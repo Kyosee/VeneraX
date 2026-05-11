@@ -16,7 +16,7 @@ class ComicType {
     if (this == local) {
       return SourcePlatformResolver.localCanonicalKey;
     } else {
-      return comicSource!.key;
+      return comicSource?.key ?? "Unknown:$value";
     }
   }
 

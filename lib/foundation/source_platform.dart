@@ -44,6 +44,7 @@ class SourcePlatformResolver {
   static const localPlatformId = 'local';
   static const localCanonicalKey = 'local';
   static const localDisplayName = 'Local';
+  static const _unknownPrefix = 'Unknown:';
   static const _legacyRemoteSourceKeys = <int, String>{
     0: 'picacg',
     1: 'ehentai',
@@ -85,9 +86,36 @@ class SourcePlatformResolver {
     );
   }
 
+  static SourcePlatformRef? fromTypeValue(int typeValue, {String? name}) {
+    if (typeValue == 0) {
+      return local;
+    }
+    final legacy = fromLegacyInt(typeValue, name: name);
+    if (legacy != null) {
+      return legacy;
+    }
+    return SourcePlatformRef(
+      platformId: 'legacy:$typeValue',
+      canonicalKey: '$_unknownPrefix$typeValue',
+      displayName: name ?? '$_unknownPrefix$typeValue',
+      kind: SourcePlatformKind.remote,
+      matchedAlias: typeValue.toString(),
+      matchedAliasType: SourceAliasType.legacyInt,
+      legacyIntType: typeValue,
+    );
+  }
+
   static SourcePlatformRef fromSourceKey(String sourceKey, {String? name}) {
     if (isLocalKey(sourceKey)) {
       return local;
+    }
+    if (sourceKey.startsWith(_unknownPrefix)) {
+      final typeValue = int.tryParse(
+        sourceKey.substring(_unknownPrefix.length),
+      );
+      if (typeValue != null) {
+        return fromTypeValue(typeValue, name: name)!;
+      }
     }
     return SourcePlatformRef(
       platformId: 'remote:$sourceKey',

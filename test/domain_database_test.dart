@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/open.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/domain_database.dart';
+import 'package:venera/foundation/source_platform.dart';
 
 void main() {
   setUpAll(() {
@@ -73,6 +74,18 @@ void main() {
           ''').single,
         containsPair('canonical_key', 'local'),
       );
+      domain.ensureSourcePlatform(
+        SourcePlatformResolver.fromSourceKey('picacg'),
+        timestamp: 2,
+      );
+      expect(
+        db.select('''
+          SELECT alias, alias_type
+          FROM source_platform_aliases
+          WHERE platform_id = 'remote:picacg';
+          ''').single,
+        containsPair('alias', 'picacg'),
+      );
     } finally {
       domain.close();
       tempDir.deleteSync(recursive: true);
@@ -95,6 +108,53 @@ void main() {
           ) VALUES ('missing-comic', 'local/path', 1, 1);
           '''),
         throwsA(isA<SqliteException>()),
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
+  test('upserts comic source and related domain state', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final comicId = domain.ensureComicSource(
+        platform: SourcePlatformResolver.fromSourceKey('picacg'),
+        sourceComicId: 'abc',
+        title: 'Title',
+        subtitle: 'Sub',
+        description: 'Desc',
+        coverUri: 'cover.jpg',
+        timestamp: 10,
+      );
+      domain.markFavorite(
+        comicId: comicId,
+        folderName: 'default',
+        timestamp: 11,
+      );
+      domain.markRead(comicId: comicId, occurredAt: 12);
+
+      expect(comicId, 'remote:picacg:abc');
+      expect(
+        domain.db.select('SELECT subtitle FROM comics WHERE comic_id = ?;', [
+          comicId,
+        ]).single,
+        containsPair('subtitle', 'Sub'),
+      );
+      expect(
+        domain.db
+            .select('SELECT COUNT(*) AS count FROM favorites;')
+            .single['count'],
+        1,
+      );
+      expect(
+        domain.db
+            .select('SELECT COUNT(*) AS count FROM history_events;')
+            .single['count'],
+        1,
       );
     } finally {
       domain.close();

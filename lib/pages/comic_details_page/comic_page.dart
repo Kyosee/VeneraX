@@ -11,6 +11,7 @@ import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -79,12 +80,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   bool showFAB = false;
 
+  final ComicStateRepository _comicStateRepository =
+      const ComicStateRepository();
+
   @override
   void onReadEnd() {
-    history ??= HistoryManager().find(
-      widget.id,
-      ComicType.fromKey(widget.sourceKey),
-    );
+    history ??= _comicStateRepository.load(widget.sourceKey, widget.id).history;
     update();
   }
 
@@ -110,10 +111,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       action = FilledButton.tonal(
         child: Text("Read".tl),
         onPressed: () {
-          final localComic = LocalManager().find(
-            widget.id,
-            ComicType.fromKey(widget.sourceKey),
-          );
+          final localComic = _comicStateRepository
+              .load(widget.sourceKey, widget.id)
+              .localComic;
           if (localComic == null) {
             context.showMessage(message: "Local comic not found".tl);
             return;
@@ -211,11 +211,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   Future<Res<ComicDetails>> loadData() async {
     if (widget.sourceKey == 'local') {
-      var localComic = LocalManager().find(widget.id, ComicType.local);
+      var state = _comicStateRepository.load(widget.sourceKey, widget.id);
+      var localComic = state.localComic;
       if (localComic == null) {
         return const Res.error('Local comic not found');
       }
-      var history = HistoryManager().find(widget.id, ComicType.local);
+      _comicStateRepository.mirrorLocalComic(localComic);
       if (isFirst) {
         Future.microtask(() {
           App.rootContext.to(() {
@@ -224,11 +225,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               cid: widget.id,
               name: localComic.title,
               chapters: localComic.chapters,
-              initialPage: history?.page,
-              initialChapter: history?.ep,
-              initialChapterGroup: history?.group,
+              initialPage: state.history?.page,
+              initialChapter: state.history?.ep,
+              initialChapterGroup: state.history?.group,
               history:
-                  history ??
+                  state.history ??
                   History.fromModel(model: localComic, ep: 0, page: 0),
               author: localComic.subTitle ?? '',
               tags: localComic.tags,
@@ -245,19 +246,15 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     if (comicSource == null) {
       return const Res.error('Comic source not found');
     }
-    isAddToLocalFav = LocalFavoritesManager().isExist(
-      widget.id,
-      ComicType.fromKey(widget.sourceKey),
-    );
-    history = HistoryManager().find(
-      widget.id,
-      ComicType.fromKey(widget.sourceKey),
-    );
+    var state = _comicStateRepository.load(widget.sourceKey, widget.id);
+    isAddToLocalFav = state.isLocalFavorite;
+    history = state.history;
     return comicSource.loadComicInfo!(widget.id);
   }
 
   @override
   Future<void> onDataLoaded() async {
+    _comicStateRepository.mirrorComicDetails(comic);
     isLiked = comic.isLiked ?? false;
     isFavorite = comic.isFavorite ?? false;
     // For sources with multi-folder favorites, prefer querying folders to get accurate favorite status

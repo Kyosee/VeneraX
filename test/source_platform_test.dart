@@ -32,4 +32,13 @@ void main() {
     expect(platform?.matchedAliasType, SourceAliasType.legacyInt);
     expect(platform?.legacyIntType, 5);
   });
+
+  test('keeps unknown legacy source ints as stable platform refs', () {
+    final platform = SourcePlatformResolver.fromTypeValue(999)!;
+
+    expect(platform.platformId, 'legacy:999');
+    expect(platform.canonicalKey, 'Unknown:999');
+    expect(platform.matchedAliasType, SourceAliasType.legacyInt);
+    expect(platform.legacyIntType, 999);
+  });
 }

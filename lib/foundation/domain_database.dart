@@ -90,6 +90,202 @@ class DomainDatabase {
       ],
     );
   }
+
+  static String comicIdFor(SourcePlatformRef platform, String sourceComicId) {
+    return '${platform.platformId}:$sourceComicId';
+  }
+
+  String ensureComicSource({
+    required SourcePlatformRef platform,
+    required String sourceComicId,
+    required String title,
+    String subtitle = '',
+    String description = '',
+    String? language,
+    String? coverUri,
+    String? sourceUrl,
+    String? sourceTitle,
+    int? timestamp,
+  }) {
+    final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+    final comicId = comicIdFor(platform, sourceComicId);
+    ensureSourcePlatform(platform, timestamp: now);
+    db.execute(
+      '''
+      INSERT INTO comics (
+        comic_id,
+        title,
+        subtitle,
+        description,
+        language,
+        cover_uri,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(comic_id) DO UPDATE SET
+        title = excluded.title,
+        subtitle = excluded.subtitle,
+        description = excluded.description,
+        language = excluded.language,
+        cover_uri = excluded.cover_uri,
+        updated_at = excluded.updated_at;
+      ''',
+      [comicId, title, subtitle, description, language, coverUri, now, now],
+    );
+    db.execute(
+      '''
+      INSERT INTO comic_sources (
+        comic_id,
+        platform_id,
+        source_comic_id,
+        source_url,
+        source_title,
+        status,
+        created_at,
+        accepted_at
+      ) VALUES (?, ?, ?, ?, ?, 'accepted', ?, ?)
+      ON CONFLICT(platform_id, source_comic_id) DO UPDATE SET
+        comic_id = excluded.comic_id,
+        source_url = excluded.source_url,
+        source_title = excluded.source_title,
+        status = 'accepted',
+        accepted_at = excluded.accepted_at;
+      ''',
+      [
+        comicId,
+        platform.platformId,
+        sourceComicId,
+        sourceUrl,
+        sourceTitle ?? title,
+        now,
+        now,
+      ],
+    );
+    return comicId;
+  }
+
+  void ensureSourcePlatform(SourcePlatformRef platform, {int? timestamp}) {
+    db.execute(
+      '''
+      INSERT INTO source_platforms (
+        platform_id,
+        canonical_key,
+        display_name,
+        kind,
+        legacy_int_type,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(platform_id) DO UPDATE SET
+        canonical_key = excluded.canonical_key,
+        display_name = excluded.display_name,
+        kind = excluded.kind,
+        legacy_int_type = COALESCE(
+          excluded.legacy_int_type,
+          source_platforms.legacy_int_type
+        );
+      ''',
+      [
+        platform.platformId,
+        platform.canonicalKey,
+        platform.displayName,
+        platform.kind.value,
+        platform.legacyIntType,
+        timestamp ?? DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
+    db.execute(
+      '''
+      INSERT OR IGNORE INTO source_platform_aliases (
+        platform_id,
+        alias,
+        alias_type,
+        legacy_int_type
+      ) VALUES (?, ?, ?, ?);
+      ''',
+      [
+        platform.platformId,
+        platform.matchedAlias,
+        platform.matchedAliasType.value,
+        platform.legacyIntType,
+      ],
+    );
+  }
+
+  void markLocalLibraryItem({
+    required String comicId,
+    required String directory,
+    String? importRoot,
+    String storageState = 'available',
+    int? timestamp,
+  }) {
+    final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+    db.execute(
+      '''
+      INSERT INTO local_library_items (
+        comic_id,
+        directory,
+        import_root,
+        storage_state,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(comic_id) DO UPDATE SET
+        directory = excluded.directory,
+        import_root = excluded.import_root,
+        storage_state = excluded.storage_state,
+        updated_at = excluded.updated_at;
+      ''',
+      [comicId, directory, importRoot, storageState, now, now],
+    );
+  }
+
+  void markFavorite({
+    required String comicId,
+    required String folderName,
+    int sortOrder = 0,
+    int? timestamp,
+  }) {
+    db.execute(
+      '''
+      INSERT OR IGNORE INTO favorites (
+        comic_id,
+        folder_name,
+        sort_order,
+        created_at
+      ) VALUES (?, ?, ?, ?);
+      ''',
+      [
+        comicId,
+        folderName,
+        sortOrder,
+        timestamp ?? DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
+  }
+
+  void markRead({
+    required String comicId,
+    String? chapterId,
+    String? pageId,
+    int? occurredAt,
+  }) {
+    db.execute(
+      '''
+      INSERT INTO history_events (
+        comic_id,
+        chapter_id,
+        page_id,
+        occurred_at
+      ) VALUES (?, ?, ?, ?);
+      ''',
+      [
+        comicId,
+        chapterId,
+        pageId,
+        occurredAt ?? DateTime.now().millisecondsSinceEpoch,
+      ],
+    );
+  }
 }
 
 const _schemaSql = '''

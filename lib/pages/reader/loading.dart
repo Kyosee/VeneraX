@@ -23,6 +23,9 @@ class ReaderWithLoading extends StatefulWidget {
 
 class _ReaderWithLoadingState
     extends LoadingState<ReaderWithLoading, ReaderProps> {
+  final ComicStateRepository _comicStateRepository =
+      const ComicStateRepository();
+
   @override
   Widget buildContent(BuildContext context, ReaderProps data) {
     return Reader(
@@ -41,31 +44,23 @@ class _ReaderWithLoadingState
 
   @override
   Future<Res<ReaderProps>> loadData() async {
+    var state = _comicStateRepository.load(widget.sourceKey, widget.id);
     var comicSource = ComicSource.find(widget.sourceKey);
-    var history = HistoryManager().find(
-      widget.id,
-      ComicType.fromKey(widget.sourceKey),
-    );
+    var history = state.history;
     if (comicSource == null) {
-      var localComic = LocalManager().find(
-        widget.id,
-        ComicType.fromKey(widget.sourceKey),
-      );
+      var localComic = state.localComic;
       if (localComic == null) {
         return Res.error("comic not found");
       }
+      _comicStateRepository.mirrorLocalComic(localComic);
       return Res(
         ReaderProps(
-          type: ComicType.fromKey(widget.sourceKey),
+          type: state.identity.type,
           cid: widget.id,
           name: localComic.title,
           chapters: localComic.chapters,
-          history: history ??
-              History.fromModel(
-                model: localComic,
-                ep: 0,
-                page: 0,
-              ),
+          history:
+              history ?? History.fromModel(model: localComic, ep: 0, page: 0),
           author: localComic.subtitle,
           tags: localComic.tags,
         ),
@@ -75,18 +70,15 @@ class _ReaderWithLoadingState
       if (comic.error) {
         return Res.fromErrorRes(comic);
       }
+      _comicStateRepository.mirrorComicDetails(comic.data);
       return Res(
         ReaderProps(
-          type: ComicType.fromKey(widget.sourceKey),
+          type: state.identity.type,
           cid: widget.id,
           name: comic.data.title,
           chapters: comic.data.chapters,
-          history: history ??
-              History.fromModel(
-                model: comic.data,
-                ep: 0,
-                page: 0,
-              ),
+          history:
+              history ?? History.fromModel(model: comic.data, ep: 0, page: 0),
           author: comic.data.findAuthor() ?? "",
           tags: comic.data.plainTags,
         ),

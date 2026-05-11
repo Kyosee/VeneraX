@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/components/window_frame.dart';
@@ -32,12 +34,21 @@ class DataSync with ChangeNotifier {
 
   void onDataChanged() {
     if (isEnabled) {
-      uploadData();
+      _pendingAutoUpload?.cancel();
+      _pendingAutoUpload = Timer(const Duration(seconds: 2), () {
+        _pendingAutoUpload = null;
+        uploadData();
+      });
     }
   }
 
   bool _handleWindowClose() {
-    if (_isUploading) {
+    if (_pendingAutoUpload?.isActive ?? false) {
+      _pendingAutoUpload?.cancel();
+      _pendingAutoUpload = null;
+      uploadData();
+    }
+    if (_isUploading || _isDownloading || _haveWaitingTask) {
       _showWindowCloseDialog();
       return false;
     }
@@ -50,9 +61,9 @@ class DataSync with ChangeNotifier {
       cancelButtonText: "Shut Down".tl,
       onCancel: () => exit(0),
       barrierDismissible: false,
-      message: "Uploading data...".tl,
+      message: "Syncing Data".tl,
     );
-    while (_isUploading) {
+    while (_isUploading || _isDownloading || _haveWaitingTask) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
     exit(0);
@@ -71,6 +82,8 @@ class DataSync with ChangeNotifier {
   bool get isUploading => _isUploading;
 
   bool _haveWaitingTask = false;
+
+  Timer? _pendingAutoUpload;
 
   String? _lastError;
 
@@ -93,13 +106,29 @@ class DataSync with ChangeNotifier {
     if (config.length != 3 || config.whereType<String>().length != 3) {
       return null;
     }
-    return List.from(config);
+    var values = config.cast<String>().map((e) => e.trim()).toList();
+    if (values.any((e) => e.isEmpty)) {
+      return null;
+    }
+    return values;
+  }
+
+  int _dataVersion() {
+    final value = appdata.settings['dataVersion'];
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Future<Res<bool>> uploadData() async {
-    if (isDownloading) return const Res(true);
+    _pendingAutoUpload?.cancel();
+    _pendingAutoUpload = null;
     if (_haveWaitingTask) return const Res(true);
-    while (isUploading) {
+    while (isDownloading || isUploading) {
       _haveWaitingTask = true;
       await Future.delayed(const Duration(milliseconds: 100));
     }
@@ -127,17 +156,20 @@ class DataSync with ChangeNotifier {
         adapter: RHttpAdapter(),
       );
 
+      File? data;
+      final previousVersion = _dataVersion();
+      final nextVersion = previousVersion + 1;
       try {
-        appdata.settings['dataVersion']++;
+        appdata.settings['dataVersion'] = nextVersion;
         await appdata.saveData(false);
-        var data = await exportAppData(
-            appdata.settings['disableSyncFields'].toString().isNotEmpty
+        data = await exportAppData(
+          appdata.settings['disableSyncFields'].toString().isNotEmpty,
         );
-        var time =
-            (DateTime.now().millisecondsSinceEpoch ~/ 86400000).toString();
+        var time = (DateTime.now().millisecondsSinceEpoch ~/ 86400000)
+            .toString();
         var filename = time;
         filename += '-';
-        filename += appdata.settings['dataVersion'].toString();
+        filename += nextVersion.toString();
         filename += '.venera';
         var files = await client.readDir('/');
         files = files.where((e) => e.name!.endsWith('.venera')).toList();
@@ -154,9 +186,13 @@ class DataSync with ChangeNotifier {
         Log.info("Upload Data", "Data uploaded successfully");
         return const Res(true);
       } catch (e, s) {
+        appdata.settings['dataVersion'] = previousVersion;
+        await appdata.saveData(false);
         Log.error("Upload Data", e, s);
         _lastError = e.toString();
         return Res.error(e.toString());
+      } finally {
+        data?.deleteIgnoreError();
       }
     } finally {
       _isUploading = false;
@@ -201,20 +237,26 @@ class DataSync with ChangeNotifier {
         if (file == null) {
           throw 'No data file found';
         }
-        var version =
-            file.name!.split('-').elementAtOrNull(1)?.split('.').first;
+        var version = file.name!
+            .split('-')
+            .elementAtOrNull(1)
+            ?.split('.')
+            .first;
         if (version != null && int.tryParse(version) != null) {
-          var currentVersion = appdata.settings['dataVersion'];
-          if (currentVersion != null && int.parse(version) <= currentVersion) {
+          var currentVersion = _dataVersion();
+          if (int.parse(version) <= currentVersion) {
             Log.info("Data Sync", 'No new data to download');
             return const Res(true);
           }
         }
         Log.info("Data Sync", "Downloading data from WebDAV server");
         var localFile = File(FilePath.join(App.cachePath, file.name!));
-        await client.read2File(file.name!, localFile.path);
-        await importAppData(localFile, true);
-        await localFile.delete();
+        try {
+          await client.read2File(file.name!, localFile.path);
+          await importAppData(localFile, true);
+        } finally {
+          localFile.deleteIgnoreError();
+        }
         Log.info("Data Sync", "Data downloaded successfully");
         return const Res(true);
       } catch (e, s) {
