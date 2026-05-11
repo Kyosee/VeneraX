@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/channel.dart';
@@ -35,6 +36,8 @@ Future<ComicUpdateResult> updateComic(
           newTags.add("$namespace:$tag");
         }
       }
+
+      const ComicStateRepository().mirrorComicDetails(newInfo);
 
       var item = FavoriteItem(
         id: c.id,

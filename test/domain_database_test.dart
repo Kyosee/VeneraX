@@ -43,6 +43,8 @@ void main() {
           'source_platforms',
           'source_platform_aliases',
           'comics',
+          'works',
+          'work_sources',
           'comic_titles',
           'comic_sources',
           'source_tags',
@@ -127,7 +129,12 @@ void main() {
         title: 'Title',
         subtitle: 'Sub',
         description: 'Desc',
+        author: 'Author',
+        status: '连载中',
+        updateTime: '2026-05-11',
         coverUri: 'cover.jpg',
+        tags: const ['genre:Action', 'status:连载中'],
+        pageCount: 12,
         timestamp: 10,
       );
       domain.markFavorite(
@@ -144,6 +151,12 @@ void main() {
         ]).single,
         containsPair('subtitle', 'Sub'),
       );
+      final baseInfo = domain.getComicBaseInfo(comicId)!;
+      expect(baseInfo.author, 'Author');
+      expect(baseInfo.status, '连载中');
+      expect(baseInfo.updateTime, '2026-05-11');
+      expect(baseInfo.tags, contains('genre:Action'));
+      expect(baseInfo.pageCount, 12);
       expect(
         domain.db
             .select('SELECT COUNT(*) AS count FROM favorites;')
@@ -161,4 +174,50 @@ void main() {
       tempDir.deleteSync(recursive: true);
     }
   });
+
+  test(
+    'creates manual links and automatic candidates between source comics',
+    () async {
+      final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+      final domain = DomainDatabase();
+
+      try {
+        await domain.init(tempDir.path);
+        final picacg = SourcePlatformResolver.fromSourceKey('picacg');
+        final ehentai = SourcePlatformResolver.fromSourceKey('ehentai');
+
+        final firstId = domain.ensureComicSource(
+          platform: picacg,
+          sourceComicId: 'same-a',
+          title: 'Same Title',
+          author: 'Same Author',
+          timestamp: 20,
+        );
+        final secondId = domain.ensureComicSource(
+          platform: ehentai,
+          sourceComicId: 'same-b',
+          title: 'Same Title',
+          author: 'Same Author',
+          timestamp: 21,
+        );
+
+        final candidates = domain.getRelatedSources(secondId);
+        expect(candidates.any((link) => link.status == 'candidate'), isTrue);
+
+        final workId = domain.linkSourceComics(
+          sourcePlatform: picacg,
+          sourceComicId: 'same-a',
+          targetPlatform: ehentai,
+          targetSourceComicId: 'same-b',
+          timestamp: 22,
+        );
+        final links = domain.getRelatedSources(firstId);
+        expect(workId, startsWith('work:'));
+        expect(links.where((link) => link.status == 'accepted'), hasLength(2));
+      } finally {
+        domain.close();
+        tempDir.deleteSync(recursive: true);
+      }
+    },
+  );
 }

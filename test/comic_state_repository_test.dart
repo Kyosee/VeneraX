@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/open.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
+import 'package:venera/foundation/favorites.dart';
 
 void main() {
   setUpAll(() {
@@ -48,7 +50,7 @@ void main() {
           'cover.jpg',
           'remote-id',
           'Sub',
-          const ['tag'],
+          const ['genre:Action', 'status:连载中'],
           'Desc',
           'picacg',
           null,
@@ -58,7 +60,7 @@ void main() {
         final comicId = repository.mirrorComic(comic);
         final rows = domain.db.select(
           '''
-        SELECT c.title, c.subtitle, c.description, s.platform_id
+        SELECT c.title, c.subtitle, c.description, c.status, s.platform_id
         FROM comics c
         JOIN comic_sources s ON s.comic_id = c.comic_id
         WHERE c.comic_id = ?;
@@ -70,11 +72,47 @@ void main() {
         expect(rows.single['title'], 'Title');
         expect(rows.single['subtitle'], 'Sub');
         expect(rows.single['description'], 'Desc');
+        expect(rows.single['status'], '连载中');
         expect(rows.single['platform_id'], 'remote:picacg');
+
+        final display = repository.displayInfoFor(comic);
+        expect(display.title, 'Title');
+        expect(display.author, 'Sub');
+        expect(display.status, '连载中');
+        expect(display.tags, contains('genre:Action'));
+        expect(display.tags, isNot(contains('status:连载中')));
       } finally {
         domain.close();
         tempDir.deleteSync(recursive: true);
       }
+    },
+  );
+
+  test(
+    'comic display status is serialization status, not update read state',
+    () {
+      const repository = ComicStateRepository();
+      final favorite = FavoriteItem(
+        id: 'fav-id',
+        name: 'Favorite',
+        coverPath: 'cover.jpg',
+        author: 'Author',
+        type: ComicType.fromKey('picacg'),
+        tags: const ['status:连载中', 'genre:Drama'],
+      );
+      final updateInfo = FavoriteItemWithUpdateInfo(
+        favorite,
+        '2026-05-11',
+        true,
+        null,
+      );
+
+      final display = repository.displayInfoFor(updateInfo);
+
+      expect(display.status, '连载中');
+      expect(display.updateTime, '2026-05-11');
+      expect(display.hasNewUpdate, isTrue);
+      expect(display.status, isNot('Unread'));
     },
   );
 }

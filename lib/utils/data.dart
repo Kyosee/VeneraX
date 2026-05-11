@@ -6,6 +6,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
@@ -29,18 +30,33 @@ Future<File> exportAppData([bool sync = true]) async {
   if (await cacheFile.exists()) {
     await cacheFile.delete();
   }
+  try {
+    if (App.domain.isInitialized) {
+      App.domain.db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+    }
+  } catch (e, s) {
+    Log.warning('Export Data', 'Failed to checkpoint domain database: $e\n$s');
+  }
   await Isolate.run(() {
     var zipFile = ZipFile.open(cacheFilePath);
     var historyFile = FilePath.join(dataPath, "history.db");
     var localFavoriteFile = FilePath.join(dataPath, "local_favorite.db");
-    var appdata = FilePath.join(dataPath, sync ? "syncdata.json" : "appdata.json");
+    var domainFile = DomainDatabase.databasePathFor(dataPath);
+    var appdata = FilePath.join(
+      dataPath,
+      sync ? "syncdata.json" : "appdata.json",
+    );
     var cookies = FilePath.join(dataPath, "cookie.db");
     zipFile.addFile("history.db", historyFile);
     zipFile.addFile("local_favorite.db", localFavoriteFile);
+    if (File(domainFile).existsSync()) {
+      zipFile.addFile("data/venera.db", domainFile);
+    }
     zipFile.addFile("appdata.json", appdata);
     zipFile.addFile("cookie.db", cookies);
-    for (var file
-        in Directory(FilePath.join(dataPath, "comic_source")).listSync()) {
+    for (var file in Directory(
+      FilePath.join(dataPath, "comic_source"),
+    ).listSync()) {
       if (file is File) {
         zipFile.addFile("comic_source/${file.name}", file.path);
       }
@@ -63,6 +79,7 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
     });
     var historyFile = cacheDir.joinFile("history.db");
     var localFavoriteFile = cacheDir.joinFile("local_favorite.db");
+    var domainFile = File(FilePath.join(cacheDirPath, "data", "venera.db"));
     var appdataFile = cacheDir.joinFile("appdata.json");
     var cookieFile = cacheDir.joinFile("cookie.db");
     if (checkVersion && appdataFile.existsSync()) {
@@ -80,11 +97,26 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
     }
     if (await localFavoriteFile.exists()) {
       LocalFavoritesManager().close();
-      File(FilePath.join(App.dataPath, "local_favorite.db"))
-          .deleteIfExistsSync();
-      localFavoriteFile
-          .renameSync(FilePath.join(App.dataPath, "local_favorite.db"));
+      File(
+        FilePath.join(App.dataPath, "local_favorite.db"),
+      ).deleteIfExistsSync();
+      localFavoriteFile.renameSync(
+        FilePath.join(App.dataPath, "local_favorite.db"),
+      );
       LocalFavoritesManager().init();
+    }
+    if (await domainFile.exists()) {
+      App.domain.close();
+      final domainDir = Directory(
+        FilePath.join(App.dataPath, DomainDatabase.dataDirectoryName),
+      );
+      domainDir.createSync(recursive: true);
+      final target = DomainDatabase.databasePathFor(App.dataPath);
+      File(target).deleteIfExistsSync();
+      File('$target-wal').deleteIfExistsSync();
+      File('$target-shm').deleteIfExistsSync();
+      domainFile.renameSync(target);
+      await App.domain.init(App.dataPath);
     }
     if (await appdataFile.exists()) {
       var content = await appdataFile.readAsString();
@@ -95,19 +127,23 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
       SingleInstanceCookieJar.instance?.dispose();
       File(FilePath.join(App.dataPath, "cookie.db")).deleteIfExistsSync();
       cookieFile.renameSync(FilePath.join(App.dataPath, "cookie.db"));
-      SingleInstanceCookieJar.instance =
-          SingleInstanceCookieJar(FilePath.join(App.dataPath, "cookie.db"))
-            ..init();
+      SingleInstanceCookieJar.instance = SingleInstanceCookieJar(
+        FilePath.join(App.dataPath, "cookie.db"),
+      )..init();
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
     if (Directory(comicSourceDir).existsSync()) {
-      Directory(FilePath.join(App.dataPath, "comic_source"))
-          .deleteIfExistsSync(recursive: true);
+      Directory(
+        FilePath.join(App.dataPath, "comic_source"),
+      ).deleteIfExistsSync(recursive: true);
       Directory(FilePath.join(App.dataPath, "comic_source")).createSync();
       for (var file in Directory(comicSourceDir).listSync()) {
         if (file is File) {
-          var targetFile =
-              FilePath.join(App.dataPath, "comic_source", file.name);
+          var targetFile = FilePath.join(
+            App.dataPath,
+            "comic_source",
+            file.name,
+          );
           await file.copy(targetFile);
         }
       }
@@ -137,20 +173,25 @@ Future<void> importPicaData(File file) async {
             .select("SELECT name FROM sqlite_master WHERE type='table';")
             .map((e) => e["name"] as String)
             .toList();
-        folderNames
-            .removeWhere((e) => e == "folder_order" || e == "folder_sync");
+        folderNames.removeWhere(
+          (e) => e == "folder_order" || e == "folder_sync",
+        );
         for (var folderSyncValue in db.select("SELECT * FROM folder_sync;")) {
           var folderName = folderSyncValue["folder_name"];
           String sourceKey = folderSyncValue["key"];
-          sourceKey =
-              sourceKey.toLowerCase() == "htmanga" ? "wnacg" : sourceKey;
+          sourceKey = sourceKey.toLowerCase() == "htmanga"
+              ? "wnacg"
+              : sourceKey;
           // 有值就跳过
           if (LocalFavoritesManager().findLinked(folderName).$1 != null) {
             continue;
           }
           try {
-            LocalFavoritesManager().linkFolderToNetwork(folderName, sourceKey,
-                jsonDecode(folderSyncValue["sync_data"])["folderId"]);
+            LocalFavoritesManager().linkFolderToNetwork(
+              folderName,
+              sourceKey,
+              jsonDecode(folderSyncValue["sync_data"])["folderId"],
+            );
           } catch (e, stack) {
             Log.error(e.toString(), stack);
           }
@@ -218,25 +259,46 @@ Future<void> importPicaData(File file) async {
           String epName = "";
           ImageFavoritesComic? tempComic = imageFavoritesComicList
               .firstWhereOrNull((e) => e.id == id && e.sourceKey == sourceKey);
-          ImageFavorite curImageFavorite =
-              ImageFavorite(page, "", null, "", id, ep, sourceKey, epName);
+          ImageFavorite curImageFavorite = ImageFavorite(
+            page,
+            "",
+            null,
+            "",
+            id,
+            ep,
+            sourceKey,
+            epName,
+          );
           if (tempComic == null) {
-            tempComic = ImageFavoritesComic(id, [], title, sourceKey, [], [],
-                DateTime.now(), "", {}, "", 1);
+            tempComic = ImageFavoritesComic(
+              id,
+              [],
+              title,
+              sourceKey,
+              [],
+              [],
+              DateTime.now(),
+              "",
+              {},
+              "",
+              1,
+            );
             tempComic.imageFavoritesEp = [
-              ImageFavoritesEp("", ep, [curImageFavorite], epName, 1)
+              ImageFavoritesEp("", ep, [curImageFavorite], epName, 1),
             ];
             imageFavoritesComicList.add(tempComic);
           } else {
-            ImageFavoritesEp? tempEp =
-                tempComic.imageFavoritesEp.firstWhereOrNull((e) => e.ep == ep);
+            ImageFavoritesEp? tempEp = tempComic.imageFavoritesEp
+                .firstWhereOrNull((e) => e.ep == ep);
             if (tempEp == null) {
-              tempComic.imageFavoritesEp
-                  .add(ImageFavoritesEp("", ep, [curImageFavorite], epName, 1));
+              tempComic.imageFavoritesEp.add(
+                ImageFavoritesEp("", ep, [curImageFavorite], epName, 1),
+              );
             } else {
               // 如果已经有这个page了, 就不添加了
-              if (tempEp.imageFavorites
-                      .firstWhereOrNull((e) => e.page == page) ==
+              if (tempEp.imageFavorites.firstWhereOrNull(
+                    (e) => e.page == page,
+                  ) ==
                   null) {
                 tempEp.imageFavorites.add(curImageFavorite);
               }
