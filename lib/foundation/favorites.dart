@@ -9,6 +9,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_provider/local_favorite_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'dart:io';
@@ -122,16 +123,9 @@ class FavoriteItem implements Comic {
     var type = json["type"] as int;
     if (type == 0 && json['coverPath'].toString().startsWith('http')) {
       type = 'picacg'.hashCode;
-    } else if (type == 1) {
-      type = 'ehentai'.hashCode;
-    } else if (type == 2) {
-      type = 'jm'.hashCode;
-    } else if (type == 3) {
-      type = 'hitomi'.hashCode;
-    } else if (type == 4) {
-      type = 'wnacg'.hashCode;
-    } else if (type == 6) {
-      type = 'nhentai'.hashCode;
+    } else if (type != 0) {
+      type =
+          SourcePlatformResolver.sourceKeyFromLegacyInt(type)?.hashCode ?? type;
     }
     return FavoriteItem(
       id: json["id"] ?? json['target'],

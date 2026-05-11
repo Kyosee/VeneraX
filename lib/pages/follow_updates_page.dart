@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
 import '../foundation/global_state.dart';
 import 'package:venera/foundation/follow_updates.dart';
+import 'package:venera/foundation/history.dart';
 
 class FollowUpdatesWidget extends StatefulWidget {
   const FollowUpdatesWidget({super.key});
@@ -53,6 +56,10 @@ class _FollowUpdatesWidgetState
 
   @override
   Widget build(BuildContext context) {
+    final updatesText = _count > 0
+        ? '@c updates'.tlParams({'c': _count})
+        : null;
+
     return SliverToBoxAdapter(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -68,40 +75,42 @@ class _FollowUpdatesWidgetState
           onTap: () {
             context.to(() => FollowUpdatesPage());
           },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('Follow Updates'.tl, style: ts.s18),
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.arrow_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (_count > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  margin: const EdgeInsets.only(bottom: 16, left: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                  ),
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                Expanded(
                   child: Text(
-                    '@c updates'.tlParams({
-                      'c': _count,
-                    }),
-                    style: ts.s16,
+                    'Follow Updates'.tl,
+                    style: ts.s18,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-            ],
-          ),
+                const SizedBox(width: 12),
+                if (updatesText != null)
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                    ),
+                    child: Text(
+                      updatesText,
+                      style: ts.s16,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_right),
+              ],
+            ),
+          ).paddingHorizontal(16),
         ),
       ),
     );
@@ -162,18 +171,10 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SmoothCustomScrollView(
-        slivers: [
-          SliverAppbar(title: Text('Follow Updates'.tl)),
-          if (folder == null)
-            buildNotConfigured(context)
-          else
-            buildConfigured(context),
-          SliverPadding(padding: const EdgeInsets.only(top: 8)),
-          buildUpdatedComics(),
-          buildAllComics(),
-        ],
-      ),
+      appBar: Appbar(title: Text('Follow Updates'.tl)),
+      body: folder == null
+          ? SmoothCustomScrollView(slivers: [buildNotConfigured(context)])
+          : buildConfiguredTabs(context),
     );
   }
 
@@ -212,50 +213,162 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   }
 
   Widget buildConfigured(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+          width: 0.6,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: Icon(Icons.stars_outlined),
-              title: Text(folder!),
-            ),
-            Text(
-              "Automatic update checking enabled.".tl,
-              style: ts.s14,
-            ).paddingHorizontal(16),
-            Text(
-              "The app will check for updates at most once a day.".tl,
-              style: ts.s14,
-            ).paddingHorizontal(16),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: showSelector,
-                  child: Text("Change Folder".tl),
-                ),
-                FilledButton.tonal(
-                  onPressed: checkNow,
-                  child: Text("Check Now".tl),
-                ),
-                const SizedBox(width: 16),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(leading: Icon(Icons.stars_outlined), title: Text(folder!)),
+          Text(
+            "Automatic update checking enabled.".tl,
+            style: ts.s14,
+          ).paddingHorizontal(16),
+          Text(
+            "The app will check for updates at most once a day.".tl,
+            style: ts.s14,
+          ).paddingHorizontal(16),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: showSelector,
+                child: Text("Change Folder".tl),
+              ),
+              FilledButton.tonal(
+                onPressed: checkNow,
+                child: Text("Check Now".tl),
+              ),
+              const SizedBox(width: 16),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget buildConfiguredTabs(BuildContext context) {
+    final unreadComics = allComics
+        .where((comic) => !_isReadCompleted(comic))
+        .toList();
+    final completedComics = allComics.where(_isReadCompleted).toList();
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          buildConfigured(context),
+          Material(
+            child: AppTabBar(
+              tabs: [
+                Tab(text: "Updates".tl),
+                Tab(text: "Unread".tl),
+                Tab(text: "Ended".tl),
               ],
             ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                buildComicsTab(
+                  updatedComics,
+                  emptyText: "No updates found".tl,
+                  top: buildUpdatedComicsHint(),
+                ),
+                buildComicsTab(unreadComics, emptyText: "No unread comics".tl),
+                buildComicsTab(
+                  completedComics,
+                  emptyText: "No ended comics".tl,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  bool _isReadCompleted(FavoriteItemWithUpdateInfo comic) {
+    var history = HistoryManager().find(
+      comic.id,
+      ComicType.fromKey(comic.sourceKey),
+    );
+    return history != null && history.page == history.maxPage;
+  }
+
+  Widget buildUpdatedComicsHint() {
+    if (updatedComics.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            "The comic will be marked as no updates as soon as you read it.".tl,
+          ).paddingHorizontal(16).paddingVertical(4),
+        ),
+        IconButton(
+          icon: Icon(Icons.done_all),
+          onPressed: () {
+            showConfirmDialog(
+              context: App.rootContext,
+              title: "Mark all as read".tl,
+              content: "Do you want to mark all as read?".tl,
+              onConfirm: () {
+                for (var comic in updatedComics) {
+                  LocalFavoritesManager().markAsRead(comic.id, comic.type);
+                }
+                updateFollowUpdatesUI();
+                appdata.saveData();
+              },
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget buildComicsTab(
+    List<FavoriteItemWithUpdateInfo> comics, {
+    required String emptyText,
+    Widget? top,
+  }) {
+    return SmoothCustomScrollView(
+      slivers: [
+        if (top != null) SliverToBoxAdapter(child: top),
+        if (comics.isNotEmpty)
+          SliverGridComics(comics: comics)
+        else
+          SliverToBoxAdapter(
+            child: Row(
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(emptyText, style: ts.s16),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -278,14 +391,11 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
               children: [
                 Icon(Icons.update),
                 const SizedBox(width: 8),
-                Text(
-                  "Updates".tl,
-                  style: ts.s18,
-                ),
+                Text("Updates".tl, style: ts.s18),
                 const Spacer(),
                 if (updatedComics.isNotEmpty)
                   IconButton(
-                    icon: Icon(Icons.clear_all),
+                    icon: Icon(Icons.done_all),
                     onPressed: () {
                       showConfirmDialog(
                         context: App.rootContext,
@@ -311,10 +421,9 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         if (updatedComics.isNotEmpty)
           SliverToBoxAdapter(
             child: Text(
-                    "The comic will be marked as no updates as soon as you read it."
-                        .tl)
-                .paddingHorizontal(16)
-                .paddingVertical(4),
+              "The comic will be marked as no updates as soon as you read it."
+                  .tl,
+            ).paddingHorizontal(16).paddingVertical(4),
           ),
         if (updatedComics.isNotEmpty)
           SliverGridComics(comics: updatedComics)
@@ -323,24 +432,23 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
             child: Row(
               children: [
                 Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "No updates found".tl,
-                        style: ts.s16,
-                      ),
-                    ],
+                    children: [Text("No updates found".tl, style: ts.s16)],
                   ),
-                )
+                ),
               ],
             ),
           ),
@@ -367,10 +475,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
               children: [
                 Icon(Icons.list),
                 const SizedBox(width: 8),
-                Text(
-                  "All Comics".tl,
-                  style: ts.s18,
-                ),
+                Text("All Comics".tl, style: ts.s18),
               ],
             ),
           ),
@@ -390,47 +495,49 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     showDialog(
       context: App.rootContext,
       builder: (context) {
-        return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
-            title: "Choose Folder".tl,
-            content: Column(
-              children: [
-                ListTile(
-                  title: Text("Folder".tl),
-                  trailing: Select(
-                    minWidth: 120,
-                    current: selectedFolder,
-                    values: folders,
-                    onTap: (i) {
-                      setState(() {
-                        selectedFolder = folders[i];
-                      });
-                    },
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ContentDialog(
+              title: "Choose Folder".tl,
+              content: Column(
+                children: [
+                  ListTile(
+                    title: Text("Folder".tl),
+                    trailing: Select(
+                      minWidth: 120,
+                      current: selectedFolder,
+                      values: folders,
+                      onTap: (i) {
+                        setState(() {
+                          selectedFolder = folders[i];
+                        });
+                      },
+                    ),
                   ),
+                ],
+              ),
+              actions: [
+                if (appdata.settings["followUpdatesFolder"] != null)
+                  TextButton(
+                    onPressed: () {
+                      disable();
+                      context.pop();
+                    },
+                    child: Text("Disable".tl),
+                  ),
+                FilledButton(
+                  onPressed: selectedFolder == null
+                      ? null
+                      : () {
+                          context.pop();
+                          setFolder(selectedFolder!);
+                        },
+                  child: Text("Confirm".tl),
                 ),
               ],
-            ),
-            actions: [
-              if (appdata.settings["followUpdatesFolder"] != null)
-                TextButton(
-                  onPressed: () {
-                    disable();
-                    context.pop();
-                  },
-                  child: Text("Disable".tl),
-                ),
-              FilledButton(
-                onPressed: selectedFolder == null
-                    ? null
-                    : () {
-                        context.pop();
-                        setFolder(selectedFolder!);
-                      },
-                child: Text("Confirm".tl),
-              ),
-            ],
-          );
-        });
+            );
+          },
+        );
       },
     );
   }
@@ -482,36 +589,8 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
 
   void checkNow() async {
     FollowUpdatesService._cancelChecking?.call();
-
-    bool isCanceled = false;
-    void onCancel() {
-      isCanceled = true;
-    }
-
-    var loadingController = showLoadingDialog(
-      App.rootContext,
-      withProgress: true,
-      cancelButtonText: "Cancel".tl,
-      onCancel: onCancel,
-      message: "Updating comics...".tl,
-    );
-
-    int updated = 0;
-
-    await for (var progress in updateFolder(folder!, true)) {
-      if (isCanceled) {
-        return;
-      }
-      loadingController.setProgress(progress.current / progress.total);
-      updated = progress.updated;
-    }
-
-    loadingController.close();
-
-    if (updated > 0) {
-      GlobalState.findOrNull<_FollowUpdatesWidgetState>()?.updateCount();
-      updateComics();
-    }
+    FollowUpdateTaskManager.instance.startCheck(folder!, manual: true);
+    context.showMessage(message: "Task started".tl);
   }
 
   void updateComics() {
@@ -549,10 +628,7 @@ abstract class FollowUpdatesService {
     if (folder == null) {
       return;
     }
-    bool isCanceled = false;
-    _cancelChecking = () {
-      isCanceled = true;
-    };
+    _cancelChecking = () {};
 
     _isChecking = true;
 
@@ -560,20 +636,29 @@ abstract class FollowUpdatesService {
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
-    int updated = 0;
+    FollowUpdateTask? task;
     try {
-      await for (var progress in updateFolder(folder, false)) {
-        if (isCanceled) {
-          return;
-        }
-        updated = progress.updated;
+      task = FollowUpdateTaskManager.instance.startCheck(folder, manual: false);
+      if (task == null) {
+        return;
       }
+      _cancelChecking = () {
+        FollowUpdateTaskManager.instance.cancel(task!.id);
+      };
+      var completer = Completer<void>();
+      void onTaskChanged() {
+        if (!task!.isRunning && !completer.isCompleted) {
+          completer.complete();
+        }
+      }
+
+      FollowUpdateTaskManager.instance.addListener(onTaskChanged);
+      await completer.future.whenComplete(() {
+        FollowUpdateTaskManager.instance.removeListener(onTaskChanged);
+      });
     } finally {
       _cancelChecking = null;
       _isChecking = false;
-      if (updated > 0) {
-        updateFollowUpdatesUI();
-      }
     }
   }
 
@@ -581,6 +666,9 @@ abstract class FollowUpdatesService {
   static void initChecker() {
     if (_isInitialized) return;
     _isInitialized = true;
+    FollowUpdateTaskManager.instance.onTaskFinished = (_) {
+      updateFollowUpdatesUI();
+    };
     _check();
     DataSync().addListener(updateFollowUpdatesUI);
     // A short interval will not affect the performance since every comic has a check time.

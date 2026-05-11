@@ -1,4 +1,5 @@
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/source_platform.dart';
 
 class ComicType {
   final int value;
@@ -12,15 +13,15 @@ class ComicType {
   int get hashCode => value.hashCode;
 
   String get sourceKey {
-    if(this == local) {
-      return "local";
+    if (this == local) {
+      return SourcePlatformResolver.localCanonicalKey;
     } else {
       return comicSource!.key;
     }
   }
 
   ComicSource? get comicSource {
-    if(this == local) {
+    if (this == local) {
       return null;
     } else {
       return ComicSource.fromIntKey(value);
@@ -30,10 +31,11 @@ class ComicType {
   static const local = ComicType(0);
 
   factory ComicType.fromKey(String key) {
-    if(key == "local") {
+    final platform = SourcePlatformResolver.fromSourceKey(key);
+    if (platform.kind == SourcePlatformKind.local) {
       return local;
     } else {
-      return ComicType(key.hashCode);
+      return ComicType(platform.canonicalKey.hashCode);
     }
   }
 }

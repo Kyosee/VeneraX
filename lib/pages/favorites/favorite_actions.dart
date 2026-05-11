@@ -113,9 +113,7 @@ void addFavorite(List<Comic> comics) {
                         name: comic.title,
                         coverPath: comic.cover,
                         author: comic.subtitle ?? '',
-                        type: ComicType((comic.sourceKey == 'local'
-                            ? 0
-                            : comic.sourceKey.hashCode)),
+                        type: ComicType.fromKey(comic.sourceKey),
                         tags: comic.tags ?? [],
                       ),
                     );

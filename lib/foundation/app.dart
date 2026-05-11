@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/history.dart';
 
 import 'appdata.dart';
+import 'domain_database.dart';
 import 'favorites.dart';
 import 'local.dart';
 
@@ -67,6 +68,8 @@ class _App {
 
   final LocalManager local = LocalManager();
 
+  final DomainDatabase domain = DomainDatabase();
+
   void rootPop() {
     rootNavigatorKey.currentState?.maybePop();
   }
@@ -94,6 +97,7 @@ class _App {
       history.init(),
       favorites.init(),
       local.init(),
+      domain.init(dataPath),
     ]);
   }
 

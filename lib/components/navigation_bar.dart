@@ -212,10 +212,7 @@ class NaviPaneState extends State<NaviPane>
             ],
           );
           if (sideInsets != EdgeInsets.zero) {
-            content = Padding(
-              padding: sideInsets,
-              child: content,
-            );
+            content = Padding(padding: sideInsets, child: content);
           }
           return content;
         },
@@ -322,6 +319,17 @@ class NaviPaneState extends State<NaviPane>
     );
   }
 
+  Widget buildAppLogo({double size = 32}) {
+    return ClipOval(
+      child: Image.asset(
+        'assets/app_icon.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+
   Widget buildLeft() {
     final value = controller.value;
     const paddingHorizontal = 12.0;
@@ -344,6 +352,25 @@ class NaviPaneState extends State<NaviPane>
           children: [
             const SizedBox(height: 16),
             SizedBox(height: MediaQuery.of(context).padding.top),
+            SizedBox(
+              height: 48,
+              child: value == 3
+                  ? Row(
+                      children: [
+                        buildAppLogo(),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Venera',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Center(child: buildAppLogo()),
+            ),
+            const SizedBox(height: 8),
             ...List<Widget>.generate(
               widget.paneItems.length,
               (index) => _SideNaviWidget(

@@ -12,7 +12,9 @@ class ComicUpdateResult {
 }
 
 Future<ComicUpdateResult> updateComic(
-    FavoriteItemWithUpdateInfo c, String folder) async {
+  FavoriteItemWithUpdateInfo c,
+  String folder,
+) async {
   int retries = 3;
   while (true) {
     try {
@@ -38,9 +40,8 @@ Future<ComicUpdateResult> updateComic(
         id: c.id,
         name: newInfo.title,
         coverPath: newInfo.cover,
-        author: newInfo.subTitle ??
-            newInfo.tags['author']?.firstOrNull ??
-            c.author,
+        author:
+            newInfo.subTitle ?? newInfo.tags['author']?.firstOrNull ?? c.author,
         type: c.type,
         tags: newTags,
       );
@@ -80,14 +81,21 @@ class UpdateProgress {
   final FavoriteItemWithUpdateInfo? comic;
   final String? errorMessage;
 
-  UpdateProgress(this.total, this.current, this.errors, this.updated,
-      [this.comic, this.errorMessage]);
+  UpdateProgress(
+    this.total,
+    this.current,
+    this.errors,
+    this.updated, [
+    this.comic,
+    this.errorMessage,
+  ]);
 }
 
 void updateFolderBase(
   String folder,
   StreamController<UpdateProgress> stream,
   bool ignoreCheckTime,
+  bool Function()? shouldCancel,
 ) async {
   var comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
   int total = comics.length;
@@ -122,6 +130,9 @@ void updateFolderBase(
   () async {
     var c = 0;
     for (var comic in comicsToUpdate) {
+      if (shouldCancel?.call() ?? false) {
+        break;
+      }
       await channel.push(comic);
       c++;
       // Throttle
@@ -145,6 +156,9 @@ void updateFolderBase(
         if (comic == null) {
           break;
         }
+        if (shouldCancel?.call() ?? false) {
+          break;
+        }
         var result = await updateComic(comic, folder);
         current++;
         if (result.updated) {
@@ -153,7 +167,16 @@ void updateFolderBase(
         if (result.errorMessage != null) {
           errors++;
         }
-        stream.add(UpdateProgress(total, current, errors, updated, comic, result.errorMessage));
+        stream.add(
+          UpdateProgress(
+            total,
+            current,
+            errors,
+            updated,
+            comic,
+            result.errorMessage,
+          ),
+        );
       }
     }();
     updateFutures.add(f);
@@ -168,24 +191,31 @@ void updateFolderBase(
   stream.close();
 }
 
-
-Stream<UpdateProgress> updateFolder(String folder, bool ignoreCheckTime) {
+Stream<UpdateProgress> updateFolder(
+  String folder,
+  bool ignoreCheckTime, {
+  bool Function()? shouldCancel,
+}) {
   var stream = StreamController<UpdateProgress>();
-  updateFolderBase(folder, stream, ignoreCheckTime);
+  updateFolderBase(folder, stream, ignoreCheckTime, shouldCancel);
   return stream.stream;
 }
 
 Future<String> getUpdatedComicsAsJson(String folder) async {
   var comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
   var updatedComics = comics.where((c) => c.hasNewUpdate).toList();
-  var jsonList = updatedComics.map((c) => {
-    'id': c.id,
-    'name': c.name,
-    'coverUrl': c.coverPath,
-    'author': c.author,
-    'type': c.type.sourceKey,
-    'updateTime': c.updateTime,
-    'tags': c.tags,
-  }).toList();
+  var jsonList = updatedComics
+      .map(
+        (c) => {
+          'id': c.id,
+          'name': c.name,
+          'coverUrl': c.coverPath,
+          'author': c.author,
+          'type': c.type.sourceKey,
+          'updateTime': c.updateTime,
+          'tags': c.tags,
+        },
+      )
+      .toList();
   return jsonEncode(jsonList);
 }

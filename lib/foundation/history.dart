@@ -74,34 +74,34 @@ class History implements Comic {
   @override
   int? maxPage;
 
-  History.fromModel(
-      {required HistoryMixin model,
-      required this.ep,
-      required this.page,
-      this.group,
-      Set<String>? readChapters,
-      DateTime? time})
-      : type = model.historyType,
-        title = model.title,
-        subtitle = model.subTitle ?? '',
-        cover = model.cover,
-        id = model.id,
-        readEpisode = readChapters ?? <String>{},
-        time = time ?? DateTime.now();
+  History.fromModel({
+    required HistoryMixin model,
+    required this.ep,
+    required this.page,
+    this.group,
+    Set<String>? readChapters,
+    DateTime? time,
+  }) : type = model.historyType,
+       title = model.title,
+       subtitle = model.subTitle ?? '',
+       cover = model.cover,
+       id = model.id,
+       readEpisode = readChapters ?? <String>{},
+       time = time ?? DateTime.now();
 
   History.fromMap(Map<String, dynamic> map)
-      : type = HistoryType(map["type"]),
-        time = DateTime.fromMillisecondsSinceEpoch(map["time"]),
-        title = map["title"],
-        subtitle = map["subtitle"],
-        cover = map["cover"],
-        ep = map["ep"],
-        page = map["page"],
-        id = map["id"],
-        readEpisode = Set<String>.from(
-            (map["readEpisode"] as List<dynamic>?)?.toSet() ??
-                const <String>{}),
-        maxPage = map["max_page"];
+    : type = HistoryType(map["type"]),
+      time = DateTime.fromMillisecondsSinceEpoch(map["time"]),
+      title = map["title"],
+      subtitle = map["subtitle"],
+      cover = map["cover"],
+      ep = map["ep"],
+      page = map["page"],
+      id = map["id"],
+      readEpisode = Set<String>.from(
+        (map["readEpisode"] as List<dynamic>?)?.toSet() ?? const <String>{},
+      ),
+      maxPage = map["max_page"];
 
   @override
   String toString() {
@@ -109,19 +109,21 @@ class History implements Comic {
   }
 
   History.fromRow(Row row)
-      : type = HistoryType(row["type"]),
-        time = DateTime.fromMillisecondsSinceEpoch(row["time"]),
-        title = row["title"],
-        subtitle = row["subtitle"],
-        cover = row["cover"],
-        ep = row["ep"],
-        page = row["page"],
-        id = row["id"],
-        readEpisode = Set<String>.from((row["readEpisode"] as String)
+    : type = HistoryType(row["type"]),
+      time = DateTime.fromMillisecondsSinceEpoch(row["time"]),
+      title = row["title"],
+      subtitle = row["subtitle"],
+      cover = row["cover"],
+      ep = row["ep"],
+      page = row["page"],
+      id = row["id"],
+      readEpisode = Set<String>.from(
+        (row["readEpisode"] as String)
             .split(',')
-            .where((element) => element != "")),
-        maxPage = row["max_page"],
-        group = row["chapter_group"];
+            .where((element) => element != ""),
+      ),
+      maxPage = row["max_page"],
+      group = row["chapter_group"];
 
   @override
   bool operator ==(Object other) {
@@ -134,23 +136,17 @@ class History implements Comic {
   @override
   String get description {
     var res = "";
-    if (group != null){
-      res += "${"Group @group".tlParams({
-        "group": group!,
-      })} - ";
+    if (group != null) {
+      res += "${"Group @group".tlParams({"group": group!})} - ";
     }
     if (ep >= 1) {
-      res += "Chapter @ep".tlParams({
-        "ep": ep,
-      });
+      res += "Chapter @ep".tlParams({"ep": ep});
     }
     if (page >= 1) {
       if (ep >= 1) {
         res += " - ";
       }
-      res += "Page @page".tlParams({
-        "page": page,
-      });
+      res += "Page @page".tlParams({"page": page});
     }
     return res;
   }
@@ -206,7 +202,7 @@ class HistoryManager with ChangeNotifier {
 
     _db.execute("""
         create table if not exists history  (
-          id text primary key,
+          id text,
           title text,
           subtitle text,
           cover text,
@@ -216,11 +212,16 @@ class HistoryManager with ChangeNotifier {
           page int,
           readEpisode text,
           max_page int,
-          chapter_group int
+          chapter_group int,
+          primary key (id, type)
         );
       """);
 
     var columns = _db.select("PRAGMA table_info(history);");
+    if (!_hasCompositePrimaryKey(columns)) {
+      _migrateToCompositePrimaryKey();
+      columns = _db.select("PRAGMA table_info(history);");
+    }
     if (!columns.any((element) => element["name"] == "chapter_group")) {
       _db.execute("alter table history add column chapter_group int;");
     }
@@ -234,6 +235,68 @@ class HistoryManager with ChangeNotifier {
         insert or replace into history (id, title, subtitle, cover, time, type, ep, page, readEpisode, max_page, chapter_group)
         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       """;
+
+  static String _cacheKey(String id, ComicType type) => "${type.value}:$id";
+
+  bool _hasCompositePrimaryKey(ResultSet columns) {
+    var idColumn = columns.firstWhereOrNull((e) => e["name"] == "id");
+    var typeColumn = columns.firstWhereOrNull((e) => e["name"] == "type");
+    return idColumn?["pk"] == 1 && typeColumn?["pk"] == 2;
+  }
+
+  void _migrateToCompositePrimaryKey() {
+    _db.execute('BEGIN TRANSACTION;');
+    try {
+      final hasChapterGroup = _db
+          .select("PRAGMA table_info(history);")
+          .any((element) => element["name"] == "chapter_group");
+      _db.execute("""
+        create table if not exists history_new (
+          id text,
+          title text,
+          subtitle text,
+          cover text,
+          time int,
+          type int,
+          ep int,
+          page int,
+          readEpisode text,
+          max_page int,
+          chapter_group int,
+          primary key (id, type)
+        );
+      """);
+      if (hasChapterGroup) {
+        _db.execute("""
+          insert or replace into history_new (
+            id, title, subtitle, cover, time, type, ep, page,
+            readEpisode, max_page, chapter_group
+          )
+          select
+            id, title, subtitle, cover, time, type, ep, page,
+            readEpisode, max_page, chapter_group
+          from history;
+        """);
+      } else {
+        _db.execute("""
+          insert or replace into history_new (
+            id, title, subtitle, cover, time, type, ep, page,
+            readEpisode, max_page
+          )
+          select
+            id, title, subtitle, cover, time, type, ep, page,
+            readEpisode, max_page
+          from history;
+        """);
+      }
+      _db.execute("drop table history;");
+      _db.execute("alter table history_new rename to history;");
+      _db.execute('COMMIT;');
+    } catch (_) {
+      _db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
 
   static Future<void> _addHistoryAsync(int dbAddr, History newItem) {
     return Isolate.run(() {
@@ -249,7 +312,7 @@ class HistoryManager with ChangeNotifier {
         newItem.page,
         newItem.readEpisode.join(','),
         newItem.maxPage,
-        newItem.group
+        newItem.group,
       ]);
     });
   }
@@ -268,9 +331,9 @@ class HistoryManager with ChangeNotifier {
     if (_cachedHistoryIds == null) {
       updateCache();
     } else {
-      _cachedHistoryIds![newItem.id] = true;
+      _cachedHistoryIds![_cacheKey(newItem.id, newItem.type)] = true;
     }
-    cachedHistories[newItem.id] = newItem;
+    cachedHistories[_cacheKey(newItem.id, newItem.type)] = newItem;
     if (cachedHistories.length > 10) {
       cachedHistories.remove(cachedHistories.keys.first);
     }
@@ -292,14 +355,14 @@ class HistoryManager with ChangeNotifier {
       newItem.page,
       newItem.readEpisode.join(','),
       newItem.maxPage,
-      newItem.group
+      newItem.group,
     ]);
     if (_cachedHistoryIds == null) {
       updateCache();
     } else {
-      _cachedHistoryIds![newItem.id] = true;
+      _cachedHistoryIds![_cacheKey(newItem.id, newItem.type)] = true;
     }
-    cachedHistories[newItem.id] = newItem;
+    cachedHistories[_cacheKey(newItem.id, newItem.type)] = newItem;
     if (cachedHistories.length > 10) {
       cachedHistories.remove(cachedHistories.keys.first);
     }
@@ -312,36 +375,42 @@ class HistoryManager with ChangeNotifier {
     notifyListeners();
   }
 
-void clearUnfavoritedHistory() {
-  _db.execute('BEGIN TRANSACTION;');
-  try {
-    final idAndTypes = _db.select("""
+  void clearUnfavoritedHistory() {
+    _db.execute('BEGIN TRANSACTION;');
+    try {
+      final idAndTypes = _db.select("""
       select id, type from history;
     """);
-    for (var element in idAndTypes) {
-      final id = element["id"] as String;
-      final type = ComicType(element["type"] as int);
-      if (!LocalFavoritesManager().isExist(id, type)) {
-        _db.execute("""
+      for (var element in idAndTypes) {
+        final id = element["id"] as String;
+        final type = ComicType(element["type"] as int);
+        if (!LocalFavoritesManager().isExist(id, type)) {
+          _db.execute(
+            """
           delete from history
           where id == ? and type == ?;
-        """, [id, type.value]);
+        """,
+            [id, type.value],
+          );
+        }
       }
+      _db.execute('COMMIT;');
+    } catch (e) {
+      _db.execute('ROLLBACK;');
+      rethrow;
     }
-    _db.execute('COMMIT;');
-  } catch (e) {
-    _db.execute('ROLLBACK;');
-    rethrow;
+    updateCache();
+    notifyListeners();
   }
-  updateCache();
-  notifyListeners();
-}
 
   void remove(String id, ComicType type) async {
-    _db.execute("""
+    _db.execute(
+      """
       delete from history
       where id == ? and type == ?;
-    """, [id, type.value]);
+    """,
+      [id, type.value],
+    );
     updateCache();
     notifyListeners();
   }
@@ -349,10 +418,14 @@ void clearUnfavoritedHistory() {
   void updateCache() {
     _cachedHistoryIds = {};
     var res = _db.select("""
-        select id from history;
+        select id, type from history;
       """);
     for (var element in res) {
-      _cachedHistoryIds![element["id"] as String] = true;
+      _cachedHistoryIds![_cacheKey(
+            element["id"] as String,
+            ComicType(element["type"] as int),
+          )] =
+          true;
     }
     for (var key in cachedHistories.keys.toList()) {
       if (!_cachedHistoryIds!.containsKey(key)) {
@@ -365,17 +438,21 @@ void clearUnfavoritedHistory() {
     if (_cachedHistoryIds == null) {
       updateCache();
     }
-    if (!_cachedHistoryIds!.containsKey(id)) {
+    var key = _cacheKey(id, type);
+    if (!_cachedHistoryIds!.containsKey(key)) {
       return null;
     }
-    if (cachedHistories.containsKey(id)) {
-      return cachedHistories[id];
+    if (cachedHistories.containsKey(key)) {
+      return cachedHistories[key];
     }
 
-    var res = _db.select("""
+    var res = _db.select(
+      """
       select * from history
       where id == ? and type == ?;
-    """, [id, type.value]);
+    """,
+      [id, type.value],
+    );
     if (res.isEmpty) {
       return null;
     }
@@ -418,10 +495,13 @@ void clearUnfavoritedHistory() {
     _db.execute('BEGIN TRANSACTION;');
     try {
       for (var history in histories) {
-        _db.execute("""
+        _db.execute(
+          """
           delete from history
           where id == ? and type == ?;
-        """, [history.id, history.type.value]);
+        """,
+          [history.id, history.type.value],
+        );
       }
       _db.execute('COMMIT;');
     } catch (e) {
@@ -441,26 +521,28 @@ void clearUnfavoritedHistory() {
       return false;
     }
 
-    return await _refreshSingleHistory(history);
+    return (await _refreshSingleHistory(history)).success;
   }
 
   /// Internal method to refresh a single history
   /// Retries up to 3 times on failure with 2 second delay between retries
-  Future<bool> _refreshSingleHistory(History history) async {
+  Future<_HistoryRefreshResult> _refreshSingleHistory(History history) async {
     var comicSource = ComicSource.find(history.sourceKey);
     if (comicSource == null || comicSource.loadComicInfo == null) {
-      return false;
+      return const _HistoryRefreshResult(false, 'Source unavailable');
     }
 
     int retries = 3;
+    String? lastError;
     while (true) {
       try {
         var res = await comicSource.loadComicInfo!(history.id);
         if (res.error) {
+          lastError = res.errorMessage ?? 'Load failed';
           await Future.delayed(const Duration(seconds: 2));
           retries--;
           if (retries == 0) {
-            return false;
+            return _HistoryRefreshResult(false, lastError);
           }
           continue;
         }
@@ -482,13 +564,14 @@ void clearUnfavoritedHistory() {
         updatedHistory.group = history.group;
 
         addHistory(updatedHistory);
-        return true;
+        return const _HistoryRefreshResult(true);
       } catch (e, s) {
+        lastError = e.toString();
         Log.error("History", "Exception while refreshing history info: $e\n$s");
         await Future.delayed(const Duration(seconds: 2));
         retries--;
         if (retries == 0) {
-          return false;
+          return _HistoryRefreshResult(false, lastError);
         }
       }
     }
@@ -497,14 +580,17 @@ void clearUnfavoritedHistory() {
   /// Refresh all histories from comic sources.
   /// Returns a stream with progress updates.
   /// From e0ea449c.
-  Stream<RefreshProgress> refreshAllHistoriesStream() {
+  Stream<RefreshProgress> refreshAllHistoriesStream({
+    bool Function()? shouldCancel,
+  }) {
     var controller = StreamController<RefreshProgress>();
-    _refreshAllHistoriesBase(controller);
+    _refreshAllHistoriesBase(controller, shouldCancel);
     return controller.stream;
   }
 
   void _refreshAllHistoriesBase(
     StreamController<RefreshProgress> controller,
+    bool Function()? shouldCancel,
   ) async {
     var histories = getAll();
     int total = histories.length;
@@ -520,7 +606,9 @@ void clearUnfavoritedHistory() {
       if (history.sourceKey == 'local') {
         skipped++;
         current++;
-        controller.add(RefreshProgress(total, current, success, failed, skipped));
+        controller.add(
+          RefreshProgress(total, current, success, failed, skipped),
+        );
         continue;
       }
       historiesToRefresh.add(history);
@@ -535,6 +623,9 @@ void clearUnfavoritedHistory() {
     () async {
       var c = 0;
       for (var history in historiesToRefresh) {
+        if (shouldCancel?.call() ?? false) {
+          break;
+        }
         await channel.push(history);
         c++;
         if (c % 5 == 0) {
@@ -556,15 +647,26 @@ void clearUnfavoritedHistory() {
           if (history == null) {
             break;
           }
+          if (shouldCancel?.call() ?? false) {
+            break;
+          }
           var result = await _refreshSingleHistory(history);
           current++;
-          if (result) {
+          if (result.success) {
             success++;
           } else {
             failed++;
           }
           controller.add(
-            RefreshProgress(total, current, success, failed, skipped),
+            RefreshProgress(
+              total,
+              current,
+              success,
+              failed,
+              skipped,
+              history,
+              result.errorMessage,
+            ),
           );
         }
       }();
@@ -584,12 +686,23 @@ class RefreshProgress {
   final int success;
   final int failed;
   final int skipped;
+  final History? history;
+  final String? errorMessage;
 
   RefreshProgress(
     this.total,
     this.current,
     this.success,
     this.failed,
-    this.skipped,
-  );
+    this.skipped, [
+    this.history,
+    this.errorMessage,
+  ]);
+}
+
+class _HistoryRefreshResult {
+  const _HistoryRefreshResult(this.success, [this.errorMessage]);
+
+  final bool success;
+  final String? errorMessage;
 }

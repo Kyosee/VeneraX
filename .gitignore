@@ -47,3 +47,6 @@ add_translation.py
 
 */*/generated_*
 */*/Generated*
+.serena/
+DEVELOPMENT_RULES.local.md
+docs/

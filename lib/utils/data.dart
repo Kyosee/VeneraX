@@ -9,11 +9,17 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'io.dart';
+
+int _legacyComicTypeValue(int legacyType) {
+  return SourcePlatformResolver.sourceKeyFromLegacyInt(legacyType)?.hashCode ??
+      legacyType;
+}
 
 Future<File> exportAppData([bool sync = true]) async {
   var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -161,15 +167,7 @@ Future<void> importPicaData(File file) async {
                 name: comic['name'],
                 coverPath: comic['cover_path'],
                 author: comic['author'],
-                type: ComicType(switch (comic['type']) {
-                  0 => 'picacg'.hashCode,
-                  1 => 'ehentai'.hashCode,
-                  2 => 'jm'.hashCode,
-                  3 => 'hitomi'.hashCode,
-                  4 => 'wnacg'.hashCode,
-                  6 => 'nhentai'.hashCode,
-                  _ => comic['type']
-                }),
+                type: ComicType(_legacyComicTypeValue(comic['type'])),
                 tags: comic['tags'].split(','),
               ),
             );
@@ -188,15 +186,7 @@ Future<void> importPicaData(File file) async {
         for (var comic in db.select("SELECT * FROM history;")) {
           HistoryManager().addHistory(
             History.fromMap({
-              "type": switch (comic['type']) {
-                0 => 'picacg'.hashCode,
-                1 => 'ehentai'.hashCode,
-                2 => 'jm'.hashCode,
-                3 => 'hitomi'.hashCode,
-                4 => 'wnacg'.hashCode,
-                5 => 'nhentai'.hashCode,
-                _ => comic['type']
-              },
+              "type": _legacyComicTypeValue(comic['type']),
               "id": comic['target'],
               "max_page": comic["max_page"],
               "ep": comic["ep"],

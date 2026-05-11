@@ -138,12 +138,12 @@ class ComicTile extends StatelessWidget {
         ? _buildDetailedMode(context)
         : _buildBriefMode(context);
 
+    final comicType = ComicType.fromKey(comic.sourceKey);
     var isFavorite = appdata.settings['showFavoriteStatusOnTile']
-        ? LocalFavoritesManager()
-            .isExist(comic.id, ComicType(comic.sourceKey.hashCode))
+        ? LocalFavoritesManager().isExist(comic.id, comicType)
         : false;
     var history = appdata.settings['showHistoryStatusOnTile']
-        ? HistoryManager().find(comic.id, ComicType(comic.sourceKey.hashCode))
+        ? HistoryManager().find(comic.id, comicType)
         : null;
     if (history?.page == 0) {
       history!.page = 1;

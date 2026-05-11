@@ -1,25 +1,15 @@
-# Due to my limited time and energy, this project is no longer maintained. Feel free to fork it.
-# 由于本人精力有限, 此项目已停止维护, 欢迎fork
-
 # venera
 [![flutter](https://img.shields.io/badge/flutter-3.41.4-blue)](https://flutter.dev/)
-[![License](https://img.shields.io/github/license/venera-app/venera)](https://github.com/venera-app/venera/blob/master/LICENSE)
-[![stars](https://img.shields.io/github/stars/venera-app/venera?style=flat)](https://github.com/venera-app/venera/stargazers)
+[![License](https://img.shields.io/github/license/kyosee/venera)](https://github.com/kyosee/venera/blob/master/LICENSE)
+[![stars](https://img.shields.io/github/stars/kyosee/venera?style=flat)](https://github.com/kyosee/venera/stargazers)
 
-[![Download](https://img.shields.io/github/v/release/venera-app/venera)](https://github.com/venera-app/venera/releases)
-[![AUR Version](https://img.shields.io/aur/version/venera-bin)](https://aur.archlinux.org/packages/venera-bin)
-[![F-Droid Version](https://img.shields.io/f-droid/v/com.github.wgh136.venera)](https://f-droid.org/packages/com.github.wgh136.venera/)
+[![Download](https://img.shields.io/github/v/release/kyosee/venera)](https://github.com/kyosee/venera/releases)
 
 A comic reader that support reading local and network comics.
 
-## Features
-- Read local comics
-- Use javascript to create comic sources
-- Read comics from network sources
-- Manage favorite comics
-- Download comics
-- View comments, tags, and other information of comics if the source supports
-- Login to comment, rate, and other operations if the source supports
+这是一个仅个人使用维护的版本，后续可能会出现比较大的改动，使用前请先确认是否适合你的场景。
+
+如果你是从[原项目](https://github.com/venera-app/venera)迁移过来的，请给 WebDAV 同步重新指定一个独立目录，不要继续和原项目共用同一目录，以免造成数据混乱。迁移前建议先备份旧的同步目录和本地数据，确认无误后再切换。
 
 ## Build from source
 1. Clone the repository
@@ -27,16 +17,9 @@ A comic reader that support reading local and network comics.
 3. Install rust, see [rustup.rs](https://rustup.rs/)
 4. Build for your platform: e.g. `flutter build apk`
 
-## Create a new comic source
-See [Comic Source](doc/comic_source.md)
-
 ## Thanks
 
 ### Tags Translation
 [EhTagTranslation](https://github.com/EhTagTranslation/Database)
 
 The Chinese translation of the manga tags is from this project.
-
-## Headless Mode
-See [Headless Doc](doc/headless_doc.md)
-

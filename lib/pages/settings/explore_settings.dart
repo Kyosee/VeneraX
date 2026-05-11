@@ -16,10 +16,7 @@ class _ExploreSettingsState extends State<ExploreSettings> {
         SelectSetting(
           title: "Display mode of comic tile".tl,
           settingKey: "comicDisplayMode",
-          optionTranslation: {
-            "detailed": "Detailed".tl,
-            "brief": "Brief".tl,
-          },
+          optionTranslation: {"detailed": "Detailed".tl, "brief": "Brief".tl},
         ).toSliver(),
         _SliderSetting(
           title: "Size of comic tile".tl,
@@ -69,7 +66,7 @@ class _ExploreSettingsState extends State<ExploreSettings> {
           settingKey: "defaultSearchTarget",
           optionTranslation: {
             '_aggregated_': "Aggregated".tl,
-            ...((){
+            ...(() {
               var map = <String, String>{};
               for (var c in ComicSource.all()) {
                 map[c.key] = c.name;
@@ -138,7 +135,7 @@ class _ManageBlockingWordViewState extends State<_ManageBlockingWordView> {
           return ListTile(
             title: Text(appdata.settings["blockedWords"][index]),
             trailing: IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.delete_outline),
               onPressed: () {
                 appdata.settings["blockedWords"].removeAt(index);
                 appdata.saveData();
@@ -157,44 +154,47 @@ class _ManageBlockingWordViewState extends State<_ManageBlockingWordView> {
       builder: (context) {
         var controller = TextEditingController();
         String? error;
-        return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
-            title: "Add keyword".tl,
-            content: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                label: Text("Keyword".tl),
-                errorText: error,
-              ),
-              onChanged: (s) {
-                if (error != null) {
-                  setState(() {
-                    error = null;
-                  });
-                }
-              },
-            ).paddingHorizontal(12),
-            actions: [
-              Button.filled(
-                onPressed: () {
-                  if (appdata.settings["blockedWords"]
-                      .contains(controller.text)) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ContentDialog(
+              title: "Add keyword".tl,
+              content: TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  label: Text("Keyword".tl),
+                  errorText: error,
+                ),
+                onChanged: (s) {
+                  if (error != null) {
                     setState(() {
-                      error = "Keyword already exists".tl;
+                      error = null;
                     });
-                    return;
                   }
-                  appdata.settings["blockedWords"].add(controller.text);
-                  appdata.saveData();
-                  this.setState(() {});
-                  context.pop();
                 },
-                child: Text("Add".tl),
-              ),
-            ],
-          );
-        });
+              ).paddingHorizontal(12),
+              actions: [
+                Button.filled(
+                  onPressed: () {
+                    if (appdata.settings["blockedWords"].contains(
+                      controller.text,
+                    )) {
+                      setState(() {
+                        error = "Keyword already exists".tl;
+                      });
+                      return;
+                    }
+                    appdata.settings["blockedWords"].add(controller.text);
+                    appdata.saveData();
+                    this.setState(() {});
+                    context.pop();
+                  },
+                  child: Text("Add".tl),
+                ),
+              ],
+            );
+          },
+        );
       },
     );
   }
@@ -264,7 +264,8 @@ class _ManageBlockingCommentWordView extends StatefulWidget {
       _ManageBlockingCommentWordViewState();
 }
 
-class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWordView> {
+class _ManageBlockingCommentWordViewState
+    extends State<_ManageBlockingCommentWordView> {
   @override
   Widget build(BuildContext context) {
     assert(appdata.settings["blockedCommentWords"] is List);
@@ -283,7 +284,7 @@ class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWo
           return ListTile(
             title: Text(appdata.settings["blockedCommentWords"][index]),
             trailing: IconButton(
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.delete_outline),
               onPressed: () {
                 appdata.settings["blockedCommentWords"].removeAt(index);
                 appdata.saveData();
@@ -302,44 +303,49 @@ class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWo
       builder: (context) {
         var controller = TextEditingController();
         String? error;
-        return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
-            title: "Add keyword".tl,
-            content: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                label: Text("Keyword".tl),
-                errorText: error,
-              ),
-              onChanged: (s) {
-                if (error != null) {
-                  setState(() {
-                    error = null;
-                  });
-                }
-              },
-            ).paddingHorizontal(12),
-            actions: [
-              Button.filled(
-                onPressed: () {
-                  if (appdata.settings["blockedCommentWords"]
-                      .contains(controller.text)) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ContentDialog(
+              title: "Add keyword".tl,
+              content: TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  label: Text("Keyword".tl),
+                  errorText: error,
+                ),
+                onChanged: (s) {
+                  if (error != null) {
                     setState(() {
-                      error = "Keyword already exists".tl;
+                      error = null;
                     });
-                    return;
                   }
-                  appdata.settings["blockedCommentWords"].add(controller.text);
-                  appdata.saveData();
-                  this.setState(() {});
-                  context.pop();
                 },
-                child: Text("Add".tl),
-              ),
-            ],
-          );
-        });
+              ).paddingHorizontal(12),
+              actions: [
+                Button.filled(
+                  onPressed: () {
+                    if (appdata.settings["blockedCommentWords"].contains(
+                      controller.text,
+                    )) {
+                      setState(() {
+                        error = "Keyword already exists".tl;
+                      });
+                      return;
+                    }
+                    appdata.settings["blockedCommentWords"].add(
+                      controller.text,
+                    );
+                    appdata.saveData();
+                    this.setState(() {});
+                    context.pop();
+                  },
+                  child: Text("Add".tl),
+                ),
+              ],
+            );
+          },
+        );
       },
     );
   }

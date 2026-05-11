@@ -83,7 +83,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void onReadEnd() {
     history ??= HistoryManager().find(
       widget.id,
-      ComicType(widget.sourceKey.hashCode),
+      ComicType.fromKey(widget.sourceKey),
     );
     update();
   }
@@ -247,11 +247,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
     isAddToLocalFav = LocalFavoritesManager().isExist(
       widget.id,
-      ComicType(widget.sourceKey.hashCode),
+      ComicType.fromKey(widget.sourceKey),
     );
     history = HistoryManager().find(
       widget.id,
-      ComicType(widget.sourceKey.hashCode),
+      ComicType.fromKey(widget.sourceKey),
     );
     return comicSource.loadComicInfo!(widget.id);
   }
