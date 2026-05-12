@@ -38,10 +38,15 @@ class _CategoriesPageState extends State<CategoriesPage>
         .where((element) => allCategories.contains(element))
         .toList();
     if (!categories.isEqualTo(this.categories)) {
+      var oldController = controller;
+      var newController = TabController(length: categories.length, vsync: this);
       setState(() {
         this.categories = categories;
+        controller = newController;
       });
-      controller = TabController(length: categories.length, vsync: this);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        oldController.dispose();
+      });
     }
   }
 
@@ -60,7 +65,7 @@ class _CategoriesPageState extends State<CategoriesPage>
         .where((element) => allCategories.contains(element))
         .toList();
     appdata.settings.addListener(onSettingsChanged);
-    controller = TabController(length: categories.length, vsync: this);
+    controller = TabController(length: this.categories.length, vsync: this);
   }
 
   void addPage() {
@@ -69,9 +74,9 @@ class _CategoriesPageState extends State<CategoriesPage>
 
   @override
   void dispose() {
-    super.dispose();
-    controller.dispose();
     appdata.settings.removeListener(onSettingsChanged);
+    controller.dispose();
+    super.dispose();
   }
 
   Widget buildEmpty() {

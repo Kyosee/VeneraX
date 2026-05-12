@@ -44,6 +44,12 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
   var controller = TextEditingController();
   bool sending = false;
 
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
   void firstLoad() async {
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
@@ -622,11 +628,13 @@ class _EmbeddedChapterCommentsPageState
   int _page = 1;
   int? maxPage;
   var textController = TextEditingController();
+  final scrollController = ScrollController();
   bool sending = false;
 
   @override
   void dispose() {
     textController.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -764,7 +772,6 @@ class _EmbeddedChapterCommentsPageState
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
     final crossAxisCount = isLandscape ? 2 : 1;
-    final scrollController = ScrollController();
 
     return Scrollbar(
       controller: scrollController,

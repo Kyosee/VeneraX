@@ -718,6 +718,31 @@ class _SliverSearchBarState extends State<SliverSearchBar>
   }
 
   @override
+  void didUpdateWidget(covariant SliverSearchBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller == oldWidget.controller) {
+      return;
+    }
+    _controller.currentText = _editingController.text;
+    if (_controller._state == this) {
+      _controller._state = null;
+    }
+    _controller = widget.controller;
+    _controller._state = this;
+    _editingController.text = _controller.currentText;
+  }
+
+  @override
+  void dispose() {
+    _controller.currentText = _editingController.text;
+    if (_controller._state == this) {
+      _controller._state = null;
+    }
+    _editingController.dispose();
+    super.dispose();
+  }
+
+  @override
   void setText(String text) {
     _editingController.text = text;
   }
@@ -875,6 +900,31 @@ class _SearchBarState extends State<AppSearchBar> with _SearchBarMixin {
     _controller._state = this;
     _editingController = TextEditingController(text: _controller.currentText);
     super.initState();
+  }
+
+  @override
+  void didUpdateWidget(covariant AppSearchBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller == oldWidget.controller) {
+      return;
+    }
+    _controller.currentText = _editingController.text;
+    if (_controller._state == this) {
+      _controller._state = null;
+    }
+    _controller = widget.controller;
+    _controller._state = this;
+    _editingController.text = _controller.currentText;
+  }
+
+  @override
+  void dispose() {
+    _controller.currentText = _editingController.text;
+    if (_controller._state == this) {
+      _controller._state = null;
+    }
+    _editingController.dispose();
+    super.dispose();
   }
 
   @override

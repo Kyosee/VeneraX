@@ -13,6 +13,12 @@ class DebugPageState extends State<DebugPage> {
   var result = "";
 
   @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
       slivers: [
@@ -86,9 +92,7 @@ class DebugPageState extends State<DebugPage> {
                   border: Border.all(color: context.colorScheme.outline),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: SingleChildScrollView(
-                  child: Text(result).paddingAll(4),
-                ),
+                child: SingleChildScrollView(child: Text(result).paddingAll(4)),
               ),
             ],
           ),

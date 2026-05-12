@@ -497,6 +497,12 @@ class _CreateFolderDialogState extends State<_CreateFolderDialog> {
   bool loading = false;
 
   @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ContentDialog(
       title: "Create a folder".tl,
