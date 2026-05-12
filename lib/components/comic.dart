@@ -699,13 +699,17 @@ class ComicTile extends StatelessWidget {
         ? HistoryManager().find(comic.id, comicType)
         : null;
     final tileHistory = showHistoryOnTile ? history : null;
+    final chapterProgress = const ComicStateRepository().chapterProgressFor(
+      comic,
+      history,
+    );
     if (tileHistory?.page == 0) {
       tileHistory!.page = 1;
     }
 
     Widget child = type == 'detailed'
-        ? _buildDetailedMode(context, history, tileHistory)
-        : _buildBriefMode(context, tileHistory);
+        ? _buildDetailedMode(context, history, tileHistory, chapterProgress)
+        : _buildBriefMode(context, tileHistory, chapterProgress);
 
     if (!isFavorite && tileHistory == null) {
       return child;
@@ -755,90 +759,24 @@ class ComicTile extends StatelessWidget {
     );
   }
 
-  String? _historyEpisodeText(History? history) {
-    if (history == null || history.ep < 1) {
-      return null;
-    }
-    final episode = 'Episode @ep'.tlParams({'ep': history.ep});
-    if (history.group == null) {
-      return episode;
-    }
-    return '${'Group @group'.tlParams({'group': history.group!})} - $episode';
-  }
-
-  String? _latestEpisodeText() {
-    final text = comic.description.isNotEmpty
-        ? comic.description
-        : comic.subtitle;
-    if (text == null || text.trim().isEmpty) {
-      return null;
-    }
-    final lines = text
-        .replaceAll('|', '\n')
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty);
-    for (final line in lines) {
-      final episode = _extractEpisodeText(line);
-      if (episode != null) {
-        return episode;
-      }
-    }
-    return null;
-  }
-
-  String? _extractEpisodeText(String text) {
-    final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (normalized.isEmpty ||
-        RegExp(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}').hasMatch(normalized)) {
-      return null;
-    }
-    final episodeMatch = RegExp(
-      r'(?:第\s*)?\d+(?:\.\d+)?\s*(?:话|話|章|回|卷|集|ch(?:apter)?\.?|ep(?:isode)?\.?)',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-    if (episodeMatch != null) {
-      return episodeMatch.group(0)?.trim();
-    }
-    final prefixedMatch = RegExp(
-      r'(?:ch(?:apter)?\.?|ep(?:isode)?\.?)\s*\d+(?:\.\d+)?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-    if (prefixedMatch != null) {
-      return prefixedMatch.group(0)?.trim();
-    }
-    if (RegExp(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}').hasMatch(normalized)) {
-      return null;
-    }
-    final numberMatch = RegExp(
-      r'(?:更新至|最新|latest|last|up to)\s*[:：]?\s*(\d+(?:\.\d+)?)',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-    final number = numberMatch?.group(1);
-    if (number == null) {
-      return null;
-    }
-    return 'Episode @ep'.tlParams({'ep': number});
-  }
-
   Widget _buildEpisodeBadge(
     BuildContext context,
-    History? history,
+    ComicChapterProgressInfo chapterProgress,
     double maxWidth,
   ) {
-    final current = _historyEpisodeText(history);
-    if (current == null) {
+    if (!chapterProgress.hasAny) {
       return const SizedBox();
     }
-    final latest = _latestEpisodeText();
     final fontSize = maxWidth < 80
         ? 8.0
         : maxWidth < 150
         ? 10.0
         : 12.0;
     final lines = [
-      '${'Current'.tl}: $current',
-      if (latest != null) '${'Latest'.tl}: $latest',
+      if (chapterProgress.currentTitle != null)
+        '${'Current'.tl}: ${chapterProgress.currentTitle}',
+      if (chapterProgress.latestTitle != null)
+        '${'Latest'.tl}: ${chapterProgress.latestTitle}',
     ];
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth),
@@ -886,6 +824,7 @@ class ComicTile extends StatelessWidget {
     BuildContext context,
     History? history,
     History? tileHistory,
+    ComicChapterProgressInfo chapterProgress,
   ) {
     return LayoutBuilder(
       builder: (context, constrains) {
@@ -917,7 +856,13 @@ class ComicTile extends StatelessWidget {
               Positioned(
                 left: 2,
                 bottom: 2,
-                child: _buildEpisodeBadge(context, tileHistory, coverWidth - 4),
+                child: _buildEpisodeBadge(
+                  context,
+                  tileHistory == null
+                      ? const ComicChapterProgressInfo()
+                      : chapterProgress,
+                  coverWidth - 4,
+                ),
               ),
             ],
           ),
@@ -963,7 +908,7 @@ class ComicTile extends StatelessWidget {
                         rating: displayInfo.rating,
                         updateText: displayInfo.updateTime,
                         statusText: displayInfo.status,
-                        progressText: _historyEpisodeText(history),
+                        progressText: chapterProgress.currentTitle,
                         pagesText: displayInfo.pagesText,
                       ),
                     ),
@@ -977,7 +922,11 @@ class ComicTile extends StatelessWidget {
     );
   }
 
-  Widget _buildBriefMode(BuildContext context, History? history) {
+  Widget _buildBriefMode(
+    BuildContext context,
+    History? history,
+    ComicChapterProgressInfo chapterProgress,
+  ) {
     return LayoutBuilder(
       builder: (context, constraints) {
         Widget image = Container(
@@ -1078,7 +1027,9 @@ class ComicTile extends StatelessWidget {
                       bottom: 2,
                       child: _buildEpisodeBadge(
                         context,
-                        history,
+                        history == null
+                            ? const ComicChapterProgressInfo()
+                            : chapterProgress,
                         constraints.maxWidth * 0.72,
                       ),
                     ),

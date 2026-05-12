@@ -8,6 +8,7 @@ import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/history.dart';
 
 void main() {
   setUpAll(() {
@@ -115,4 +116,156 @@ void main() {
       expect(display.status, isNot('Unread'));
     },
   );
+
+  test('chapter progress uses mirrored chapter titles', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'venera_domain_chapters_',
+    );
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final repository = ComicStateRepository(domain: domain);
+      final staleComic = ComicDetails.fromJson({
+        'title': 'Title',
+        'subtitle': 'Author',
+        'cover': 'cover.jpg',
+        'description': '',
+        'tags': <String, List<String>>{},
+        'chapters': {for (var i = 1; i <= 8; i++) '$i': '第$i話'},
+        'sourceKey': 'picacg',
+        'comicId': 'comic-id',
+      });
+      final comic = ComicDetails.fromJson({
+        'title': 'Title',
+        'subtitle': 'Author',
+        'cover': 'cover.jpg',
+        'description': '',
+        'tags': <String, List<String>>{},
+        'chapters': {
+          '1': '第1.1話',
+          '2': '第1.2話',
+          '3': '第2.1話',
+          '4': '第2.2話',
+          '5': '第2.3話',
+          '6': '第11話',
+        },
+        'sourceKey': 'picacg',
+        'comicId': 'comic-id',
+      });
+      repository.mirrorComicDetails(staleComic);
+      repository.mirrorComicDetails(comic);
+
+      final progress = repository.chapterProgressFor(
+        Comic(
+          'Title',
+          'cover.jpg',
+          'comic-id',
+          'Author',
+          const [],
+          '第8話',
+          'picacg',
+          null,
+          null,
+        ),
+        History.fromModel(model: comic, ep: 5, page: 11),
+      );
+
+      expect(progress.currentTitle, '第2.3話');
+      expect(progress.latestTitle, '第11話');
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
+  test('chapter progress does not synthesize chapter numbers', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'venera_domain_no_chapters_',
+    );
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final repository = ComicStateRepository(domain: domain);
+      final details = ComicDetails.fromJson({
+        'title': 'Title',
+        'subtitle': 'Author',
+        'cover': 'cover.jpg',
+        'description': '',
+        'tags': <String, List<String>>{},
+        'sourceKey': 'picacg',
+        'comicId': 'comic-id',
+      });
+      final comic = Comic(
+        'Title',
+        'cover.jpg',
+        'comic-id',
+        'Author',
+        const [],
+        '',
+        'picacg',
+        null,
+        null,
+      );
+      repository.mirrorComic(comic);
+
+      final progress = repository.chapterProgressFor(
+        comic,
+        History.fromModel(model: details, ep: 8, page: 1),
+      );
+
+      expect(progress.currentTitle, isNull);
+      expect(progress.latestTitle, isNull);
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
+  test('chapter progress falls back to saved latest chapter title', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'venera_domain_latest_fallback_',
+    );
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final repository = ComicStateRepository(domain: domain);
+      final details = ComicDetails.fromJson({
+        'title': 'Title',
+        'subtitle': 'Author',
+        'cover': 'cover.jpg',
+        'description': '',
+        'tags': <String, List<String>>{},
+        'sourceKey': 'picacg',
+        'comicId': 'comic-id',
+      });
+      final favorite = FavoriteItem(
+        id: 'comic-id',
+        name: 'Title',
+        coverPath: 'cover.jpg',
+        author: 'Author',
+        type: ComicType.fromKey('picacg'),
+        tags: const [],
+      );
+      final updateInfo = FavoriteItemWithUpdateInfo(
+        favorite,
+        '第11話',
+        true,
+        null,
+      );
+
+      final progress = repository.chapterProgressFor(
+        updateInfo,
+        History.fromModel(model: details, ep: 8, page: 1),
+      );
+
+      expect(progress.currentTitle, isNull);
+      expect(progress.latestTitle, '第11話');
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
 }

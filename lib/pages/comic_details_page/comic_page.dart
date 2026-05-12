@@ -401,32 +401,37 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 const SizedBox(height: 6),
                 SizedBox(
                   height: 116,
-                  child: ComicDescription(
-                    title: comic.title,
-                    subtitle:
-                        comic.findAuthor() ??
-                        comic.subTitle ??
-                        comic.uploader ??
-                        '',
-                    description: comic.description ?? '',
-                    badge: ComicSource.find(comic.sourceKey)?.name,
-                    tags: comic.plainTags,
-                    maxLines: 3,
-                    enableTranslate:
-                        ComicSource.find(
-                          comic.sourceKey,
-                        )?.enableTagsTranslate ??
-                        false,
-                    rating: comic.stars,
-                    updateText: comic.findUpdateTime() ?? comic.updateTime,
-                    progressText: history?.description,
-                    pagesText: comic.maxPage?.toString(),
-                    showTitle: false,
-                    onTapAuthor: (author, namespace) {
-                      onTapTag(author, namespace ?? 'author');
-                    },
-                    onTapTag: onTapTag,
-                  ),
+                  child: () {
+                    final chapterProgress = _comicStateRepository
+                        .chapterProgressFromDetails(comic, history);
+                    return ComicDescription(
+                      title: comic.title,
+                      subtitle:
+                          comic.findAuthor() ??
+                          comic.subTitle ??
+                          comic.uploader ??
+                          '',
+                      description: comic.description ?? '',
+                      badge: ComicSource.find(comic.sourceKey)?.name,
+                      tags: comic.plainTags,
+                      maxLines: 3,
+                      enableTranslate:
+                          ComicSource.find(
+                            comic.sourceKey,
+                          )?.enableTagsTranslate ??
+                          false,
+                      rating: comic.stars,
+                      updateText: comic.findUpdateTime() ?? comic.updateTime,
+                      progressText:
+                          chapterProgress.currentTitle ?? history?.description,
+                      pagesText: comic.maxPage?.toString(),
+                      showTitle: false,
+                      onTapAuthor: (author, namespace) {
+                        onTapTag(author, namespace ?? 'author');
+                      },
+                      onTapTag: onTapTag,
+                    );
+                  }(),
                 ),
               ],
             ),

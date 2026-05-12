@@ -102,6 +102,15 @@ class ComicDisplayInfo {
   final bool hasNewUpdate;
 }
 
+class ComicChapterProgressInfo {
+  const ComicChapterProgressInfo({this.currentTitle, this.latestTitle});
+
+  final String? currentTitle;
+  final String? latestTitle;
+
+  bool get hasAny => currentTitle != null || latestTitle != null;
+}
+
 class ComicStateRepository {
   const ComicStateRepository({
     DomainDatabase? domain,
@@ -266,6 +275,32 @@ class ComicStateRepository {
     return _db.getRelatedSources(identity.comicId);
   }
 
+  ComicChapterProgressInfo chapterProgressFor(Comic comic, History? history) {
+    final chapters = _findChapters(comic);
+    final latestTitle =
+        chapters?.titles.lastOrNull ?? _latestChapterTitleFallbackFor(comic);
+    return ComicChapterProgressInfo(
+      currentTitle: history == null || chapters == null || chapters.length == 0
+          ? null
+          : _chapterTitleAt(chapters, history),
+      latestTitle: latestTitle,
+    );
+  }
+
+  ComicChapterProgressInfo chapterProgressFromDetails(
+    ComicDetails comic,
+    History? history,
+  ) {
+    final chapters = comic.chapters;
+    if (history == null || chapters == null || chapters.length == 0) {
+      return const ComicChapterProgressInfo();
+    }
+    return ComicChapterProgressInfo(
+      currentTitle: _chapterTitleAt(chapters, history),
+      latestTitle: chapters.titles.lastOrNull,
+    );
+  }
+
   void linkRelatedSource({
     required Comic comic,
     required String targetSourceKey,
@@ -357,7 +392,10 @@ class ComicStateRepository {
         tags: comic.plainTags,
         pageCount: comic.maxPage,
       ),
-      afterBaseWrite: (comicId) => _mirrorCommonState(identity, comicId),
+      afterBaseWrite: (comicId) {
+        _mirrorChapters(identity, comic.chapters);
+        _mirrorCommonState(identity, comicId);
+      },
     );
   }
 
@@ -391,7 +429,10 @@ class ComicStateRepository {
         );
         return comicId;
       },
-      afterBaseWrite: (comicId) => _mirrorCommonState(identity, comicId),
+      afterBaseWrite: (comicId) {
+        _mirrorChapters(identity, comic.chapters);
+        _mirrorCommonState(identity, comicId);
+      },
     );
   }
 
@@ -513,6 +554,149 @@ class ComicStateRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  ComicChapters? _findChapters(Comic comic) {
+    if (comic is LocalComic) {
+      return comic.chapters;
+    }
+    return _findDomainChapters(comic);
+  }
+
+  ComicChapters? _findDomainChapters(Comic comic) {
+    try {
+      final domain = _domain ?? (App.isInitialized ? App.domain : null);
+      if (domain == null || !domain.isInitialized) {
+        return null;
+      }
+      final identity = identityFor(comic.sourceKey, comic.id);
+      final rows = domain.getSourceChapters(
+        platform: identity.platform,
+        sourceComicId: identity.sourceComicId,
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      if (rows.any((row) => row.sourceChapterGroup != null)) {
+        final grouped = <String, Map<String, String>>{};
+        for (final row in rows) {
+          final groupIndex = row.sourceChapterGroup ?? 1;
+          final groupName = row.sourceGroupTitle ?? groupIndex.toString();
+          final sourceId = row.sourceChapterId ?? row.chapterId;
+          grouped.putIfAbsent(groupName, () => <String, String>{})[sourceId] =
+              row.title;
+        }
+        return ComicChapters.grouped(grouped);
+      }
+      return ComicChapters({
+        for (final row in rows) row.sourceChapterId ?? row.chapterId: row.title,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _chapterTitleAt(ComicChapters chapters, History history) {
+    if (chapters.isGrouped && history.group != null) {
+      if (history.group! < 1 || history.group! > chapters.groupCount) {
+        return null;
+      }
+      final group = chapters.getGroupByIndex(history.group! - 1);
+      return group.values.elementAtOrNull(history.ep - 1);
+    }
+    return chapters.titles.elementAtOrNull(history.ep - 1);
+  }
+
+  String? _latestChapterTitleFallbackFor(Comic comic) {
+    final identity = identityFor(comic.sourceKey, comic.id);
+    final updateInfo = comic is FavoriteItemWithUpdateInfo
+        ? comic
+        : _findFollowUpdateInfo(comic.id, identity.type);
+    return _pick([
+      _extractChapterTitle(updateInfo?.updateTime),
+      if (comic is! History) _extractChapterTitle(comic.description),
+      if (comic is! History) _extractChapterTitle(comic.subtitle),
+    ]);
+  }
+
+  String? _extractChapterTitle(String? text) {
+    if (text == null || text.trim().isEmpty) {
+      return null;
+    }
+    final lines = text
+        .replaceAll('|', '\n')
+        .split('\n')
+        .map((e) => e.replaceAll(RegExp(r'\s+'), ' ').trim())
+        .where((e) => e.isNotEmpty);
+    for (final line in lines) {
+      if (RegExp(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}').hasMatch(line)) {
+        continue;
+      }
+      final cnMatch = RegExp(
+        r'(?:第\s*)?\d+(?:\.\d+)?\s*(?:话|話|章|回|卷|集)',
+        caseSensitive: false,
+      ).firstMatch(line);
+      if (cnMatch != null) {
+        return cnMatch.group(0)?.trim();
+      }
+      final enMatch = RegExp(
+        r'(?:ch(?:apter)?\.?|ep(?:isode)?\.?)\s*\d+(?:\.\d+)?',
+        caseSensitive: false,
+      ).firstMatch(line);
+      if (enMatch != null) {
+        return enMatch.group(0)?.trim();
+      }
+    }
+    return null;
+  }
+
+  void _mirrorChapters(ComicIdentity identity, ComicChapters? chapters) {
+    if (chapters == null) {
+      return;
+    }
+    final rows = <DomainComicChapterInfo>[];
+    var chapterIndex = 1;
+    if (chapters.isGrouped) {
+      var groupIndex = 1;
+      for (final groupName in chapters.groups) {
+        var indexInGroup = 1;
+        for (final entry in chapters.getGroup(groupName).entries) {
+          rows.add(
+            DomainComicChapterInfo(
+              chapterId: '${identity.comicId}:chapter:$chapterIndex',
+              title: entry.value,
+              chapterIndex: chapterIndex,
+              sourceChapterId: entry.key,
+              sourceChapterIndex: chapterIndex,
+              sourceChapterGroup: groupIndex,
+              sourceGroupTitle: groupName,
+              sourceChapterIndexInGroup: indexInGroup,
+            ),
+          );
+          chapterIndex++;
+          indexInGroup++;
+        }
+        groupIndex++;
+      }
+    } else {
+      for (final entry in chapters.allChapters.entries) {
+        rows.add(
+          DomainComicChapterInfo(
+            chapterId: '${identity.comicId}:chapter:$chapterIndex',
+            title: entry.value,
+            chapterIndex: chapterIndex,
+            sourceChapterId: entry.key,
+            sourceChapterIndex: chapterIndex,
+          ),
+        );
+        chapterIndex++;
+      }
+    }
+    _db.replaceSourceChapters(
+      platform: identity.platform,
+      sourceComicId: identity.sourceComicId,
+      chapters: rows,
+    );
   }
 
   String? _sourceNameFor(String sourceKey) {

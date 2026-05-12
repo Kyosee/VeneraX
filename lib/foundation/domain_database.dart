@@ -35,6 +35,28 @@ class DomainComicBaseInfo {
   final String? workId;
 }
 
+class DomainComicChapterInfo {
+  const DomainComicChapterInfo({
+    required this.chapterId,
+    required this.title,
+    required this.chapterIndex,
+    this.sourceChapterId,
+    this.sourceChapterIndex,
+    this.sourceChapterGroup,
+    this.sourceGroupTitle,
+    this.sourceChapterIndexInGroup,
+  });
+
+  final String chapterId;
+  final String title;
+  final int chapterIndex;
+  final String? sourceChapterId;
+  final int? sourceChapterIndex;
+  final int? sourceChapterGroup;
+  final String? sourceGroupTitle;
+  final int? sourceChapterIndexInGroup;
+}
+
 class DomainComicSourceLink {
   const DomainComicSourceLink({
     required this.workId,
@@ -66,7 +88,7 @@ class DomainComicSourceLink {
 }
 
 class DomainDatabase {
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
   static const dataDirectoryName = 'data';
   static const databaseFileName = 'venera.db';
 
@@ -127,6 +149,21 @@ class DomainDatabase {
     addColumnIfMissing('comics', 'update_time', 'update_time TEXT');
     addColumnIfMissing('comics', 'tags_json', 'tags_json TEXT');
     addColumnIfMissing('comics', 'page_count', 'page_count INTEGER');
+    addColumnIfMissing(
+      'chapter_sources',
+      'source_chapter_group',
+      'source_chapter_group INTEGER',
+    );
+    addColumnIfMissing(
+      'chapter_sources',
+      'source_group_title',
+      'source_group_title TEXT',
+    );
+    addColumnIfMissing(
+      'chapter_sources',
+      'source_chapter_index_in_group',
+      'source_chapter_index_in_group INTEGER',
+    );
     addColumnIfMissing(
       'comics',
       'base_info_updated_at',
@@ -325,6 +362,131 @@ class DomainDatabase {
   }) {
     final comicId = comicIdFor(platform, sourceComicId);
     return getComicBaseInfo(comicId);
+  }
+
+  void replaceSourceChapters({
+    required SourcePlatformRef platform,
+    required String sourceComicId,
+    required List<DomainComicChapterInfo> chapters,
+    int? timestamp,
+  }) {
+    final sourceRows = db.select(
+      '''
+      SELECT comic_source_id, comic_id
+      FROM comic_sources
+      WHERE platform_id = ? AND source_comic_id = ?
+      LIMIT 1;
+      ''',
+      [platform.platformId, sourceComicId],
+    );
+    if (sourceRows.isEmpty) {
+      return;
+    }
+
+    final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+    final comicSourceId = sourceRows.single['comic_source_id'] as int;
+    final comicId = sourceRows.single['comic_id'] as String;
+    db.execute('BEGIN TRANSACTION;');
+    try {
+      db.execute(
+        '''
+        DELETE FROM chapter_sources
+        WHERE comic_source_id = ?;
+        ''',
+        [comicSourceId],
+      );
+      for (final chapter in chapters) {
+        final chapterId = '$comicId:chapter:${chapter.chapterIndex}';
+        final sourceChapterId = chapter.sourceChapterId ?? chapterId;
+        db.execute(
+          '''
+          INSERT INTO chapters (
+            chapter_id,
+            comic_id,
+            title,
+            chapter_index,
+            source_chapter_id,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(comic_id, chapter_index) DO UPDATE SET
+            title = excluded.title,
+            source_chapter_id = excluded.source_chapter_id;
+          ''',
+          [
+            chapterId,
+            comicId,
+            chapter.title,
+            chapter.chapterIndex,
+            sourceChapterId,
+            now,
+          ],
+        );
+        db.execute(
+          '''
+          INSERT INTO chapter_sources (
+            chapter_id,
+            comic_source_id,
+            source_chapter_id,
+            source_chapter_index,
+            source_title,
+            source_chapter_group,
+            source_group_title,
+            source_chapter_index_in_group
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(comic_source_id, source_chapter_id) DO UPDATE SET
+            chapter_id = excluded.chapter_id,
+            source_chapter_index = excluded.source_chapter_index,
+            source_title = excluded.source_title,
+            source_chapter_group = excluded.source_chapter_group,
+            source_group_title = excluded.source_group_title,
+            source_chapter_index_in_group =
+              excluded.source_chapter_index_in_group;
+          ''',
+          [
+            chapterId,
+            comicSourceId,
+            sourceChapterId,
+            chapter.sourceChapterIndex ?? chapter.chapterIndex,
+            chapter.title,
+            chapter.sourceChapterGroup,
+            chapter.sourceGroupTitle,
+            chapter.sourceChapterIndexInGroup,
+          ],
+        );
+      }
+      db.execute('COMMIT;');
+    } catch (_) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  List<DomainComicChapterInfo> getSourceChapters({
+    required SourcePlatformRef platform,
+    required String sourceComicId,
+  }) {
+    final rows = db.select(
+      '''
+      SELECT
+        ch.chapter_id,
+        COALESCE(NULLIF(cs.source_title, ''), ch.title) AS title,
+        ch.chapter_index,
+        cs.source_chapter_id,
+        cs.source_chapter_index,
+        cs.source_chapter_group,
+        cs.source_group_title,
+        cs.source_chapter_index_in_group
+      FROM comic_sources src
+      JOIN chapter_sources cs ON cs.comic_source_id = src.comic_source_id
+      JOIN chapters ch ON ch.chapter_id = cs.chapter_id
+      WHERE src.platform_id = ? AND src.source_comic_id = ?
+      ORDER BY
+        COALESCE(cs.source_chapter_index, ch.chapter_index),
+        ch.chapter_index;
+      ''',
+      [platform.platformId, sourceComicId],
+    );
+    return rows.map(_chapterInfoFromRow).toList();
   }
 
   String ensureWorkForComic({
@@ -838,6 +1000,19 @@ class DomainDatabase {
     );
   }
 
+  DomainComicChapterInfo _chapterInfoFromRow(Row row) {
+    return DomainComicChapterInfo(
+      chapterId: row['chapter_id'] as String,
+      title: row['title'] as String,
+      chapterIndex: row['chapter_index'] as int,
+      sourceChapterId: row['source_chapter_id'] as String?,
+      sourceChapterIndex: row['source_chapter_index'] as int?,
+      sourceChapterGroup: row['source_chapter_group'] as int?,
+      sourceGroupTitle: row['source_group_title'] as String?,
+      sourceChapterIndexInGroup: row['source_chapter_index_in_group'] as int?,
+    );
+  }
+
   DomainComicSourceLink _sourceLinkFromRow(Row row) {
     return DomainComicSourceLink(
       workId: row['work_id'] as String,
@@ -1059,6 +1234,9 @@ CREATE TABLE IF NOT EXISTS chapter_sources (
   source_chapter_id TEXT,
   source_chapter_index INTEGER,
   source_title TEXT,
+  source_chapter_group INTEGER,
+  source_group_title TEXT,
+  source_chapter_index_in_group INTEGER,
   UNIQUE (comic_source_id, source_chapter_id),
   FOREIGN KEY (chapter_id) REFERENCES chapters(chapter_id) ON DELETE CASCADE,
   FOREIGN KEY (comic_source_id) REFERENCES comic_sources(comic_source_id)
