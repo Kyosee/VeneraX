@@ -205,6 +205,13 @@ class LocalFavoritesManager with ChangeNotifier {
 
   static LocalFavoritesManager? cache;
 
+  static const _nonFavoriteTables = {
+    'folder_sync',
+    'folder_order',
+    'comic_links',
+    'sqlite_sequence',
+  };
+
   late Database _db;
 
   late Map<String, int> counts;
@@ -237,29 +244,7 @@ class LocalFavoritesManager with ChangeNotifier {
     """);
     var folderNames = _getFolderNamesWithDB();
     for (var folder in folderNames) {
-      var columns = _db.select("""
-        pragma table_info("$folder");
-      """);
-      if (!columns.any((element) => element["name"] == "translated_tags")) {
-        _db.execute("""
-          alter table "$folder"
-          add column translated_tags TEXT;
-        """);
-        var comics = getFolderComics(folder);
-        for (var comic in comics) {
-          var translatedTags = _translateTags(comic.tags);
-          _db.execute(
-            """
-            update "$folder"
-            set translated_tags = ?
-            where id == ? and type == ?;
-          """,
-            [translatedTags, comic.id, comic.type.value],
-          );
-        }
-      } else {
-        break;
-      }
+      _ensureFavoriteFolderSchema(folder);
     }
     await appdata.ensureInit();
     // Make sure the follow updates folder is ready
@@ -365,10 +350,86 @@ class LocalFavoritesManager with ChangeNotifier {
     return tables;
   }
 
+  Set<String> _tableColumns(String table) {
+    return _db
+        .select("""
+          pragma table_info("$table");
+        """)
+        .map((element) => element["name"] as String)
+        .toSet();
+  }
+
+  bool _isFavoriteFolderTable(String table) {
+    if (_nonFavoriteTables.contains(table) || table.startsWith('sqlite_')) {
+      return false;
+    }
+    final columns = _tableColumns(table);
+    const requiredColumns = {
+      'id',
+      'name',
+      'author',
+      'tags',
+      'cover_path',
+      'time',
+    };
+    return columns.containsAll(requiredColumns);
+  }
+
+  void _ensureFavoriteFolderSchema(String folder) {
+    var columns = _tableColumns(folder);
+    if (!columns.contains('type')) {
+      _db.execute("""
+        alter table "$folder"
+        add column type int;
+      """);
+      _db.execute(
+        """
+        update "$folder"
+        set type = ?
+        where type is null;
+      """,
+        [ComicType.local.value],
+      );
+      columns = _tableColumns(folder);
+    }
+    if (!columns.contains('display_order')) {
+      _db.execute("""
+        alter table "$folder"
+        add column display_order int;
+      """);
+      _db.execute("""
+        update "$folder"
+        set display_order = rowid
+        where display_order is null;
+      """);
+      columns = _tableColumns(folder);
+    }
+    if (!columns.contains('translated_tags')) {
+      _db.execute("""
+        alter table "$folder"
+        add column translated_tags TEXT;
+      """);
+      var comics = getFolderComics(folder);
+      for (var comic in comics) {
+        var translatedTags = _translateTags(comic.tags);
+        _db.execute(
+          """
+            update "$folder"
+            set translated_tags = ?
+            where id == ? and type == ?;
+          """,
+          [translatedTags, comic.id, comic.type.value],
+        );
+      }
+    }
+  }
+
   List<String> _getFolderNamesWithDB() {
     final folders = _getTablesWithDB();
-    folders.remove('folder_sync');
-    folders.remove('folder_order');
+    folders.removeWhere((folder) => !_isFavoriteFolderTable(folder));
+    for (var folder in folders) {
+      _ensureFavoriteFolderSchema(folder);
+    }
     var folderToOrder = <String, int>{};
     for (var folder in folders) {
       var res = _db.select(
