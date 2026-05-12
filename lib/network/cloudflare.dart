@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:dio/dio.dart';
@@ -66,7 +67,28 @@ class CloudflareException implements DioException {
 class CloudflareInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    if (options.headers['cookie'].toString().contains('cf_clearance') ||
+    if (options.method.toUpperCase() == 'GET' &&
+        options.responseType != ResponseType.stream &&
+        options.responseType != ResponseType.bytes) {
+      var cachedHtml = _takeVerifiedHtml(options.uri);
+      if (cachedHtml != null) {
+        handler.resolve(
+          Response<dynamic>(
+            requestOptions: options,
+            data: cachedHtml.html,
+            statusCode: 200,
+            statusMessage: 'OK',
+            headers: Headers.fromMap({
+              'content-type': ['text/html; charset=utf-8'],
+            }),
+          ),
+        );
+        return;
+      }
+    }
+
+    var cookieHeader = _readHeaderIgnoreCase(options.headers, 'cookie');
+    if (_containsCloudflareCookie(_parseCookieHeader(cookieHeader ?? '').keys) ||
         _isCloudflareVerifiedHost(options.uri.host)) {
       _applyBrowserHeaders(options);
     }
@@ -116,6 +138,60 @@ const _cloudflareVerifiedHostsKey = 'cloudflareVerifiedHosts';
 
 final _cloudflareRequestHeaders = <String, Map<String, String>>{};
 
+final _verifiedHtmlCache = <String, _VerifiedHtml>{};
+
+class _VerifiedHtml {
+  final String html;
+
+  final DateTime expiresAt;
+
+  _VerifiedHtml(this.html, this.expiresAt);
+}
+
+bool _isCloudflareCookieName(String cookieName) {
+  var name = cookieName.trim().toLowerCase();
+  return name == 'cf_clearance' ||
+      name == '__cf_bm' ||
+      name == '_cfuvid' ||
+      name.startsWith('cf_chl_');
+}
+
+bool _containsCloudflareCookie(Iterable<String> cookieNames) {
+  return cookieNames.any(_isCloudflareCookieName);
+}
+
+Map<String, String> _parseCookieHeader(String cookieHeader) {
+  var cookies = <String, String>{};
+  if (cookieHeader.trim().isEmpty) {
+    return cookies;
+  }
+  for (var segment in cookieHeader.split(';')) {
+    var part = segment.trim();
+    if (part.isEmpty) {
+      continue;
+    }
+    var idx = part.indexOf('=');
+    if (idx <= 0) {
+      continue;
+    }
+    var name = part.substring(0, idx).trim();
+    var value = part.substring(idx + 1).trim();
+    if (name.isNotEmpty) {
+      cookies[name] = value;
+    }
+  }
+  return cookies;
+}
+
+String? _readHeaderIgnoreCase(Map<String, dynamic> headers, String name) {
+  for (var entry in headers.entries) {
+    if (entry.key.toLowerCase() == name.toLowerCase()) {
+      return entry.value?.toString();
+    }
+  }
+  return null;
+}
+
 Map<String, String> _headersForBrowser(Map<String, dynamic> headers) {
   const skippedHeaders = {
     'accept-encoding',
@@ -151,19 +227,91 @@ bool _headersNeedInAppWebview(Map<String, String> headers) {
 }
 
 bool _isCloudflareChallengePage(String head, String body) {
-  var content = "$head\n$body";
+  var content = "$head\n$body".toLowerCase();
   return content.contains('#challenge-success-text') ||
       content.contains("#challenge-error-text") ||
       content.contains("#challenge-form") ||
       content.contains("challenge-platform") ||
       content.contains("/cdn-cgi/challenge-platform/") ||
       content.contains("window._cf_chl_opt") ||
+      content.contains("__cf_chl_opt") ||
+      content.contains("cf-browser-verification") ||
+      content.contains("cf-challenge-running") ||
       content.contains("cf-challenge") ||
       content.contains("cf-turnstile") ||
       content.contains("cf_captcha_kind") ||
       content.contains("cf_chl_") ||
-      content.contains("Just a moment") ||
-      content.contains("Checking if the site connection is secure");
+      content.contains("verify you are human") ||
+      content.contains("checking your browser before accessing") ||
+      content.contains("checking if the site connection is secure") ||
+      content.contains("please wait while we verify") ||
+      content.contains("<title>just a moment") ||
+      content.contains("just a moment...");
+}
+
+String _normalizeDesktopWebviewValue(String? raw, String fallback) {
+  if (raw == null || raw.isEmpty) {
+    return fallback;
+  }
+  var value = raw.trim();
+  try {
+    var decoded = jsonDecode(value);
+    if (decoded is String) {
+      value = decoded;
+    } else if (decoded != null) {
+      value = decoded.toString();
+    }
+  } catch (_) {
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.substring(1, value.length - 1);
+    }
+  }
+  value = value.trim();
+  if (value.isEmpty) {
+    return fallback;
+  }
+  return value;
+}
+
+String _verifiedHtmlCacheKey(Uri uri) => uri.toString();
+
+bool _cacheVerifiedHtml(Uri uri, String html) {
+  if (html.trim().isEmpty || _isCloudflareChallengePage('', html)) {
+    return false;
+  }
+  _verifiedHtmlCache[_verifiedHtmlCacheKey(uri)] = _VerifiedHtml(
+    html,
+    DateTime.now().add(const Duration(minutes: 2)),
+  );
+  Log.info("Cloudflare", "Cached verified WebView HTML for $uri");
+  return true;
+}
+
+_VerifiedHtml? _takeVerifiedHtml(Uri uri) {
+  var cached = _verifiedHtmlCache.remove(_verifiedHtmlCacheKey(uri));
+  if (cached == null || cached.expiresAt.isBefore(DateTime.now())) {
+    return null;
+  }
+  Log.info("Cloudflare", "Using cached verified WebView HTML for $uri");
+  return cached;
+}
+
+bool _sameSiteHost(String a, String b) {
+  var left = a.toLowerCase();
+  var right = b.toLowerCase();
+  String site(String host) {
+    var parts = host.split('.');
+    if (parts.length <= 2) {
+      return host;
+    }
+    return parts.sublist(parts.length - 2).join('.');
+  }
+
+  return left == right ||
+      left.endsWith('.$right') ||
+      right.endsWith('.$left') ||
+      site(left) == site(right);
 }
 
 void _applyBrowserHeaders(RequestOptions options) {
@@ -267,16 +415,20 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
     }
   }
 
-  bool saveCookies(Map<String, String> cookies) {
-    var domain = uri.host;
+  bool saveCookies(Uri targetUri, Map<String, String> cookies) {
+    if (cookies.isEmpty) {
+      Log.info("Cloudflare", "Saved 0 cookies, cloudflareCookie=false");
+      return false;
+    }
+    var domain = targetUri.host;
     var splits = domain.split('.');
     if (splits.length > 1) {
       domain = ".${splits[splits.length - 2]}.${splits[splits.length - 1]}";
     }
-    var hasClearance = cookies['cf_clearance']?.isNotEmpty == true;
-    SingleInstanceCookieJar.instance?.deleteByName(uri, 'cf_clearance');
+    var hasCloudflareCookie = _containsCloudflareCookie(cookies.keys);
+    SingleInstanceCookieJar.instance?.deleteByName(targetUri, 'cf_clearance');
     SingleInstanceCookieJar.instance?.saveFromResponse(
-      uri,
+      targetUri,
       List<io.Cookie>.generate(cookies.length, (index) {
         var cookie = io.Cookie(
           cookies.keys.elementAt(index),
@@ -289,12 +441,12 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
     Log.info(
       "Cloudflare",
       "Saved ${cookies.length} cookies, "
-          "cf_clearance=$hasClearance",
+          "cloudflareCookie=$hasCloudflareCookie",
     );
-    if (hasClearance) {
-      _markCloudflareVerifiedHost(uri.host);
+    if (hasCloudflareCookie) {
+      _markCloudflareVerifiedHost(targetUri.host);
     }
-    return hasClearance;
+    return hasCloudflareCookie;
   }
 
   // Desktop WebView can read cookies more reliably, but it cannot replay
@@ -316,12 +468,23 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
       initialUrl: url,
       userDataFolderWindows: _cloudflareProfilePath(uri),
       onTitleChange: (title, controller) async {
-        var head =
-            await controller.evaluateJavascript("document.head.innerHTML") ??
-            "";
-        var body =
-            await controller.evaluateJavascript("document.body.innerHTML") ??
-            "";
+        var currentUrl = _normalizeDesktopWebviewValue(
+          await controller.evaluateJavascript("location.href"),
+          url,
+        );
+        var currentUri = Uri.tryParse(currentUrl) ?? uri;
+        var head = _normalizeDesktopWebviewValue(
+          await controller.evaluateJavascript(
+            "(document.head && document.head.innerHTML) || ''",
+          ),
+          '',
+        );
+        var body = _normalizeDesktopWebviewValue(
+          await controller.evaluateJavascript(
+            "(document.body && document.body.innerHTML) || ''",
+          ),
+          '',
+        );
         Log.info("Cloudflare", "Checking head: $head");
         var isChallenging = _isCloudflareChallengePage(head, body);
         if (!isChallenging) {
@@ -334,13 +497,40 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
             appdata.implicitData['ua'] = ua;
             appdata.writeImplicitData();
           }
-          var cookiesMap = await controller.getCookies(url);
-          if (saveCookies(cookiesMap)) {
+          var html = _normalizeDesktopWebviewValue(
+            await controller.evaluateJavascript(
+              "(document.documentElement && document.documentElement.outerHTML) || ''",
+            ),
+            '',
+          );
+          var hasVerifiedHtml = false;
+          if (_sameSiteHost(currentUri.host, uri.host)) {
+            hasVerifiedHtml = _cacheVerifiedHtml(uri, html);
+            hasVerifiedHtml =
+                _cacheVerifiedHtml(currentUri, html) || hasVerifiedHtml;
+          }
+          var cookiesMap = await controller.getCookies(currentUrl);
+          try {
+            var rawCookie = await controller.evaluateJavascript(
+              "document.cookie",
+            );
+            cookiesMap.addAll(
+              _parseCookieHeader(
+                _normalizeDesktopWebviewValue(rawCookie, ''),
+              ),
+            );
+          } catch (e, s) {
+            Log.warning("Cloudflare", "Read document.cookie failed\n$e\n$s");
+          }
+          var hasCloudflareCookie = saveCookies(currentUri, cookiesMap);
+          if (hasCloudflareCookie || hasVerifiedHtml) {
+            _markCloudflareVerifiedHost(uri.host);
+            _markCloudflareVerifiedHost(currentUri.host);
             verificationSucceeded = true;
             controller.close();
             finish();
           } else {
-            Log.info("Cloudflare", "Waiting for cf_clearance cookie");
+            Log.info("Cloudflare", "Waiting for Cloudflare cookie or HTML");
           }
         }
       },
@@ -375,24 +565,61 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           appdata.implicitData['ua'] = ua;
           appdata.writeImplicitData();
         }
-        var cookies = await controller.getCookies(url) ?? [];
-        var hasClearance = cookies.any(
-          (cookie) => cookie.name == 'cf_clearance' && cookie.value.isNotEmpty,
+        var currentUrl = (await controller.getUrl())?.toString() ?? url;
+        var currentUri = Uri.tryParse(currentUrl) ?? uri;
+        var htmlText =
+            (await controller.evaluateJavascript(
+              source:
+                  "(document.documentElement && document.documentElement.outerHTML) || ''",
+            ))?.toString() ??
+            '';
+        var hasVerifiedHtml = false;
+        if (_sameSiteHost(currentUri.host, uri.host)) {
+          hasVerifiedHtml = _cacheVerifiedHtml(uri, htmlText);
+          hasVerifiedHtml =
+              _cacheVerifiedHtml(currentUri, htmlText) || hasVerifiedHtml;
+        }
+        var cookies = <io.Cookie>[];
+        for (var cookieUrl in {url, currentUrl}) {
+          cookies.addAll(await controller.getCookies(cookieUrl) ?? []);
+        }
+        try {
+          var rawCookie = await controller.evaluateJavascript(
+            source: "document.cookie",
+          );
+          var jsCookies = _parseCookieHeader(rawCookie?.toString() ?? '');
+          cookies.addAll(
+            jsCookies.entries.map((e) {
+              var cookie = io.Cookie(e.key, e.value);
+              cookie.domain = currentUri.host;
+              return cookie;
+            }),
+          );
+        } catch (e, s) {
+          Log.warning("Cloudflare", "Read document.cookie failed\n$e\n$s");
+        }
+        var hasCloudflareCookie = cookies.any(
+          (cookie) =>
+              cookie.value.isNotEmpty && _isCloudflareCookieName(cookie.name),
         );
-        SingleInstanceCookieJar.instance?.deleteByName(uri, 'cf_clearance');
-        SingleInstanceCookieJar.instance?.saveFromResponse(uri, cookies);
+        SingleInstanceCookieJar.instance?.deleteByName(
+          currentUri,
+          'cf_clearance',
+        );
+        SingleInstanceCookieJar.instance?.saveFromResponse(currentUri, cookies);
         Log.info(
           "Cloudflare",
           "Saved ${cookies.length} cookies, "
-              "cf_clearance=$hasClearance",
+              "cloudflareCookie=$hasCloudflareCookie",
         );
-        if (hasClearance) {
+        if (hasCloudflareCookie || hasVerifiedHtml) {
           _markCloudflareVerifiedHost(uri.host);
+          _markCloudflareVerifiedHost(currentUri.host);
           success = true;
           verificationSucceeded = true;
           App.rootPop();
         } else {
-          Log.info("Cloudflare", "Waiting for cf_clearance cookie");
+          Log.info("Cloudflare", "Waiting for Cloudflare cookie or HTML");
         }
       }
     }
@@ -414,6 +641,15 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           if (ua != null) {
             appdata.implicitData['ua'] = ua;
             appdata.writeImplicitData();
+          }
+          var startedUrl = (await controller.getUrl())?.toString() ?? url;
+          var startedUri = Uri.tryParse(startedUrl) ?? uri;
+          var cookies = await controller.getCookies(startedUrl) ?? [];
+          if (cookies.isNotEmpty) {
+            SingleInstanceCookieJar.instance?.saveFromResponse(
+              startedUri,
+              cookies,
+            );
           }
         },
       ),
