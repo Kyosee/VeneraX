@@ -1,8 +1,11 @@
 part of 'components.dart';
 
 class SmoothCustomScrollView extends StatelessWidget {
-  const SmoothCustomScrollView(
-      {super.key, required this.slivers, this.controller});
+  const SmoothCustomScrollView({
+    super.key,
+    required this.slivers,
+    this.controller,
+  });
 
   final ScrollController? controller;
 
@@ -19,9 +22,7 @@ class SmoothCustomScrollView extends StatelessWidget {
           slivers: [
             ...slivers,
             SliverPadding(
-              padding: EdgeInsets.only(
-                bottom: context.padding.bottom,
-              ),
+              padding: EdgeInsets.only(bottom: context.padding.bottom),
             ),
           ],
         );
@@ -31,8 +32,11 @@ class SmoothCustomScrollView extends StatelessWidget {
 }
 
 class SmoothScrollProvider extends StatefulWidget {
-  const SmoothScrollProvider(
-      {super.key, this.controller, required this.builder});
+  const SmoothScrollProvider({
+    super.key,
+    this.controller,
+    required this.builder,
+  });
 
   final ScrollController? controller;
 
@@ -48,6 +52,8 @@ class _SmoothScrollProviderState extends State<SmoothScrollProvider> {
   late final ScrollController _controller;
 
   double? _futurePosition;
+
+  int _scrollAnimationToken = 0;
 
   static bool _isMouseScroll = App.isDesktop;
 
@@ -91,6 +97,7 @@ class _SmoothScrollProviderState extends State<SmoothScrollProvider> {
     var child = Listener(
       onPointerDown: (event) {
         _futurePosition = null;
+        _scrollAnimationToken++;
         if (_isMouseScroll) {
           setState(() {
             _isMouseScroll = false;
@@ -125,25 +132,29 @@ class _SmoothScrollProviderState extends State<SmoothScrollProvider> {
           var afterOffset = (_futurePosition! - currentLocation).abs();
           if (_futurePosition == old) return;
           var target = _futurePosition!;
+          var token = ++_scrollAnimationToken;
           var duration = _fastAnimationDuration;
           if (afterOffset < beforeOffset) {
             duration = duration * (afterOffset / beforeOffset);
-            if (duration < Duration(milliseconds: 10)) {
-              duration = Duration(milliseconds: 10);
+            if (duration < const Duration(milliseconds: 8)) {
+              duration = const Duration(milliseconds: 8);
             }
           }
           _controller
               .animateTo(
-            _futurePosition!,
-            duration: duration,
-            curve: Curves.linear,
-          )
+                _futurePosition!,
+                duration: duration,
+                curve: Curves.easeOutCubic,
+              )
               .then((_) {
-            var current = _controller.position.pixels;
-            if (current == target && current == _futurePosition) {
-              _futurePosition = null;
-            }
-          });
+                if (token != _scrollAnimationToken) {
+                  return;
+                }
+                var current = _controller.position.pixels;
+                if (current == target && current == _futurePosition) {
+                  _futurePosition = null;
+                }
+              });
         }
       },
       child: ScrollState._(
@@ -195,8 +206,8 @@ class ScrollState extends InheritedWidget {
   final void Function(int id) onChildInactive;
 
   static ScrollState of(BuildContext context) {
-    final ScrollState? provider =
-        context.dependOnInheritedWidgetOfExactType<ScrollState>();
+    final ScrollState? provider = context
+        .dependOnInheritedWidgetOfExactType<ScrollState>();
     return provider!;
   }
 
@@ -298,10 +309,9 @@ class _AppScrollBarState extends State<AppScrollBar> {
     var offset = details.primaryDelta!;
     var positionOffset =
         offset / (viewHeight - _scrollIndicatorSize) * (maxExtent - minExtent);
-    _scrollController.jumpTo((position + positionOffset).clamp(
-      minExtent,
-      maxExtent,
-    ));
+    _scrollController.jumpTo(
+      (position + positionOffset).clamp(minExtent, maxExtent),
+    );
   }
 
   void onChanged() {
@@ -338,13 +348,11 @@ class _AppScrollBarState extends State<AppScrollBar> {
         var top = scrollHeight == 0
             ? 0.0
             : (position - minExtent) /
-                scrollHeight *
-                (height - _scrollIndicatorSize);
+                  scrollHeight *
+                  (height - _scrollIndicatorSize);
         return Stack(
           children: [
-            Positioned.fill(
-              child: widget.child,
-            ),
+            Positioned.fill(child: widget.child),
             Positioned(
               top: top + widget.topPadding,
               right: 0,
@@ -404,10 +412,7 @@ class _ScrollIndicatorPainter extends CustomPainter {
     var path = Path()
       ..moveTo(size.width, 0)
       ..lineTo(size.width, size.height)
-      ..arcToPoint(
-        Offset(size.width, 0),
-        radius: Radius.circular(size.width),
-      );
+      ..arcToPoint(Offset(size.width, 0), radius: Radius.circular(size.width));
     canvas.drawShadow(path, shadowColor, 2, true);
     var backgroundPaint = Paint()
       ..color = backgroundColor
@@ -415,10 +420,7 @@ class _ScrollIndicatorPainter extends CustomPainter {
     path = Path()
       ..moveTo(size.width, 0)
       ..lineTo(size.width, size.height)
-      ..arcToPoint(
-        Offset(size.width, 0),
-        radius: Radius.circular(size.width),
-      );
+      ..arcToPoint(Offset(size.width, 0), radius: Radius.circular(size.width));
     canvas.drawPath(path, backgroundPaint);
   }
 
