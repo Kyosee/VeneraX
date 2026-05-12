@@ -108,20 +108,60 @@ class DomainDatabase {
       p.join(appDataPath, dataDirectoryName, databaseFileName);
 
   Future<void> init(String appDataPath) async {
+    initSync(appDataPath);
+  }
+
+  void initSync(String appDataPath) {
     if (_db != null) {
       return;
     }
     final dbPath = databasePathFor(appDataPath);
     Directory(p.dirname(dbPath)).createSync(recursive: true);
-    final database = sqlite3.open(dbPath);
-    configure(database);
-    createSchema(database);
-    _db = database;
+    _db = _openDatabase(dbPath);
+  }
+
+  Database _openDatabase(String dbPath) {
+    Database? database;
+    try {
+      database = sqlite3.open(dbPath);
+      configure(database);
+      createSchema(database);
+      return database;
+    } catch (_) {
+      database?.dispose();
+      _backupDatabaseFiles(dbPath);
+    }
+
+    final recoveredDatabase = sqlite3.open(dbPath);
+    configure(recoveredDatabase);
+    createSchema(recoveredDatabase);
+    return recoveredDatabase;
   }
 
   void close() {
     _db?.dispose();
     _db = null;
+  }
+
+  static void _backupDatabaseFiles(String dbPath) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    for (final path in [dbPath, '$dbPath-wal', '$dbPath-shm']) {
+      final file = File(path);
+      if (!file.existsSync()) {
+        continue;
+      }
+      file.renameSync(_nextBackupPath(path, timestamp));
+    }
+  }
+
+  static String _nextBackupPath(String path, int timestamp) {
+    var backupPath = '$path.invalid-$timestamp';
+    var index = 1;
+    while (File(backupPath).existsSync()) {
+      backupPath = '$path.invalid-$timestamp-$index';
+      index++;
+    }
+    return backupPath;
   }
 
   static void configure(Database db) {

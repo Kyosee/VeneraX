@@ -132,7 +132,21 @@ class ComicStateRepository {
   HistoryManager get _history => _historyManager ?? HistoryManager();
   LocalFavoritesManager get _favorites =>
       _favoritesManager ?? LocalFavoritesManager();
-  bool get _domainReady => (_domain ?? App.domain).isInitialized;
+  bool get _domainReady {
+    final domain = _domain ?? (App.isInitialized ? App.domain : null);
+    if (domain == null) {
+      return false;
+    }
+    if (!domain.isInitialized && _domain == null && App.isInitialized) {
+      try {
+        domain.initSync(App.dataPath);
+      } catch (_) {
+        return false;
+      }
+    }
+    return domain.isInitialized;
+  }
+
   bool get isDomainReady => _domainReady;
 
   ComicIdentity identityFor(String sourceKey, String sourceComicId) {
@@ -271,8 +285,15 @@ class ComicStateRepository {
     if (!_domainReady) {
       return const <DomainComicSourceLink>[];
     }
-    final identity = identityFor(comic.sourceKey, comic.id);
-    return _db.getRelatedSources(identity.comicId);
+    final fallbackIdentity = identityFor(comic.sourceKey, comic.id);
+    try {
+      final comicId = mirrorComic(comic);
+      _db.ensureWorkForComic(comicId: comicId);
+      return _db.getRelatedSources(comicId);
+    } catch (error, stackTrace) {
+      Log.warning('Related sources load failed', '$error\n$stackTrace');
+      return _db.getRelatedSources(fallbackIdentity.comicId);
+    }
   }
 
   ComicChapterProgressInfo chapterProgressFor(Comic comic, History? history) {

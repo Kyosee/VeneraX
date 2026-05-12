@@ -89,6 +89,40 @@ void main() {
     },
   );
 
+  test('related sources include the current comic source by default', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'venera_domain_related_self_',
+    );
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final repository = ComicStateRepository(domain: domain);
+      final comic = Comic(
+        'Title',
+        'cover.jpg',
+        'self-id',
+        'Author',
+        const ['status:连载中'],
+        'Desc',
+        'picacg',
+        null,
+        'zh',
+      );
+
+      final links = repository.relatedSourcesFor(comic);
+
+      expect(links, hasLength(1));
+      expect(links.single.comicId, 'remote:picacg:self-id');
+      expect(links.single.sourceComicId, 'self-id');
+      expect(links.single.status, 'accepted');
+      expect(links.single.sourceName, 'picacg');
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
   test(
     'comic display status is serialization status, not update read state',
     () {

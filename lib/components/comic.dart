@@ -164,6 +164,14 @@ class ComicTile extends StatelessWidget {
     }
     var searchGroups = <String, _RelatedSearchGroup>{};
     var isSearching = false;
+    var dialogClosed = false;
+
+    void updateDialog(StateSetter setState, VoidCallback fn) {
+      if (dialogClosed) {
+        return;
+      }
+      setState(fn);
+    }
 
     void openDetail(
       String sourceKey,
@@ -178,6 +186,7 @@ class ComicTile extends StatelessWidget {
     }
 
     void showLinkPreview(
+      BuildContext context,
       DomainComicSourceLink link, {
       VoidCallback? onAccept,
       VoidCallback? onReject,
@@ -213,7 +222,11 @@ class ComicTile extends StatelessWidget {
       );
     }
 
-    void showResultPreview(Comic result, VoidCallback onLink) {
+    void showResultPreview(
+      BuildContext context,
+      Comic result,
+      VoidCallback onLink,
+    ) {
       _showRelatedComicPreview(
         context: context,
         title: result.title,
@@ -252,7 +265,7 @@ class ComicTile extends StatelessWidget {
           targetSourceKey: result.sourceKey,
           targetComicId: result.id,
         );
-        setState(() {
+        updateDialog(setState, () {
           searchGroups = {};
         });
         context.showMessage(message: 'Linked'.tl);
@@ -267,7 +280,7 @@ class ComicTile extends StatelessWidget {
         context.showMessage(message: 'Invalid input'.tl);
         return;
       }
-      setState(() {
+      updateDialog(setState, () {
         isSearching = true;
         searchGroups = {
           for (final sourceKey in selectedSourceKeys)
@@ -282,7 +295,7 @@ class ComicTile extends StatelessWidget {
         final source = ComicSource.find(sourceKey);
         final searchData = source?.searchPageData;
         if (source == null || searchData == null) {
-          setState(() {
+          updateDialog(setState, () {
             searchGroups[sourceKey] = _RelatedSearchGroup(
               sourceKey: sourceKey,
               sourceName: _sourceNameForKey(sourceKey, sourceKey),
@@ -300,7 +313,7 @@ class ComicTile extends StatelessWidget {
           final res = searchData.loadPage != null
               ? await searchData.loadPage!(keyword, 1, options)
               : await searchData.loadNext!(keyword, null, options);
-          setState(() {
+          updateDialog(setState, () {
             searchGroups[sourceKey] = _RelatedSearchGroup(
               sourceKey: sourceKey,
               sourceName: source.name,
@@ -309,7 +322,7 @@ class ComicTile extends StatelessWidget {
             );
           });
         } catch (e) {
-          setState(() {
+          updateDialog(setState, () {
             searchGroups[sourceKey] = _RelatedSearchGroup(
               sourceKey: sourceKey,
               sourceName: source.name,
@@ -318,12 +331,12 @@ class ComicTile extends StatelessWidget {
           });
         }
       }
-      setState(() {
+      updateDialog(setState, () {
         isSearching = false;
       });
     }
 
-    Widget buildSourceSelector(StateSetter setState) {
+    Widget buildSourceSelector(StateSetter setState, BuildContext context) {
       if (searchableSources.isEmpty) {
         return Text(
           'No searchable sources'.tl,
@@ -383,7 +396,7 @@ class ComicTile extends StatelessWidget {
       );
     }
 
-    Widget buildLinkList(StateSetter setState) {
+    Widget buildLinkList(StateSetter setState, BuildContext context) {
       if (!repository.isDomainReady) {
         return Center(
           child: Text(
@@ -409,6 +422,7 @@ class ComicTile extends StatelessWidget {
               link: link,
               isCurrent: link.comicId == currentIdentity.comicId,
               onTap: () => showLinkPreview(
+                context,
                 link,
                 onAccept: link.status == 'candidate'
                     ? () {
@@ -463,7 +477,7 @@ class ComicTile extends StatelessWidget {
       return ListView(
         padding: EdgeInsets.zero,
         children: [
-          buildSourceSelector(setState),
+          buildSourceSelector(setState, context),
           const SizedBox(height: 12),
           TextField(
             controller: searchController,
@@ -534,6 +548,7 @@ class ComicTile extends StatelessWidget {
                       _RelatedSearchResultRow(
                         comic: result,
                         onTap: () => showResultPreview(
+                          context,
                           result,
                           () => linkSearchResult(setState, context, result),
                         ),
@@ -653,7 +668,10 @@ class ComicTile extends StatelessWidget {
                             Expanded(
                               child: TabBarView(
                                 children: [
-                                  buildLinkList(setState).paddingHorizontal(16),
+                                  buildLinkList(
+                                    setState,
+                                    context,
+                                  ).paddingHorizontal(16),
                                   buildSearchList(
                                     setState,
                                     context,
@@ -683,6 +701,7 @@ class ComicTile extends StatelessWidget {
         );
       },
     ).whenComplete(() {
+      dialogClosed = true;
       sourceKeyController.dispose();
       comicIdController.dispose();
       searchController.dispose();

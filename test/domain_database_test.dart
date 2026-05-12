@@ -94,6 +94,47 @@ void main() {
     }
   });
 
+  test('recovers from incompatible canonical database schema', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final dbPath = DomainDatabase.databasePathFor(tempDir.path);
+    File(dbPath).parent.createSync(recursive: true);
+    final legacyDb = sqlite3.open(dbPath);
+    legacyDb.execute('''
+      CREATE TABLE source_platforms (
+        platform_id TEXT PRIMARY KEY
+      );
+      ''');
+    legacyDb.dispose();
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final db = domain.db;
+      final backups = File(dbPath).parent
+          .listSync()
+          .where((entity) => entity.path.contains('venera.db.invalid-'))
+          .toList();
+
+      expect(domain.isInitialized, isTrue);
+      expect(backups, isNotEmpty);
+      expect(
+        db.select('PRAGMA user_version;').first['user_version'],
+        DomainDatabase.schemaVersion,
+      );
+      expect(
+        db.select('''
+          SELECT canonical_key
+          FROM source_platforms
+          WHERE platform_id = 'local';
+          ''').single,
+        containsPair('canonical_key', 'local'),
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
   test('enforces foreign keys in canonical database', () async {
     final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
     final domain = DomainDatabase();
