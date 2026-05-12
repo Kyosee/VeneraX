@@ -74,17 +74,98 @@ class _AboutSettingsState extends State<AboutSettings> {
   }
 }
 
-Future<bool> checkUpdate() async {
-  var res = await AppDio().get(
-    "https://cdn.jsdelivr.net/gh/Kyosee/venera@master/pubspec.yaml",
+class AppUpdateInfo {
+  const AppUpdateInfo({
+    required this.version,
+    required this.releaseUrl,
+    this.windowsPackageUrl,
+  });
+
+  final String version;
+  final String releaseUrl;
+  final String? windowsPackageUrl;
+
+  bool get canUseWindowsUpdater => App.isWindows && windowsPackageUrl != null;
+}
+
+Future<AppUpdateInfo?> checkUpdate() async {
+  final latestRelease = await _getLatestRelease();
+  final latestVersion = _versionFromRelease(latestRelease);
+  if (latestVersion == null || !_compareVersion(latestVersion, App.version)) {
+    return null;
+  }
+  final windowsAsset = App.isWindows
+      ? _findWindowsZipAsset(latestRelease["assets"])
+      : null;
+  return AppUpdateInfo(
+    version: latestVersion,
+    releaseUrl:
+        latestRelease["html_url"]?.toString() ??
+        "https://github.com/Kyosee/venera/releases",
+    windowsPackageUrl: windowsAsset?["browser_download_url"]?.toString(),
+  );
+}
+
+Future<Map<String, dynamic>> _getLatestRelease() async {
+  final res = await AppDio().get(
+    "https://api.github.com/repos/Kyosee/venera/releases/latest",
+    options: Options(
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Venera",
+      },
+    ),
   );
   if (res.statusCode == 200) {
-    var data = loadYaml(res.data);
-    if (data["version"] != null) {
-      return _compareVersion(data["version"].split("+")[0], App.version);
+    final data = res.data is String ? jsonDecode(res.data) : res.data;
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
     }
   }
-  return false;
+  throw StateError("Failed to check latest release");
+}
+
+String? _versionFromRelease(Map<String, dynamic> release) {
+  final tagName = release["tag_name"]?.toString();
+  if (tagName == null || tagName.isEmpty) {
+    return null;
+  }
+  return _normalizeVersion(tagName);
+}
+
+Map<String, dynamic>? _findWindowsZipAsset(Object? assets) {
+  if (assets is! List) {
+    return null;
+  }
+  final candidates = assets
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .where((asset) {
+        final name = asset["name"]?.toString().toLowerCase() ?? "";
+        return name.endsWith(".zip") &&
+            name.contains("windows") &&
+            !name.contains("installer") &&
+            asset["browser_download_url"] != null;
+      })
+      .toList();
+  if (candidates.isEmpty) {
+    return null;
+  }
+
+  final isArm64 = Abi.current() == Abi.windowsArm64;
+  Map<String, dynamic>? preferred;
+  for (final asset in candidates) {
+    final name = asset["name"]!.toString().toLowerCase();
+    if (isArm64 && name.contains("arm64")) {
+      preferred = asset;
+      break;
+    }
+    if (!isArm64 && !name.contains("arm64")) {
+      preferred = asset;
+      break;
+    }
+  }
+  return preferred ?? candidates.first;
 }
 
 Future<void> checkUpdateUi([
@@ -93,26 +174,39 @@ Future<void> checkUpdateUi([
 ]) async {
   try {
     var value = await checkUpdate();
-    if (value) {
+    if (value != null) {
       if (delay) {
         await Future.delayed(const Duration(seconds: 2));
       }
       showDialog(
         context: App.rootContext,
         builder: (context) {
+          final canUseWindowsUpdater = value.canUseWindowsUpdater;
           return ContentDialog(
             title: "New version available".tl,
             content: Text(
-              "A new version is available. Do you want to update now?".tl,
+              "Version @v is available. Do you want to update now?".tlParams({
+                "v": value.version,
+              }),
             ).paddingHorizontal(16),
             actions: [
               Button.text(
                 onPressed: () {
                   Navigator.pop(context);
-                  launchUrlString("https://github.com/Kyosee/venera/releases");
+                  launchUrlString(value.releaseUrl);
                 },
-                child: Text("Update".tl),
+                child: Text(
+                  canUseWindowsUpdater ? "Open release page".tl : "Update".tl,
+                ),
               ),
+              if (canUseWindowsUpdater)
+                Button.filled(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _startWindowsUpdate(value);
+                  },
+                  child: Text("Update".tl),
+                ),
             ],
           );
         },
@@ -122,20 +216,80 @@ Future<void> checkUpdateUi([
     }
   } catch (e, s) {
     Log.error("Check Update", e.toString(), s);
+    if (showMessageIfNoUpdate) {
+      App.rootContext.showMessage(message: "Failed to check updates".tl);
+    }
   }
+}
+
+Future<void> _startWindowsUpdate(AppUpdateInfo updateInfo) async {
+  if (!App.isWindows || updateInfo.windowsPackageUrl == null) {
+    await launchUrlString(updateInfo.releaseUrl);
+    return;
+  }
+  final appExe = Platform.resolvedExecutable;
+  final appDir = File(appExe).parent.path;
+  final updater = File(_joinWindowsPath(appDir, "venera_updater.exe"));
+  if (!updater.existsSync()) {
+    App.rootContext.showMessage(
+      message:
+          "Updater not found. Please download the latest package manually.".tl,
+    );
+    await launchUrlString(updateInfo.releaseUrl);
+    return;
+  }
+
+  App.rootContext.showMessage(
+    message: "Preparing update. Venera will restart automatically.".tl,
+  );
+  await appdata.saveData(false);
+  appdata.writeImplicitData();
+  await Process.start(updater.path, [
+    "--app-dir",
+    appDir,
+    "--package-url",
+    updateInfo.windowsPackageUrl!,
+    "--app-exe",
+    appExe,
+    "--pid",
+    pid.toString(),
+    "--restart",
+  ], mode: ProcessStartMode.detached);
+  await Future.delayed(const Duration(milliseconds: 500));
+  exit(0);
+}
+
+String _joinWindowsPath(String dir, String file) {
+  if (dir.endsWith(r"\")) {
+    return "$dir$file";
+  }
+  return "$dir\\$file";
 }
 
 /// return true if version1 > version2
 bool _compareVersion(String version1, String version2) {
-  var v1 = version1.split(".");
-  var v2 = version2.split(".");
-  for (var i = 0; i < v1.length; i++) {
-    if (int.parse(v1[i]) > int.parse(v2[i])) {
+  var v1 = _normalizeVersion(version1).split(".");
+  var v2 = _normalizeVersion(version2).split(".");
+  final length = v1.length > v2.length ? v1.length : v2.length;
+  for (var i = 0; i < length; i++) {
+    final value1 = i < v1.length ? int.tryParse(v1[i]) ?? 0 : 0;
+    final value2 = i < v2.length ? int.tryParse(v2[i]) ?? 0 : 0;
+    if (value1 > value2) {
       return true;
     }
-    if (int.parse(v1[i]) < int.parse(v2[i])) {
+    if (value1 < value2) {
       return false;
     }
   }
   return false;
+}
+
+String _normalizeVersion(String version) {
+  var result = version.trim();
+  if (result.startsWith("v") || result.startsWith("V")) {
+    result = result.substring(1);
+  }
+  result = result.split("+").first;
+  result = result.split("-").first;
+  return result;
 }
