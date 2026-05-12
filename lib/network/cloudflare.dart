@@ -13,7 +13,9 @@ import 'cookie_jar.dart';
 class CloudflareException implements DioException {
   final String url;
 
-  CloudflareException(this.url);
+  final Map<String, String> headers;
+
+  CloudflareException(this.url, [this.headers = const {}]);
 
   @override
   String toString() {
@@ -23,7 +25,8 @@ class CloudflareException implements DioException {
   static CloudflareException? fromString(String message) {
     var match = RegExp(r"CloudflareException: (.+)").firstMatch(message);
     if (match == null) return null;
-    return CloudflareException(match.group(1)!);
+    var url = match.group(1)!;
+    return CloudflareException(url, _cloudflareRequestHeaders[url] ?? const {});
   }
 
   @override
@@ -93,17 +96,75 @@ class CloudflareInterceptor extends Interceptor {
 
   CloudflareException? _check(Response response) {
     if (response.headers['cf-mitigated']?.firstOrNull == "challenge") {
+      var uri = response.requestOptions.uri;
+      var url = uri.toString();
+      _cloudflareRequestHeaders[url] = _headersForBrowser(
+        response.requestOptions.headers,
+      );
       SingleInstanceCookieJar.instance?.deleteByName(
-        response.requestOptions.uri,
+        uri,
         'cf_clearance',
       );
-      return CloudflareException(response.requestOptions.uri.toString());
+      _unmarkCloudflareVerifiedHost(uri.host);
+      return CloudflareException(url, _cloudflareRequestHeaders[url]!);
     }
     return null;
   }
 }
 
 const _cloudflareVerifiedHostsKey = 'cloudflareVerifiedHosts';
+
+final _cloudflareRequestHeaders = <String, Map<String, String>>{};
+
+Map<String, String> _headersForBrowser(Map<String, dynamic> headers) {
+  const skippedHeaders = {
+    'accept-encoding',
+    'connection',
+    'content-length',
+    'cookie',
+    'host',
+  };
+  var result = <String, String>{};
+  headers.forEach((key, value) {
+    var normalizedKey = key.toLowerCase();
+    if (value == null || skippedHeaders.contains(normalizedKey)) {
+      return;
+    }
+    var normalizedValue = value.toString().trim();
+    if (normalizedValue.isNotEmpty) {
+      result[key] = normalizedValue;
+    }
+  });
+  return result;
+}
+
+bool _headersNeedInAppWebview(Map<String, String> headers) {
+  const browserControlledHeaders = {
+    'accept',
+    'accept-language',
+    'upgrade-insecure-requests',
+    'user-agent',
+  };
+  return headers.keys.any(
+    (key) => !browserControlledHeaders.contains(key.toLowerCase()),
+  );
+}
+
+bool _isCloudflareChallengePage(String head, String body) {
+  var content = "$head\n$body";
+  return content.contains('#challenge-success-text') ||
+      content.contains("#challenge-error-text") ||
+      content.contains("#challenge-form") ||
+      content.contains("challenge-platform") ||
+      content.contains("/cdn-cgi/challenge-platform/") ||
+      content.contains("window._cf_chl_opt") ||
+      content.contains("cf-challenge") ||
+      content.contains("cf-turnstile") ||
+      content.contains("cf_captcha_kind") ||
+      content.contains("cf_chl_") ||
+      content.contains("Just a moment") ||
+      content.contains("Checking if the site connection is secure");
+}
 
 void _applyBrowserHeaders(RequestOptions options) {
   _setHeader(options, 'User-Agent', appdata.implicitData['ua'] ?? webUA);
@@ -152,6 +213,18 @@ void _markCloudflareVerifiedHost(String host) {
   }
 }
 
+void _unmarkCloudflareVerifiedHost(String host) {
+  var data = appdata.implicitData[_cloudflareVerifiedHostsKey];
+  if (data is! List) {
+    return;
+  }
+  var hosts = data.whereType<String>().toSet();
+  if (hosts.remove(host)) {
+    appdata.implicitData[_cloudflareVerifiedHostsKey] = hosts.toList();
+    appdata.writeImplicitData();
+  }
+}
+
 String _cloudflareProfilePath(Uri uri) {
   var host = uri.host.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
   return "${App.dataPath}\\cloudflare_webview\\$host";
@@ -177,7 +250,9 @@ void _resetCloudflareProfile(Uri uri) {
 void passCloudflare(CloudflareException e, void Function() onFinished) async {
   var url = e.url;
   var uri = Uri.parse(url);
+  var requestHeaders = e.headers;
   var completed = false;
+  var verificationSucceeded = false;
   SingleInstanceCookieJar.instance?.deleteByName(uri, 'cf_clearance');
   _resetCloudflareProfile(uri);
 
@@ -186,15 +261,19 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
       return;
     }
     completed = true;
-    onFinished();
+    if (verificationSucceeded) {
+      _cloudflareRequestHeaders.remove(url);
+      onFinished();
+    }
   }
 
-  void saveCookies(Map<String, String> cookies) {
+  bool saveCookies(Map<String, String> cookies) {
     var domain = uri.host;
     var splits = domain.split('.');
     if (splits.length > 1) {
       domain = ".${splits[splits.length - 2]}.${splits[splits.length - 1]}";
     }
+    var hasClearance = cookies['cf_clearance']?.isNotEmpty == true;
     SingleInstanceCookieJar.instance?.deleteByName(uri, 'cf_clearance');
     SingleInstanceCookieJar.instance?.saveFromResponse(
       uri,
@@ -210,15 +289,18 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
     Log.info(
       "Cloudflare",
       "Saved ${cookies.length} cookies, "
-          "cf_clearance=${cookies.containsKey('cf_clearance')}",
+          "cf_clearance=$hasClearance",
     );
-    _markCloudflareVerifiedHost(uri.host);
+    if (hasClearance) {
+      _markCloudflareVerifiedHost(uri.host);
+    }
+    return hasClearance;
   }
 
-  // Desktop WebView can read cookies more reliably than in-app WebView on
-  // Windows, especially Cloudflare's HttpOnly clearance cookie.
+  // Desktop WebView can read cookies more reliably, but it cannot replay
+  // request headers like Referer that some image/CDN challenges require.
   var useDesktopWebview = false;
-  if (App.isDesktop) {
+  if (App.isDesktop && !_headersNeedInAppWebview(requestHeaders)) {
     try {
       useDesktopWebview = await DesktopWebview.isAvailable();
     } catch (e, s) {
@@ -241,16 +323,11 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
             await controller.evaluateJavascript("document.body.innerHTML") ??
             "";
         Log.info("Cloudflare", "Checking head: $head");
-        var isChallenging =
-            head.contains('#challenge-success-text') ||
-            head.contains("#challenge-error-text") ||
-            head.contains("#challenge-form") ||
-            body.contains("challenge-platform") ||
-            body.contains("window._cf_chl_opt");
+        var isChallenging = _isCloudflareChallengePage(head, body);
         if (!isChallenging) {
           Log.info(
             "Cloudflare",
-            "Cloudflare is passed due to there is no challenge css",
+            "No Cloudflare challenge markers found",
           );
           var ua = controller.userAgent;
           if (ua != null) {
@@ -258,9 +335,13 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
             appdata.writeImplicitData();
           }
           var cookiesMap = await controller.getCookies(url);
-          saveCookies(cookiesMap);
-          controller.close();
-          finish();
+          if (saveCookies(cookiesMap)) {
+            verificationSucceeded = true;
+            controller.close();
+            finish();
+          } else {
+            Log.info("Cloudflare", "Waiting for cf_clearance cookie");
+          }
         }
       },
       onClose: finish,
@@ -283,39 +364,43 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           ))?.toString() ??
           "";
       Log.info("Cloudflare", "Checking head: $head");
-      var isChallenging =
-          head.contains('#challenge-success-text') ||
-          head.contains("#challenge-error-text") ||
-          head.contains("#challenge-form") ||
-          body.contains("challenge-platform") ||
-          body.contains("window._cf_chl_opt");
+      var isChallenging = _isCloudflareChallengePage(head, body);
       if (!isChallenging) {
         Log.info(
           "Cloudflare",
-          "Cloudflare is passed due to there is no challenge css",
+          "No Cloudflare challenge markers found",
         );
-        success = true;
         var ua = await controller.getUA();
         if (ua != null) {
           appdata.implicitData['ua'] = ua;
           appdata.writeImplicitData();
         }
         var cookies = await controller.getCookies(url) ?? [];
+        var hasClearance = cookies.any(
+          (cookie) => cookie.name == 'cf_clearance' && cookie.value.isNotEmpty,
+        );
         SingleInstanceCookieJar.instance?.deleteByName(uri, 'cf_clearance');
         SingleInstanceCookieJar.instance?.saveFromResponse(uri, cookies);
         Log.info(
           "Cloudflare",
           "Saved ${cookies.length} cookies, "
-              "cf_clearance=${cookies.any((cookie) => cookie.name == 'cf_clearance')}",
+              "cf_clearance=$hasClearance",
         );
-        _markCloudflareVerifiedHost(uri.host);
-        App.rootPop();
+        if (hasClearance) {
+          _markCloudflareVerifiedHost(uri.host);
+          success = true;
+          verificationSucceeded = true;
+          App.rootPop();
+        } else {
+          Log.info("Cloudflare", "Waiting for cf_clearance cookie");
+        }
       }
     }
 
     await App.rootContext.to(
       () => AppWebview(
         initialUrl: url,
+        initialHeaders: requestHeaders.isEmpty ? null : requestHeaders,
         singlePage: true,
         onTitleChange: (title, controller) async {
           // Keep the webview open until page load stops; title changes can fire

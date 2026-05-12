@@ -55,6 +55,7 @@ extension WebviewExtension on InAppWebViewController {
 class AppWebview extends StatefulWidget {
   const AppWebview({
     required this.initialUrl,
+    this.initialHeaders,
     this.onTitleChange,
     this.onNavigation,
     this.singlePage = false,
@@ -64,6 +65,8 @@ class AppWebview extends StatefulWidget {
   });
 
   final String initialUrl;
+
+  final Map<String, String>? initialHeaders;
 
   final void Function(String title, InAppWebViewController controller)?
   onTitleChange;
@@ -189,7 +192,10 @@ class _AppWebviewState extends State<AppWebview> {
     return InAppWebView(
       webViewEnvironment: e,
       initialSettings: InAppWebViewSettings(isInspectable: true),
-      initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
+      initialUrlRequest: URLRequest(
+        url: WebUri(widget.initialUrl),
+        headers: widget.initialHeaders,
+      ),
       onTitleChanged: (c, t) {
         if (mounted) {
           setState(() {
