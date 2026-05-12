@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/foundation/comic_source_update_tasks.dart';
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/history_tasks.dart';
@@ -20,6 +21,7 @@ class _TasksPageState extends State<TasksPage> {
   final historyRefreshManager = HistoryRefreshTaskManager.instance;
   final relatedSourceManager = RelatedSourceTaskManager.instance;
   final sourceMigrationManager = SourceMigrationTaskManager.instance;
+  final comicSourceUpdateManager = ComicSourceUpdateTaskManager.instance;
 
   @override
   void initState() {
@@ -28,6 +30,7 @@ class _TasksPageState extends State<TasksPage> {
     historyRefreshManager.addListener(update);
     relatedSourceManager.addListener(update);
     sourceMigrationManager.addListener(update);
+    comicSourceUpdateManager.addListener(update);
   }
 
   @override
@@ -36,6 +39,7 @@ class _TasksPageState extends State<TasksPage> {
     historyRefreshManager.removeListener(update);
     relatedSourceManager.removeListener(update);
     sourceMigrationManager.removeListener(update);
+    comicSourceUpdateManager.removeListener(update);
     super.dispose();
   }
 
@@ -86,6 +90,9 @@ class _TasksPageState extends State<TasksPage> {
       ...sourceMigrationManager.currentTasks.map(
         (task) => buildSourceMigrationTaskCard(task, expanded: false),
       ),
+      ...comicSourceUpdateManager.currentTasks.map(
+        (task) => buildComicSourceUpdateTaskCard(task, expanded: false),
+      ),
     ];
     return buildTaskWidgets(widgets, "No current tasks".tl);
   }
@@ -103,6 +110,9 @@ class _TasksPageState extends State<TasksPage> {
       ),
       ...sourceMigrationManager.historyTasks.map(
         (task) => buildSourceMigrationTaskCard(task, expanded: false),
+      ),
+      ...comicSourceUpdateManager.historyTasks.map(
+        (task) => buildComicSourceUpdateTaskCard(task, expanded: false),
       ),
     ];
     return buildTaskWidgets(widgets, "No task history".tl);
@@ -313,6 +323,49 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
+  Widget buildComicSourceUpdateTaskCard(
+    ComicSourceUpdateTask task, {
+    required bool expanded,
+  }) {
+    var progressText = task.total == 0
+        ? "0%"
+        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    return Card(
+      elevation: 0,
+      color: context.colorScheme.surface,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        initiallyExpanded: expanded,
+        leading: Icon(task.isRunning ? Icons.update : Icons.history),
+        title: Text(
+          "Updating comic sources".tl,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          [comicSourceUpdateStatusText(task), progressText].join(" · "),
+        ),
+        trailing: task.isRunning
+            ? TextButton(
+                onPressed: () => comicSourceUpdateManager.cancel(task.id),
+                child: Text("Cancel".tl),
+              )
+            : null,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: task.isRunning && task.total == 0 ? null : task.progress,
+            ),
+          ),
+          const SizedBox(height: 8),
+          buildComicSourceUpdateSummary(task),
+          buildComicSourceUpdateDetails(task),
+        ],
+      ),
+    );
+  }
+
   Widget buildFollowUpdateSummary(FollowUpdateTask task) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -382,6 +435,25 @@ class _TasksPageState extends State<TasksPage> {
                 'total': task.total,
                 'checked': task.checked,
                 'migrated': task.migrated,
+                'failed': task.failed,
+              }),
+          style: ts.s14,
+        ),
+      ),
+    );
+  }
+
+  Widget buildComicSourceUpdateSummary(ComicSourceUpdateTask task) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          "Total: @total  Checked: @checked  Updated: @updated  Failed: @failed"
+              .tlParams({
+                'total': task.total,
+                'checked': task.checked,
+                'updated': task.updated,
                 'failed': task.failed,
               }),
           style: ts.s14,
@@ -561,6 +633,44 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
+  Widget buildComicSourceUpdateDetails(ComicSourceUpdateTask task) {
+    return buildSourceBox(
+      title: "Comic source update details".tl,
+      children: [
+        for (final detail in task.details) ...[
+          Text(detail.sourceName, maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 2),
+          Text(
+            [
+              "Version: @old -> @new".tlParams({
+                'old': detail.oldVersion,
+                'new': detail.newVersion ?? detail.targetVersion ?? '-',
+              }),
+              comicSourceUpdateDetailStatusText(detail.status),
+            ].join(" · "),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: ts.s12.withColor(
+              detail.status == 'failed'
+                  ? context.colorScheme.error
+                  : context.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (detail.error != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              detail.error!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: ts.s12.withColor(context.colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
   Widget buildSourceBox({required List<Widget> children, String? title}) {
     return Container(
       width: double.infinity,
@@ -617,6 +727,26 @@ class _TasksPageState extends State<TasksPage> {
       SourceMigrationTaskStatus.completed => "Completed".tl,
       SourceMigrationTaskStatus.canceled => "Canceled".tl,
       SourceMigrationTaskStatus.failed => "Failed".tl,
+    };
+  }
+
+  String comicSourceUpdateStatusText(ComicSourceUpdateTask task) {
+    return switch (task.status) {
+      ComicSourceUpdateTaskStatus.running => "Running".tl,
+      ComicSourceUpdateTaskStatus.completed => "Completed".tl,
+      ComicSourceUpdateTaskStatus.canceled => "Canceled".tl,
+      ComicSourceUpdateTaskStatus.failed => "Failed".tl,
+    };
+  }
+
+  String comicSourceUpdateDetailStatusText(String status) {
+    return switch (status) {
+      'pending' => "Pending".tl,
+      'updating' => "Updating".tl,
+      'updated' => "Success".tl,
+      'skipped' => "Skipped".tl,
+      'failed' => "Failed".tl,
+      _ => status,
     };
   }
 

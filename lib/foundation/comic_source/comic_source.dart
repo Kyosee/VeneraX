@@ -102,6 +102,12 @@ class ComicSourceManager with ChangeNotifier, Init {
 
   Map<String, String> get availableUpdates => Map.from(_availableUpdates);
 
+  void clearAvailableUpdate(String key) {
+    if (_availableUpdates.remove(key) != null) {
+      notifyListeners();
+    }
+  }
+
   void notifyStateChange() {
     notifyListeners();
   }
