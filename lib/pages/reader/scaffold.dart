@@ -980,13 +980,16 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
   void _checkBatteryAvailability() async {
     try {
       _batteryLevel = await _battery.batteryLevel;
+      if (!mounted) return;
       state = await _battery.batteryState;
+      if (!mounted) return;
       if (_batteryLevel > 0 && state != BatteryState.unknown) {
         setState(() {
           _hasBattery = true;
         });
         _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
           _battery.batteryLevel.then((level) {
+            if (!mounted) return;
             if (_batteryLevel != level) {
               setState(() {
                 _batteryLevel = level;
@@ -1095,6 +1098,7 @@ class _ClockWidgetState extends State<_ClockWidget> {
     _currentTime = _getCurrentTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final time = _getCurrentTime();
+      if (!mounted) return;
       if (_currentTime != time) {
         setState(() {
           _currentTime = time;

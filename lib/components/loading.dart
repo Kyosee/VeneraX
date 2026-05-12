@@ -73,8 +73,7 @@ class NetworkError extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (action != null)
-                    action!.paddingRight(8),
+                  if (action != null) action!.paddingRight(8),
                   FilledButton(
                     onPressed: retry,
                     child: Text(buttonText ?? 'Retry'.tl),
@@ -145,6 +144,7 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
         }
         retry++;
         await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return res;
       }
     }
   }
@@ -169,13 +169,16 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
       error = null;
     });
     loadDataWithRetry().then((value) async {
+      if (!mounted) return;
       if (value.success) {
         data = value.data;
         await onDataLoaded();
+        if (!mounted) return;
         setState(() {
           isLoading = false;
         });
       } else {
+        if (!mounted) return;
         setState(() {
           isLoading = false;
           error = value.errorMessage!;
@@ -198,6 +201,7 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
         if (value.success) {
           data = value.data;
           await onDataLoaded();
+          if (!mounted) return;
           setState(() {
             isLoading = false;
           });
