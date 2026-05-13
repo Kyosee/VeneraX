@@ -45,6 +45,16 @@ fn ensure_schema_upgrades(connection: &Connection) -> rusqlite::Result<()> {
         "#,
         [],
     )?;
+    connection.execute(
+        r#"
+        UPDATE tasks
+        SET status = 'failed',
+            error = 'server restarted before task finished',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'running'
+        "#,
+        [],
+    )?;
     Ok(())
 }
 

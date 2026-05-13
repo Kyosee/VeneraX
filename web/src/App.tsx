@@ -54,6 +54,7 @@ import {
   type SourceSettingsResponse,
   type SourceSettingValue,
   type SourceSummary,
+  type TaskSummary,
   type WebDavConfigResponse,
   type WebDavEntry,
   type WebDavUploadResponse,
@@ -81,6 +82,9 @@ import {
   recordHistory,
   searchComics,
   setFavorite,
+  getTasks,
+  markFollowUpdatesRead,
+  startFollowUpdatesCheck,
   updateSource,
   updateSourceSetting,
   uploadWebDav,
@@ -107,6 +111,7 @@ type AppData = {
   sources: SourceSummary[]
   library: LibraryResponse
   followUpdates: FollowUpdatesResponse
+  tasks: TaskSummary[]
 }
 
 type ComicOpenRequest = {
@@ -173,7 +178,8 @@ const emptyData: AppData = {
     favorites: [],
     favorite_folders: []
   },
-  followUpdates: { folder: null, updated_total: 0, all_total: 0, updated: [], all: [] }
+  followUpdates: { folder: null, updated_total: 0, all_total: 0, updated: [], all: [] },
+  tasks: []
 }
 
 const libraryPageStep = 100
@@ -186,6 +192,24 @@ function storedFollowFolder(settings: SettingsResponse, folders: FavoriteFolder[
   const value = settings.values.followUpdatesFolder
   if (typeof value !== 'string' || value.trim() === '') return null
   return folders.some((folder) => folder.name === value) ? value : null
+}
+
+function mergeTasks(current: TaskSummary[], incoming: TaskSummary) {
+  return [incoming, ...current.filter((task) => task.id !== incoming.id)]
+}
+
+function taskPayloadText(task: TaskSummary, key: string) {
+  const value = task.payload?.[key]
+  return typeof value === 'string' ? value : null
+}
+
+function taskPayloadNumber(task: TaskSummary, key: string) {
+  const value = task.payload?.[key]
+  return typeof value === 'number' ? value : 0
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function libraryItemKey(item: LibraryItem) {
@@ -260,17 +284,18 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [health, settings, sources, library] = await Promise.all([
+      const [health, settings, sources, library, tasks] = await Promise.all([
         getHealth(),
         getSettings(),
         getSources(),
-        getLibrary()
+        getLibrary(),
+        getTasks()
       ])
       const followFolder = storedFollowFolder(settings, library.favorite_folders)
       const followUpdates = followFolder
         ? await getFollowUpdates({ folder: followFolder })
         : emptyFollowUpdates(null)
-      setData({ health, settings, sources, library, followUpdates })
+      setData({ health, settings, sources, library, followUpdates, tasks: tasks.tasks })
       setActiveFavoriteFolder(null)
       setActiveFollowFolder(followFolder)
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
@@ -450,16 +475,75 @@ export default function App() {
     }
   }
 
+  const refreshTasks = useCallback(async () => {
+    const response = await getTasks()
+    setData((current) => ({ ...current, tasks: response.tasks }))
+    return response.tasks
+  }, [])
+
+  const refreshFollowFolder = async (folder: string) => {
+    try {
+      const followUpdates = await getFollowUpdates({ folder })
+      setData((current) => ({ ...current, followUpdates }))
+      setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '追更刷新失败')
+      throw err
+    }
+  }
+
   const refreshFollowUpdates = async () => {
     if (!activeFollowFolder) return
     setLoadingFollowUpdates(true)
     setError(null)
     try {
-      const followUpdates = await getFollowUpdates({ folder: activeFollowFolder })
+      await refreshFollowFolder(activeFollowFolder)
+    } finally {
+      setLoadingFollowUpdates(false)
+    }
+  }
+
+  const pollFollowTask = async (taskId: string, folder: string) => {
+    try {
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        await delay(2000)
+        const tasks = await refreshTasks()
+        const task = tasks.find((item) => item.id === taskId)
+        if (!task || task.status !== 'running') {
+          await refreshFollowFolder(folder)
+          return
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '追更任务轮询失败')
+    }
+  }
+
+  const checkFollowUpdates = async () => {
+    if (!activeFollowFolder) return
+    setLoadingFollowUpdates(true)
+    setError(null)
+    try {
+      const task = await startFollowUpdatesCheck({ folder: activeFollowFolder, force: true })
+      setData((current) => ({ ...current, tasks: mergeTasks(current.tasks, task) }))
+      if (task.status === 'running') void pollFollowTask(task.id, activeFollowFolder)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '追更检查启动失败')
+    } finally {
+      setLoadingFollowUpdates(false)
+    }
+  }
+
+  const markFollowUpdatesAsRead = async () => {
+    if (!activeFollowFolder) return
+    setLoadingFollowUpdates(true)
+    setError(null)
+    try {
+      const followUpdates = await markFollowUpdatesRead({ folder: activeFollowFolder })
       setData((current) => ({ ...current, followUpdates }))
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '追更刷新失败')
+      setError(err instanceof Error ? err.message : '追更标记失败')
     } finally {
       setLoadingFollowUpdates(false)
     }
@@ -510,6 +594,12 @@ export default function App() {
   }
 
   const showRootChrome = route.kind === 'main' && isPrimaryTabKey(activeTab)
+  const activeFollowTask = data.tasks.find(
+    (task) =>
+      task.kind === 'follow_updates' &&
+      task.status === 'running' &&
+      taskPayloadText(task, 'folder') === activeFollowFolder
+  )
 
   return (
     <div className="app-shell">
@@ -602,9 +692,12 @@ export default function App() {
               folders={data.library.favorite_folders}
               activeFolder={activeFollowFolder}
               loading={loadingFollowUpdates}
+              task={activeFollowTask ?? null}
               onBack={closeStandalonePage}
               onFolderSelect={selectFollowFolder}
               onRefresh={refreshFollowUpdates}
+              onCheck={checkFollowUpdates}
+              onMarkRead={markFollowUpdatesAsRead}
               onOpenComic={openDetail}
             />
           ) : null}
@@ -618,7 +711,9 @@ export default function App() {
               onOpenComic={openDetail}
             />
           ) : null}
-          {route.kind === 'main' && activeTab === 'tasks' ? <TasksView onBack={closeStandalonePage} /> : null}
+          {route.kind === 'main' && activeTab === 'tasks' ? (
+            <TasksView tasks={data.tasks} onBack={closeStandalonePage} onRefresh={refreshTasks} />
+          ) : null}
           {route.kind === 'main' && activeTab === 'settings' ? (
             <SettingsView
               settings={data.settings}
@@ -1558,18 +1653,24 @@ function UpdatesView({
   folders,
   activeFolder,
   loading,
+  task,
   onBack,
   onFolderSelect,
   onRefresh,
+  onCheck,
+  onMarkRead,
   onOpenComic
 }: {
   data: FollowUpdatesResponse
   folders: FavoriteFolder[]
   activeFolder: string | null
   loading: boolean
+  task: TaskSummary | null
   onBack: () => void
   onFolderSelect: (folder: string | null) => Promise<void>
   onRefresh: () => Promise<void>
+  onCheck: () => Promise<void>
+  onMarkRead: () => Promise<void>
   onOpenComic: (request: ComicOpenRequest) => void
 }) {
   const [activeList, setActiveList] = useState<'updated' | 'all'>('updated')
@@ -1605,15 +1706,38 @@ function UpdatesView({
           title="追更"
           onBack={onBack}
           actions={
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="刷新追更"
-              disabled={!activeFolder || loading}
-              onClick={() => void onRefresh()}
-            >
-              {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
-            </button>
+            <>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="检查更新"
+                title="检查更新"
+                disabled={!activeFolder || loading || task != null}
+                onClick={() => void onCheck()}
+              >
+                {task ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="全部已读"
+                title="全部已读"
+                disabled={!activeFolder || loading || data.updated_total === 0}
+                onClick={() => void onMarkRead()}
+              >
+                <CheckSquare size={18} />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="刷新追更"
+                title="刷新追更"
+                disabled={!activeFolder || loading}
+                onClick={() => void onRefresh()}
+              >
+                {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
+              </button>
+            </>
           }
         />
         <section className="follow-config-card">
@@ -1632,6 +1756,7 @@ function UpdatesView({
               <span>选择收藏夹后显示追更</span>
             </div>
           )}
+          {task ? <TaskProgressLine task={task} /> : null}
         </section>
         {activeFolder ? (
           <>
@@ -2481,13 +2606,87 @@ function categoryItemKey(tab: SourcePageTab, part: SourceCategoryPart, item: Sou
   return `${tab.source.source_key}:${part.title}:${item.label}:${item.category ?? ''}:${item.param ?? ''}`
 }
 
-function TasksView({ onBack }: { onBack: () => void }) {
+function TasksView({
+  tasks,
+  onBack,
+  onRefresh
+}: {
+  tasks: TaskSummary[]
+  onBack: () => void
+  onRefresh: () => Promise<TaskSummary[]>
+}) {
   return (
     <div className="view-stack">
-      <PageHeader title="任务" onBack={onBack} />
-      <Panel title="任务" action="0">
-        <EmptyLine icon={ClipboardList} text="暂无后台任务" />
+      <PageHeader
+        title="任务"
+        onBack={onBack}
+        actions={
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="刷新任务"
+            title="刷新任务"
+            onClick={() => void onRefresh()}
+          >
+            <RefreshCw size={18} />
+          </button>
+        }
+      />
+      <Panel title="任务" action={String(tasks.length)}>
+        {tasks.length === 0 ? (
+          <EmptyLine icon={ClipboardList} text="暂无后台任务" />
+        ) : (
+          <div className="task-list">
+            {tasks.map((task) => (
+              <TaskRow key={task.id} task={task} />
+            ))}
+          </div>
+        )}
       </Panel>
+    </div>
+  )
+}
+
+function TaskRow({ task }: { task: TaskSummary }) {
+  const folder = taskPayloadText(task, 'folder') ?? '未知'
+  const total = taskPayloadNumber(task, 'total')
+  const checked = taskPayloadNumber(task, 'checked')
+  const updated = taskPayloadNumber(task, 'updated')
+  const failed = taskPayloadNumber(task, 'failed')
+  const currentTitle = taskPayloadText(task, 'currentTitle')
+  const title = task.kind === 'follow_updates' ? `追更检查 · ${folder}` : task.kind
+  const statusText =
+    task.status === 'running' ? '运行中' : task.status === 'completed' ? '完成' : '异常'
+
+  return (
+    <div className="task-row">
+      <div className="task-row-main">
+        <strong>{title}</strong>
+        <span>{currentTitle ?? `${checked}/${total}`}</span>
+      </div>
+      <div className="task-row-meta">
+        <span>{statusText}</span>
+        <span>{checked}/{total}</span>
+        <span>更新 {updated}</span>
+        <span>失败 {failed}</span>
+      </div>
+      <progress value={task.progress} max={100} aria-label={title} />
+      {task.error ? <small>{task.error}</small> : null}
+    </div>
+  )
+}
+
+function TaskProgressLine({ task }: { task: TaskSummary }) {
+  const total = taskPayloadNumber(task, 'total')
+  const checked = taskPayloadNumber(task, 'checked')
+  const updated = taskPayloadNumber(task, 'updated')
+  const failed = taskPayloadNumber(task, 'failed')
+  return (
+    <div className="follow-task-summary">
+      <span>检查 {checked}/{total}</span>
+      <span>更新 {updated}</span>
+      <span>失败 {failed}</span>
+      <progress value={task.progress} max={100} aria-label="追更检查进度" />
     </div>
   )
 }

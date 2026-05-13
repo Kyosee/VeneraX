@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -14,8 +15,8 @@ use axum::{
     Json, Router,
 };
 use regex::Regex;
-use rusqlite::params;
-use serde_json::Value;
+use rusqlite::{params, OptionalExtension};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 
@@ -26,15 +27,16 @@ use crate::{
     models::{
         CapabilitiesResponse, Capability, ComicInfoRequest, ComicInfoResponse, ComicPagesRequest,
         ComicPagesResponse, DeleteResponse, FavoriteFolder, FavoriteWriteRequest,
-        FollowUpdatesQuery, FollowUpdatesResponse, HealthResponse, HistoryWriteRequest,
-        ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
-        ImportBackupPreviewRequest, ImportBackupPreviewResponse, ImportBackupsResponse,
-        LibraryItem, LibraryQuery, LibraryResponse, SearchRequest, SearchResponse, SettingsPatch,
+        FollowUpdatesCheckRequest, FollowUpdatesMarkReadRequest, FollowUpdatesQuery,
+        FollowUpdatesResponse, HealthResponse, HistoryWriteRequest, ImageProxyQuery,
+        ImportBackupApplyRequest, ImportBackupApplyResponse, ImportBackupPreviewRequest,
+        ImportBackupPreviewResponse, ImportBackupsResponse, LibraryItem, LibraryQuery,
+        LibraryResponse, RuntimeComicInfo, SearchRequest, SearchResponse, SettingsPatch,
         SettingsResponse, SourceCategoryRequest, SourceComicListResponse, SourceExploreRequest,
         SourcePageManifest, SourcePagesResponse, SourcePatchRequest, SourceSettingPatchRequest,
-        SourceSettingsResponse, SourceSummary, SourceWriteRequest, WebDavConfigRequest,
-        WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse, WebDavListRequest,
-        WebDavListResponse, WebDavUploadRequest, WebDavUploadResponse,
+        SourceSettingsResponse, SourceSummary, SourceWriteRequest, TaskSummary, TasksResponse,
+        WebDavConfigRequest, WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse,
+        WebDavListRequest, WebDavListResponse, WebDavUploadRequest, WebDavUploadResponse,
     },
     source_runtime,
     state::AppState,
@@ -48,6 +50,9 @@ pub fn api_router() -> Router<AppState> {
         .route("/settings", get(get_settings).put(update_settings))
         .route("/library", get(get_library))
         .route("/follow-updates", get(get_follow_updates))
+        .route("/follow-updates/check", post(start_follow_update_check))
+        .route("/follow-updates/mark-read", post(mark_follow_updates_read))
+        .route("/tasks", get(list_tasks))
         .route("/history", post(upsert_history))
         .route("/favorites", post(set_favorite))
         .route(
@@ -186,6 +191,85 @@ async fn get_follow_updates(
     Query(query): Query<FollowUpdatesQuery>,
 ) -> ApiResult<Json<FollowUpdatesResponse>> {
     Ok(Json(read_follow_updates(&state, query)?))
+}
+
+async fn start_follow_update_check(
+    State(state): State<AppState>,
+    Json(payload): Json<FollowUpdatesCheckRequest>,
+) -> ApiResult<Json<TaskSummary>> {
+    let folder = payload.folder.trim().to_string();
+    if folder.is_empty() {
+        return Err(ApiError::BadRequest("folder is required".to_string()));
+    }
+
+    ensure_favorite_folder(&state, &folder)?;
+    if let Some(task) = running_follow_update_task(&state, &folder)? {
+        return Ok(Json(task));
+    }
+
+    let force = payload.force.unwrap_or(true);
+    let limit = payload.limit.map(|value| value.clamp(1, 1000));
+    let dry_run = payload.dry_run.unwrap_or(false);
+    let total = count_follow_check_items(&state, &folder, force, limit)?;
+    let task_id = format!("follow-updates-{}", now_millis());
+    let payload = follow_task_payload(&folder, total, 0, 0, 0, None, dry_run);
+    insert_task(&state, &task_id, "follow_updates", &payload)?;
+
+    let worker_state = state.clone();
+    let worker_task_id = task_id.clone();
+    tokio::spawn(async move {
+        run_follow_update_task(worker_state, worker_task_id, folder, force, limit, dry_run).await;
+    });
+
+    Ok(Json(read_task(&state, &task_id)?))
+}
+
+async fn mark_follow_updates_read(
+    State(state): State<AppState>,
+    Json(payload): Json<FollowUpdatesMarkReadRequest>,
+) -> ApiResult<Json<FollowUpdatesResponse>> {
+    let folder = payload.folder.trim().to_string();
+    if folder.is_empty() {
+        return Err(ApiError::BadRequest("folder is required".to_string()));
+    }
+    ensure_favorite_folder(&state, &folder)?;
+    {
+        let database = state
+            .database
+            .lock()
+            .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+        database.execute(
+            "UPDATE favorite_folder_items SET has_new_update = 0 WHERE folder_name = ?1",
+            [&folder],
+        )?;
+    }
+    Ok(Json(read_follow_updates(
+        &state,
+        FollowUpdatesQuery {
+            folder: Some(folder),
+            limit: None,
+            offset: None,
+        },
+    )?))
+}
+
+async fn list_tasks(State(state): State<AppState>) -> ApiResult<Json<TasksResponse>> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let mut statement = database.prepare(
+        r#"
+        SELECT id, kind, status, progress, payload, error, created_at, updated_at
+        FROM tasks
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT 50
+        "#,
+    )?;
+    let rows = statement.query_map([], task_from_row)?;
+    Ok(Json(TasksResponse {
+        tasks: rows.collect::<Result<Vec<_>, _>>()?,
+    }))
 }
 
 async fn upsert_history(
@@ -1220,6 +1304,463 @@ fn read_follow_updates(
         all_total,
         updated,
         all,
+    })
+}
+
+struct FollowCheckItem {
+    folder_name: String,
+    source_key: String,
+    comic_id: String,
+    title: String,
+    subtitle: Option<String>,
+    cover: Option<String>,
+    last_update_time: Option<String>,
+    file_name: String,
+}
+
+async fn run_follow_update_task(
+    state: AppState,
+    task_id: String,
+    folder: String,
+    force: bool,
+    limit: Option<u32>,
+    dry_run: bool,
+) {
+    let result =
+        run_follow_update_task_inner(&state, &task_id, &folder, force, limit, dry_run).await;
+    if let Err(err) = result {
+        let payload = json!({ "folder": folder });
+        let _ = update_task(
+            &state,
+            &task_id,
+            "failed",
+            100,
+            &payload,
+            Some(err.to_string()),
+        );
+    }
+}
+
+async fn run_follow_update_task_inner(
+    state: &AppState,
+    task_id: &str,
+    folder: &str,
+    force: bool,
+    limit: Option<u32>,
+    dry_run: bool,
+) -> ApiResult<()> {
+    let items = read_follow_check_items(state, folder, force, limit)?;
+    let total = items.len() as u64;
+    if total == 0 {
+        let payload = follow_task_payload(folder, 0, 0, 0, 0, None, dry_run);
+        update_task(state, task_id, "completed", 100, &payload, None)?;
+        return Ok(());
+    }
+
+    let mut checked = 0;
+    let mut updated = 0;
+    let mut failed = 0;
+    for item in items {
+        let current_title = Some(item.title.clone());
+        match check_follow_item(state, &item, dry_run).await {
+            Ok(has_update) => {
+                if has_update {
+                    updated += 1;
+                }
+            }
+            Err(_) => {
+                failed += 1;
+            }
+        }
+        checked += 1;
+        let progress = ((checked * 100) / total).min(100) as u32;
+        let payload = follow_task_payload(
+            folder,
+            total,
+            checked,
+            updated,
+            failed,
+            current_title,
+            dry_run,
+        );
+        update_task(state, task_id, "running", progress, &payload, None)?;
+    }
+
+    let payload = follow_task_payload(folder, total, checked, updated, failed, None, dry_run);
+    update_task(state, task_id, "completed", 100, &payload, None)
+}
+
+async fn check_follow_item(
+    state: &AppState,
+    item: &FollowCheckItem,
+    dry_run: bool,
+) -> ApiResult<bool> {
+    let source_path = state.config.sources_dir().join(&item.file_name);
+    let info = source_runtime::comic_info(&state.config, &source_path, &item.comic_id).await?;
+    let marker = follow_update_marker(&info);
+    let has_update = marker
+        .as_deref()
+        .map(|next| !follow_markers_equivalent(item.last_update_time.as_deref(), next))
+        .unwrap_or(false);
+    let now = now_millis() as i64;
+    if dry_run {
+        return Ok(has_update);
+    }
+
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    database.execute(
+        r#"
+        UPDATE favorites
+        SET title = ?1, subtitle = ?2, cover = ?3
+        WHERE source_key = ?4 AND comic_id = ?5
+        "#,
+        params![
+            info.title.trim(),
+            info.subtitle.as_deref().or(item.subtitle.as_deref()),
+            info.cover.as_deref().or(item.cover.as_deref()),
+            &item.source_key,
+            &item.comic_id,
+        ],
+    )?;
+
+    if let Some(marker) = marker {
+        database.execute(
+            r#"
+            UPDATE favorite_folder_items
+            SET last_update_time = ?1,
+                has_new_update = CASE WHEN ?2 THEN 1 ELSE has_new_update END,
+                last_check_time = ?3
+            WHERE folder_name = ?4 AND source_key = ?5 AND comic_id = ?6
+            "#,
+            params![
+                marker,
+                has_update,
+                now,
+                &item.folder_name,
+                &item.source_key,
+                &item.comic_id,
+            ],
+        )?;
+    } else {
+        database.execute(
+            r#"
+            UPDATE favorite_folder_items
+            SET last_check_time = ?1
+            WHERE folder_name = ?2 AND source_key = ?3 AND comic_id = ?4
+            "#,
+            params![now, &item.folder_name, &item.source_key, &item.comic_id],
+        )?;
+    }
+
+    Ok(has_update)
+}
+
+fn read_follow_check_items(
+    state: &AppState,
+    folder: &str,
+    force: bool,
+    limit: Option<u32>,
+) -> ApiResult<Vec<FollowCheckItem>> {
+    let cutoff = now_millis().saturating_sub(24 * 60 * 60 * 1000) as i64;
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let mut statement = database.prepare(
+        r#"
+        SELECT i.folder_name, f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+               i.last_update_time, s.file_name
+        FROM favorite_folder_items i
+        JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+        JOIN comic_sources s ON s.source_key = i.source_key AND s.enabled = 1
+        WHERE i.folder_name = ?1
+          AND (?2 OR i.last_check_time IS NULL OR i.last_check_time < ?3)
+        ORDER BY i.created_at DESC
+        LIMIT ?4
+        "#,
+    )?;
+    let rows = statement.query_map(
+        params![folder, force, cutoff, i64::from(limit.unwrap_or(u32::MAX))],
+        |row| {
+            Ok(FollowCheckItem {
+                folder_name: row.get(0)?,
+                source_key: row.get(1)?,
+                comic_id: row.get(2)?,
+                title: row.get(3)?,
+                subtitle: row.get(4)?,
+                cover: row.get(5)?,
+                last_update_time: row.get(6)?,
+                file_name: row.get(7)?,
+            })
+        },
+    )?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+fn count_follow_check_items(
+    state: &AppState,
+    folder: &str,
+    force: bool,
+    limit: Option<u32>,
+) -> ApiResult<u64> {
+    let cutoff = now_millis().saturating_sub(24 * 60 * 60 * 1000) as i64;
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let count = database.query_row(
+        r#"
+        SELECT COUNT(*)
+        FROM favorite_folder_items i
+        JOIN comic_sources s ON s.source_key = i.source_key AND s.enabled = 1
+        WHERE i.folder_name = ?1
+          AND (?2 OR i.last_check_time IS NULL OR i.last_check_time < ?3)
+        "#,
+        params![folder, force, cutoff],
+        |row| row.get(0),
+    )?;
+    Ok(limit.map(u64::from).map_or(count, |value| count.min(value)))
+}
+
+fn ensure_favorite_folder(state: &AppState, folder: &str) -> ApiResult<()> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let exists = database
+        .query_row(
+            "SELECT 1 FROM favorite_folders WHERE folder_name = ?1",
+            [folder],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if exists {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(
+            "favorite folder not found".to_string(),
+        ))
+    }
+}
+
+fn follow_update_marker(info: &RuntimeComicInfo) -> Option<String> {
+    raw_update_time(&info.raw).or_else(|| chapter_update_marker(info))
+}
+
+fn raw_update_time(raw: &Value) -> Option<String> {
+    let keys = [
+        "updateTime",
+        "update_time",
+        "lastUpdate",
+        "last_update",
+        "uploadTime",
+        "upload_time",
+    ];
+    for key in keys {
+        if let Some(value) = raw.get(key).and_then(Value::as_str) {
+            if let Some(date) = normalize_update_date(value) {
+                return Some(date);
+            }
+        }
+    }
+    let accepted = ["更新", "最後更新", "最后更新", "update", "last update"];
+    if let Some(tags) = raw.get("tags").and_then(Value::as_object) {
+        for (key, value) in tags {
+            if !accepted.iter().any(|name| key.eq_ignore_ascii_case(name)) {
+                continue;
+            }
+            if let Some(date) = value
+                .as_array()
+                .and_then(|items| items.first())
+                .and_then(Value::as_str)
+                .and_then(normalize_update_date)
+            {
+                return Some(date);
+            }
+            if let Some(date) = value.as_str().and_then(normalize_update_date) {
+                return Some(date);
+            }
+        }
+    }
+    None
+}
+
+fn normalize_update_date(value: &str) -> Option<String> {
+    let date = value.split([' ', 'T']).next()?.trim();
+    let mut parts = date.split('-');
+    let year = parts.next()?.parse::<u32>().ok()?;
+    let month = parts.next()?.parse::<u32>().ok()?;
+    let day = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some()
+        || !(2000..=3000).contains(&year)
+        || !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+    {
+        return None;
+    }
+    Some(format!("{year}-{month}-{day}"))
+}
+
+fn chapter_update_marker(info: &RuntimeComicInfo) -> Option<String> {
+    if info.episodes.is_empty() {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    for episode in &info.episodes {
+        hasher.update(episode.id.as_bytes());
+        hasher.update([0]);
+        hasher.update(episode.title.as_bytes());
+        hasher.update([0]);
+    }
+    let digest = format!("{:x}", hasher.finalize());
+    Some(format!(
+        "__chapters__{}_{}",
+        info.episodes.len(),
+        &digest[..8]
+    ))
+}
+
+fn follow_markers_equivalent(current: Option<&str>, next: &str) -> bool {
+    if current == Some(next) {
+        return true;
+    }
+    match current.and_then(chapter_marker_count) {
+        Some(current_count) => chapter_marker_count(next) == Some(current_count),
+        None => false,
+    }
+}
+
+fn chapter_marker_count(marker: &str) -> Option<usize> {
+    marker
+        .strip_prefix("__chapters__")?
+        .split('_')
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn follow_task_payload(
+    folder: &str,
+    total: u64,
+    checked: u64,
+    updated: u64,
+    failed: u64,
+    current_title: Option<String>,
+    dry_run: bool,
+) -> Value {
+    json!({
+        "folder": folder,
+        "total": total,
+        "checked": checked,
+        "updated": updated,
+        "failed": failed,
+        "currentTitle": current_title,
+        "dryRun": dry_run
+    })
+}
+
+fn insert_task(state: &AppState, id: &str, kind: &str, payload: &Value) -> ApiResult<()> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    database.execute(
+        r#"
+        INSERT INTO tasks (id, kind, status, progress, payload, created_at, updated_at)
+        VALUES (?1, ?2, 'running', 0, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        "#,
+        params![id, kind, payload.to_string()],
+    )?;
+    Ok(())
+}
+
+fn update_task(
+    state: &AppState,
+    id: &str,
+    status: &str,
+    progress: u32,
+    payload: &Value,
+    error: Option<String>,
+) -> ApiResult<()> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    database.execute(
+        r#"
+        UPDATE tasks
+        SET status = ?1, progress = ?2, payload = ?3, error = ?4, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?5
+        "#,
+        params![status, progress, payload.to_string(), error, id],
+    )?;
+    Ok(())
+}
+
+fn running_follow_update_task(state: &AppState, folder: &str) -> ApiResult<Option<TaskSummary>> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let mut statement = database.prepare(
+        r#"
+        SELECT id, kind, status, progress, payload, error, created_at, updated_at
+        FROM tasks
+        WHERE kind = 'follow_updates' AND status = 'running'
+        ORDER BY updated_at DESC
+        "#,
+    )?;
+    let rows = statement.query_map([], task_from_row)?;
+    for row in rows {
+        let task = row?;
+        if task.payload.get("folder").and_then(Value::as_str) == Some(folder) {
+            return Ok(Some(task));
+        }
+    }
+    Ok(None)
+}
+
+fn read_task(state: &AppState, id: &str) -> ApiResult<TaskSummary> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    database
+        .query_row(
+            r#"
+            SELECT id, kind, status, progress, payload, error, created_at, updated_at
+            FROM tasks
+            WHERE id = ?1
+            "#,
+            [id],
+            task_from_row,
+        )
+        .map_err(ApiError::Database)
+}
+
+fn task_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskSummary> {
+    let payload_text: String = row.get(4)?;
+    let payload = serde_json::from_str::<Value>(&payload_text).unwrap_or(Value::Null);
+    Ok(TaskSummary {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        status: row.get(2)?,
+        progress: row.get::<_, i64>(3)?.clamp(0, 100) as u32,
+        payload,
+        error: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 

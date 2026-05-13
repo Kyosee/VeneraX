@@ -483,6 +483,42 @@ button {
   padding-left: 16px;
 }
 
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.task-row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-row:last-child {
+  border-bottom: 0;
+}
+
+.task-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.task-row-main strong,
+.task-row-main span,
+.task-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row small {
+  color: var(--danger);
+}
+
 .follow-config-card {
   display: grid;
   gap: 8px;
@@ -512,6 +548,23 @@ button {
 
 .follow-config-stats span {
   min-width: 0;
+}
+
+.follow-task-summary,
+.task-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.follow-task-summary progress,
+.task-row progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--primary);
 }
 
 .app-tabs {

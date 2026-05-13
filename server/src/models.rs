@@ -344,6 +344,36 @@ pub struct FollowUpdatesResponse {
 }
 
 #[derive(Deserialize)]
+pub struct FollowUpdatesCheckRequest {
+    pub folder: String,
+    pub force: Option<bool>,
+    pub limit: Option<u32>,
+    pub dry_run: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct FollowUpdatesMarkReadRequest {
+    pub folder: String,
+}
+
+#[derive(Serialize)]
+pub struct TaskSummary {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub progress: u32,
+    pub payload: Value,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize)]
+pub struct TasksResponse {
+    pub tasks: Vec<TaskSummary>,
+}
+
+#[derive(Deserialize)]
 pub struct HistoryWriteRequest {
     pub source_key: String,
     pub comic_id: String,

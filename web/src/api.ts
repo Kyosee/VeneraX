@@ -230,6 +230,32 @@ export type FollowUpdatesQuery = {
   offset?: number
 }
 
+export type FollowUpdatesCheckRequest = {
+  folder: string
+  force?: boolean
+  limit?: number
+  dry_run?: boolean
+}
+
+export type FollowUpdatesMarkReadRequest = {
+  folder: string
+}
+
+export type TaskSummary = {
+  id: string
+  kind: string
+  status: string
+  progress: number
+  payload: Record<string, unknown> | null
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TasksResponse = {
+  tasks: TaskSummary[]
+}
+
 export type HistoryWriteRequest = {
   source_key: string
   comic_id: string
@@ -399,6 +425,24 @@ export function getFollowUpdates(query?: FollowUpdatesQuery) {
   })
   const suffix = params.toString()
   return request<FollowUpdatesResponse>(`/api/follow-updates${suffix ? `?${suffix}` : ''}`)
+}
+
+export function startFollowUpdatesCheck(payload: FollowUpdatesCheckRequest) {
+  return request<TaskSummary>('/api/follow-updates/check', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function markFollowUpdatesRead(payload: FollowUpdatesMarkReadRequest) {
+  return request<FollowUpdatesResponse>('/api/follow-updates/mark-read', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function getTasks() {
+  return request<TasksResponse>('/api/tasks')
 }
 
 export function recordHistory(payload: HistoryWriteRequest) {
