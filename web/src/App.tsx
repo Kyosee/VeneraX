@@ -36,6 +36,8 @@ import {
   type LibraryResponse,
   type SearchComic,
   type SettingsResponse,
+  type SourcePageManifest,
+  type SourcePagesResponse,
   type SourceSummary,
   type WebDavConfigResponse,
   type WebDavEntry,
@@ -46,6 +48,7 @@ import {
   getHealth,
   getLibrary,
   getSettings,
+  getSourcePages,
   getSources,
   getWebDavConfig,
   listImportBackups,
@@ -400,8 +403,12 @@ export default function App() {
               onRecordHistory={saveHistory}
             />
           ) : null}
-          {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
-          {activeTab === 'categories' ? <CollectionView title="分类" icon={Tags} /> : null}
+          {activeTab === 'explore' ? (
+            <SourcePagesView title="发现" icon={Compass} kind="explore" />
+          ) : null}
+          {activeTab === 'categories' ? (
+            <SourcePagesView title="分类" icon={Tags} kind="categories" />
+          ) : null}
           {activeTab === 'updates' ? (
             <UpdatesView
               data={data.followUpdates}
@@ -475,7 +482,7 @@ function BottomNav({
 }) {
   return (
     <nav className="bottom-nav" aria-label="底部导航">
-      {[primaryNav[0], primaryNav[1], primaryNav[2], actionNav[0], actionNav[2]].map((item) => (
+      {[...primaryNav, ...actionNav].map((item) => (
         <NavButton key={item.key} item={item} active={activeTab === item.key} onSelect={onSelect} />
       ))}
     </nav>
@@ -1501,12 +1508,177 @@ function LibraryReader({
   )
 }
 
-function CollectionView({ title, icon: Icon }: { title: string; icon: typeof Home }) {
+function SourcePagesView({
+  title,
+  icon: Icon,
+  kind
+}: {
+  title: string
+  icon: typeof Home
+  kind: 'explore' | 'categories'
+}) {
+  const [data, setData] = useState<SourcePagesResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(null)
+    getSourcePages()
+      .then((next) => {
+        if (active) setData(next)
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : '源页面加载失败')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const sources = useMemo(() => {
+    const items = data?.sources ?? []
+    return items.filter((source) =>
+      kind === 'explore'
+        ? source.explore_pages.length > 0
+        : (source.category?.parts.some((part) => part.items.length > 0) ?? false)
+    )
+  }, [data, kind])
+
+  const tabs = useMemo<SourcePageTab[]>(() => {
+    if (kind === 'explore') {
+      return sources.flatMap((source) =>
+        source.explore_pages.map((page, index) => ({
+          key: `${source.source_key}:explore:${index}:${page.title}`,
+          title: page.title,
+          subtitle: page.title === source.source_name ? null : source.source_name,
+          source,
+          page
+        }))
+      )
+    }
+
+    return sources.map((source) => ({
+      key: `${source.source_key}:categories`,
+      title: source.category?.title ?? source.source_name,
+      subtitle: source.category?.title === source.source_name ? null : source.source_name,
+      source
+    }))
+  }, [kind, sources])
+
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      if (selectedKey !== null) setSelectedKey(null)
+      return
+    }
+    if (!tabs.some((tab) => tab.key === selectedKey)) {
+      setSelectedKey(tabs[0].key)
+    }
+  }, [selectedKey, tabs])
+
+  const selectedTab = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0]
+
   return (
     <div className="view-stack">
-      <Panel title={title} action="0">
-        <EmptyLine icon={Icon} text="暂无条目" />
+      <Panel title={title} action={loading ? '...' : String(tabs.length)}>
+        {error ? <EmptyLine icon={WifiOff} text={error} /> : null}
+        {!error && loading ? <EmptyLine icon={Loader2} text="加载中" /> : null}
+        {!error && !loading && tabs.length === 0 ? <EmptyLine icon={Icon} text="暂无条目" /> : null}
+        {!error && !loading && selectedTab ? (
+          <>
+            <SourceAppTabs tabs={tabs} selectedKey={selectedTab.key} onSelect={setSelectedKey} />
+            <SourcePageContent tab={selectedTab} kind={kind} />
+          </>
+        ) : null}
       </Panel>
+    </div>
+  )
+}
+
+type SourcePageTab = {
+  key: string
+  title: string
+  subtitle: string | null
+  source: SourcePageManifest
+  page?: SourcePageManifest['explore_pages'][number]
+}
+
+function SourceAppTabs({
+  tabs,
+  selectedKey,
+  onSelect
+}: {
+  tabs: SourcePageTab[]
+  selectedKey: string
+  onSelect: (key: string) => void
+}) {
+  return (
+    <div className="source-app-tabs" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          className={tab.key === selectedKey ? 'source-app-tab selected' : 'source-app-tab'}
+          key={tab.key}
+          type="button"
+          role="tab"
+          aria-selected={tab.key === selectedKey}
+          onClick={() => onSelect(tab.key)}
+        >
+          <span>{tab.title}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SourcePageContent({
+  tab,
+  kind
+}: {
+  tab: SourcePageTab
+  kind: 'explore' | 'categories'
+}) {
+  if (kind === 'explore') {
+    return (
+      <div className="source-explore-page">
+        <div className="source-section-title">
+          <strong>{tab.title}</strong>
+          {tab.subtitle ? <span>{tab.subtitle}</span> : null}
+        </div>
+        <EmptyLine icon={Compass} text="暂无条目" />
+      </div>
+    )
+  }
+
+  const categoryParts = tab.source.category?.parts ?? []
+
+  return (
+    <div className="category-app-page">
+      {categoryParts.map((part) => {
+        const visible = part.items.slice(0, 60)
+        const remaining = part.items.length - visible.length
+        return (
+          <section className="category-app-section" key={`${tab.source.source_key}:${part.title}`}>
+            <div className="source-section-title">
+              <strong>{part.title}</strong>
+              <span>{part.items.length}</span>
+            </div>
+            <div className="category-chip-list">
+              {visible.map((item) => (
+                <span className="category-chip" key={`${part.title}:${item.label}:${item.param ?? ''}`}>
+                  {item.label}
+                </span>
+              ))}
+              {remaining > 0 ? <span className="category-chip muted">+{remaining}</span> : null}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }

@@ -45,6 +45,40 @@ export type SourcePatchRequest = {
   enabled?: boolean
 }
 
+export type SourceExplorePage = {
+  title: string
+  page_type: string | null
+}
+
+export type SourceCategoryItem = {
+  label: string
+  param: string | null
+}
+
+export type SourceCategoryPart = {
+  title: string
+  item_type: string | null
+  items: SourceCategoryItem[]
+}
+
+export type SourceCategoryManifest = {
+  key: string | null
+  title: string
+  parts: SourceCategoryPart[]
+}
+
+export type SourcePageManifest = {
+  source_key: string
+  source_name: string
+  explore_pages: SourceExplorePage[]
+  category: SourceCategoryManifest | null
+  error: string | null
+}
+
+export type SourcePagesResponse = {
+  sources: SourcePageManifest[]
+}
+
 export type SearchComic = {
   id: string
   title: string
@@ -366,6 +400,10 @@ export function applyImportBackup(path: string) {
 
 export function getSources() {
   return request<SourceSummary[]>('/api/sources')
+}
+
+export function getSourcePages() {
+  return request<SourcePagesResponse>('/api/source-pages')
 }
 
 export function saveSource(payload: SourceWriteRequest) {

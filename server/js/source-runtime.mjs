@@ -147,6 +147,13 @@ function log(level, title, content) {
   console.error('[source]', level, title, content)
 }
 
+function randomInt(min, max) {
+  const floorMin = Math.ceil(Number(min) || 0)
+  const floorMax = Math.floor(Number(max) || 0)
+  if (floorMax <= floorMin) return floorMin
+  return Math.floor(Math.random() * (floorMax - floorMin + 1)) + floorMin
+}
+
 function json(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
 }
@@ -726,6 +733,7 @@ function createContext() {
     HtmlNode,
     log,
     Network,
+    randomInt,
     URL,
     URLSearchParams,
     TextDecoder,
@@ -745,7 +753,7 @@ function createContext() {
   return vm.createContext(sandbox)
 }
 
-async function loadSource(sourcePath) {
+async function loadSource(sourcePath, { runInit = true } = {}) {
   const code = await fs.readFile(sourcePath, 'utf8')
   const match = code.match(/\bclass\s+([A-Za-z_$][\w$]*)\s+extends\s+ComicSource\b/)
   if (!match) {
@@ -760,7 +768,7 @@ async function loadSource(sourcePath) {
   const SourceClass = context.__SourceClass
   const source = new SourceClass()
   source.__bindData(dataPathForSource(sourcePath), await readSourceData(sourcePath))
-  if (typeof source.init === 'function') {
+  if (runInit && typeof source.init === 'function') {
     await source.init()
   }
   return source
@@ -846,6 +854,84 @@ async function comicPages(source, comicId, episodeId) {
   }
 }
 
+function sourceManifest(source) {
+  return {
+    explore_pages: normalizeExplorePages(source.explore),
+    category: normalizeCategory(source.category)
+  }
+}
+
+function normalizeExplorePages(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((page, index) => {
+      const raw = page && typeof page === 'object' ? page : { title: page }
+      return {
+        title: text(raw.title ?? raw.name ?? raw.label ?? `Page ${index + 1}`) ?? `Page ${index + 1}`,
+        page_type: text(raw.type)
+      }
+    })
+    .filter((page) => page.title)
+}
+
+function normalizeCategory(value) {
+  if (!value || typeof value !== 'object') return null
+  const parts = Array.isArray(value.parts)
+    ? value.parts
+    : Array.isArray(value.categories)
+      ? [{ name: value.title ?? value.name, categories: value.categories, categoryParams: value.categoryParams }]
+      : []
+  const normalizedParts = parts.map(normalizeCategoryPart).filter((part) => part.items.length > 0)
+  if (normalizedParts.length === 0) return null
+  return {
+    key: text(value.key ?? value.title ?? value.name),
+    title: text(value.title ?? value.name ?? value.key ?? '分类') ?? '分类',
+    parts: normalizedParts
+  }
+}
+
+function normalizeCategoryPart(part, index) {
+  const raw = part && typeof part === 'object' ? part : { name: `分类 ${index + 1}` }
+  const categories = normalizeCategoryItems(raw.categories ?? raw.items ?? raw.values)
+  const params = normalizeStringList(raw.categoryParams ?? raw.params ?? raw.parameters)
+  return {
+    title: text(raw.name ?? raw.title ?? raw.label ?? `分类 ${index + 1}`) ?? `分类 ${index + 1}`,
+    item_type: text(raw.itemType ?? raw.type),
+    items: categories.map((item, itemIndex) => ({
+      label: item.label,
+      param: item.param ?? params[itemIndex] ?? null
+    }))
+  }
+}
+
+function normalizeCategoryItems(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (item && typeof item === 'object') {
+          const label = text(item.label ?? item.title ?? item.name ?? item.text ?? item.value ?? item.id)
+          return label ? { label, param: text(item.param ?? item.value ?? item.id) } : null
+        }
+        const label = text(item)
+        return label ? { label, param: null } : null
+      })
+      .filter(Boolean)
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).map(([key, label]) => ({
+      label: text(label) ?? key,
+      param: key
+    }))
+  }
+  return []
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
+  if (value && typeof value === 'object') return Object.keys(value)
+  return []
+}
+
 function normalizeSearchResult(result) {
   const comics = Array.isArray(result?.comics)
     ? result.comics
@@ -915,9 +1001,11 @@ function isEpisodeObject(value) {
 
 async function main() {
   const [action, sourcePath, first = '', second = '1'] = process.argv.slice(2)
-  const source = await loadSource(sourcePath)
+  const source = await loadSource(sourcePath, { runInit: action !== 'manifest' })
   let data
-  if (action === 'search') {
+  if (action === 'manifest') {
+    data = sourceManifest(source)
+  } else if (action === 'search') {
     data = await search(source, first, Number.parseInt(second, 10) || 1)
   } else if (action === 'info') {
     data = await comicInfo(source, first)

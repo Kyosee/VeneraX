@@ -157,6 +157,52 @@ pub struct ComicPagesResponse {
     pub images: Vec<String>,
 }
 
+#[derive(Default, Serialize, Deserialize)]
+pub struct SourceExplorePage {
+    pub title: String,
+    pub page_type: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct SourceCategoryItem {
+    pub label: String,
+    pub param: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct SourceCategoryPart {
+    pub title: String,
+    pub item_type: Option<String>,
+    pub items: Vec<SourceCategoryItem>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct SourceCategoryManifest {
+    pub key: Option<String>,
+    pub title: String,
+    pub parts: Vec<SourceCategoryPart>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct RuntimeSourcePageManifest {
+    pub explore_pages: Vec<SourceExplorePage>,
+    pub category: Option<SourceCategoryManifest>,
+}
+
+#[derive(Serialize)]
+pub struct SourcePageManifest {
+    pub source_key: String,
+    pub source_name: String,
+    pub explore_pages: Vec<SourceExplorePage>,
+    pub category: Option<SourceCategoryManifest>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SourcePagesResponse {
+    pub sources: Vec<SourcePageManifest>,
+}
+
 #[derive(Serialize)]
 pub struct LibraryItem {
     pub source_key: String,

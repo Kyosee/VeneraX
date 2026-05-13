@@ -26,9 +26,9 @@ use crate::{
         ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
         ImportBackupPreviewRequest, ImportBackupPreviewResponse, ImportBackupsResponse,
         LibraryItem, LibraryQuery, LibraryResponse, SearchRequest, SearchResponse, SettingsPatch,
-        SettingsResponse, SourcePatchRequest, SourceSummary, SourceWriteRequest,
-        WebDavConfigRequest, WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse,
-        WebDavListRequest, WebDavListResponse,
+        SettingsResponse, SourcePageManifest, SourcePagesResponse, SourcePatchRequest,
+        SourceSummary, SourceWriteRequest, WebDavConfigRequest, WebDavConfigResponse,
+        WebDavDownloadRequest, WebDavDownloadResponse, WebDavListRequest, WebDavListResponse,
     },
     source_runtime,
     state::AppState,
@@ -56,6 +56,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/imports/preview", post(preview_import_backup))
         .route("/imports/apply", post(apply_import_backup))
         .route("/sources", get(list_sources).post(upsert_source))
+        .route("/source-pages", get(list_source_pages))
         .route("/sources/{key}", patch(update_source).delete(delete_source))
         .route("/search", post(search_comics))
         .route("/comic/info", post(comic_info))
@@ -563,6 +564,55 @@ async fn list_sources(State(state): State<AppState>) -> ApiResult<Json<Vec<Sourc
     }
 
     Ok(Json(sources))
+}
+
+async fn list_source_pages(State(state): State<AppState>) -> ApiResult<Json<SourcePagesResponse>> {
+    let rows = {
+        let database = state
+            .database
+            .lock()
+            .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+        let mut statement = database.prepare(
+            r#"
+            SELECT source_key, name, file_name
+            FROM comic_sources
+            WHERE enabled = 1
+            ORDER BY name COLLATE NOCASE
+            "#,
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let mut sources = Vec::with_capacity(rows.len());
+    for (source_key, source_name, file_name) in rows {
+        let source_path = state.config.sources_dir().join(file_name);
+        let manifest = source_runtime::manifest(&state.config, &source_path).await;
+        match manifest {
+            Ok(manifest) => sources.push(SourcePageManifest {
+                source_key,
+                source_name,
+                explore_pages: manifest.explore_pages,
+                category: manifest.category,
+                error: None,
+            }),
+            Err(err) => sources.push(SourcePageManifest {
+                source_key,
+                source_name,
+                explore_pages: Vec::new(),
+                category: None,
+                error: Some(err.to_string()),
+            }),
+        }
+    }
+
+    Ok(Json(SourcePagesResponse { sources }))
 }
 
 async fn upsert_source(

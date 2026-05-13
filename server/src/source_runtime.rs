@@ -6,7 +6,7 @@ use tokio::{process::Command, time::timeout};
 use crate::{
     config::AppConfig,
     error::{ApiError, ApiResult},
-    models::{RuntimeComicInfo, RuntimeComicPages, RuntimeSearchResult},
+    models::{RuntimeComicInfo, RuntimeComicPages, RuntimeSearchResult, RuntimeSourcePageManifest},
 };
 
 #[derive(Deserialize)]
@@ -44,6 +44,14 @@ pub async fn comic_pages(
 ) -> ApiResult<RuntimeComicPages> {
     let source = source_path.display().to_string();
     run_runtime(config, &["pages", source.as_str(), comic_id, episode_id]).await
+}
+
+pub async fn manifest(
+    config: &AppConfig,
+    source_path: &Path,
+) -> ApiResult<RuntimeSourcePageManifest> {
+    let source = source_path.display().to_string();
+    run_runtime(config, &["manifest", source.as_str()]).await
 }
 
 async fn run_runtime<T>(config: &AppConfig, args: &[&str]) -> ApiResult<T>
