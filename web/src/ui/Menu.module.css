@@ -1,0 +1,7 @@
+.menu { list-style: none; margin: 0; padding: 0; }
+.item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 16px;
+        background: transparent; border: none; cursor: pointer; color: inherit;
+        font: var(--md-typescale-body-medium); text-align: left; }
+.item:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.danger { color: var(--md-sys-color-error); }
+.icon { width: 18px; height: 18px; }

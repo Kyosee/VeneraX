@@ -1,0 +1,3 @@
+.flyout { position: fixed; background: var(--md-sys-color-surface-container-highest);
+          color: var(--md-sys-color-on-surface); border-radius: var(--md-shape-xs);
+          box-shadow: var(--md-elev-2); z-index: 1000; min-width: 112px; padding: 8px 0; }

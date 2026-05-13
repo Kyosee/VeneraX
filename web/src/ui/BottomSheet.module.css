@@ -1,0 +1,7 @@
+.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / .32); z-index: 1000;
+         display: flex; align-items: flex-end; }
+.sheet { background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface);
+         border-radius: var(--md-shape-xl) var(--md-shape-xl) 0 0; width: 100%;
+         padding: 8px 24px 24px; max-height: 80vh; overflow-y: auto; }
+.handle { width: 32px; height: 4px; border-radius: var(--md-shape-full);
+          background: var(--md-sys-color-on-surface-variant); opacity: 0.4; margin: 8px auto 16px; }
