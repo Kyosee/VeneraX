@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+
+FROM node:25-bookworm AS web-builder
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm config set registry "$NPM_REGISTRY" && npm ci --prefer-offline --no-audit
+COPY web/ ./
+RUN npm run build
+
+FROM rust:1.88-bookworm AS server-builder
+ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+WORKDIR /app/server
+COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/.cargo ./.cargo
+COPY server/src ./src
+COPY server/migrations ./migrations
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL="$CARGO_REGISTRIES_CRATES_IO_PROTOCOL" cargo build --release
+
+FROM debian:bookworm-slim
+ARG DEBIAN_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_MIRROR}-security|g" /etc/apt/sources.list.d/debian.sources
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=server-builder /app/server/target/release/venera-web-server /app/venera-web-server
+COPY --from=web-builder /app/web/dist /app/web/dist
+ENV VENERA_WEB_BIND=0.0.0.0:3000
+ENV VENERA_WEB_DATA_DIR=/data
+ENV VENERA_WEB_STATIC_DIR=/app/web/dist
+VOLUME ["/data"]
+EXPOSE 3000
+CMD ["/app/venera-web-server"]

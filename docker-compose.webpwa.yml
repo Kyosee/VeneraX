@@ -1,0 +1,15 @@
+services:
+  venera-webpwa:
+    build:
+      context: .
+      dockerfile: Dockerfile.webpwa
+    container_name: venera-webpwa
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data.venera/webpwa:/data
+    environment:
+      VENERA_WEB_BIND: 0.0.0.0:3000
+      VENERA_WEB_DATA_DIR: /data
+      VENERA_WEB_STATIC_DIR: /app/web/dist

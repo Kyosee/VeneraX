@@ -53,3 +53,8 @@ docs/
 data.venera
 /android/key.properties
 /android/keystore.jks
+
+# Web PWA workspace
+/web/node_modules/
+/web/dist/
+/server/target/

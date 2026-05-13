@@ -1,0 +1,12 @@
+.git
+.github
+.dart_tool
+.serena
+build
+web/node_modules
+web/dist
+server/target
+docs
+data.venera
+*.log
+*.tmp
