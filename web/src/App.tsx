@@ -93,6 +93,7 @@ import {
 import { ReloadPrompt } from './ReloadPrompt'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { SnackbarHost } from './ui/Snackbar'
+import { Ripple } from './ui/Ripple'
 import { AppDataProvider } from './context/AppDataContext'
 import { LibraryProvider } from './context/LibraryContext'
 import { TasksProvider } from './context/TasksContext'
@@ -939,8 +940,12 @@ function NavButton({
       onClick={() => onSelect(item.key)}
       title={item.label}
     >
-      <Icon size={22} />
-      <span>{item.label}</span>
+      <Ripple>
+        <span className="nav-button-content">
+          <Icon size={22} />
+          <span>{item.label}</span>
+        </span>
+      </Ripple>
     </button>
   )
 }
