@@ -1,0 +1,9 @@
+.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / .32); z-index: 1000;
+         display: flex; align-items: center; justify-content: center; padding: 24px; }
+.dialog { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface);
+          border-radius: var(--md-shape-xl); min-width: 280px; max-width: 560px; padding: 24px;
+          box-shadow: var(--md-elev-3); }
+.icon { display: flex; justify-content: center; margin-bottom: 16px; color: var(--md-sys-color-secondary); }
+.title { font: var(--md-typescale-headline-small); margin: 0 0 16px; }
+.body { font: var(--md-typescale-body-medium); color: var(--md-sys-color-on-surface-variant); margin-bottom: 24px; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; }
