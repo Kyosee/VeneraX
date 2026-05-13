@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen,
+  ChevronRight,
   ClipboardList,
   Compass,
   Download,
@@ -24,6 +25,7 @@ import {
   type ComicInfo,
   type FavoriteWriteRequest,
   type FavoriteFolder,
+  type FollowUpdatesResponse,
   type HistoryWriteRequest,
   type HealthResponse,
   type ImportBackupApplyResponse,
@@ -39,6 +41,7 @@ import {
   applyImportBackup,
   getComicInfo,
   getComicPages,
+  getFollowUpdates,
   getHealth,
   getLibrary,
   getSettings,
@@ -65,6 +68,7 @@ type TabKey =
   | 'favorites'
   | 'explore'
   | 'categories'
+  | 'updates'
   | 'search'
   | 'tasks'
   | 'settings'
@@ -74,6 +78,7 @@ type AppData = {
   settings: SettingsResponse | null
   sources: SourceSummary[]
   library: LibraryResponse
+  followUpdates: FollowUpdatesResponse
 }
 
 const primaryNav = [
@@ -85,6 +90,7 @@ const primaryNav = [
 ] satisfies Array<{ key: TabKey; label: string; icon: typeof Home }>
 
 const actionNav = [
+  { key: 'updates', label: '追更', icon: RefreshCw },
   { key: 'search', label: '搜索', icon: Search },
   { key: 'tasks', label: '任务', icon: ClipboardList },
   { key: 'settings', label: '设置', icon: Settings }
@@ -101,7 +107,8 @@ const emptyData: AppData = {
     history: [],
     favorites: [],
     favorite_folders: []
-  }
+  },
+  followUpdates: { folder: null, updated_total: 0, all_total: 0, updated: [], all: [] }
 }
 
 const libraryPageStep = 100
@@ -136,13 +143,14 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [health, settings, sources, library] = await Promise.all([
+      const [health, settings, sources, library, followUpdates] = await Promise.all([
         getHealth(),
         getSettings(),
         getSources(),
-        getLibrary()
+        getLibrary(),
+        getFollowUpdates()
       ])
-      setData({ health, settings, sources, library })
+      setData({ health, settings, sources, library, followUpdates })
       setActiveFavoriteFolder(null)
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
     } catch (err) {
@@ -299,7 +307,12 @@ export default function App() {
         />
         <div className="content">
           {activeTab === 'home' ? (
-            <HomeView data={data} error={error} onRecordHistory={saveHistory} />
+            <HomeView
+              data={data}
+              error={error}
+              onOpenTab={setActiveTab}
+              onRecordHistory={saveHistory}
+            />
           ) : null}
           {activeTab === 'history' ? (
             <LibraryView
@@ -337,6 +350,9 @@ export default function App() {
           ) : null}
           {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
           {activeTab === 'categories' ? <CollectionView title="分类" icon={Tags} /> : null}
+          {activeTab === 'updates' ? (
+            <UpdatesView data={data.followUpdates} onRecordHistory={saveHistory} />
+          ) : null}
           {activeTab === 'search' ? (
             <SearchView
               sources={data.sources}
@@ -470,10 +486,12 @@ function TopBar({
 function HomeView({
   data,
   error,
+  onOpenTab,
   onRecordHistory
 }: {
   data: AppData
   error: string | null
+  onOpenTab: (tab: TabKey) => void
   onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
 }) {
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
@@ -495,33 +513,136 @@ function HomeView({
         </section>
       ) : null}
 
-      <section className="panel-grid">
-        <Panel title="历史记录" action={String(data.library.history_total)}>
-          <LibraryList
-            items={data.library.history.slice(0, 4)}
+      <section className="home-card-list">
+        <HomeCard
+          title="历史记录"
+          count={data.library.history_total}
+          icon={History}
+          onOpen={() => onOpenTab('history')}
+        >
+          <ComicStrip
+            items={data.library.history.slice(0, 8)}
             emptyText="暂无阅读记录"
             onSelect={setSelectedItem}
           />
-        </Panel>
-        <Panel title="收藏" action={String(data.library.favorites_total)}>
-          <LibraryList
-            items={data.library.favorites.slice(0, 4)}
+        </HomeCard>
+        <HomeCard
+          title="收藏"
+          count={data.library.favorites_total}
+          icon={Heart}
+          onOpen={() => onOpenTab('favorites')}
+        >
+          <ComicStrip
+            items={data.library.favorites.slice(0, 8)}
             emptyText="暂无收藏"
             onSelect={setSelectedItem}
           />
-        </Panel>
-        <Panel title="追更" action="0">
-          <EmptyLine icon={RefreshCw} text="暂无更新任务" />
-        </Panel>
-        <Panel title="漫画源" action={String(data.sources.length)}>
-          <SourceList sources={data.sources.slice(0, 5)} compact />
-        </Panel>
+        </HomeCard>
+        <HomeCard
+          title="追更"
+          count={data.followUpdates.updated_total}
+          icon={RefreshCw}
+          onOpen={() => onOpenTab('updates')}
+        >
+          <ComicStrip
+            items={data.followUpdates.updated.slice(0, 8)}
+            emptyText={
+              data.followUpdates.all_total > 0
+                ? `已跟踪 ${data.followUpdates.all_total} 部，暂无更新`
+                : '暂无更新任务'
+            }
+            icon={RefreshCw}
+            onSelect={setSelectedItem}
+          />
+        </HomeCard>
+        <HomeCard
+          title="漫画源"
+          count={data.sources.length}
+          icon={Library}
+          onOpen={() => onOpenTab('search')}
+        >
+          <SourceChips sources={data.sources.slice(0, 12)} />
+        </HomeCard>
       </section>
       {selectedItem ? (
         <Panel title="漫画详情">
           <LibraryReader item={selectedItem} onRecordHistory={onRecordHistory} />
         </Panel>
       ) : null}
+    </div>
+  )
+}
+
+function HomeCard({
+  title,
+  count,
+  icon: Icon,
+  onOpen,
+  children
+}: {
+  title: string
+  count: number
+  icon: typeof Home
+  onOpen: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <section className="home-card">
+      <button className="home-card-header" type="button" onClick={onOpen}>
+        <Icon size={20} />
+        <strong>{title}</strong>
+        <span>{count}</span>
+        <ChevronRight size={20} />
+      </button>
+      {children}
+    </section>
+  )
+}
+
+function ComicStrip({
+  items,
+  emptyText,
+  icon: Icon = BookOpen,
+  onSelect
+}: {
+  items: LibraryItem[]
+  emptyText: string
+  icon?: typeof Home
+  onSelect?: (item: LibraryItem) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="home-card-empty">
+        <EmptyLine icon={Icon} text={emptyText} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="comic-strip">
+      {items.map((item) => (
+        <ComicTile key={libraryItemKey(item)} item={item} compact onSelect={onSelect} />
+      ))}
+    </div>
+  )
+}
+
+function SourceChips({ sources }: { sources: SourceSummary[] }) {
+  if (sources.length === 0) {
+    return (
+      <div className="home-card-empty">
+        <EmptyLine icon={Library} text="暂无源文件" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="source-chip-list">
+      {sources.map((source) => (
+        <span className="source-chip" key={source.key}>
+          {source.name}
+        </span>
+      ))}
     </div>
   )
 }
@@ -767,13 +888,7 @@ function SearchResults({
     <div className="result-list">
       {comics.map((comic) => (
         <button className="result-row" key={comic.id} type="button" onClick={() => onSelect(comic)}>
-          {comic.cover ? (
-            <img src={imageProxyUrl(comic.cover)} alt="" loading="lazy" />
-          ) : (
-            <div className="result-cover-placeholder">
-              <BookOpen size={18} />
-            </div>
-          )}
+          <CoverImage url={comic.cover} iconSize={18} />
           <div className="result-main">
             <strong>{comic.title}</strong>
             {comic.subtitle ? <span>{comic.subtitle}</span> : null}
@@ -816,13 +931,7 @@ function ComicDetails({
   return (
     <div className="comic-detail">
       <div className="comic-summary">
-        {comic.cover ? (
-          <img src={imageProxyUrl(comic.cover)} alt="" loading="lazy" />
-        ) : (
-          <div className="result-cover-placeholder">
-            <BookOpen size={20} />
-          </div>
-        )}
+        <CoverImage url={comic.cover} iconSize={20} />
         <div>
           <strong>{comic.title}</strong>
           {comic.subtitle ? <span>{comic.subtitle}</span> : null}
@@ -871,6 +980,74 @@ function ComicDetails({
             ))}
           </div>
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+function UpdatesView({
+  data,
+  onRecordHistory
+}: {
+  data: FollowUpdatesResponse
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+}) {
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
+  const [activeList, setActiveList] = useState<'updated' | 'all'>('updated')
+  const visibleItems = activeList === 'updated' ? data.updated : data.all
+  const visibleTotal = activeList === 'updated' ? data.updated_total : data.all_total
+
+  return (
+    <div className="view-stack">
+      <section className="follow-config-card">
+        <div className="follow-config-title">
+          <RefreshCw size={20} />
+          <strong>追更</strong>
+          <span>{data.folder ?? '全部收藏夹'}</span>
+        </div>
+        <div className="follow-config-stats">
+          <span>更新 {data.updated_total}</span>
+          <span>追踪 {data.all_total}</span>
+        </div>
+      </section>
+      <div className="app-tabs" role="tablist" aria-label="追更列表">
+        <button
+          className={activeList === 'updated' ? 'selected' : ''}
+          type="button"
+          role="tab"
+          aria-selected={activeList === 'updated'}
+          onClick={() => setActiveList('updated')}
+        >
+          更新
+        </button>
+        <button
+          className={activeList === 'all' ? 'selected' : ''}
+          type="button"
+          role="tab"
+          aria-selected={activeList === 'all'}
+          onClick={() => setActiveList('all')}
+        >
+          全部
+        </button>
+      </div>
+      <Panel title={activeList === 'updated' ? '更新' : '全部漫画'} action={String(visibleTotal)}>
+        <LibraryGrid
+          items={visibleItems}
+          emptyText={
+            activeList === 'updated'
+              ? data.all_total > 0
+                ? '暂无更新'
+                : '暂无追更数据'
+              : '暂无追更数据'
+          }
+          icon={RefreshCw}
+          onSelect={setSelectedItem}
+        />
+      </Panel>
+      {selectedItem ? (
+        <Panel title="漫画详情">
+          <LibraryReader item={selectedItem} onRecordHistory={onRecordHistory} />
+        </Panel>
       ) : null}
     </div>
   )
@@ -930,7 +1107,7 @@ function FavoritesView({
           {loadingFolder ? (
             <EmptyLine icon={Loader2} text="加载收藏中" />
           ) : (
-            <LibraryList
+            <LibraryGrid
               items={items}
               emptyText="暂无收藏"
               icon={Heart}
@@ -1006,7 +1183,7 @@ function LibraryView({
   return (
     <div className="view-stack">
       <Panel title={title} action={String(total)}>
-        <LibraryList items={items} emptyText={emptyText} icon={Icon} onSelect={setSelectedItem} />
+        <LibraryGrid items={items} emptyText={emptyText} icon={Icon} onSelect={setSelectedItem} />
         {onLoadMore ? (
           <button
             className="icon-text-button subtle library-more-button"
@@ -1028,7 +1205,7 @@ function LibraryView({
   )
 }
 
-function LibraryList({
+function LibraryGrid({
   items,
   emptyText,
   icon: Icon = BookOpen,
@@ -1044,30 +1221,50 @@ function LibraryList({
   }
 
   return (
-    <div className="library-list">
+    <div className="comic-grid">
       {items.map((item) => (
-        <button
-          className="library-row"
-          key={`${item.source_key}:${item.comic_id}`}
-          type="button"
-          onClick={() => onSelect?.(item)}
-        >
-          {item.cover ? (
-            <img src={imageProxyUrl(item.cover)} alt="" loading="lazy" />
-          ) : (
-            <div className="result-cover-placeholder">
-              <BookOpen size={18} />
-            </div>
-          )}
-          <div className="library-main">
-            <strong>{item.title}</strong>
-            {item.episode_title ? <span>{item.episode_title}</span> : null}
-            {item.subtitle ? <small>{item.subtitle}</small> : null}
-          </div>
-        </button>
+        <ComicTile key={libraryItemKey(item)} item={item} onSelect={onSelect} />
       ))}
     </div>
   )
+}
+
+function ComicTile({
+  item,
+  compact = false,
+  onSelect
+}: {
+  item: LibraryItem
+  compact?: boolean
+  onSelect?: (item: LibraryItem) => void
+}) {
+  return (
+    <button
+      className={compact ? 'comic-tile compact' : 'comic-tile'}
+      type="button"
+      onClick={() => onSelect?.(item)}
+      title={item.title}
+    >
+      <CoverImage url={item.cover} iconSize={18} />
+      <strong>{item.title}</strong>
+      {item.episode_title ? <span>{item.episode_title}</span> : null}
+      {item.subtitle ? <small>{item.subtitle}</small> : null}
+    </button>
+  )
+}
+
+function CoverImage({ url, iconSize }: { url: string | null; iconSize: number }) {
+  const [failed, setFailed] = useState(false)
+
+  if (!url || failed) {
+    return (
+      <div className="result-cover-placeholder">
+        <BookOpen size={iconSize} />
+      </div>
+    )
+  }
+
+  return <img src={imageProxyUrl(url)} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
 function LibraryReader({

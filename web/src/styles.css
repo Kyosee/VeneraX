@@ -180,6 +180,94 @@ button {
   gap: 18px;
 }
 
+.home-card-list {
+  display: grid;
+  gap: 16px;
+}
+
+.home-card,
+.follow-config-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.home-card-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.home-card-header > svg:last-child {
+  justify-self: end;
+}
+
+.home-card-header strong {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-card-header span,
+.follow-config-title span,
+.follow-config-stats span {
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.comic-strip {
+  display: grid;
+  grid-auto-columns: 88px;
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 0 16px 16px;
+  scrollbar-width: none;
+}
+
+.comic-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.home-card-empty {
+  padding: 0 16px 14px;
+}
+
+.source-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.source-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--secondary-soft);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .search-strip {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -189,7 +277,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 
 .search-strip input,
@@ -277,7 +365,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 
 .panel-grid {
@@ -362,6 +450,71 @@ button {
   padding-left: 16px;
 }
 
+.follow-config-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.follow-config-title,
+.follow-config-stats,
+.updates-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.follow-config-title {
+  min-height: 32px;
+}
+
+.follow-config-title strong {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.follow-config-stats {
+  flex-wrap: wrap;
+}
+
+.app-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app-tabs button {
+  position: relative;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-tabs button.selected {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.app-tabs button.selected::after {
+  position: absolute;
+  right: 18px;
+  bottom: 0;
+  left: 18px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary);
+  content: "";
+}
+
+.updates-summary {
+  min-height: 40px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -379,7 +532,7 @@ button {
 .panel-header span {
   min-width: 28px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--primary);
   background: var(--primary-soft);
   font-size: 12px;
@@ -387,10 +540,66 @@ button {
   text-align: center;
 }
 
-.source-list,
-.library-list {
+.source-list {
   display: grid;
   gap: 8px;
+}
+
+.comic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 16px 12px;
+}
+
+.comic-tile {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comic-tile.compact {
+  width: 88px;
+}
+
+.comic-tile img,
+.comic-tile .result-cover-placeholder {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 6px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-soft));
+}
+
+.comic-tile strong,
+.comic-tile span,
+.comic-tile small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comic-tile strong {
+  display: -webkit-box;
+  min-height: 38px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.comic-tile span,
+.comic-tile small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .source-list.compact {
@@ -899,6 +1108,19 @@ button {
   .panel-grid,
   .hidden-list {
     grid-template-columns: 1fr;
+  }
+
+  .comic-grid {
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 14px 10px;
+  }
+
+  .comic-strip {
+    grid-auto-columns: 82px;
+  }
+
+  .comic-tile.compact {
+    width: 82px;
   }
 
   .search-strip {

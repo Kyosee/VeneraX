@@ -122,6 +122,20 @@ export type LibraryQuery = {
   favorite_folder?: string
 }
 
+export type FollowUpdatesResponse = {
+  folder: string | null
+  updated_total: number
+  all_total: number
+  updated: LibraryItem[]
+  all: LibraryItem[]
+}
+
+export type FollowUpdatesQuery = {
+  folder?: string
+  limit?: number
+  offset?: number
+}
+
 export type HistoryWriteRequest = {
   source_key: string
   comic_id: string
@@ -272,6 +286,15 @@ export function getLibrary(query?: LibraryQuery) {
   })
   const suffix = params.toString()
   return request<LibraryResponse>(`/api/library${suffix ? `?${suffix}` : ''}`)
+}
+
+export function getFollowUpdates(query?: FollowUpdatesQuery) {
+  const params = new URLSearchParams()
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (value != null) params.set(key, String(value))
+  })
+  const suffix = params.toString()
+  return request<FollowUpdatesResponse>(`/api/follow-updates${suffix ? `?${suffix}` : ''}`)
 }
 
 export function recordHistory(payload: HistoryWriteRequest) {

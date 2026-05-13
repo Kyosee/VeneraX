@@ -14,8 +14,54 @@ pub async fn connect(config: &AppConfig) -> anyhow::Result<Database> {
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.execute_batch(include_str!("../migrations/0001_init.sql"))?;
+    ensure_schema_upgrades(&connection)?;
 
     Ok(Arc::new(Mutex::new(connection)))
+}
+
+fn ensure_schema_upgrades(connection: &Connection) -> rusqlite::Result<()> {
+    add_column_if_missing(
+        connection,
+        "favorite_folder_items",
+        "last_update_time",
+        "last_update_time TEXT",
+    )?;
+    add_column_if_missing(
+        connection,
+        "favorite_folder_items",
+        "has_new_update",
+        "has_new_update INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        connection,
+        "favorite_folder_items",
+        "last_check_time",
+        "last_check_time INTEGER",
+    )?;
+    connection.execute(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_favorite_folder_items_updates
+        ON favorite_folder_items (has_new_update, last_update_time DESC)
+        "#,
+        [],
+    )?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|item| item == column) {
+        connection.execute(&format!("ALTER TABLE {table} ADD COLUMN {definition}"), [])?;
+    }
+    Ok(())
 }
 
 async fn ensure_directories(config: &AppConfig) -> anyhow::Result<()> {

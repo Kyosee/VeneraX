@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS favorite_folder_items (
     source_key TEXT NOT NULL,
     comic_id TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_update_time TEXT,
+    has_new_update INTEGER NOT NULL DEFAULT 0,
+    last_check_time INTEGER,
     PRIMARY KEY (folder_name, source_key, comic_id)
 );
 

@@ -60,6 +60,9 @@ struct ImportedFavoriteFolderItem {
     source_key: String,
     comic_id: String,
     timestamp_ms: Option<i64>,
+    last_update_time: Option<String>,
+    has_new_update: bool,
+    last_check_time: Option<i64>,
 }
 
 struct ImportPlan {
@@ -234,16 +237,28 @@ pub async fn apply_backup(
         for item in &plan.favorite_folder_items {
             transaction.execute(
                 r#"
-                INSERT INTO favorite_folder_items (folder_name, source_key, comic_id, created_at)
-                VALUES (?1, ?2, ?3, COALESCE(datetime(?4 / 1000, 'unixepoch'), CURRENT_TIMESTAMP))
+                INSERT INTO favorite_folder_items (
+                    folder_name, source_key, comic_id, created_at,
+                    last_update_time, has_new_update, last_check_time
+                )
+                VALUES (
+                    ?1, ?2, ?3, COALESCE(datetime(?4 / 1000, 'unixepoch'), CURRENT_TIMESTAMP),
+                    ?5, ?6, ?7
+                )
                 ON CONFLICT(folder_name, source_key, comic_id) DO UPDATE SET
-                    created_at = excluded.created_at
+                    created_at = excluded.created_at,
+                    last_update_time = excluded.last_update_time,
+                    has_new_update = excluded.has_new_update,
+                    last_check_time = excluded.last_check_time
                 "#,
                 params![
                     &item.folder_name,
                     &item.source_key,
                     &item.comic_id,
                     item.timestamp_ms,
+                    &item.last_update_time,
+                    item.has_new_update,
+                    item.last_check_time,
                 ],
             )?;
         }
@@ -746,6 +761,9 @@ fn import_favorites(
                 source_key: source_key.clone(),
                 comic_id: row.comic_id.clone(),
                 timestamp_ms,
+                last_update_time: row.last_update_time.clone(),
+                has_new_update: row.has_new_update.unwrap_or(0) != 0,
+                last_check_time: row.last_check_time,
             });
         }
         if !seen.insert((source_key.clone(), row.comic_id.clone())) {
@@ -828,6 +846,9 @@ struct FavoriteRow {
     cover: Option<String>,
     time: Option<String>,
     type_value: i64,
+    last_update_time: Option<String>,
+    has_new_update: Option<i64>,
+    last_check_time: Option<i64>,
 }
 
 struct HistoryRow {
@@ -867,6 +888,23 @@ fn read_favorite_folder_order(path: &Path) -> rusqlite::Result<HashMap<String, i
     Ok(order)
 }
 
+fn sqlite_columns(connection: &Connection, table_name: &str) -> rusqlite::Result<HashSet<String>> {
+    let identifier = quote_identifier(table_name);
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({identifier})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<HashSet<_>>>()?;
+    Ok(columns)
+}
+
+fn optional_column_expr(columns: &HashSet<String>, column: &str) -> String {
+    if columns.contains(column) {
+        quote_identifier(column)
+    } else {
+        "NULL".to_string()
+    }
+}
+
 fn scan_favorite_rows(path: &Path, mut visit: impl FnMut(FavoriteRow)) -> rusqlite::Result<()> {
     let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let table_names = user_table_names(&connection)?
@@ -880,9 +918,13 @@ fn scan_favorite_rows(path: &Path, mut visit: impl FnMut(FavoriteRow)) -> rusqli
         .collect::<Vec<_>>();
 
     for table_name in table_names {
+        let columns = sqlite_columns(&connection, &table_name)?;
         let identifier = quote_identifier(&table_name);
+        let last_update_expr = optional_column_expr(&columns, "last_update_time");
+        let has_new_update_expr = optional_column_expr(&columns, "has_new_update");
+        let last_check_expr = optional_column_expr(&columns, "last_check_time");
         let mut statement = connection.prepare(&format!(
-            "SELECT id, name, author, cover_path, time, type FROM {identifier}"
+            "SELECT id, name, author, cover_path, time, type, {last_update_expr}, {has_new_update_expr}, {last_check_expr} FROM {identifier}"
         ))?;
         let rows = statement.query_map([], |row| {
             Ok(FavoriteRow {
@@ -893,6 +935,9 @@ fn scan_favorite_rows(path: &Path, mut visit: impl FnMut(FavoriteRow)) -> rusqli
                 cover: row.get(3)?,
                 time: row.get(4)?,
                 type_value: row.get(5)?,
+                last_update_time: row.get(6)?,
+                has_new_update: row.get(7)?,
+                last_check_time: row.get(8)?,
             })
         })?;
         for row in rows {

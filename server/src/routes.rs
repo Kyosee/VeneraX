@@ -21,8 +21,9 @@ use crate::{
     image_proxy, import_preview,
     models::{
         CapabilitiesResponse, Capability, ComicInfoRequest, ComicInfoResponse, ComicPagesRequest,
-        ComicPagesResponse, DeleteResponse, FavoriteFolder, FavoriteWriteRequest, HealthResponse,
-        HistoryWriteRequest, ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
+        ComicPagesResponse, DeleteResponse, FavoriteFolder, FavoriteWriteRequest,
+        FollowUpdatesQuery, FollowUpdatesResponse, HealthResponse, HistoryWriteRequest,
+        ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
         ImportBackupPreviewRequest, ImportBackupPreviewResponse, ImportBackupsResponse,
         LibraryItem, LibraryQuery, LibraryResponse, SearchRequest, SearchResponse, SettingsPatch,
         SettingsResponse, SourceSummary, SourceWriteRequest, WebDavConfigRequest,
@@ -40,6 +41,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/capabilities", get(capabilities))
         .route("/settings", get(get_settings).put(update_settings))
         .route("/library", get(get_library))
+        .route("/follow-updates", get(get_follow_updates))
         .route("/history", post(upsert_history))
         .route("/favorites", post(set_favorite))
         .route(
@@ -163,6 +165,13 @@ async fn get_library(
     Query(query): Query<LibraryQuery>,
 ) -> ApiResult<Json<LibraryResponse>> {
     Ok(Json(read_library(&state, query)?))
+}
+
+async fn get_follow_updates(
+    State(state): State<AppState>,
+    Query(query): Query<FollowUpdatesQuery>,
+) -> ApiResult<Json<FollowUpdatesResponse>> {
+    Ok(Json(read_follow_updates(&state, query)?))
 }
 
 async fn upsert_history(
@@ -824,6 +833,143 @@ fn library_item_from_favorite_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<L
         episode_id: None,
         episode_title: None,
         updated_at: row.get(5)?,
+    })
+}
+
+fn read_follow_updates(
+    state: &AppState,
+    query: FollowUpdatesQuery,
+) -> ApiResult<FollowUpdatesResponse> {
+    let folder = query
+        .folder
+        .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_string()));
+    let limit = normalize_limit(query.limit, DEFAULT_FAVORITES_LIMIT);
+    let offset = query.offset.unwrap_or(0);
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+
+    let (all_total, updated_total, updated, all) = match folder.as_deref() {
+        Some(folder_name) => {
+            let all_total = database.query_row(
+                "SELECT COUNT(*) FROM favorite_folder_items WHERE folder_name = ?1",
+                params![folder_name],
+                |row| row.get::<_, u64>(0),
+            )?;
+            let updated_total = database.query_row(
+                r#"
+                SELECT COUNT(*)
+                FROM favorite_folder_items
+                WHERE folder_name = ?1 AND has_new_update != 0
+                "#,
+                params![folder_name],
+                |row| row.get::<_, u64>(0),
+            )?;
+            let mut statement = database.prepare(
+                r#"
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       COALESCE(i.last_update_time, i.created_at)
+                FROM favorite_folder_items i
+                JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+                WHERE i.folder_name = ?1 AND i.has_new_update != 0
+                ORDER BY COALESCE(i.last_update_time, i.created_at) DESC
+                LIMIT ?2 OFFSET ?3
+                "#,
+            )?;
+            let rows = statement.query_map(
+                params![folder_name, i64::from(limit), i64::from(offset)],
+                library_item_from_favorite_row,
+            )?;
+            let updated = rows.collect::<Result<Vec<_>, _>>()?;
+            let mut all_statement = database.prepare(
+                r#"
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       COALESCE(i.last_update_time, i.created_at)
+                FROM favorite_folder_items i
+                JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+                WHERE i.folder_name = ?1
+                ORDER BY i.has_new_update DESC, COALESCE(i.last_update_time, i.created_at) DESC
+                LIMIT ?2 OFFSET ?3
+                "#,
+            )?;
+            let all_rows = all_statement.query_map(
+                params![folder_name, i64::from(limit), i64::from(offset)],
+                library_item_from_favorite_row,
+            )?;
+            (
+                all_total,
+                updated_total,
+                updated,
+                all_rows.collect::<Result<Vec<_>, _>>()?,
+            )
+        }
+        None => {
+            let all_total = database.query_row(
+                r#"
+                SELECT COUNT(DISTINCT source_key || char(31) || comic_id)
+                FROM favorite_folder_items
+                "#,
+                [],
+                |row| row.get::<_, u64>(0),
+            )?;
+            let updated_total = database.query_row(
+                r#"
+                SELECT COUNT(DISTINCT source_key || char(31) || comic_id)
+                FROM favorite_folder_items
+                WHERE has_new_update != 0
+                "#,
+                [],
+                |row| row.get::<_, u64>(0),
+            )?;
+            let mut statement = database.prepare(
+                r#"
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at
+                FROM favorite_folder_items i
+                JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+                WHERE i.has_new_update != 0
+                GROUP BY f.source_key, f.comic_id
+                ORDER BY updated_at DESC
+                LIMIT ?1 OFFSET ?2
+                "#,
+            )?;
+            let rows = statement.query_map(
+                params![i64::from(limit), i64::from(offset)],
+                library_item_from_favorite_row,
+            )?;
+            let updated = rows.collect::<Result<Vec<_>, _>>()?;
+            let mut all_statement = database.prepare(
+                r#"
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at,
+                       MAX(i.has_new_update) AS has_update
+                FROM favorite_folder_items i
+                JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+                GROUP BY f.source_key, f.comic_id
+                ORDER BY has_update DESC, updated_at DESC
+                LIMIT ?1 OFFSET ?2
+                "#,
+            )?;
+            let all_rows = all_statement.query_map(
+                params![i64::from(limit), i64::from(offset)],
+                library_item_from_favorite_row,
+            )?;
+            (
+                all_total,
+                updated_total,
+                updated,
+                all_rows.collect::<Result<Vec<_>, _>>()?,
+            )
+        }
+    };
+
+    Ok(FollowUpdatesResponse {
+        folder,
+        updated_total,
+        all_total,
+        updated,
+        all,
     })
 }
 

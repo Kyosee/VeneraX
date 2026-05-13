@@ -190,6 +190,22 @@ pub struct LibraryQuery {
     pub favorite_folder: Option<String>,
 }
 
+#[derive(Default, Deserialize)]
+pub struct FollowUpdatesQuery {
+    pub folder: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct FollowUpdatesResponse {
+    pub folder: Option<String>,
+    pub updated_total: u64,
+    pub all_total: u64,
+    pub updated: Vec<LibraryItem>,
+    pub all: Vec<LibraryItem>,
+}
+
 #[derive(Deserialize)]
 pub struct HistoryWriteRequest {
     pub source_key: String,

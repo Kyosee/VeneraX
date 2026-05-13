@@ -73,21 +73,22 @@ async fn fetch_remote_image(config: &AppConfig, raw_url: &str) -> ApiResult<Imag
         .arg(&image_path)
         .arg(&type_path);
 
-    let output = timeout(Duration::from_secs(30), command.output())
-        .await
-        .map_err(|_| ApiError::ImageProxy("image fetch timed out".to_string()))?
-        .map_err(|err| ApiError::ImageProxy(err.to_string()))?;
+    let output = match timeout(Duration::from_secs(30), command.output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(err)) => return Err(ApiError::ImageProxy(err.to_string())),
+        Err(_) => return Ok(placeholder_image_payload("image fetch timed out")),
+    };
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        return Err(ApiError::ImageProxy(runtime_error(&stdout, &stderr)));
+        return Ok(placeholder_image_payload(&runtime_error(&stdout, &stderr)));
     }
 
     let envelope: FetchEnvelope = serde_json::from_str(stdout.trim())
         .map_err(|err| ApiError::ImageProxy(format!("invalid image fetch response: {err}")))?;
     if !envelope.ok {
-        return Err(ApiError::ImageProxy(
-            envelope
+        return Ok(placeholder_image_payload(
+            &envelope
                 .error
                 .unwrap_or_else(|| "image fetch failed".to_string()),
         ));
@@ -95,13 +96,19 @@ async fn fetch_remote_image(config: &AppConfig, raw_url: &str) -> ApiResult<Imag
 
     let bytes = fs::read(&image_path).await?;
     if bytes.len() > MAX_IMAGE_BYTES {
-        return Err(ApiError::ImageProxy("image is too large".to_string()));
+        return Ok(placeholder_image_payload("image is too large"));
+    }
+    let sniffed_content_type = sniff_content_type(&bytes);
+    if sniffed_content_type.is_none() {
+        return Ok(placeholder_image_payload(
+            "upstream did not return an image",
+        ));
     }
     let content_type = envelope
         .content_type
         .filter(|value| is_image_content_type(value))
-        .or_else(|| sniff_content_type(&bytes).map(str::to_string))
-        .ok_or_else(|| ApiError::ImageProxy("upstream did not return an image".to_string()))?;
+        .or_else(|| sniffed_content_type.map(str::to_string))
+        .unwrap_or_else(|| "image/svg+xml".to_string());
 
     Ok(ImagePayload {
         bytes,
@@ -237,4 +244,38 @@ fn runtime_error(stdout: &str, stderr: &str) -> String {
     } else {
         "image fetch failed".to_string()
     }
+}
+
+fn placeholder_image_payload(reason: &str) -> ImagePayload {
+    let escaped = escape_svg_text(reason);
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="320" viewBox="0 0 240 320">
+<rect width="240" height="320" rx="16" fill="#30354a"/>
+<path d="M88 132h64v48H88z" fill="none" stroke="#9b96ff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M96 168l18-22 20 24 11-14 7 10" fill="none" stroke="#9b96ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="145" cy="144" r="6" fill="#9b96ff"/>
+<text x="120" y="218" text-anchor="middle" fill="#a8adbc" font-family="Arial, sans-serif" font-size="14">cover unavailable</text>
+<title>{escaped}</title>
+</svg>"##
+    );
+    ImagePayload {
+        bytes: svg.into_bytes(),
+        content_type: "image/svg+xml".to_string(),
+        cache_status: "fallback",
+    }
+}
+
+fn escape_svg_text(value: &str) -> String {
+    value
+        .chars()
+        .take(160)
+        .flat_map(|ch| match ch {
+            '&' => "&amp;".chars().collect::<Vec<_>>(),
+            '<' => "&lt;".chars().collect::<Vec<_>>(),
+            '>' => "&gt;".chars().collect::<Vec<_>>(),
+            '"' => "&quot;".chars().collect::<Vec<_>>(),
+            '\'' => "&#39;".chars().collect::<Vec<_>>(),
+            _ => vec![ch],
+        })
+        .collect()
 }
