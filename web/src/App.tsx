@@ -1,18 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
+  CheckSquare,
   ClipboardList,
   Compass,
   Download,
   EyeOff,
+  Filter,
   FolderOpen,
   Heart,
   History,
   Home,
   Library,
   Loader2,
+  MessageCircle,
+  MoreHorizontal,
+  Play,
+  Share2,
   Trash2,
   Upload,
   RefreshCw,
@@ -83,6 +90,8 @@ type TabKey =
   | 'tasks'
   | 'settings'
 
+type PrimaryTabKey = 'home' | 'favorites' | 'explore' | 'categories'
+
 type AppData = {
   health: HealthResponse | null
   settings: SettingsResponse | null
@@ -90,6 +99,26 @@ type AppData = {
   library: LibraryResponse
   followUpdates: FollowUpdatesResponse
 }
+
+type ComicOpenRequest = {
+  sourceKey: string
+  comicId: string
+  title: string
+  subtitle: string | null
+  cover: string | null
+  initialComic?: ComicInfo
+}
+
+type ReaderOpenRequest = {
+  sourceKey: string
+  comic: ComicInfo
+  episode: ComicEpisode
+}
+
+type AppRoute =
+  | { kind: 'main' }
+  | { kind: 'detail'; request: ComicOpenRequest }
+  | { kind: 'reader'; request: ReaderOpenRequest }
 
 type ReaderMode =
   | 'galleryLeftToRight'
@@ -110,14 +139,12 @@ const readerModeOptions = [
 
 const primaryNav = [
   { key: 'home', label: '首页', icon: Home },
-  { key: 'history', label: '历史', icon: History },
   { key: 'favorites', label: '收藏', icon: Heart },
   { key: 'explore', label: '发现', icon: Compass },
   { key: 'categories', label: '分类', icon: Tags }
-] satisfies Array<{ key: TabKey; label: string; icon: typeof Home }>
+] satisfies Array<{ key: PrimaryTabKey; label: string; icon: typeof Home }>
 
 const actionNav = [
-  { key: 'updates', label: '追更', icon: RefreshCw },
   { key: 'search', label: '搜索', icon: Search },
   { key: 'tasks', label: '任务', icon: ClipboardList },
   { key: 'settings', label: '设置', icon: Settings }
@@ -159,6 +186,31 @@ function mergeLibraryItems(current: LibraryItem[], incoming: LibraryItem[]) {
   ]
 }
 
+function isPrimaryTabKey(value: TabKey): value is PrimaryTabKey {
+  return primaryNav.some((item) => item.key === value)
+}
+
+function libraryItemToOpenRequest(item: LibraryItem): ComicOpenRequest {
+  return {
+    sourceKey: item.source_key,
+    comicId: item.comic_id,
+    title: item.title,
+    subtitle: item.subtitle,
+    cover: item.cover,
+    initialComic: undefined
+  }
+}
+
+function searchComicToOpenRequest(sourceKey: string, comic: SearchComic): ComicOpenRequest {
+  return {
+    sourceKey,
+    comicId: comic.id,
+    title: comic.title,
+    subtitle: comic.subtitle,
+    cover: comic.cover
+  }
+}
+
 function normalizeReaderMode(value: unknown): ReaderMode {
   return readerModeOptions.some((option) => option.key === value)
     ? (value as ReaderMode)
@@ -174,6 +226,8 @@ function readerModeClassName(mode: ReaderMode) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home')
+  const [activePrimaryTab, setActivePrimaryTab] = useState<PrimaryTabKey>('home')
+  const [route, setRoute] = useState<AppRoute>({ kind: 'main' })
   const [data, setData] = useState<AppData>(emptyData)
   const [loading, setLoading] = useState(true)
   const [loadingMoreLibrary, setLoadingMoreLibrary] = useState<'history' | 'favorites' | null>(null)
@@ -254,7 +308,7 @@ export default function App() {
     }))
   }
 
-  const saveHistory = async (payload: HistoryWriteRequest) => {
+  const saveHistory = useCallback(async (payload: HistoryWriteRequest) => {
     const library = await recordHistory(payload)
     setData((current) => ({
       ...current,
@@ -267,7 +321,7 @@ export default function App() {
             : library.favorites
       }
     }))
-  }
+  }, [])
 
   const saveFavorite = async (payload: FavoriteWriteRequest) => {
     const library = await setFavorite(payload)
@@ -353,47 +407,104 @@ export default function App() {
     }
   }
 
+  const openTab = (tab: TabKey) => {
+    if (isPrimaryTabKey(tab)) setActivePrimaryTab(tab)
+    setActiveTab(tab)
+    setRoute({ kind: 'main' })
+  }
+
+  const closeStandalonePage = () => {
+    setActiveTab(activePrimaryTab)
+    setRoute({ kind: 'main' })
+  }
+
+  const openDetail = (request: ComicOpenRequest) => {
+    setRoute({ kind: 'detail', request })
+  }
+
+  const openReader = (request: ReaderOpenRequest) => {
+    setRoute({ kind: 'reader', request })
+  }
+
+  const backToDetailFromReader = (request: ReaderOpenRequest) => {
+    setRoute({
+      kind: 'detail',
+      request: {
+        sourceKey: request.sourceKey,
+        comicId: request.comic.id,
+        title: request.comic.title,
+        subtitle: request.comic.subtitle,
+        cover: request.comic.cover,
+        initialComic: request.comic
+      }
+    })
+  }
+
+  if (route.kind === 'reader') {
+    return (
+      <ReaderPage
+        request={route.request}
+        readerMode={readerMode}
+        onBack={() => backToDetailFromReader(route.request)}
+        onRecordHistory={saveHistory}
+      />
+    )
+  }
+
+  const showRootChrome = route.kind === 'main' && isPrimaryTabKey(activeTab)
+
   return (
     <div className="app-shell">
-      <SideNav activeTab={activeTab} onSelect={setActiveTab} />
+      <SideNav activeTab={activePrimaryTab} onSelect={openTab} />
       <main className="main-area">
-        <TopBar
-          activeTab={activeTab}
-          health={data.health}
-          loading={loading}
-          error={error}
-          lastUpdated={lastUpdated}
-          onRefresh={load}
-          onSelect={setActiveTab}
-        />
-        <div className="content">
-          {activeTab === 'home' ? (
+        {showRootChrome ? (
+          <TopBar
+            activeTab={activePrimaryTab}
+            health={data.health}
+            loading={loading}
+            error={error}
+            lastUpdated={lastUpdated}
+            onRefresh={load}
+            onSelect={openTab}
+          />
+        ) : null}
+        <div className={showRootChrome ? 'content' : 'content content-page'}>
+          {route.kind === 'detail' ? (
+            <ComicDetailPage
+              request={route.request}
+              favorites={data.library.favorites}
+              onBack={() => setRoute({ kind: 'main' })}
+              onOpenReader={openReader}
+              onSetFavorite={saveFavorite}
+            />
+          ) : null}
+          {route.kind === 'main' && activeTab === 'home' ? (
             <HomeView
               data={data}
               error={error}
-              readerMode={readerMode}
-              onOpenTab={setActiveTab}
-              onRecordHistory={saveHistory}
+              onOpenTab={openTab}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'history' ? (
+          {route.kind === 'main' && activeTab === 'history' ? (
             <LibraryView
               title="历史记录"
               icon={History}
               items={data.library.history}
               total={data.library.history_total}
               emptyText="暂无阅读记录"
+              standalone
               loadingMore={loadingMoreLibrary === 'history'}
+              onBack={closeStandalonePage}
               onLoadMore={
                 data.library.history.length < data.library.history_total
                   ? () => loadMoreLibrary('history')
                   : undefined
               }
-              readerMode={readerMode}
-              onRecordHistory={saveHistory}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'favorites' ? (
+          {route.kind === 'main' && activeTab === 'favorites' ? (
             <FavoritesView
               items={data.library.favorites}
               total={data.library.favorites_window_total}
@@ -408,57 +519,49 @@ export default function App() {
                   ? () => loadMoreLibrary('favorites')
                   : undefined
               }
-              readerMode={readerMode}
-              onRecordHistory={saveHistory}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'explore' ? (
+          {route.kind === 'main' && activeTab === 'explore' ? (
             <SourcePagesView
               title="发现"
               icon={Compass}
               kind="explore"
-              favorites={data.library.favorites}
-              readerMode={readerMode}
-              onRecordHistory={saveHistory}
-              onSetFavorite={saveFavorite}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'categories' ? (
+          {route.kind === 'main' && activeTab === 'categories' ? (
             <SourcePagesView
               title="分类"
               icon={Tags}
               kind="categories"
-              favorites={data.library.favorites}
-              readerMode={readerMode}
-              onRecordHistory={saveHistory}
-              onSetFavorite={saveFavorite}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'updates' ? (
+          {route.kind === 'main' && activeTab === 'updates' ? (
             <UpdatesView
               data={data.followUpdates}
-              readerMode={readerMode}
-              onRecordHistory={saveHistory}
+              onBack={closeStandalonePage}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'search' ? (
+          {route.kind === 'main' && activeTab === 'search' ? (
             <SearchView
               sources={data.sources}
-              favorites={data.library.favorites}
-              readerMode={readerMode}
+              onBack={closeStandalonePage}
               onSourceUpload={upsertSource}
               onSourceDelete={removeSource}
               onSourceToggle={toggleSource}
-              onRecordHistory={saveHistory}
-              onSetFavorite={saveFavorite}
+              onOpenComic={openDetail}
             />
           ) : null}
-          {activeTab === 'tasks' ? <TasksView /> : null}
-          {activeTab === 'settings' ? (
+          {route.kind === 'main' && activeTab === 'tasks' ? <TasksView onBack={closeStandalonePage} /> : null}
+          {route.kind === 'main' && activeTab === 'settings' ? (
             <SettingsView
               settings={data.settings}
               themeMode={themeMode}
               readerMode={readerMode}
+              onBack={closeStandalonePage}
               onThemeChange={setThemeMode}
               onReaderModeChange={setReaderMode}
               onImportComplete={load}
@@ -466,7 +569,7 @@ export default function App() {
           ) : null}
         </div>
       </main>
-      <BottomNav activeTab={activeTab} onSelect={setActiveTab} />
+      {showRootChrome ? <BottomNav activeTab={activePrimaryTab} onSelect={openTab} /> : null}
       <ReloadPrompt />
     </div>
   )
@@ -476,7 +579,7 @@ function SideNav({
   activeTab,
   onSelect
 }: {
-  activeTab: TabKey
+  activeTab: PrimaryTabKey
   onSelect: (tab: TabKey) => void
 }) {
   return (
@@ -491,7 +594,7 @@ function SideNav({
       </nav>
       <nav className="nav-stack nav-stack-actions">
         {actionNav.map((item) => (
-          <NavButton key={item.key} item={item} active={activeTab === item.key} onSelect={onSelect} />
+          <NavButton key={item.key} item={item} active={false} onSelect={onSelect} />
         ))}
       </nav>
     </aside>
@@ -502,7 +605,7 @@ function BottomNav({
   activeTab,
   onSelect
 }: {
-  activeTab: TabKey
+  activeTab: PrimaryTabKey
   onSelect: (tab: TabKey) => void
 }) {
   return (
@@ -547,7 +650,7 @@ function TopBar({
   onRefresh,
   onSelect
 }: {
-  activeTab: TabKey
+  activeTab: PrimaryTabKey
   health: HealthResponse | null
   loading: boolean
   error: string | null
@@ -574,7 +677,7 @@ function TopBar({
           const Icon = item.icon
           return (
             <button
-              className={activeTab === item.key ? 'top-action-button active' : 'top-action-button'}
+              className="top-action-button"
               key={item.key}
               type="button"
               title={item.label}
@@ -598,18 +701,14 @@ function TopBar({
 function HomeView({
   data,
   error,
-  readerMode,
   onOpenTab,
-  onRecordHistory
+  onOpenComic
 }: {
   data: AppData
   error: string | null
-  readerMode: ReaderMode
   onOpenTab: (tab: TabKey) => void
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
-
   return (
     <div className="view-stack">
       <section className="search-strip" aria-label="搜索">
@@ -627,6 +726,15 @@ function HomeView({
         </section>
       ) : null}
 
+      <section className="sync-card">
+        <RefreshCw size={20} />
+        <div>
+          <strong>同步数据</strong>
+          <span>WebDAV 当前为只读下载，上传待功能稳定后启用</span>
+        </div>
+        <StatusPill ok={data.health?.status === 'ok' && !error} text={data.health?.status === 'ok' && !error ? '正常' : '异常'} />
+      </section>
+
       <section className="home-card-list">
         <HomeCard
           title="历史记录"
@@ -637,20 +745,13 @@ function HomeView({
           <ComicStrip
             items={data.library.history.slice(0, 8)}
             emptyText="暂无阅读记录"
-            onSelect={setSelectedItem}
+            onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
           />
         </HomeCard>
-        <HomeCard
-          title="收藏"
-          count={data.library.favorites_total}
-          icon={Heart}
-          onOpen={() => onOpenTab('favorites')}
-        >
-          <ComicStrip
-            items={data.library.favorites.slice(0, 8)}
-            emptyText="暂无收藏"
-            onSelect={setSelectedItem}
-          />
+        <HomeCard title="本地" count={0} icon={FolderOpen} onOpen={() => undefined}>
+          <div className="home-card-empty">
+            <EmptyLine icon={FolderOpen} text="Web 端暂未接入本地导入" />
+          </div>
         </HomeCard>
         <HomeCard
           title="追更"
@@ -666,7 +767,7 @@ function HomeView({
                 : '暂无更新任务'
             }
             icon={RefreshCw}
-            onSelect={setSelectedItem}
+            onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
           />
         </HomeCard>
         <HomeCard
@@ -677,16 +778,12 @@ function HomeView({
         >
           <SourceChips sources={data.sources.slice(0, 12)} />
         </HomeCard>
+        <HomeCard title="图片收藏" count={0} icon={Bookmark} onOpen={() => undefined}>
+          <div className="home-card-empty">
+            <EmptyLine icon={Bookmark} text="暂无图片收藏数据" />
+          </div>
+        </HomeCard>
       </section>
-      {selectedItem ? (
-        <Panel title="漫画详情">
-          <LibraryReader
-            item={selectedItem}
-            readerMode={readerMode}
-            onRecordHistory={onRecordHistory}
-          />
-        </Panel>
-      ) : null}
     </div>
   )
 }
@@ -765,36 +862,348 @@ function SourceChips({ sources }: { sources: SourceSummary[] }) {
   )
 }
 
+function PageHeader({
+  title,
+  onBack,
+  actions
+}: {
+  title: string
+  onBack?: () => void
+  actions?: React.ReactNode
+}) {
+  return (
+    <header className="page-header">
+      <button className="icon-button" type="button" aria-label="返回" onClick={onBack}>
+        <ChevronLeft size={20} />
+      </button>
+      <h1>{title}</h1>
+      <div className="page-header-actions">{actions ?? <span />}</div>
+    </header>
+  )
+}
+
+function LoadMoreSentinel({
+  loading,
+  onLoadMore,
+  label
+}: {
+  loading: boolean
+  onLoadMore?: () => void
+  label?: string
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!onLoadMore || loading) return
+    const node = ref.current
+    if (!node) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) onLoadMore()
+      },
+      { rootMargin: '360px 0px' }
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [loading, onLoadMore])
+
+  if (!onLoadMore && !loading) return null
+
+  return (
+    <div className="load-more-sentinel" ref={ref}>
+      {loading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+      <span>{loading ? '加载中' : label ? `继续加载 ${label}` : '继续加载'}</span>
+    </div>
+  )
+}
+
+function ComicDetailPage({
+  request,
+  favorites,
+  onBack,
+  onOpenReader,
+  onSetFavorite
+}: {
+  request: ComicOpenRequest
+  favorites: LibraryItem[]
+  onBack: () => void
+  onOpenReader: (request: ReaderOpenRequest) => void
+  onSetFavorite: (payload: FavoriteWriteRequest) => Promise<void>
+}) {
+  const [comic, setComic] = useState<ComicInfo | null>(request.initialComic ?? null)
+  const [loading, setLoading] = useState(!request.initialComic)
+  const [message, setMessage] = useState<string | null>(null)
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setComic(request.initialComic ?? null)
+    setLoading(!request.initialComic)
+    setMessage(null)
+    if (request.initialComic) return
+    void getComicInfo(request.sourceKey, request.comicId)
+      .then((response) => {
+        if (cancelled) return
+        setComic(response.comic)
+        setMessage(response.comic.episodes.length === 0 ? '暂无章节' : null)
+      })
+      .catch((err) => {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : '详情加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [request.comicId, request.initialComic, request.sourceKey])
+
+  const isFavorite = Boolean(
+    comic && favorites.some((item) => item.source_key === request.sourceKey && item.comic_id === comic.id)
+  )
+  const firstEpisode = comic?.episodes[0]
+
+  const toggleFavorite = async () => {
+    if (!comic || favoriteBusy) return
+    setFavoriteBusy(true)
+    try {
+      await onSetFavorite({
+        source_key: request.sourceKey,
+        comic_id: comic.id,
+        title: comic.title,
+        subtitle: comic.subtitle,
+        cover: comic.cover,
+        favorite: !isFavorite
+      })
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : '收藏更新失败')
+    } finally {
+      setFavoriteBusy(false)
+    }
+  }
+
+  const openEpisode = (episode: ComicEpisode) => {
+    if (!comic) return
+    onOpenReader({ sourceKey: request.sourceKey, comic, episode })
+  }
+
+  return (
+    <article className="comic-detail-page">
+      <PageHeader
+        title={comic?.title ?? request.title}
+        onBack={onBack}
+        actions={
+          <button className="top-action-button" type="button" aria-label="更多" title="更多">
+            <MoreHorizontal size={20} />
+          </button>
+        }
+      />
+      {loading ? <EmptyLine icon={Loader2} text="加载详情中" /> : null}
+      {!loading && !comic ? <EmptyLine icon={BookOpen} text={message ?? '详情加载失败'} /> : null}
+      {comic ? (
+        <>
+          <section className="detail-hero">
+            <CoverImage url={comic.cover ?? request.cover} iconSize={28} />
+            <div className="detail-hero-main">
+              <h2>{comic.title}</h2>
+              {comic.subtitle ? <p>{comic.subtitle}</p> : null}
+              <div className="metadata-chips">
+                <span>{request.sourceKey}</span>
+                <span>{comic.episodes.length} 章</span>
+                {comic.tags.slice(0, 3).map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            </div>
+          </section>
+          <section className="detail-action-row" aria-label="漫画操作">
+            {firstEpisode ? (
+              <button className="detail-action primary" type="button" onClick={() => openEpisode(firstEpisode)}>
+                <Play size={18} />
+                <span>开始</span>
+              </button>
+            ) : null}
+            <button
+              className={isFavorite ? 'detail-action active' : 'detail-action'}
+              type="button"
+              disabled={favoriteBusy}
+              onClick={toggleFavorite}
+            >
+              <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+              <span>{isFavorite ? '已收藏' : '收藏'}</span>
+            </button>
+            <button className="detail-action" type="button" disabled>
+              <Download size={18} />
+              <span>下载</span>
+            </button>
+            <button className="detail-action" type="button" disabled>
+              <MessageCircle size={18} />
+              <span>评论</span>
+            </button>
+            <button className="detail-action" type="button" disabled>
+              <Share2 size={18} />
+              <span>分享</span>
+            </button>
+          </section>
+          {message ? <EmptyLine icon={BookOpen} text={message} /> : null}
+          {comic.description ? (
+            <section className="detail-section">
+              <h3>简介</h3>
+              <p>{comic.description}</p>
+            </section>
+          ) : null}
+          <section className="detail-section">
+            <h3>章节</h3>
+            {comic.episodes.length === 0 ? (
+              <EmptyLine icon={BookOpen} text="暂无章节" />
+            ) : (
+              <div className="chapter-grid">
+                {comic.episodes.map((episode) => (
+                  <button key={episode.id} className="chapter-cell" type="button" onClick={() => openEpisode(episode)}>
+                    {episode.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
+    </article>
+  )
+}
+
+function ReaderPage({
+  request,
+  readerMode,
+  onBack,
+  onRecordHistory
+}: {
+  request: ReaderOpenRequest
+  readerMode: ReaderMode
+  onBack: () => void
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+}) {
+  const [images, setImages] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState<string | null>(null)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [chromeOpen, setChromeOpen] = useState(true)
+  const isGalleryMode = readerMode.startsWith('gallery')
+  const activePageIndex = images.length === 0 ? 0 : Math.min(pageIndex, images.length - 1)
+  const visibleImages = isGalleryMode ? images.slice(activePageIndex, activePageIndex + 1) : images
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setMessage(null)
+    setImages([])
+    setPageIndex(0)
+    void getComicPages(request.sourceKey, request.comic.id, request.episode.id)
+      .then(async (response) => {
+        if (cancelled) return
+        setImages(response.images)
+        setMessage(response.images.length === 0 ? '暂无图片' : null)
+        if (response.images.length > 0) {
+          await onRecordHistory({
+            source_key: request.sourceKey,
+            comic_id: request.comic.id,
+            title: request.comic.title,
+            subtitle: request.comic.subtitle,
+            cover: request.comic.cover,
+            episode_id: request.episode.id,
+            episode_title: request.episode.title
+          })
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : '章节加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [onRecordHistory, request.comic, request.episode, request.sourceKey])
+
+  const readerModeLabel = readerModeOptions.find((option) => option.key === readerMode)?.label
+
+  return (
+    <main className={`reader-page ${readerModeClassName(readerMode)}`} tabIndex={0}>
+      <div className="reader-stage" onClick={() => setChromeOpen((value) => !value)}>
+        {loading ? <EmptyLine icon={Loader2} text="加载章节中" /> : null}
+        {message && images.length === 0 ? <EmptyLine icon={BookOpen} text={message} /> : null}
+        {images.length > 0 ? (
+          <div className="reader-image-list">
+            {visibleImages.map((image, index) => (
+              <img
+                key={`${image}-${index}`}
+                src={imageProxyUrl(image)}
+                alt={`第 ${isGalleryMode ? activePageIndex + 1 : index + 1} 页`}
+                loading={index < 2 ? 'eager' : 'lazy'}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <header className={chromeOpen ? 'reader-top open' : 'reader-top'}>
+        <button className="icon-button" type="button" aria-label="返回" onClick={onBack}>
+          <ChevronLeft size={20} />
+        </button>
+        <div>
+          <strong>{request.comic.title}</strong>
+          <span>{request.episode.title}</span>
+        </div>
+        <button className="icon-button" type="button" aria-label="更多">
+          <MoreHorizontal size={20} />
+        </button>
+      </header>
+      <footer className={chromeOpen ? 'reader-bottom open' : 'reader-bottom'}>
+        <button
+          className="icon-button"
+          type="button"
+          disabled={!isGalleryMode || activePageIndex === 0}
+          onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div className="reader-progress">
+          <span>{isGalleryMode ? `${activePageIndex + 1}/${images.length || 1}` : `${images.length} 张`}</span>
+          <small>{readerModeLabel}</small>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          disabled={!isGalleryMode || activePageIndex >= images.length - 1}
+          onClick={() => setPageIndex((current) => Math.min(images.length - 1, current + 1))}
+        >
+          <ChevronRight size={18} />
+        </button>
+      </footer>
+    </main>
+  )
+}
+
 function SearchView({
   sources,
-  favorites,
-  readerMode,
+  onBack,
   onSourceUpload,
   onSourceDelete,
   onSourceToggle,
-  onRecordHistory,
-  onSetFavorite
+  onOpenComic
 }: {
   sources: SourceSummary[]
-  favorites: LibraryItem[]
-  readerMode: ReaderMode
+  onBack: () => void
   onSourceUpload: (file: File) => Promise<void>
   onSourceDelete: (key: string) => Promise<void>
   onSourceToggle: (key: string, enabled: boolean) => Promise<void>
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
-  onSetFavorite: (payload: FavoriteWriteRequest) => Promise<void>
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
   const [keyword, setKeyword] = useState('')
   const [selectedSource, setSelectedSource] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchMessage, setSearchMessage] = useState<string | null>(null)
   const [results, setResults] = useState<SearchComic[]>([])
-  const [selectedComic, setSelectedComic] = useState<ComicInfo | null>(null)
-  const [comicMessage, setComicMessage] = useState<string | null>(null)
-  const [images, setImages] = useState<string[]>([])
-  const [activeEpisodeTitle, setActiveEpisodeTitle] = useState<string | null>(null)
-  const [loadingComic, setLoadingComic] = useState(false)
-  const [loadingImages, setLoadingImages] = useState(false)
   const [sourceMessage, setSourceMessage] = useState<string | null>(null)
   const enabledSources = useMemo(
     () => sources.filter((source) => source.enabled && source.runtime_status === 'registered'),
@@ -807,10 +1216,6 @@ function SearchView({
     setSelectedSource(nextSource)
     setResults([])
     setSearchMessage(null)
-    setSelectedComic(null)
-    setComicMessage(null)
-    setImages([])
-    setActiveEpisodeTitle(null)
     if (!nextSource) {
       setKeyword('')
     }
@@ -820,10 +1225,6 @@ function SearchView({
     setSelectedSource(value)
     setResults([])
     setSearchMessage(null)
-    setSelectedComic(null)
-    setComicMessage(null)
-    setImages([])
-    setActiveEpisodeTitle(null)
   }
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -836,9 +1237,6 @@ function SearchView({
     try {
       const response = await searchComics(selectedSource, value, 1)
       setResults(response.comics)
-      setSelectedComic(null)
-      setImages([])
-      setActiveEpisodeTitle(null)
       setSearchMessage(response.comics.length === 0 ? '没有结果' : null)
     } catch (err) {
       setResults([])
@@ -846,67 +1244,6 @@ function SearchView({
     } finally {
       setSearching(false)
     }
-  }
-
-  const handleOpenComic = async (comic: SearchComic) => {
-    if (!selectedSource) return
-
-    setLoadingComic(true)
-    setComicMessage(null)
-    setImages([])
-    setActiveEpisodeTitle(null)
-    try {
-      const response = await getComicInfo(selectedSource, comic.id)
-      setSelectedComic(response.comic)
-      setComicMessage(response.comic.episodes.length === 0 ? '暂无章节' : null)
-    } catch (err) {
-      setSelectedComic(null)
-      setComicMessage(err instanceof Error ? err.message : '详情加载失败')
-    } finally {
-      setLoadingComic(false)
-    }
-  }
-
-  const handleLoadImages = async (episode: ComicEpisode) => {
-    if (!selectedSource || !selectedComic) return
-
-    setLoadingImages(true)
-    setComicMessage(null)
-    try {
-      const response = await getComicPages(selectedSource, selectedComic.id, episode.id)
-      setImages(response.images)
-      setActiveEpisodeTitle(episode.title)
-      setComicMessage(response.images.length === 0 ? '暂无图片' : null)
-      if (response.images.length > 0) {
-        await onRecordHistory({
-          source_key: selectedSource,
-          comic_id: selectedComic.id,
-          title: selectedComic.title,
-          subtitle: selectedComic.subtitle,
-          cover: selectedComic.cover,
-          episode_id: episode.id,
-          episode_title: episode.title
-        })
-      }
-    } catch (err) {
-      setImages([])
-      setActiveEpisodeTitle(null)
-      setComicMessage(err instanceof Error ? err.message : '章节加载失败')
-    } finally {
-      setLoadingImages(false)
-    }
-  }
-
-  const handleFavoriteChange = async (comic: ComicInfo, favorite: boolean) => {
-    if (!selectedSource) return
-    await onSetFavorite({
-      source_key: selectedSource,
-      comic_id: comic.id,
-      title: comic.title,
-      subtitle: comic.subtitle,
-      cover: comic.cover,
-      favorite
-    })
   }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -945,6 +1282,7 @@ function SearchView({
 
   return (
     <div className="view-stack">
+      <PageHeader title="搜索" onBack={onBack} />
       <form className="search-strip" aria-label="搜索" onSubmit={handleSearch}>
         <Search size={20} />
         <input
@@ -973,27 +1311,13 @@ function SearchView({
         {searchMessage ? (
           <EmptyLine icon={Search} text={searchMessage} />
         ) : (
-          <SearchResults comics={results} onSelect={handleOpenComic} />
+          <SearchResults
+            comics={results}
+            onSelect={(comic) => {
+              if (selectedSource) onOpenComic(searchComicToOpenRequest(selectedSource, comic))
+            }}
+          />
         )}
-      </Panel>
-      <Panel title="漫画详情" action={selectedComic ? String(selectedComic.episodes.length) : undefined}>
-        <ComicDetails
-          comic={selectedComic}
-          images={images}
-          activeEpisodeTitle={activeEpisodeTitle}
-          readerMode={readerMode}
-          favorite={Boolean(
-            selectedComic &&
-              favorites.some(
-                (item) => item.source_key === selectedSource && item.comic_id === selectedComic.id
-              )
-          )}
-          loadingComic={loadingComic}
-          loadingImages={loadingImages}
-          message={comicMessage}
-          onLoadImages={handleLoadImages}
-          onFavoriteChange={handleFavoriteChange}
-        />
       </Panel>
       <Panel title="源管理" action={String(sources.length)}>
         <div className="source-toolbar">
@@ -1168,20 +1492,20 @@ function ComicDetails({
 
 function UpdatesView({
   data,
-  readerMode,
-  onRecordHistory
+  onBack,
+  onOpenComic
 }: {
   data: FollowUpdatesResponse
-  readerMode: ReaderMode
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+  onBack: () => void
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const [activeList, setActiveList] = useState<'updated' | 'all'>('updated')
   const visibleItems = activeList === 'updated' ? data.updated : data.all
   const visibleTotal = activeList === 'updated' ? data.updated_total : data.all_total
 
   return (
     <div className="view-stack">
+      <PageHeader title="追更" onBack={onBack} />
       <section className="follow-config-card">
         <div className="follow-config-title">
           <RefreshCw size={20} />
@@ -1224,18 +1548,9 @@ function UpdatesView({
               : '暂无追更数据'
           }
           icon={RefreshCw}
-          onSelect={setSelectedItem}
+          onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
         />
       </Panel>
-      {selectedItem ? (
-        <Panel title="漫画详情">
-          <LibraryReader
-            item={selectedItem}
-            readerMode={readerMode}
-            onRecordHistory={onRecordHistory}
-          />
-        </Panel>
-      ) : null}
     </div>
   )
 }
@@ -1248,10 +1563,9 @@ function FavoritesView({
   activeFolder,
   loadingFolder,
   loadingMore = false,
-  readerMode,
   onFolderSelect,
   onLoadMore,
-  onRecordHistory
+  onOpenComic
 }: {
   items: LibraryItem[]
   total: number
@@ -1260,12 +1574,10 @@ function FavoritesView({
   activeFolder: string | null
   loadingFolder?: boolean
   loadingMore?: boolean
-  readerMode: ReaderMode
   onFolderSelect: (folder: string | null) => Promise<void>
   onLoadMore?: () => void
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const activeFolderTitle =
     activeFolder == null
       ? '全部'
@@ -1300,30 +1612,11 @@ function FavoritesView({
               items={items}
               emptyText="暂无收藏"
               icon={Heart}
-              onSelect={setSelectedItem}
+              onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
             />
           )}
-          {onLoadMore ? (
-            <button
-              className="icon-text-button subtle library-more-button"
-              type="button"
-              disabled={loadingMore}
-              onClick={onLoadMore}
-            >
-              {loadingMore ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-              {loadingMore ? '加载中' : `加载更多 (${items.length}/${total})`}
-            </button>
-          ) : null}
+          <LoadMoreSentinel loading={loadingMore} onLoadMore={onLoadMore} label={`${items.length}/${total}`} />
         </Panel>
-        {selectedItem ? (
-          <Panel title="漫画详情">
-            <LibraryReader
-              item={selectedItem}
-              readerMode={readerMode}
-              onRecordHistory={onRecordHistory}
-            />
-          </Panel>
-        ) : null}
       </div>
     </div>
   )
@@ -1359,9 +1652,10 @@ function LibraryView({
   total,
   emptyText,
   loadingMore = false,
-  readerMode,
+  standalone = false,
+  onBack,
   onLoadMore,
-  onRecordHistory
+  onOpenComic
 }: {
   title: string
   icon: typeof Home
@@ -1369,39 +1663,108 @@ function LibraryView({
   total: number
   emptyText: string
   loadingMore?: boolean
-  readerMode: ReaderMode
+  standalone?: boolean
+  onBack?: () => void
   onLoadMore?: () => void
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
-
   return (
     <div className="view-stack">
-      <Panel title={title} action={String(total)}>
-        <LibraryGrid items={items} emptyText={emptyText} icon={Icon} onSelect={setSelectedItem} />
-        {onLoadMore ? (
-          <button
-            className="icon-text-button subtle library-more-button"
-            type="button"
-            disabled={loadingMore}
-            onClick={onLoadMore}
-          >
-            {loadingMore ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            {loadingMore ? '加载中' : `加载更多 (${items.length}/${total})`}
-          </button>
-        ) : null}
-      </Panel>
-      {selectedItem ? (
-        <Panel title="漫画详情">
-          <LibraryReader
-            item={selectedItem}
-            readerMode={readerMode}
-            onRecordHistory={onRecordHistory}
-          />
-        </Panel>
+      {standalone ? (
+        <PageHeader
+          title={title}
+          onBack={onBack}
+          actions={
+            <>
+              <button className="top-action-button" type="button" aria-label="筛选" title="筛选">
+                <Filter size={20} />
+              </button>
+              <button className="top-action-button" type="button" aria-label="刷新" title="刷新">
+                <RefreshCw size={20} />
+              </button>
+              <button className="top-action-button" type="button" aria-label="多选" title="多选">
+                <CheckSquare size={20} />
+              </button>
+              <button className="top-action-button" type="button" aria-label="删除" title="删除">
+                <Trash2 size={20} />
+              </button>
+            </>
+          }
+        />
       ) : null}
+      {standalone ? (
+        <section className="search-strip app-page-search" aria-label="搜索">
+          <Search size={20} />
+          <input placeholder="搜索" disabled />
+        </section>
+      ) : null}
+      <Panel title={title} action={String(total)}>
+        {standalone ? (
+          <GroupedLibraryList
+            items={items}
+            emptyText={emptyText}
+            icon={Icon}
+            onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
+          />
+        ) : (
+          <LibraryGrid
+            items={items}
+            emptyText={emptyText}
+            icon={Icon}
+            onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
+          />
+        )}
+        <LoadMoreSentinel loading={loadingMore} onLoadMore={onLoadMore} label={`${items.length}/${total}`} />
+      </Panel>
     </div>
   )
+}
+
+function GroupedLibraryList({
+  items,
+  emptyText,
+  icon: Icon,
+  onSelect
+}: {
+  items: LibraryItem[]
+  emptyText: string
+  icon: typeof Home
+  onSelect: (item: LibraryItem) => void
+}) {
+  if (items.length === 0) {
+    return <EmptyLine icon={Icon} text={emptyText} />
+  }
+
+  const groups = new Map<string, LibraryItem[]>()
+  items.forEach((item) => {
+    const title = dateGroupTitle(item.updated_at)
+    groups.set(title, [...(groups.get(title) ?? []), item])
+  })
+
+  return (
+    <div className="library-groups">
+      {[...groups.entries()].map(([title, groupItems]) => (
+        <section className="library-group" key={title}>
+          <h3>{title}</h3>
+          <LibraryGrid items={groupItems} emptyText={emptyText} icon={Icon} onSelect={onSelect} />
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function dateGroupTitle(value: string | null) {
+  if (!value) return '更早'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '更早'
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.floor((today.getTime() - day.getTime()) / 86_400_000)
+  if (diffDays <= 0) return '今天'
+  if (diffDays === 1) return '昨天'
+  if (diffDays < 7) return '本周'
+  return '更早'
 }
 
 function LibraryGrid({
@@ -1557,18 +1920,12 @@ function SourcePagesView({
   title,
   icon: Icon,
   kind,
-  favorites,
-  readerMode,
-  onRecordHistory,
-  onSetFavorite
+  onOpenComic
 }: {
   title: string
   icon: typeof Home
   kind: 'explore' | 'categories'
-  favorites: LibraryItem[]
-  readerMode: ReaderMode
-  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
-  onSetFavorite: (payload: FavoriteWriteRequest) => Promise<void>
+  onOpenComic: (request: ComicOpenRequest) => void
 }) {
   const [data, setData] = useState<SourcePagesResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1577,13 +1934,6 @@ function SourcePagesView({
   const [list, setList] = useState<SourceComicListResponse | null>(null)
   const [listLoading, setListLoading] = useState(false)
   const [listMessage, setListMessage] = useState<string | null>(null)
-  const [selectedComic, setSelectedComic] = useState<ComicInfo | null>(null)
-  const [comicSourceKey, setComicSourceKey] = useState<string | null>(null)
-  const [comicMessage, setComicMessage] = useState<string | null>(null)
-  const [images, setImages] = useState<string[]>([])
-  const [activeEpisodeTitle, setActiveEpisodeTitle] = useState<string | null>(null)
-  const [loadingComic, setLoadingComic] = useState(false)
-  const [loadingImages, setLoadingImages] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -1648,16 +1998,6 @@ function SourcePagesView({
 
   const selectedTab = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0]
 
-  const resetReader = useCallback(() => {
-    setSelectedComic(null)
-    setComicSourceKey(null)
-    setComicMessage(null)
-    setImages([])
-    setActiveEpisodeTitle(null)
-    setLoadingComic(false)
-    setLoadingImages(false)
-  }, [])
-
   const loadSourceList = useCallback(
     async (target: SourceListTarget, page: number, append = false) => {
       setListLoading(true)
@@ -1678,7 +2018,6 @@ function SourcePagesView({
   )
 
   useEffect(() => {
-    resetReader()
     setList(null)
     setListMessage(null)
     if (!selectedTab) {
@@ -1692,7 +2031,7 @@ function SourcePagesView({
     } else {
       setListTarget(null)
     }
-  }, [kind, selectedTab?.key, loadSourceList, resetReader])
+  }, [kind, selectedTab?.key, loadSourceList])
 
   const activeCategoryKey =
     listTarget?.kind === 'category' || listTarget?.kind === 'search'
@@ -1701,7 +2040,6 @@ function SourcePagesView({
 
   const handleCategorySelect = (part: SourceCategoryPart, item: SourceCategoryItem) => {
     if (!selectedTab) return
-    resetReader()
     setList(null)
     const targetPage = item.target_page ?? part.item_type ?? 'category'
     const target: SourceListTarget =
@@ -1726,64 +2064,7 @@ function SourcePagesView({
   const handleOpenComic = async (comic: SearchComic) => {
     const sourceKey = list?.source_key ?? selectedTab?.source.source_key
     if (!sourceKey) return
-
-    setLoadingComic(true)
-    setComicSourceKey(sourceKey)
-    setComicMessage(null)
-    setImages([])
-    setActiveEpisodeTitle(null)
-    try {
-      const response = await getComicInfo(sourceKey, comic.id)
-      setSelectedComic(response.comic)
-      setComicMessage(response.comic.episodes.length === 0 ? '暂无章节' : null)
-    } catch (err) {
-      setSelectedComic(null)
-      setComicMessage(err instanceof Error ? err.message : '详情加载失败')
-    } finally {
-      setLoadingComic(false)
-    }
-  }
-
-  const handleLoadImages = async (episode: ComicEpisode) => {
-    if (!comicSourceKey || !selectedComic) return
-
-    setLoadingImages(true)
-    setComicMessage(null)
-    try {
-      const response = await getComicPages(comicSourceKey, selectedComic.id, episode.id)
-      setImages(response.images)
-      setActiveEpisodeTitle(episode.title)
-      setComicMessage(response.images.length === 0 ? '暂无图片' : null)
-      if (response.images.length > 0) {
-        await onRecordHistory({
-          source_key: comicSourceKey,
-          comic_id: selectedComic.id,
-          title: selectedComic.title,
-          subtitle: selectedComic.subtitle,
-          cover: selectedComic.cover,
-          episode_id: episode.id,
-          episode_title: episode.title
-        })
-      }
-    } catch (err) {
-      setImages([])
-      setActiveEpisodeTitle(null)
-      setComicMessage(err instanceof Error ? err.message : '章节加载失败')
-    } finally {
-      setLoadingImages(false)
-    }
-  }
-
-  const handleFavoriteChange = async (comic: ComicInfo, favorite: boolean) => {
-    if (!comicSourceKey) return
-    await onSetFavorite({
-      source_key: comicSourceKey,
-      comic_id: comic.id,
-      title: comic.title,
-      subtitle: comic.subtitle,
-      cover: comic.cover,
-      favorite
-    })
+    onOpenComic(searchComicToOpenRequest(sourceKey, comic))
   }
 
   return (
@@ -1808,42 +2089,14 @@ function SourcePagesView({
               showEmpty={kind === 'explore' || Boolean(listTarget)}
               onSelect={handleOpenComic}
             />
-            {list && canLoadMoreSourceList(list) ? (
-              <button
-                className="icon-text-button subtle library-more-button"
-                type="button"
-                disabled={listLoading}
-                onClick={handleLoadMore}
-              >
-                {listLoading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-                {listLoading ? '加载中' : `加载更多 (${list.page}/${list.max_page})`}
-              </button>
-            ) : null}
+            <LoadMoreSentinel
+              loading={listLoading}
+              onLoadMore={list && canLoadMoreSourceList(list) ? handleLoadMore : undefined}
+              label={list ? `${list.page}/${list.max_page ?? '?'}` : undefined}
+            />
           </>
         ) : null}
       </Panel>
-      {loadingComic || selectedComic || comicMessage ? (
-        <Panel title="漫画详情" action={selectedComic ? String(selectedComic.episodes.length) : undefined}>
-          <ComicDetails
-            comic={selectedComic}
-            images={images}
-            activeEpisodeTitle={activeEpisodeTitle}
-            readerMode={readerMode}
-            favorite={Boolean(
-              selectedComic &&
-                comicSourceKey &&
-                favorites.some(
-                  (item) => item.source_key === comicSourceKey && item.comic_id === selectedComic.id
-                )
-            )}
-            loadingComic={loadingComic}
-            loadingImages={loadingImages}
-            message={comicMessage}
-            onLoadImages={handleLoadImages}
-            onFavoriteChange={handleFavoriteChange}
-          />
-        </Panel>
-      ) : null}
     </div>
   )
 }
@@ -2099,9 +2352,10 @@ function categoryItemKey(tab: SourcePageTab, part: SourceCategoryPart, item: Sou
   return `${tab.source.source_key}:${part.title}:${item.label}:${item.category ?? ''}:${item.param ?? ''}`
 }
 
-function TasksView() {
+function TasksView({ onBack }: { onBack: () => void }) {
   return (
     <div className="view-stack">
+      <PageHeader title="任务" onBack={onBack} />
       <Panel title="任务" action="0">
         <EmptyLine icon={ClipboardList} text="暂无后台任务" />
       </Panel>
@@ -2113,6 +2367,7 @@ function SettingsView({
   settings,
   themeMode,
   readerMode,
+  onBack,
   onThemeChange,
   onReaderModeChange,
   onImportComplete
@@ -2120,6 +2375,7 @@ function SettingsView({
   settings: SettingsResponse | null
   themeMode: string
   readerMode: ReaderMode
+  onBack: () => void
   onThemeChange: (value: string) => Promise<void>
   onReaderModeChange: (value: ReaderMode) => Promise<void>
   onImportComplete: () => void | Promise<void>
@@ -2128,6 +2384,7 @@ function SettingsView({
 
   return (
     <div className="view-stack">
+      <PageHeader title="设置" onBack={onBack} />
       <Panel title="显示">
         <div className="segmented-control" role="group" aria-label="主题">
           {['system', 'light', 'dark'].map((value) => (
