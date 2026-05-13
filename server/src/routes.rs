@@ -7,7 +7,7 @@ use axum::{
         HeaderMap, HeaderValue,
     },
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use regex::Regex;
@@ -26,9 +26,9 @@ use crate::{
         ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
         ImportBackupPreviewRequest, ImportBackupPreviewResponse, ImportBackupsResponse,
         LibraryItem, LibraryQuery, LibraryResponse, SearchRequest, SearchResponse, SettingsPatch,
-        SettingsResponse, SourceSummary, SourceWriteRequest, WebDavConfigRequest,
-        WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse, WebDavListRequest,
-        WebDavListResponse,
+        SettingsResponse, SourcePatchRequest, SourceSummary, SourceWriteRequest,
+        WebDavConfigRequest, WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse,
+        WebDavListRequest, WebDavListResponse,
     },
     source_runtime,
     state::AppState,
@@ -56,7 +56,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/imports/preview", post(preview_import_backup))
         .route("/imports/apply", post(apply_import_backup))
         .route("/sources", get(list_sources).post(upsert_source))
-        .route("/sources/{key}", delete(delete_source))
+        .route("/sources/{key}", patch(update_source).delete(delete_source))
         .route("/search", post(search_comics))
         .route("/comic/info", post(comic_info))
         .route("/comic/pages", post(comic_pages))
@@ -621,6 +621,61 @@ async fn upsert_source(
         runtime_status: "registered",
         updated_at: None,
     }))
+}
+
+async fn update_source(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Json(payload): Json<SourcePatchRequest>,
+) -> ApiResult<Json<SourceSummary>> {
+    if !is_valid_source_key(&key) {
+        return Err(ApiError::BadRequest("invalid source key".to_string()));
+    }
+    let Some(enabled) = payload.enabled else {
+        return Err(ApiError::BadRequest(
+            "enabled field is required".to_string(),
+        ));
+    };
+
+    let source = {
+        let database = state
+            .database
+            .lock()
+            .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+        let changed = database.execute(
+            r#"
+            UPDATE comic_sources
+            SET enabled = ?2, updated_at = CURRENT_TIMESTAMP
+            WHERE source_key = ?1
+            "#,
+            params![&key, enabled],
+        )?;
+        if changed == 0 {
+            return Err(ApiError::BadRequest("source not found".to_string()));
+        }
+
+        database.query_row(
+            r#"
+            SELECT source_key, name, version, file_name, enabled, updated_at
+            FROM comic_sources
+            WHERE source_key = ?1
+            "#,
+            [&key],
+            |row| {
+                Ok(SourceSummary {
+                    key: row.get(0)?,
+                    name: row.get(1)?,
+                    version: row.get(2)?,
+                    file_name: row.get(3)?,
+                    enabled: row.get::<_, i64>(4)? != 0,
+                    runtime_status: "registered",
+                    updated_at: row.get(5)?,
+                })
+            },
+        )?
+    };
+
+    Ok(Json(source))
 }
 
 async fn delete_source(

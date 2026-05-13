@@ -41,6 +41,10 @@ export type SourceWriteRequest = {
   content: string
 }
 
+export type SourcePatchRequest = {
+  enabled?: boolean
+}
+
 export type SearchComic = {
   id: string
   title: string
@@ -367,6 +371,13 @@ export function getSources() {
 export function saveSource(payload: SourceWriteRequest) {
   return request<SourceSummary>('/api/sources', {
     method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function updateSource(key: string, payload: SourcePatchRequest) {
+  return request<SourceSummary>(`/api/sources/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload)
   })
 }

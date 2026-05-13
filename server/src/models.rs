@@ -57,6 +57,11 @@ pub struct SourceWriteRequest {
     pub content: String,
 }
 
+#[derive(Deserialize)]
+pub struct SourcePatchRequest {
+    pub enabled: Option<bool>,
+}
+
 #[derive(Serialize)]
 pub struct DeleteResponse {
     pub deleted: bool,

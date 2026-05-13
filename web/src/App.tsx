@@ -59,6 +59,7 @@ import {
   recordHistory,
   searchComics,
   setFavorite,
+  updateSource,
   updateSettings
 } from './api'
 import { ReloadPrompt } from './ReloadPrompt'
@@ -235,6 +236,14 @@ export default function App() {
     }))
   }
 
+  const toggleSource = async (key: string, enabled: boolean) => {
+    const source = await updateSource(key, { enabled })
+    setData((current) => ({
+      ...current,
+      sources: current.sources.map((item) => (item.key === key ? source : item))
+    }))
+  }
+
   const saveHistory = async (payload: HistoryWriteRequest) => {
     const library = await recordHistory(payload)
     setData((current) => ({
@@ -407,6 +416,7 @@ export default function App() {
               readerMode={readerMode}
               onSourceUpload={upsertSource}
               onSourceDelete={removeSource}
+              onSourceToggle={toggleSource}
               onRecordHistory={saveHistory}
               onSetFavorite={saveFavorite}
             />
@@ -709,6 +719,7 @@ function SearchView({
   readerMode,
   onSourceUpload,
   onSourceDelete,
+  onSourceToggle,
   onRecordHistory,
   onSetFavorite
 }: {
@@ -717,6 +728,7 @@ function SearchView({
   readerMode: ReaderMode
   onSourceUpload: (file: File) => Promise<void>
   onSourceDelete: (key: string) => Promise<void>
+  onSourceToggle: (key: string, enabled: boolean) => Promise<void>
   onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
   onSetFavorite: (payload: FavoriteWriteRequest) => Promise<void>
 }) {
@@ -732,10 +744,14 @@ function SearchView({
   const [loadingComic, setLoadingComic] = useState(false)
   const [loadingImages, setLoadingImages] = useState(false)
   const [sourceMessage, setSourceMessage] = useState<string | null>(null)
+  const enabledSources = useMemo(
+    () => sources.filter((source) => source.enabled && source.runtime_status === 'registered'),
+    [sources]
+  )
 
   useEffect(() => {
-    if (selectedSource && sources.some((source) => source.key === selectedSource)) return
-    const nextSource = sources[0]?.key ?? ''
+    if (selectedSource && enabledSources.some((source) => source.key === selectedSource)) return
+    const nextSource = enabledSources[0]?.key ?? ''
     setSelectedSource(nextSource)
     setResults([])
     setSearchMessage(null)
@@ -746,7 +762,7 @@ function SearchView({
     if (!nextSource) {
       setKeyword('')
     }
-  }, [selectedSource, sources])
+  }, [enabledSources, selectedSource])
 
   const handleSourceChange = (value: string) => {
     setSelectedSource(value)
@@ -865,23 +881,33 @@ function SearchView({
     }
   }
 
+  const handleToggle = async (key: string, enabled: boolean) => {
+    setSourceMessage('更新中')
+    try {
+      await onSourceToggle(key, enabled)
+      setSourceMessage(enabled ? '已启用' : '已停用')
+    } catch (err) {
+      setSourceMessage(err instanceof Error ? err.message : '更新失败')
+    }
+  }
+
   return (
     <div className="view-stack">
       <form className="search-strip" aria-label="搜索" onSubmit={handleSearch}>
         <Search size={20} />
         <input
           value={keyword}
-          placeholder={selectedSource ? '关键词' : '先导入漫画源'}
+          placeholder={selectedSource ? '关键词' : '先启用漫画源'}
           disabled={!selectedSource || searching}
           onChange={(event) => setKeyword(event.target.value)}
         />
         <select
           value={selectedSource}
-          disabled={sources.length === 0 || searching}
+          disabled={enabledSources.length === 0 || searching}
           aria-label="漫画源"
           onChange={(event) => handleSourceChange(event.target.value)}
         >
-          {sources.map((source) => (
+          {enabledSources.map((source) => (
             <option key={source.key} value={source.key}>
               {source.name}
             </option>
@@ -926,7 +952,7 @@ function SearchView({
           </label>
           {sourceMessage ? <span className="muted-text">{sourceMessage}</span> : null}
         </div>
-        <SourceList sources={sources} onDelete={handleDelete} />
+        <SourceList sources={sources} onDelete={handleDelete} onToggle={handleToggle} />
       </Panel>
     </div>
   )
@@ -1824,11 +1850,13 @@ function Panel({
 function SourceList({
   sources,
   compact = false,
-  onDelete
+  onDelete,
+  onToggle
 }: {
   sources: SourceSummary[]
   compact?: boolean
   onDelete?: (key: string) => void
+  onToggle?: (key: string, enabled: boolean) => void
 }) {
   if (sources.length === 0) {
     return <EmptyLine icon={Library} text="暂无源文件" />
@@ -1839,23 +1867,44 @@ function SourceList({
       {sources.map((source) => (
         <div className="source-row" key={source.key}>
           <div className="source-main">
-            <strong>{source.name}</strong>
+            <div className="source-title-row">
+              <strong>{source.name}</strong>
+              {source.version ? <span className="source-version-chip">{source.version}</span> : null}
+            </div>
             <span>{source.file_name}</span>
           </div>
-          <StatusPill
-            ok={source.runtime_status === 'registered'}
-            text={source.runtime_status === 'registered' ? '已登记' : '待解析'}
-          />
-          {onDelete ? (
-            <button
-              className="icon-button danger"
-              type="button"
-              aria-label={`删除 ${source.name}`}
-              onClick={() => onDelete(source.key)}
-            >
-              <Trash2 size={16} />
-            </button>
-          ) : null}
+          <div className="source-actions">
+            <StatusPill
+              ok={source.runtime_status === 'registered' && source.enabled}
+              text={
+                source.runtime_status !== 'registered'
+                  ? '待解析'
+                  : source.enabled
+                    ? '启用'
+                    : '停用'
+              }
+            />
+            {onToggle && source.runtime_status === 'registered' ? (
+              <label className="source-toggle" title={source.enabled ? '停用' : '启用'}>
+                <input
+                  type="checkbox"
+                  checked={source.enabled}
+                  onChange={(event) => onToggle(source.key, event.target.checked)}
+                />
+                <span />
+              </label>
+            ) : null}
+            {onDelete ? (
+              <button
+                className="icon-button danger"
+                type="button"
+                aria-label={`删除 ${source.name}`}
+                onClick={() => onDelete(source.key)}
+              >
+                <Trash2 size={16} />
+              </button>
+            ) : null}
+          </div>
         </div>
       ))}
     </div>
