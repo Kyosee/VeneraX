@@ -91,6 +91,8 @@ import {
   deleteFavoriteFolder
 } from './api'
 import { ReloadPrompt } from './ReloadPrompt'
+import { ThemeProvider } from './theme/ThemeProvider'
+import { SnackbarHost } from './ui/Snackbar'
 
 type TabKey =
   | 'home'
@@ -716,9 +718,14 @@ export default function App() {
   )
 
   return (
-    <div className="app-shell">
-      <SideNav activeTab={activePrimaryTab} onSelect={openTab} />
-      <main className="main-area">
+    <ThemeProvider
+      colorSetting={typeof data.settings?.values.color === 'string' ? data.settings.values.color : 'blue'}
+      themeMode={(themeMode === 'light' || themeMode === 'dark') ? themeMode : 'system'}
+    >
+      <SnackbarHost>
+        <div className="app-shell">
+          <SideNav activeTab={activePrimaryTab} onSelect={openTab} />
+          <main className="main-area">
         {showRootChrome ? (
           <TopBar
             activeTab={activePrimaryTab}
@@ -854,7 +861,9 @@ export default function App() {
       </main>
       {showRootChrome ? <BottomNav activeTab={activePrimaryTab} onSelect={openTab} /> : null}
       <ReloadPrompt />
-    </div>
+        </div>
+      </SnackbarHost>
+    </ThemeProvider>
   )
 }
 
