@@ -88,6 +88,41 @@ export type ComicPagesResponse = {
   images: string[]
 }
 
+export type LibraryItem = {
+  source_key: string
+  comic_id: string
+  title: string
+  subtitle: string | null
+  cover: string | null
+  episode_id: string | null
+  episode_title: string | null
+  updated_at: string | null
+}
+
+export type LibraryResponse = {
+  history: LibraryItem[]
+  favorites: LibraryItem[]
+}
+
+export type HistoryWriteRequest = {
+  source_key: string
+  comic_id: string
+  title: string
+  subtitle: string | null
+  cover: string | null
+  episode_id: string
+  episode_title: string
+}
+
+export type FavoriteWriteRequest = {
+  source_key: string
+  comic_id: string
+  title: string
+  subtitle: string | null
+  cover: string | null
+  favorite: boolean
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -125,6 +160,24 @@ export function updateSettings(values: Record<string, unknown>) {
   return request<SettingsResponse>('/api/settings', {
     method: 'PUT',
     body: JSON.stringify({ values })
+  })
+}
+
+export function getLibrary() {
+  return request<LibraryResponse>('/api/library')
+}
+
+export function recordHistory(payload: HistoryWriteRequest) {
+  return request<LibraryResponse>('/api/history', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function setFavorite(payload: FavoriteWriteRequest) {
+  return request<LibraryResponse>('/api/favorites', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   })
 }
 

@@ -13,6 +13,28 @@ CREATE TABLE IF NOT EXISTS comic_sources (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS reading_history (
+    source_key TEXT NOT NULL,
+    comic_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    cover TEXT,
+    episode_id TEXT,
+    episode_title TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source_key, comic_id)
+);
+
+CREATE TABLE IF NOT EXISTS favorites (
+    source_key TEXT NOT NULL,
+    comic_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    cover TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source_key, comic_id)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,

@@ -19,19 +19,26 @@ import {
 import {
   type ComicEpisode,
   type ComicInfo,
+  type FavoriteWriteRequest,
+  type HistoryWriteRequest,
   type HealthResponse,
+  type LibraryItem,
+  type LibraryResponse,
   type SearchComic,
   type SettingsResponse,
   type SourceSummary,
   getComicInfo,
   getComicPages,
   getHealth,
+  getLibrary,
   getSettings,
   getSources,
   saveSource,
   deleteSource,
   imageProxyUrl,
+  recordHistory,
   searchComics,
+  setFavorite,
   updateSettings
 } from './api'
 import { ReloadPrompt } from './ReloadPrompt'
@@ -42,6 +49,7 @@ type AppData = {
   health: HealthResponse | null
   settings: SettingsResponse | null
   sources: SourceSummary[]
+  library: LibraryResponse
 }
 
 const primaryNav = [
@@ -60,7 +68,8 @@ const actionNav = [
 const emptyData: AppData = {
   health: null,
   settings: null,
-  sources: []
+  sources: [],
+  library: { history: [], favorites: [] }
 }
 
 export default function App() {
@@ -74,12 +83,13 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [health, settings, sources] = await Promise.all([
+      const [health, settings, sources, library] = await Promise.all([
         getHealth(),
         getSettings(),
-        getSources()
+        getSources(),
+        getLibrary()
       ])
-      setData({ health, settings, sources })
+      setData({ health, settings, sources, library })
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
     } catch (err) {
       setError(err instanceof Error ? err.message : '服务端请求失败')
@@ -123,6 +133,16 @@ export default function App() {
     }))
   }
 
+  const saveHistory = async (payload: HistoryWriteRequest) => {
+    const library = await recordHistory(payload)
+    setData((current) => ({ ...current, library }))
+  }
+
+  const saveFavorite = async (payload: FavoriteWriteRequest) => {
+    const library = await setFavorite(payload)
+    setData((current) => ({ ...current, library }))
+  }
+
   return (
     <div className="app-shell">
       <SideNav activeTab={activeTab} onSelect={setActiveTab} />
@@ -136,11 +156,20 @@ export default function App() {
         />
         <div className="content">
           {activeTab === 'home' ? <HomeView data={data} error={error} /> : null}
-          {activeTab === 'favorites' ? <CollectionView title="收藏" icon={Heart} /> : null}
+          {activeTab === 'favorites' ? (
+            <LibraryView title="收藏" icon={Heart} items={data.library.favorites} emptyText="暂无收藏" />
+          ) : null}
           {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
           {activeTab === 'categories' ? <CollectionView title="分类" icon={Tags} /> : null}
           {activeTab === 'search' ? (
-            <SearchView sources={data.sources} onSourceUpload={upsertSource} onSourceDelete={removeSource} />
+            <SearchView
+              sources={data.sources}
+              favorites={data.library.favorites}
+              onSourceUpload={upsertSource}
+              onSourceDelete={removeSource}
+              onRecordHistory={saveHistory}
+              onSetFavorite={saveFavorite}
+            />
           ) : null}
           {activeTab === 'tasks' ? <TasksView /> : null}
           {activeTab === 'settings' ? (
@@ -276,11 +305,11 @@ function HomeView({ data, error }: { data: AppData; error: string | null }) {
       ) : null}
 
       <section className="panel-grid">
-        <Panel title="历史记录" action="0">
-          <EmptyLine icon={BookOpen} text="暂无阅读记录" />
+        <Panel title="历史记录" action={String(data.library.history.length)}>
+          <LibraryList items={data.library.history.slice(0, 4)} emptyText="暂无阅读记录" />
         </Panel>
-        <Panel title="本地漫画" action="0">
-          <EmptyLine icon={Library} text="暂无本地条目" />
+        <Panel title="收藏" action={String(data.library.favorites.length)}>
+          <LibraryList items={data.library.favorites.slice(0, 4)} emptyText="暂无收藏" />
         </Panel>
         <Panel title="追更" action="0">
           <EmptyLine icon={RefreshCw} text="暂无更新任务" />
@@ -295,12 +324,18 @@ function HomeView({ data, error }: { data: AppData; error: string | null }) {
 
 function SearchView({
   sources,
+  favorites,
   onSourceUpload,
-  onSourceDelete
+  onSourceDelete,
+  onRecordHistory,
+  onSetFavorite
 }: {
   sources: SourceSummary[]
+  favorites: LibraryItem[]
   onSourceUpload: (file: File) => Promise<void>
   onSourceDelete: (key: string) => Promise<void>
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+  onSetFavorite: (payload: FavoriteWriteRequest) => Promise<void>
 }) {
   const [keyword, setKeyword] = useState('')
   const [selectedSource, setSelectedSource] = useState('')
@@ -391,6 +426,17 @@ function SearchView({
       setImages(response.images)
       setActiveEpisodeTitle(episode.title)
       setComicMessage(response.images.length === 0 ? '暂无图片' : null)
+      if (response.images.length > 0) {
+        await onRecordHistory({
+          source_key: selectedSource,
+          comic_id: selectedComic.id,
+          title: selectedComic.title,
+          subtitle: selectedComic.subtitle,
+          cover: selectedComic.cover,
+          episode_id: episode.id,
+          episode_title: episode.title
+        })
+      }
     } catch (err) {
       setImages([])
       setActiveEpisodeTitle(null)
@@ -398,6 +444,18 @@ function SearchView({
     } finally {
       setLoadingImages(false)
     }
+  }
+
+  const handleFavoriteChange = async (comic: ComicInfo, favorite: boolean) => {
+    if (!selectedSource) return
+    await onSetFavorite({
+      source_key: selectedSource,
+      comic_id: comic.id,
+      title: comic.title,
+      subtitle: comic.subtitle,
+      cover: comic.cover,
+      favorite
+    })
   }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -462,10 +520,17 @@ function SearchView({
           comic={selectedComic}
           images={images}
           activeEpisodeTitle={activeEpisodeTitle}
+          favorite={Boolean(
+            selectedComic &&
+              favorites.some(
+                (item) => item.source_key === selectedSource && item.comic_id === selectedComic.id
+              )
+          )}
           loadingComic={loadingComic}
           loadingImages={loadingImages}
           message={comicMessage}
           onLoadImages={handleLoadImages}
+          onFavoriteChange={handleFavoriteChange}
         />
       </Panel>
       <Panel title="源管理" action={String(sources.length)}>
@@ -520,18 +585,22 @@ function ComicDetails({
   comic,
   images,
   activeEpisodeTitle,
+  favorite,
   loadingComic,
   loadingImages,
   message,
-  onLoadImages
+  onLoadImages,
+  onFavoriteChange
 }: {
   comic: ComicInfo | null
   images: string[]
   activeEpisodeTitle: string | null
+  favorite: boolean
   loadingComic: boolean
   loadingImages: boolean
   message: string | null
   onLoadImages: (episode: ComicEpisode) => void
+  onFavoriteChange: (comic: ComicInfo, favorite: boolean) => void
 }) {
   if (loadingComic) {
     return <EmptyLine icon={Loader2} text="加载详情中" />
@@ -554,6 +623,14 @@ function ComicDetails({
           <strong>{comic.title}</strong>
           {comic.subtitle ? <span>{comic.subtitle}</span> : null}
           {comic.description ? <p>{comic.description}</p> : null}
+          <button
+            className={favorite ? 'icon-text-button subtle active' : 'icon-text-button subtle'}
+            type="button"
+            onClick={() => onFavoriteChange(comic, !favorite)}
+          >
+            <Heart size={16} fill={favorite ? 'currentColor' : 'none'} />
+            {favorite ? '已收藏' : '收藏'}
+          </button>
         </div>
       </div>
       <div className="episode-list">
@@ -589,6 +666,61 @@ function ComicDetails({
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function LibraryView({
+  title,
+  icon: Icon,
+  items,
+  emptyText
+}: {
+  title: string
+  icon: typeof Home
+  items: LibraryItem[]
+  emptyText: string
+}) {
+  return (
+    <div className="view-stack">
+      <Panel title={title} action={String(items.length)}>
+        <LibraryList items={items} emptyText={emptyText} icon={Icon} />
+      </Panel>
+    </div>
+  )
+}
+
+function LibraryList({
+  items,
+  emptyText,
+  icon: Icon = BookOpen
+}: {
+  items: LibraryItem[]
+  emptyText: string
+  icon?: typeof Home
+}) {
+  if (items.length === 0) {
+    return <EmptyLine icon={Icon} text={emptyText} />
+  }
+
+  return (
+    <div className="library-list">
+      {items.map((item) => (
+        <div className="library-row" key={`${item.source_key}:${item.comic_id}`}>
+          {item.cover ? (
+            <img src={imageProxyUrl(item.cover)} alt="" loading="lazy" />
+          ) : (
+            <div className="result-cover-placeholder">
+              <BookOpen size={18} />
+            </div>
+          )}
+          <div className="library-main">
+            <strong>{item.title}</strong>
+            {item.episode_title ? <span>{item.episode_title}</span> : null}
+            {item.subtitle ? <small>{item.subtitle}</small> : null}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

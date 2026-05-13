@@ -250,6 +250,17 @@ button {
   font-weight: 700;
 }
 
+.icon-text-button.subtle {
+  margin-top: 10px;
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.icon-text-button.subtle.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
 .icon-button.danger {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
@@ -299,7 +310,8 @@ button {
   text-align: center;
 }
 
-.source-list {
+.source-list,
+.library-list {
   display: grid;
   gap: 8px;
 }
@@ -323,6 +335,7 @@ button {
 }
 
 .source-row,
+.library-row,
 .data-row,
 .empty-line {
   display: flex;
@@ -330,7 +343,8 @@ button {
   min-width: 0;
 }
 
-.source-row {
+.source-row,
+.library-row {
   justify-content: space-between;
   gap: 12px;
   padding: 10px;
@@ -338,25 +352,45 @@ button {
   background: var(--surface-soft);
 }
 
-.source-main {
+.source-main,
+.library-main {
   display: grid;
   min-width: 0;
 }
 
 .source-main strong,
-.source-main span {
+.source-main span,
+.library-main strong,
+.library-main span,
+.library-main small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .source-main span,
+.library-main span,
+.library-main small,
 .result-main span,
 .result-main small,
 .empty-line,
 .data-row {
   color: var(--muted);
   font-size: 13px;
+}
+
+.library-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+}
+
+.library-row img,
+.library-row .result-cover-placeholder {
+  width: 42px;
+  aspect-ratio: 3 / 4;
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 .empty-line,

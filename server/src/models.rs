@@ -151,3 +151,42 @@ pub struct ComicPagesResponse {
     pub episode_id: String,
     pub images: Vec<String>,
 }
+
+#[derive(Serialize)]
+pub struct LibraryItem {
+    pub source_key: String,
+    pub comic_id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub cover: Option<String>,
+    pub episode_id: Option<String>,
+    pub episode_title: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct LibraryResponse {
+    pub history: Vec<LibraryItem>,
+    pub favorites: Vec<LibraryItem>,
+}
+
+#[derive(Deserialize)]
+pub struct HistoryWriteRequest {
+    pub source_key: String,
+    pub comic_id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub cover: Option<String>,
+    pub episode_id: String,
+    pub episode_title: String,
+}
+
+#[derive(Deserialize)]
+pub struct FavoriteWriteRequest {
+    pub source_key: String,
+    pub comic_id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub cover: Option<String>,
+    pub favorite: bool,
+}

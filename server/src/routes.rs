@@ -11,6 +11,7 @@ use axum::{
     Json, Router,
 };
 use regex::Regex;
+use rusqlite::params;
 use serde_json::Value;
 use tokio::fs;
 
@@ -19,7 +20,8 @@ use crate::{
     image_proxy,
     models::{
         CapabilitiesResponse, Capability, ComicInfoRequest, ComicInfoResponse, ComicPagesRequest,
-        ComicPagesResponse, DeleteResponse, HealthResponse, ImageProxyQuery, SearchRequest,
+        ComicPagesResponse, DeleteResponse, FavoriteWriteRequest, HealthResponse,
+        HistoryWriteRequest, ImageProxyQuery, LibraryItem, LibraryResponse, SearchRequest,
         SearchResponse, SettingsPatch, SettingsResponse, SourceSummary, SourceWriteRequest,
     },
     source_runtime,
@@ -31,6 +33,9 @@ pub fn api_router() -> Router<AppState> {
         .route("/health", get(health))
         .route("/capabilities", get(capabilities))
         .route("/settings", get(get_settings).put(update_settings))
+        .route("/library", get(get_library))
+        .route("/history", post(upsert_history))
+        .route("/favorites", post(set_favorite))
         .route("/sources", get(list_sources).post(upsert_source))
         .route("/sources/{key}", delete(delete_source))
         .route("/search", post(search_comics))
@@ -134,6 +139,100 @@ async fn update_settings(
     }
 
     get_settings(State(state)).await
+}
+
+async fn get_library(State(state): State<AppState>) -> ApiResult<Json<LibraryResponse>> {
+    Ok(Json(read_library(&state)?))
+}
+
+async fn upsert_history(
+    State(state): State<AppState>,
+    Json(payload): Json<HistoryWriteRequest>,
+) -> ApiResult<Json<LibraryResponse>> {
+    validate_library_key(&payload.source_key, &payload.comic_id)?;
+    if payload.title.trim().is_empty() || payload.episode_id.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "history title and episode id cannot be empty".to_string(),
+        ));
+    }
+
+    {
+        let database = state
+            .database
+            .lock()
+            .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+        database.execute(
+            r#"
+            INSERT INTO reading_history (
+                source_key, comic_id, title, subtitle, cover, episode_id, episode_title, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)
+            ON CONFLICT(source_key, comic_id) DO UPDATE SET
+                title = excluded.title,
+                subtitle = excluded.subtitle,
+                cover = excluded.cover,
+                episode_id = excluded.episode_id,
+                episode_title = excluded.episode_title,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+            params![
+                payload.source_key,
+                payload.comic_id,
+                payload.title.trim(),
+                payload.subtitle,
+                payload.cover,
+                payload.episode_id.trim(),
+                payload.episode_title.trim(),
+            ],
+        )?;
+    }
+
+    Ok(Json(read_library(&state)?))
+}
+
+async fn set_favorite(
+    State(state): State<AppState>,
+    Json(payload): Json<FavoriteWriteRequest>,
+) -> ApiResult<Json<LibraryResponse>> {
+    validate_library_key(&payload.source_key, &payload.comic_id)?;
+    if payload.favorite && payload.title.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "favorite title cannot be empty".to_string(),
+        ));
+    }
+
+    {
+        let database = state
+            .database
+            .lock()
+            .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+        if payload.favorite {
+            database.execute(
+                r#"
+                INSERT INTO favorites (source_key, comic_id, title, subtitle, cover, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)
+                ON CONFLICT(source_key, comic_id) DO UPDATE SET
+                    title = excluded.title,
+                    subtitle = excluded.subtitle,
+                    cover = excluded.cover
+                "#,
+                params![
+                    payload.source_key,
+                    payload.comic_id,
+                    payload.title.trim(),
+                    payload.subtitle,
+                    payload.cover,
+                ],
+            )?;
+        } else {
+            database.execute(
+                "DELETE FROM favorites WHERE source_key = ?1 AND comic_id = ?2",
+                params![payload.source_key, payload.comic_id],
+            )?;
+        }
+    }
+
+    Ok(Json(read_library(&state)?))
 }
 
 async fn search_comics(
@@ -396,6 +495,63 @@ async fn delete_source(
     Ok(Json(DeleteResponse { deleted: true }))
 }
 
+fn read_library(state: &AppState) -> ApiResult<LibraryResponse> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+
+    let history = {
+        let mut statement = database.prepare(
+            r#"
+            SELECT source_key, comic_id, title, subtitle, cover, episode_id, episode_title, updated_at
+            FROM reading_history
+            ORDER BY updated_at DESC
+            LIMIT 20
+            "#,
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(LibraryItem {
+                source_key: row.get(0)?,
+                comic_id: row.get(1)?,
+                title: row.get(2)?,
+                subtitle: row.get(3)?,
+                cover: row.get(4)?,
+                episode_id: row.get(5)?,
+                episode_title: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let favorites = {
+        let mut statement = database.prepare(
+            r#"
+            SELECT source_key, comic_id, title, subtitle, cover, created_at
+            FROM favorites
+            ORDER BY created_at DESC
+            LIMIT 50
+            "#,
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(LibraryItem {
+                source_key: row.get(0)?,
+                comic_id: row.get(1)?,
+                title: row.get(2)?,
+                subtitle: row.get(3)?,
+                cover: row.get(4)?,
+                episode_id: None,
+                episode_title: None,
+                updated_at: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    Ok(LibraryResponse { history, favorites })
+}
+
 fn read_settings(state: &AppState) -> ApiResult<BTreeMap<String, Value>> {
     let database = state
         .database
@@ -414,6 +570,16 @@ fn read_settings(state: &AppState) -> ApiResult<BTreeMap<String, Value>> {
     }
 
     Ok(values)
+}
+
+fn validate_library_key(source_key: &str, comic_id: &str) -> ApiResult<()> {
+    if !is_valid_source_key(source_key) {
+        return Err(ApiError::BadRequest("invalid source key".to_string()));
+    }
+    if comic_id.trim().is_empty() {
+        return Err(ApiError::BadRequest("comic id cannot be empty".to_string()));
+    }
+    Ok(())
 }
 
 fn source_file_name(state: &AppState, key: &str) -> ApiResult<String> {
