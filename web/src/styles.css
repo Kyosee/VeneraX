@@ -1882,26 +1882,9 @@ button {
   }
 }
 
-/* App layout parity overrides — match Flutter Material Design */
-:root,
-:root[data-theme="dark"] {
-  color-scheme: light;
-  color: #171d1b;
-  background: #ffffff;
-  --bg: #ffffff;
-  --surface: #ffffff;
-  --surface-soft: #f0f5f3;
-  --text: #171d1b;
-  --muted: #6b7571;
-  --border: #dfe7e3;
-  --primary: #008f86;
-  --primary-soft: #d8f3ee;
-  --secondary-soft: #e4f3ef;
-  --teal: #008f86;
-  --amber: #9a6700;
-  --danger: #ba1a1a;
-  --shadow: 0 1px 3px rgba(24, 35, 32, 0.08);
-}
+/* App layout parity overrides — static palette removed; M3 tokens are
+   set dynamically by ThemeProvider and aliased to legacy --bg/--surface/etc.
+   at the top of this file. */
 
 body,
 .app-shell {
