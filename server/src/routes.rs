@@ -18,14 +18,16 @@ use tokio::fs;
 
 use crate::{
     error::{ApiError, ApiResult},
-    image_proxy,
+    image_proxy, import_preview,
     models::{
         CapabilitiesResponse, Capability, ComicInfoRequest, ComicInfoResponse, ComicPagesRequest,
         ComicPagesResponse, DeleteResponse, FavoriteWriteRequest, HealthResponse,
-        HistoryWriteRequest, ImageProxyQuery, LibraryItem, LibraryResponse, SearchRequest,
-        SearchResponse, SettingsPatch, SettingsResponse, SourceSummary, SourceWriteRequest,
-        WebDavConfigRequest, WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse,
-        WebDavListRequest, WebDavListResponse,
+        HistoryWriteRequest, ImageProxyQuery, ImportBackupApplyRequest, ImportBackupApplyResponse,
+        ImportBackupPreviewRequest, ImportBackupPreviewResponse, ImportBackupsResponse,
+        LibraryItem, LibraryResponse, SearchRequest, SearchResponse, SettingsPatch,
+        SettingsResponse, SourceSummary, SourceWriteRequest, WebDavConfigRequest,
+        WebDavConfigResponse, WebDavDownloadRequest, WebDavDownloadResponse, WebDavListRequest,
+        WebDavListResponse,
     },
     source_runtime,
     state::AppState,
@@ -48,6 +50,9 @@ pub fn api_router() -> Router<AppState> {
         )
         .route("/webdav/list", post(list_webdav))
         .route("/webdav/download", post(download_webdav))
+        .route("/imports/backups", get(list_import_backups))
+        .route("/imports/preview", post(preview_import_backup))
+        .route("/imports/apply", post(apply_import_backup))
         .route("/sources", get(list_sources).post(upsert_source))
         .route("/sources/{key}", delete(delete_source))
         .route("/search", post(search_comics))
@@ -353,6 +358,30 @@ async fn download_webdav(
     Ok(Json(response))
 }
 
+async fn list_import_backups(
+    State(state): State<AppState>,
+) -> ApiResult<Json<ImportBackupsResponse>> {
+    Ok(Json(import_preview::list_backups(&state.config).await?))
+}
+
+async fn preview_import_backup(
+    State(state): State<AppState>,
+    Json(payload): Json<ImportBackupPreviewRequest>,
+) -> ApiResult<Json<ImportBackupPreviewResponse>> {
+    Ok(Json(
+        import_preview::preview_backup(&state.config, &payload.path).await?,
+    ))
+}
+
+async fn apply_import_backup(
+    State(state): State<AppState>,
+    Json(payload): Json<ImportBackupApplyRequest>,
+) -> ApiResult<Json<ImportBackupApplyResponse>> {
+    Ok(Json(
+        import_preview::apply_backup(&state, &payload.path).await?,
+    ))
+}
+
 async fn search_comics(
     State(state): State<AppState>,
     Json(payload): Json<SearchRequest>,
@@ -642,6 +671,9 @@ fn read_library(state: &AppState) -> ApiResult<LibraryResponse> {
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
     };
+    let history_total = database.query_row("SELECT COUNT(*) FROM reading_history", [], |row| {
+        row.get::<_, u64>(0)
+    })?;
 
     let favorites = {
         let mut statement = database.prepare(
@@ -666,8 +698,16 @@ fn read_library(state: &AppState) -> ApiResult<LibraryResponse> {
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
     };
+    let favorites_total = database.query_row("SELECT COUNT(*) FROM favorites", [], |row| {
+        row.get::<_, u64>(0)
+    })?;
 
-    Ok(LibraryResponse { history, favorites })
+    Ok(LibraryResponse {
+        history_total,
+        favorites_total,
+        history,
+        favorites,
+    })
 }
 
 fn read_settings(state: &AppState) -> ApiResult<BTreeMap<String, Value>> {

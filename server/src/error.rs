@@ -21,6 +21,8 @@ pub enum ApiError {
     ImageProxy(String),
     #[error("webdav error: {0}")]
     WebDav(String),
+    #[error("import preview error: {0}")]
+    ImportPreview(String),
 }
 
 #[derive(Serialize)]
@@ -35,6 +37,7 @@ impl IntoResponse for ApiError {
             ApiError::SourceRuntime(_) | ApiError::ImageProxy(_) | ApiError::WebDav(_) => {
                 StatusCode::BAD_GATEWAY
             }
+            ApiError::ImportPreview(_) => StatusCode::BAD_REQUEST,
             ApiError::Database(_) | ApiError::Io(_) | ApiError::State(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }

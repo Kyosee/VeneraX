@@ -24,6 +24,9 @@ import {
   type FavoriteWriteRequest,
   type HistoryWriteRequest,
   type HealthResponse,
+  type ImportBackupApplyResponse,
+  type ImportBackupPreviewResponse,
+  type ImportBackupSummary,
   type LibraryItem,
   type LibraryResponse,
   type SearchComic,
@@ -31,6 +34,7 @@ import {
   type SourceSummary,
   type WebDavConfigResponse,
   type WebDavEntry,
+  applyImportBackup,
   getComicInfo,
   getComicPages,
   getHealth,
@@ -38,7 +42,9 @@ import {
   getSettings,
   getSources,
   getWebDavConfig,
+  listImportBackups,
   listWebDav,
+  previewImportBackup,
   saveSource,
   saveWebDavConfig,
   deleteSource,
@@ -77,7 +83,7 @@ const emptyData: AppData = {
   health: null,
   settings: null,
   sources: [],
-  library: { history: [], favorites: [] }
+  library: { history_total: 0, favorites_total: 0, history: [], favorites: [] }
 }
 
 export default function App() {
@@ -165,7 +171,13 @@ export default function App() {
         <div className="content">
           {activeTab === 'home' ? <HomeView data={data} error={error} /> : null}
           {activeTab === 'favorites' ? (
-            <LibraryView title="收藏" icon={Heart} items={data.library.favorites} emptyText="暂无收藏" />
+            <LibraryView
+              title="收藏"
+              icon={Heart}
+              items={data.library.favorites}
+              total={data.library.favorites_total}
+              emptyText="暂无收藏"
+            />
           ) : null}
           {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
           {activeTab === 'categories' ? <CollectionView title="分类" icon={Tags} /> : null}
@@ -181,7 +193,12 @@ export default function App() {
           ) : null}
           {activeTab === 'tasks' ? <TasksView /> : null}
           {activeTab === 'settings' ? (
-            <SettingsView settings={data.settings} themeMode={themeMode} onThemeChange={setThemeMode} />
+            <SettingsView
+              settings={data.settings}
+              themeMode={themeMode}
+              onThemeChange={setThemeMode}
+              onImportComplete={load}
+            />
           ) : null}
         </div>
       </main>
@@ -313,10 +330,10 @@ function HomeView({ data, error }: { data: AppData; error: string | null }) {
       ) : null}
 
       <section className="panel-grid">
-        <Panel title="历史记录" action={String(data.library.history.length)}>
+        <Panel title="历史记录" action={String(data.library.history_total)}>
           <LibraryList items={data.library.history.slice(0, 4)} emptyText="暂无阅读记录" />
         </Panel>
-        <Panel title="收藏" action={String(data.library.favorites.length)}>
+        <Panel title="收藏" action={String(data.library.favorites_total)}>
           <LibraryList items={data.library.favorites.slice(0, 4)} emptyText="暂无收藏" />
         </Panel>
         <Panel title="追更" action="0">
@@ -682,16 +699,18 @@ function LibraryView({
   title,
   icon: Icon,
   items,
+  total,
   emptyText
 }: {
   title: string
   icon: typeof Home
   items: LibraryItem[]
+  total: number
   emptyText: string
 }) {
   return (
     <div className="view-stack">
-      <Panel title={title} action={String(items.length)}>
+      <Panel title={title} action={String(total)}>
         <LibraryList items={items} emptyText={emptyText} icon={Icon} />
       </Panel>
     </div>
@@ -756,11 +775,13 @@ function TasksView() {
 function SettingsView({
   settings,
   themeMode,
-  onThemeChange
+  onThemeChange,
+  onImportComplete
 }: {
   settings: SettingsResponse | null
   themeMode: string
   onThemeChange: (value: string) => Promise<void>
+  onImportComplete: () => void | Promise<void>
 }) {
   const hidden = settings?.hidden_features ?? []
 
@@ -780,7 +801,7 @@ function SettingsView({
           ))}
         </div>
       </Panel>
-      <WebDavPanel />
+      <WebDavPanel onImportComplete={onImportComplete} />
       <Panel title="Web 屏蔽项" action={String(hidden.length)}>
         <div className="hidden-list">
           {hidden.map((item) => (
@@ -795,7 +816,7 @@ function SettingsView({
   )
 }
 
-function WebDavPanel() {
+function WebDavPanel({ onImportComplete }: { onImportComplete: () => void | Promise<void> }) {
   const [config, setConfig] = useState<WebDavConfigResponse | null>(null)
   const [endpointUrl, setEndpointUrl] = useState('')
   const [username, setUsername] = useState('')
@@ -803,6 +824,9 @@ function WebDavPanel() {
   const [rootPath, setRootPath] = useState('/')
   const [currentPath, setCurrentPath] = useState('')
   const [entries, setEntries] = useState<WebDavEntry[]>([])
+  const [backups, setBackups] = useState<ImportBackupSummary[]>([])
+  const [preview, setPreview] = useState<ImportBackupPreviewResponse | null>(null)
+  const [importResult, setImportResult] = useState<ImportBackupApplyResponse | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -815,7 +839,13 @@ function WebDavPanel() {
         setRootPath(next.root_path || '/')
       })
       .catch((err) => setMessage(err instanceof Error ? err.message : 'WebDAV 配置读取失败'))
+    void loadBackups()
   }, [])
+
+  const loadBackups = async () => {
+    const result = await listImportBackups()
+    setBackups(result.backups)
+  }
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -858,8 +888,37 @@ function WebDavPanel() {
     try {
       const result = await downloadWebDav(path)
       setMessage(`已下载 ${result.file_name}`)
+      await loadBackups()
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'WebDAV 下载失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const previewBackup = async (path: string) => {
+    setBusy(true)
+    setMessage(null)
+    setImportResult(null)
+    try {
+      setPreview(await previewImportBackup(path))
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : '备份预览失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importBackup = async (path: string) => {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const result = await applyImportBackup(path)
+      setImportResult(result)
+      setMessage(`已导入 ${result.sources_imported} 个源、${result.favorites_imported} 个收藏、${result.history_imported} 条历史`)
+      await onImportComplete()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : '备份导入失败')
     } finally {
       setBusy(false)
     }
@@ -928,8 +987,77 @@ function WebDavPanel() {
           ))}
         </div>
       ) : null}
+      {backups.length > 0 ? (
+        <div className="import-backups">
+          <div className="section-label">本地备份</div>
+          {backups.map((backup) => (
+            <div className="webdav-row" key={backup.path}>
+              <button
+                className="webdav-entry-button"
+                type="button"
+                disabled={busy}
+                onClick={() => void previewBackup(backup.path)}
+              >
+                <BookOpen size={16} />
+                <span>{backup.file_name}</span>
+                <small>{formatBytes(backup.size)}</small>
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                disabled={busy}
+                aria-label={`导入 ${backup.file_name}`}
+                onClick={() => void importBackup(backup.path)}
+              >
+                <Upload size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {preview ? <BackupPreview preview={preview} /> : null}
+      {importResult ? (
+        <div className="import-result">
+          源 {importResult.sources_imported}，收藏 {importResult.favorites_imported}，历史 {importResult.history_imported}
+          ，跳过 {importResult.favorites_skipped + importResult.history_skipped}
+        </div>
+      ) : null}
     </Panel>
   )
+}
+
+function BackupPreview({ preview }: { preview: ImportBackupPreviewResponse }) {
+  return (
+    <div className="backup-preview">
+      <div className="section-label">备份预览</div>
+      <div className="backup-stats">
+        <span>源 JS {preview.comic_source_js_count}</span>
+        <span>源数据 {preview.comic_source_data_count}</span>
+        <span>文件 {preview.entry_count}</span>
+      </div>
+      <div className="data-row">AppData: {preview.appdata_keys.join(', ') || '无'}</div>
+      <div className="backup-db-list">
+        {preview.databases.map((database) => (
+          <div className="backup-db" key={database.name}>
+            <strong>{database.name}</strong>
+            <span>
+              {database.present
+                ? database.error
+                  ? database.error
+                  : `${database.tables.length} 表`
+                : '缺失'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
 function Panel({

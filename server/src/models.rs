@@ -166,6 +166,8 @@ pub struct LibraryItem {
 
 #[derive(Serialize)]
 pub struct LibraryResponse {
+    pub history_total: u64,
+    pub favorites_total: u64,
     pub history: Vec<LibraryItem>,
     pub favorites: Vec<LibraryItem>,
 }
@@ -241,4 +243,67 @@ pub struct WebDavDownloadResponse {
     pub local_path: String,
     pub size: u64,
     pub content_type: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupSummary {
+    pub file_name: String,
+    pub path: String,
+    pub size: u64,
+    pub modified: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupsResponse {
+    pub backups: Vec<ImportBackupSummary>,
+}
+
+#[derive(Deserialize)]
+pub struct ImportBackupPreviewRequest {
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+pub struct ImportBackupApplyRequest {
+    pub path: String,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupTablePreview {
+    pub name: String,
+    pub row_count: Option<u64>,
+    pub columns: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupDatabasePreview {
+    pub name: String,
+    pub present: bool,
+    pub tables: Vec<ImportBackupTablePreview>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupPreviewResponse {
+    pub file_name: String,
+    pub path: String,
+    pub size: u64,
+    pub entry_count: usize,
+    pub appdata_keys: Vec<String>,
+    pub comic_source_js_count: usize,
+    pub comic_source_data_count: usize,
+    pub comic_source_samples: Vec<String>,
+    pub databases: Vec<ImportBackupDatabasePreview>,
+}
+
+#[derive(Serialize)]
+pub struct ImportBackupApplyResponse {
+    pub file_name: String,
+    pub path: String,
+    pub sources_imported: usize,
+    pub source_data_files_imported: usize,
+    pub favorites_imported: usize,
+    pub history_imported: usize,
+    pub favorites_skipped: usize,
+    pub history_skipped: usize,
 }

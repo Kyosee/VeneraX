@@ -626,6 +626,55 @@ button {
   white-space: nowrap;
 }
 
+.webdav-entry-button small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.import-backups,
+.backup-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.backup-stats,
+.backup-db-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.backup-stats span,
+.backup-db {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.backup-db span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.import-result {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .segmented-control {
   display: inline-grid;
   grid-template-columns: repeat(3, minmax(74px, 1fr));

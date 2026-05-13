@@ -100,6 +100,8 @@ export type LibraryItem = {
 }
 
 export type LibraryResponse = {
+  history_total: number
+  favorites_total: number
   history: LibraryItem[]
   favorites: LibraryItem[]
 }
@@ -158,6 +160,53 @@ export type WebDavDownloadResponse = {
   local_path: string
   size: number
   content_type: string | null
+}
+
+export type ImportBackupSummary = {
+  file_name: string
+  path: string
+  size: number
+  modified: number | null
+}
+
+export type ImportBackupsResponse = {
+  backups: ImportBackupSummary[]
+}
+
+export type ImportBackupTablePreview = {
+  name: string
+  row_count: number | null
+  columns: string[]
+}
+
+export type ImportBackupDatabasePreview = {
+  name: string
+  present: boolean
+  tables: ImportBackupTablePreview[]
+  error: string | null
+}
+
+export type ImportBackupPreviewResponse = {
+  file_name: string
+  path: string
+  size: number
+  entry_count: number
+  appdata_keys: string[]
+  comic_source_js_count: number
+  comic_source_data_count: number
+  comic_source_samples: string[]
+  databases: ImportBackupDatabasePreview[]
+}
+
+export type ImportBackupApplyResponse = {
+  file_name: string
+  path: string
+  sources_imported: number
+  source_data_files_imported: number
+  favorites_imported: number
+  history_imported: number
+  favorites_skipped: number
+  history_skipped: number
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -244,6 +293,24 @@ export function listWebDav(path = '') {
 
 export function downloadWebDav(path: string) {
   return request<WebDavDownloadResponse>('/api/webdav/download', {
+    method: 'POST',
+    body: JSON.stringify({ path })
+  })
+}
+
+export function listImportBackups() {
+  return request<ImportBackupsResponse>('/api/imports/backups')
+}
+
+export function previewImportBackup(path: string) {
+  return request<ImportBackupPreviewResponse>('/api/imports/preview', {
+    method: 'POST',
+    body: JSON.stringify({ path })
+  })
+}
+
+export function applyImportBackup(path: string) {
+  return request<ImportBackupApplyResponse>('/api/imports/apply', {
     method: 'POST',
     body: JSON.stringify({ path })
   })
