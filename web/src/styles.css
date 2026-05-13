@@ -241,46 +241,17 @@ button {
   font-weight: 700;
 }
 
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+.icon-button.danger {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-.metric,
 .panel,
 .notice {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-.metric {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 4px 10px;
-  min-height: 68px;
-  padding: 12px;
-}
-
-.metric svg {
-  color: var(--teal);
-}
-
-.metric span {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.metric strong {
-  grid-column: 2;
-  overflow: hidden;
-  font-size: 20px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .panel-grid {
@@ -328,6 +299,18 @@ button {
   max-height: 224px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.source-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.source-toolbar input {
+  display: none;
 }
 
 .source-row,
@@ -504,25 +487,6 @@ button {
   .panel-grid,
   .hidden-list {
     grid-template-columns: 1fr;
-  }
-
-  .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .metric {
-    min-height: 58px;
-    padding: 10px;
-    gap: 2px 8px;
-  }
-
-  .metric strong {
-    font-size: 18px;
-  }
-
-  .metric span {
-    font-size: 12px;
   }
 
   .search-strip {

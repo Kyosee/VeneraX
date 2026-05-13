@@ -49,3 +49,14 @@ pub struct SourceSummary {
     pub runtime_status: &'static str,
     pub updated_at: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct SourceWriteRequest {
+    pub file_name: Option<String>,
+    pub content: String,
+}
+
+#[derive(Serialize)]
+pub struct DeleteResponse {
+    pub deleted: bool,
+}

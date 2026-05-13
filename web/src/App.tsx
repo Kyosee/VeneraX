@@ -1,31 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen,
-  CheckCircle2,
   ClipboardList,
   Compass,
-  Database,
   EyeOff,
   Heart,
   Home,
   Library,
   Loader2,
+  Trash2,
+  Upload,
   RefreshCw,
   Search,
-  Server,
   Settings,
   Tags,
   WifiOff
 } from 'lucide-react'
 import {
-  type CapabilitiesResponse,
   type HealthResponse,
   type SettingsResponse,
   type SourceSummary,
-  getCapabilities,
   getHealth,
   getSettings,
   getSources,
+  saveSource,
+  deleteSource,
   updateSettings
 } from './api'
 import { ReloadPrompt } from './ReloadPrompt'
@@ -34,7 +33,6 @@ type TabKey = 'home' | 'favorites' | 'explore' | 'categories' | 'search' | 'task
 
 type AppData = {
   health: HealthResponse | null
-  capabilities: CapabilitiesResponse | null
   settings: SettingsResponse | null
   sources: SourceSummary[]
 }
@@ -54,7 +52,6 @@ const actionNav = [
 
 const emptyData: AppData = {
   health: null,
-  capabilities: null,
   settings: null,
   sources: []
 }
@@ -70,13 +67,12 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [health, capabilities, settings, sources] = await Promise.all([
+      const [health, settings, sources] = await Promise.all([
         getHealth(),
-        getCapabilities(),
         getSettings(),
         getSources()
       ])
-      setData({ health, capabilities, settings, sources })
+      setData({ health, settings, sources })
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
     } catch (err) {
       setError(err instanceof Error ? err.message : '服务端请求失败')
@@ -103,6 +99,23 @@ export default function App() {
     setData((current) => ({ ...current, settings: next }))
   }
 
+  const upsertSource = async (file: File) => {
+    const content = await file.text()
+    const source = await saveSource({ file_name: file.name, content })
+    setData((current) => ({
+      ...current,
+      sources: [source, ...current.sources.filter((item) => item.key !== source.key)]
+    }))
+  }
+
+  const removeSource = async (key: string) => {
+    await deleteSource(key)
+    setData((current) => ({
+      ...current,
+      sources: current.sources.filter((item) => item.key !== key)
+    }))
+  }
+
   return (
     <div className="app-shell">
       <SideNav activeTab={activeTab} onSelect={setActiveTab} />
@@ -115,11 +128,13 @@ export default function App() {
           onRefresh={load}
         />
         <div className="content">
-          {activeTab === 'home' ? <HomeView data={data} error={error} loading={loading} /> : null}
+          {activeTab === 'home' ? <HomeView data={data} error={error} /> : null}
           {activeTab === 'favorites' ? <CollectionView title="收藏" icon={Heart} /> : null}
           {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
           {activeTab === 'categories' ? <CollectionView title="分类" icon={Tags} /> : null}
-          {activeTab === 'search' ? <SearchView sources={data.sources} /> : null}
+          {activeTab === 'search' ? (
+            <SearchView sources={data.sources} onSourceUpload={upsertSource} onSourceDelete={removeSource} />
+          ) : null}
           {activeTab === 'tasks' ? <TasksView /> : null}
           {activeTab === 'settings' ? (
             <SettingsView settings={data.settings} themeMode={themeMode} onThemeChange={setThemeMode} />
@@ -211,16 +226,20 @@ function TopBar({
   lastUpdated: string | null
   onRefresh: () => void
 }) {
-  const connected = health?.status === 'ok' && !error
+  const isNormal =
+    health?.status === 'ok' &&
+    health.database === 'sqlite' &&
+    health.data_dir.trim().length > 0 &&
+    !error
 
   return (
     <header className="top-bar">
       <div>
         <h1>Venera</h1>
-        <p>{connected ? `服务端 ${health.version}` : '服务端未连接'}</p>
+        <p>{isNormal ? `服务端 ${health.version}` : '服务或数据异常'}</p>
       </div>
       <div className="top-actions">
-        <StatusPill ok={connected} text={connected ? '在线' : '离线'} />
+        <StatusPill ok={isNormal} text={isNormal ? '正常' : '异常'} />
         {lastUpdated ? <span className="muted-text">{lastUpdated}</span> : null}
         <button className="icon-button" type="button" onClick={onRefresh} aria-label="刷新">
           {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
@@ -230,12 +249,7 @@ function TopBar({
   )
 }
 
-function HomeView({ data, error, loading }: { data: AppData; error: string | null; loading: boolean }) {
-  const availableCount =
-    data.capabilities?.features.filter((feature) => feature.status === 'available').length ?? 0
-  const plannedCount =
-    data.capabilities?.features.filter((feature) => feature.status === 'planned').length ?? 0
-
+function HomeView({ data, error }: { data: AppData; error: string | null }) {
   return (
     <div className="view-stack">
       <section className="search-strip" aria-label="搜索">
@@ -252,13 +266,6 @@ function HomeView({ data, error, loading }: { data: AppData; error: string | nul
           <span>{error}</span>
         </section>
       ) : null}
-
-      <section className="metric-grid" aria-label="状态概览">
-        <Metric icon={Server} label="服务" value={loading ? '检查中' : data.health ? '正常' : '离线'} />
-        <Metric icon={Database} label="数据" value={data.health?.database ?? 'SQLite'} />
-        <Metric icon={Library} label="源" value={String(data.sources.length)} />
-        <Metric icon={CheckCircle2} label="能力" value={`${availableCount}/${availableCount + plannedCount}`} />
-      </section>
 
       <section className="panel-grid">
         <Panel title="历史记录" action="0">
@@ -278,7 +285,41 @@ function HomeView({ data, error, loading }: { data: AppData; error: string | nul
   )
 }
 
-function SearchView({ sources }: { sources: SourceSummary[] }) {
+function SearchView({
+  sources,
+  onSourceUpload,
+  onSourceDelete
+}: {
+  sources: SourceSummary[]
+  onSourceUpload: (file: File) => Promise<void>
+  onSourceDelete: (key: string) => Promise<void>
+}) {
+  const [sourceMessage, setSourceMessage] = useState<string | null>(null)
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setSourceMessage('导入中')
+    try {
+      await onSourceUpload(file)
+      setSourceMessage('导入完成')
+    } catch (err) {
+      setSourceMessage(err instanceof Error ? err.message : '导入失败')
+    }
+  }
+
+  const handleDelete = async (key: string) => {
+    setSourceMessage('删除中')
+    try {
+      await onSourceDelete(key)
+      setSourceMessage('已删除')
+    } catch (err) {
+      setSourceMessage(err instanceof Error ? err.message : '删除失败')
+    }
+  }
+
   return (
     <div className="view-stack">
       <section className="search-strip" aria-label="搜索">
@@ -288,8 +329,16 @@ function SearchView({ sources }: { sources: SourceSummary[] }) {
           搜索
         </button>
       </section>
-      <Panel title="可用源" action={String(sources.length)}>
-        <SourceList sources={sources} />
+      <Panel title="源管理" action={String(sources.length)}>
+        <div className="source-toolbar">
+          <label className="icon-text-button">
+            <Upload size={16} />
+            导入 JS 源
+            <input type="file" accept=".js,text/javascript" onChange={handleFileChange} />
+          </label>
+          {sourceMessage ? <span className="muted-text">{sourceMessage}</span> : null}
+        </div>
+        <SourceList sources={sources} onDelete={handleDelete} />
       </Panel>
     </div>
   )
@@ -356,16 +405,6 @@ function SettingsView({
   )
 }
 
-function Metric({ icon: Icon, label, value }: { icon: typeof Home; label: string; value: string }) {
-  return (
-    <div className="metric">
-      <Icon size={20} />
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-
 function Panel({
   title,
   action,
@@ -386,7 +425,15 @@ function Panel({
   )
 }
 
-function SourceList({ sources, compact = false }: { sources: SourceSummary[]; compact?: boolean }) {
+function SourceList({
+  sources,
+  compact = false,
+  onDelete
+}: {
+  sources: SourceSummary[]
+  compact?: boolean
+  onDelete?: (key: string) => void
+}) {
   if (sources.length === 0) {
     return <EmptyLine icon={Library} text="暂无源文件" />
   }
@@ -403,6 +450,16 @@ function SourceList({ sources, compact = false }: { sources: SourceSummary[]; co
             ok={source.runtime_status === 'registered'}
             text={source.runtime_status === 'registered' ? '已登记' : '待解析'}
           />
+          {onDelete ? (
+            <button
+              className="icon-button danger"
+              type="button"
+              aria-label={`删除 ${source.name}`}
+              onClick={() => onDelete(source.key)}
+            >
+              <Trash2 size={16} />
+            </button>
+          ) : null}
         </div>
       ))}
     </div>

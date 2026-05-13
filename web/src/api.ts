@@ -35,6 +35,11 @@ export type SourceSummary = {
   updated_at: string | null
 }
 
+export type SourceWriteRequest = {
+  file_name?: string
+  content: string
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -77,4 +82,17 @@ export function updateSettings(values: Record<string, unknown>) {
 
 export function getSources() {
   return request<SourceSummary[]>('/api/sources')
+}
+
+export function saveSource(payload: SourceWriteRequest) {
+  return request<SourceSummary>('/api/sources', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteSource(key: string) {
+  return request<{ deleted: boolean }>(`/api/sources/${encodeURIComponent(key)}`, {
+    method: 'DELETE'
+  })
 }
