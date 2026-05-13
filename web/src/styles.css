@@ -383,6 +383,14 @@ button {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-row:hover {
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--primary-soft));
 }
 
 .library-row img,

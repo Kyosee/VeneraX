@@ -169,7 +169,9 @@ export default function App() {
           onRefresh={load}
         />
         <div className="content">
-          {activeTab === 'home' ? <HomeView data={data} error={error} /> : null}
+          {activeTab === 'home' ? (
+            <HomeView data={data} error={error} onRecordHistory={saveHistory} />
+          ) : null}
           {activeTab === 'favorites' ? (
             <LibraryView
               title="收藏"
@@ -177,6 +179,7 @@ export default function App() {
               items={data.library.favorites}
               total={data.library.favorites_total}
               emptyText="暂无收藏"
+              onRecordHistory={saveHistory}
             />
           ) : null}
           {activeTab === 'explore' ? <CollectionView title="发现" icon={Compass} /> : null}
@@ -311,7 +314,17 @@ function TopBar({
   )
 }
 
-function HomeView({ data, error }: { data: AppData; error: string | null }) {
+function HomeView({
+  data,
+  error,
+  onRecordHistory
+}: {
+  data: AppData
+  error: string | null
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+}) {
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
+
   return (
     <div className="view-stack">
       <section className="search-strip" aria-label="搜索">
@@ -331,10 +344,18 @@ function HomeView({ data, error }: { data: AppData; error: string | null }) {
 
       <section className="panel-grid">
         <Panel title="历史记录" action={String(data.library.history_total)}>
-          <LibraryList items={data.library.history.slice(0, 4)} emptyText="暂无阅读记录" />
+          <LibraryList
+            items={data.library.history.slice(0, 4)}
+            emptyText="暂无阅读记录"
+            onSelect={setSelectedItem}
+          />
         </Panel>
         <Panel title="收藏" action={String(data.library.favorites_total)}>
-          <LibraryList items={data.library.favorites.slice(0, 4)} emptyText="暂无收藏" />
+          <LibraryList
+            items={data.library.favorites.slice(0, 4)}
+            emptyText="暂无收藏"
+            onSelect={setSelectedItem}
+          />
         </Panel>
         <Panel title="追更" action="0">
           <EmptyLine icon={RefreshCw} text="暂无更新任务" />
@@ -343,6 +364,11 @@ function HomeView({ data, error }: { data: AppData; error: string | null }) {
           <SourceList sources={data.sources.slice(0, 5)} compact />
         </Panel>
       </section>
+      {selectedItem ? (
+        <Panel title="漫画详情">
+          <LibraryReader item={selectedItem} onRecordHistory={onRecordHistory} />
+        </Panel>
+      ) : null}
     </div>
   )
 }
@@ -625,7 +651,7 @@ function ComicDetails({
   loadingImages: boolean
   message: string | null
   onLoadImages: (episode: ComicEpisode) => void
-  onFavoriteChange: (comic: ComicInfo, favorite: boolean) => void
+  onFavoriteChange?: (comic: ComicInfo, favorite: boolean) => void
 }) {
   if (loadingComic) {
     return <EmptyLine icon={Loader2} text="加载详情中" />
@@ -648,14 +674,16 @@ function ComicDetails({
           <strong>{comic.title}</strong>
           {comic.subtitle ? <span>{comic.subtitle}</span> : null}
           {comic.description ? <p>{comic.description}</p> : null}
-          <button
-            className={favorite ? 'icon-text-button subtle active' : 'icon-text-button subtle'}
-            type="button"
-            onClick={() => onFavoriteChange(comic, !favorite)}
-          >
-            <Heart size={16} fill={favorite ? 'currentColor' : 'none'} />
-            {favorite ? '已收藏' : '收藏'}
-          </button>
+          {onFavoriteChange ? (
+            <button
+              className={favorite ? 'icon-text-button subtle active' : 'icon-text-button subtle'}
+              type="button"
+              onClick={() => onFavoriteChange(comic, !favorite)}
+            >
+              <Heart size={16} fill={favorite ? 'currentColor' : 'none'} />
+              {favorite ? '已收藏' : '收藏'}
+            </button>
+          ) : null}
         </div>
       </div>
       <div className="episode-list">
@@ -700,19 +728,28 @@ function LibraryView({
   icon: Icon,
   items,
   total,
-  emptyText
+  emptyText,
+  onRecordHistory
 }: {
   title: string
   icon: typeof Home
   items: LibraryItem[]
   total: number
   emptyText: string
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
 }) {
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
+
   return (
     <div className="view-stack">
       <Panel title={title} action={String(total)}>
-        <LibraryList items={items} emptyText={emptyText} icon={Icon} />
+        <LibraryList items={items} emptyText={emptyText} icon={Icon} onSelect={setSelectedItem} />
       </Panel>
+      {selectedItem ? (
+        <Panel title="漫画详情">
+          <LibraryReader item={selectedItem} onRecordHistory={onRecordHistory} />
+        </Panel>
+      ) : null}
     </div>
   )
 }
@@ -720,11 +757,13 @@ function LibraryView({
 function LibraryList({
   items,
   emptyText,
-  icon: Icon = BookOpen
+  icon: Icon = BookOpen,
+  onSelect
 }: {
   items: LibraryItem[]
   emptyText: string
   icon?: typeof Home
+  onSelect?: (item: LibraryItem) => void
 }) {
   if (items.length === 0) {
     return <EmptyLine icon={Icon} text={emptyText} />
@@ -733,7 +772,12 @@ function LibraryList({
   return (
     <div className="library-list">
       {items.map((item) => (
-        <div className="library-row" key={`${item.source_key}:${item.comic_id}`}>
+        <button
+          className="library-row"
+          key={`${item.source_key}:${item.comic_id}`}
+          type="button"
+          onClick={() => onSelect?.(item)}
+        >
           {item.cover ? (
             <img src={imageProxyUrl(item.cover)} alt="" loading="lazy" />
           ) : (
@@ -746,9 +790,93 @@ function LibraryList({
             {item.episode_title ? <span>{item.episode_title}</span> : null}
             {item.subtitle ? <small>{item.subtitle}</small> : null}
           </div>
-        </div>
+        </button>
       ))}
     </div>
+  )
+}
+
+function LibraryReader({
+  item,
+  onRecordHistory
+}: {
+  item: LibraryItem
+  onRecordHistory: (payload: HistoryWriteRequest) => Promise<void>
+}) {
+  const [comic, setComic] = useState<ComicInfo | null>(null)
+  const [images, setImages] = useState<string[]>([])
+  const [activeEpisodeTitle, setActiveEpisodeTitle] = useState<string | null>(null)
+  const [loadingComic, setLoadingComic] = useState(false)
+  const [loadingImages, setLoadingImages] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingComic(true)
+    setMessage(null)
+    setImages([])
+    setActiveEpisodeTitle(null)
+    void getComicInfo(item.source_key, item.comic_id)
+      .then((response) => {
+        if (cancelled) return
+        setComic(response.comic)
+        setMessage(response.comic.episodes.length === 0 ? '暂无章节' : null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setComic(null)
+        setMessage(err instanceof Error ? err.message : '详情加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingComic(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [item.source_key, item.comic_id])
+
+  const handleLoadImages = async (episode: ComicEpisode) => {
+    if (!comic) return
+
+    setLoadingImages(true)
+    setMessage(null)
+    try {
+      const response = await getComicPages(item.source_key, comic.id, episode.id)
+      setImages(response.images)
+      setActiveEpisodeTitle(episode.title)
+      setMessage(response.images.length === 0 ? '暂无图片' : null)
+      if (response.images.length > 0) {
+        await onRecordHistory({
+          source_key: item.source_key,
+          comic_id: comic.id,
+          title: comic.title,
+          subtitle: comic.subtitle,
+          cover: comic.cover,
+          episode_id: episode.id,
+          episode_title: episode.title
+        })
+      }
+    } catch (err) {
+      setImages([])
+      setActiveEpisodeTitle(null)
+      setMessage(err instanceof Error ? err.message : '章节加载失败')
+    } finally {
+      setLoadingImages(false)
+    }
+  }
+
+  return (
+    <ComicDetails
+      comic={comic}
+      images={images}
+      activeEpisodeTitle={activeEpisodeTitle}
+      favorite={false}
+      loadingComic={loadingComic}
+      loadingImages={loadingImages}
+      message={message}
+      onLoadImages={handleLoadImages}
+    />
   )
 }
 
