@@ -1,0 +1,2 @@
+.row { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.box { width: 18px; height: 18px; accent-color: var(--md-sys-color-primary); }

@@ -1,0 +1,3 @@
+.group { display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; }
+.dot { accent-color: var(--md-sys-color-primary); }

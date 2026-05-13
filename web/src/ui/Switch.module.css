@@ -1,0 +1,7 @@
+.sw { width: 52px; height: 32px; border-radius: var(--md-shape-full); border: 2px solid var(--md-sys-color-outline);
+      background: var(--md-sys-color-surface-container-highest); cursor: pointer; padding: 4px;
+      transition: background var(--md-motion-short-4); }
+.thumb { width: 16px; height: 16px; border-radius: var(--md-shape-full); background: var(--md-sys-color-outline);
+         transition: transform var(--md-motion-short-4), background var(--md-motion-short-4); display: block; }
+.on { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+.on .thumb { transform: translateX(20px); background: var(--md-sys-color-on-primary); width: 22px; height: 22px; margin-top: -3px; }
