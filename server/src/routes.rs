@@ -26,7 +26,8 @@ use crate::{
     image_proxy, import_preview,
     models::{
         CapabilitiesResponse, Capability, ComicInfoRequest, ComicInfoResponse, ComicPagesRequest,
-        ComicPagesResponse, DeleteResponse, FavoriteFolder, FavoriteWriteRequest,
+        ComicPagesResponse, DeleteResponse, FavoriteFolder, FavoriteFolderCreateRequest,
+        FavoriteFolderRenameRequest, FavoriteFolderResponse, FavoriteWriteRequest,
         FollowUpdatesCheckRequest, FollowUpdatesMarkReadRequest, FollowUpdatesQuery,
         FollowUpdatesResponse, HealthResponse, HistoryWriteRequest, ImageProxyQuery,
         ImportBackupApplyRequest, ImportBackupApplyResponse, ImportBackupPreviewRequest,
@@ -55,6 +56,14 @@ pub fn api_router() -> Router<AppState> {
         .route("/tasks", get(list_tasks))
         .route("/history", post(upsert_history))
         .route("/favorites", post(set_favorite))
+        .route(
+            "/favorite-folders",
+            get(list_favorite_folders).post(create_favorite_folder),
+        )
+        .route(
+            "/favorite-folders/{name}",
+            patch(rename_favorite_folder).delete(delete_favorite_folder),
+        )
         .route(
             "/webdav/config",
             get(get_webdav_config)
@@ -360,6 +369,115 @@ async fn set_favorite(
     }
 
     Ok(Json(read_library(&state, LibraryQuery::default())?))
+}
+
+async fn list_favorite_folders(
+    State(state): State<AppState>,
+) -> ApiResult<Json<FavoriteFolderResponse>> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let folders = read_favorite_folders(&database)?;
+    Ok(Json(FavoriteFolderResponse { folders }))
+}
+
+async fn create_favorite_folder(
+    State(state): State<AppState>,
+    Json(payload): Json<FavoriteFolderCreateRequest>,
+) -> ApiResult<Json<FavoriteFolderResponse>> {
+    let name = payload.name.trim().to_string();
+    let title = payload.title.trim().to_string();
+    if name.is_empty() || title.is_empty() {
+        return Err(ApiError::BadRequest(
+            "folder name and title are required".to_string(),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err(ApiError::BadRequest(
+            "folder name contains invalid characters".to_string(),
+        ));
+    }
+
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let exists: bool = database
+        .query_row(
+            "SELECT 1 FROM favorite_folders WHERE folder_name = ?1",
+            [&name],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if exists {
+        return Err(ApiError::BadRequest(
+            "folder already exists".to_string(),
+        ));
+    }
+
+    let max_order: i64 = database
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM favorite_folders",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(-1);
+    database.execute(
+        "INSERT INTO favorite_folders (folder_name, title, sort_order) VALUES (?1, ?2, ?3)",
+        params![&name, &title, max_order + 1],
+    )?;
+
+    let folders = read_favorite_folders(&database)?;
+    Ok(Json(FavoriteFolderResponse { folders }))
+}
+
+async fn rename_favorite_folder(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(payload): Json<FavoriteFolderRenameRequest>,
+) -> ApiResult<Json<FavoriteFolderResponse>> {
+    let title = payload.title.trim().to_string();
+    if title.is_empty() {
+        return Err(ApiError::BadRequest("folder title is required".to_string()));
+    }
+
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    let changed = database.execute(
+        "UPDATE favorite_folders SET title = ?1 WHERE folder_name = ?2",
+        params![&title, &name],
+    )?;
+    if changed == 0 {
+        return Err(ApiError::BadRequest("folder not found".to_string()));
+    }
+
+    let folders = read_favorite_folders(&database)?;
+    Ok(Json(FavoriteFolderResponse { folders }))
+}
+
+async fn delete_favorite_folder(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> ApiResult<Json<DeleteResponse>> {
+    let database = state
+        .database
+        .lock()
+        .map_err(|_| ApiError::State("database lock poisoned".to_string()))?;
+    database.execute(
+        "DELETE FROM favorite_folder_items WHERE folder_name = ?1",
+        [&name],
+    )?;
+    let deleted = database.execute("DELETE FROM favorite_folders WHERE folder_name = ?1", [&name])?;
+    Ok(Json(DeleteResponse {
+        deleted: deleted > 0,
+    }))
 }
 
 async fn get_webdav_config(State(state): State<AppState>) -> ApiResult<Json<WebDavConfigResponse>> {
@@ -1072,7 +1190,7 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 WHERE i.folder_name = ?1
-                ORDER BY i.created_at DESC
+                ORDER BY datetime(i.created_at) DESC, f.title COLLATE NOCASE ASC, f.comic_id ASC
                 LIMIT ?2 OFFSET ?3
                 "#,
             )?;
@@ -1091,7 +1209,7 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
                 r#"
                 SELECT source_key, comic_id, title, subtitle, cover, created_at
                 FROM favorites
-                ORDER BY created_at DESC
+                ORDER BY datetime(created_at) DESC, title COLLATE NOCASE ASC, comic_id ASC
                 LIMIT ?1 OFFSET ?2
                 "#,
             )?;

@@ -524,3 +524,19 @@ pub struct ImportBackupApplyResponse {
     pub favorites_skipped: usize,
     pub history_skipped: usize,
 }
+
+#[derive(Deserialize)]
+pub struct FavoriteFolderCreateRequest {
+    pub name: String,
+    pub title: String,
+}
+
+#[derive(Deserialize)]
+pub struct FavoriteFolderRenameRequest {
+    pub title: String,
+}
+
+#[derive(Serialize)]
+pub struct FavoriteFolderResponse {
+    pub folders: Vec<FavoriteFolder>,
+}

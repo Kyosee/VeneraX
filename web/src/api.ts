@@ -604,3 +604,40 @@ export function getComicPages(sourceKey: string, comicId: string, episodeId: str
 export function imageProxyUrl(url: string) {
   return `/api/image?url=${encodeURIComponent(url)}`
 }
+
+export type FavoriteFolderCreateRequest = {
+  name: string
+  title: string
+}
+
+export type FavoriteFolderRenameRequest = {
+  title: string
+}
+
+export type FavoriteFolderResponse = {
+  folders: FavoriteFolder[]
+}
+
+export function listFavoriteFolders() {
+  return request<FavoriteFolderResponse>('/api/favorite-folders')
+}
+
+export function createFavoriteFolder(payload: FavoriteFolderCreateRequest) {
+  return request<FavoriteFolderResponse>('/api/favorite-folders', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function renameFavoriteFolder(name: string, payload: FavoriteFolderRenameRequest) {
+  return request<FavoriteFolderResponse>(`/api/favorite-folders/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteFavoriteFolder(name: string) {
+  return request<{ deleted: boolean }>(`/api/favorite-folders/${encodeURIComponent(name)}`, {
+    method: 'DELETE'
+  })
+}

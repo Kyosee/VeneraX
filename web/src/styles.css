@@ -488,6 +488,21 @@ button {
   text-align: center;
 }
 
+.folder-name-input {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 14px;
+  outline: 0;
+}
+
+.folder-name-input:focus {
+  border-color: var(--primary);
+}
+
 .favorite-layout > .view-stack {
   min-width: 0;
   padding-left: 16px;

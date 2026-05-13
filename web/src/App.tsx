@@ -86,7 +86,9 @@ import {
   updateSource,
   updateSourceSetting,
   uploadWebDav,
-  updateSettings
+  updateSettings,
+  createFavoriteFolder,
+  deleteFavoriteFolder
 } from './api'
 import { ReloadPrompt } from './ReloadPrompt'
 
@@ -561,6 +563,32 @@ export default function App() {
     }
   }
 
+  const handleCreateFolder = async (title: string) => {
+    const name = title.trim().replace(/\s+/g, '_').toLowerCase() || Date.now().toString(36)
+    const response = await createFavoriteFolder({ name, title: title.trim() })
+    setData((current) => ({
+      ...current,
+      library: { ...current.library, favorite_folders: response.folders }
+    }))
+  }
+
+  const handleDeleteFolder = async (name: string) => {
+    await deleteFavoriteFolder(name)
+    if (activeFavoriteFolder === name) {
+      setActiveFavoriteFolder(null)
+    }
+    if (activeFollowFolder === name) {
+      setActiveFollowFolder(null)
+    }
+    setData((current) => {
+      const folders = current.library.favorite_folders.filter((f) => f.name !== name)
+      return {
+        ...current,
+        library: { ...current.library, favorite_folders: folders }
+      }
+    })
+  }
+
   const refreshTasks = useCallback(async () => {
     const response = await getTasks()
     setData((current) => ({ ...current, tasks: response.tasks }))
@@ -760,6 +788,8 @@ export default function App() {
                   : undefined
               }
               onOpenComic={openDetail}
+              onCreateFolder={handleCreateFolder}
+              onDeleteFolder={handleDeleteFolder}
             />
           ) : null}
           {route.kind === 'main' && activeTab === 'explore' ? (
@@ -2220,7 +2250,9 @@ function FavoritesView({
   loadingMore = false,
   onFolderSelect,
   onLoadMore,
-  onOpenComic
+  onOpenComic,
+  onCreateFolder,
+  onDeleteFolder
 }: {
   items: LibraryItem[]
   total: number
@@ -2232,16 +2264,36 @@ function FavoritesView({
   onFolderSelect: (folder: string | null) => Promise<void>
   onLoadMore?: () => void
   onOpenComic: (request: ComicOpenRequest) => void
+  onCreateFolder?: (title: string) => Promise<void>
+  onDeleteFolder?: (name: string) => Promise<void>
 }) {
+  const [addingFolder, setAddingFolder] = useState(false)
+  const [newFolderTitle, setNewFolderTitle] = useState('')
+  const [folderBusy, setFolderBusy] = useState(false)
   const activeFolderTitle =
     activeFolder == null
       ? '全部'
       : folders.find((folder) => folder.name === activeFolder)?.title ?? activeFolder
 
+  const handleAddFolder = async () => {
+    const title = newFolderTitle.trim()
+    if (!title || !onCreateFolder) return
+    setFolderBusy(true)
+    try {
+      await onCreateFolder(title)
+      setNewFolderTitle('')
+      setAddingFolder(false)
+    } catch {
+      // error handled by parent
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
   return (
     <div className="favorite-layout">
       <aside className="favorite-folder-panel" aria-label="收藏文件夹">
-        <div className="folder-section-title">本地收藏</div>
+        <div className="folder-section-title">收藏夹</div>
         <FavoriteFolderButton
           title="全部"
           count={allTotal}
@@ -2255,8 +2307,35 @@ function FavoritesView({
             count={folder.count}
             active={activeFolder === folder.name}
             onClick={() => onFolderSelect(folder.name)}
+            onDelete={onDeleteFolder ? () => onDeleteFolder(folder.name) : undefined}
           />
         ))}
+        {onCreateFolder ? (
+          addingFolder ? (
+            <div style={{ display: 'grid', gap: '6px', padding: '8px 12px' }}>
+              <input
+                className="folder-name-input"
+                value={newFolderTitle}
+                placeholder="文件夹名称"
+                onChange={(e) => setNewFolderTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddFolder() }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button className="primary-button" style={{ minHeight: '32px', fontSize: '13px' }} disabled={!newFolderTitle.trim() || folderBusy} onClick={handleAddFolder}>
+                  {folderBusy ? '创建中' : '确定'}
+                </button>
+                <button className="icon-text-button subtle" style={{ minHeight: '32px', fontSize: '13px' }} onClick={() => setAddingFolder(false)}>
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="favorite-folder-button" type="button" onClick={() => setAddingFolder(true)}>
+              <span style={{ color: 'var(--muted)' }}>+ 新建文件夹</span>
+            </button>
+          )
+        ) : null}
       </aside>
       <div className="view-stack">
         <Panel title={activeFolderTitle} action={String(total)}>
@@ -2281,22 +2360,38 @@ function FavoriteFolderButton({
   title,
   count,
   active,
-  onClick
+  onClick,
+  onDelete
 }: {
   title: string
   count: number
   active: boolean
   onClick: () => void
+  onDelete?: () => void
 }) {
   return (
-    <button
-      className={active ? 'favorite-folder-button active' : 'favorite-folder-button'}
-      type="button"
-      onClick={onClick}
-    >
-      <span>{title}</span>
-      <small>{count}</small>
-    </button>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center' }}>
+      <button
+        className={active ? 'favorite-folder-button active' : 'favorite-folder-button'}
+        type="button"
+        onClick={onClick}
+      >
+        <span>{title}</span>
+        <small>{count}</small>
+      </button>
+      {onDelete ? (
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={`删除 ${title}`}
+          title={`删除 ${title}`}
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          style={{ width: '32px', height: '32px', color: 'var(--muted)' }}
+        >
+          <Trash2 size={14} />
+        </button>
+      ) : null}
+    </div>
   )
 }
 
