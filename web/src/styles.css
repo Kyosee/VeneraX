@@ -1893,6 +1893,28 @@ button {
   .top-actions-mobile { display: none; }
 }
 
+.color-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.color-preset-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--md-shape-full);
+  border: 2px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--md-motion-short-4), border-color var(--md-motion-short-4);
+}
+.color-preset-swatch:hover { transform: scale(1.1); }
+.color-preset-swatch.selected {
+  border-color: var(--md-sys-color-primary);
+  border-width: 3px;
+  transform: scale(1.1);
+}
+
 body,
 .app-shell {
   background: var(--bg);

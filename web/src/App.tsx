@@ -1171,6 +1171,37 @@ function SourceChips({ sources }: { sources: SourceSummary[] }) {
   )
 }
 
+function ColorPresetRow({ current, onChange }: { current: string; onChange: (value: string) => void }) {
+  const presets: { key: string; label: string; hex: string }[] = [
+    { key: 'system', label: '跟随系统', hex: '#2196F3' },
+    { key: 'red',    label: '红',    hex: '#F44336' },
+    { key: 'pink',   label: '粉',    hex: '#E91E63' },
+    { key: 'purple', label: '紫',    hex: '#9C27B0' },
+    { key: 'blue',   label: '蓝',    hex: '#2196F3' },
+    { key: 'cyan',   label: '青',    hex: '#00BCD4' },
+    { key: 'green',  label: '绿',    hex: '#4CAF50' },
+    { key: 'yellow', label: '黄',    hex: '#FFEB3B' },
+    { key: 'orange', label: '橙',    hex: '#FF9800' },
+  ]
+  return (
+    <div className="color-preset-row" role="radiogroup" aria-label="主题色">
+      {presets.map((p) => (
+        <button
+          key={p.key}
+          type="button"
+          role="radio"
+          aria-checked={current === p.key}
+          aria-label={p.label}
+          title={p.label}
+          className={`color-preset-swatch${current === p.key ? ' selected' : ''}`}
+          style={{ background: p.hex }}
+          onClick={() => onChange(p.key)}
+        />
+      ))}
+    </div>
+  )
+}
+
 function PageHeader({
   title,
   onBack,
@@ -3341,6 +3372,12 @@ function SettingsView({
                     </button>
                   ))}
                 </div>
+              </SettingRow>
+              <SettingRow title="主题色" subtitle="种子色驱动 Material 3 调色板">
+                <ColorPresetRow
+                  current={typeof settings?.values.color === 'string' ? settings.values.color : 'blue'}
+                  onChange={(value) => void updateSetting('color', value)}
+                />
               </SettingRow>
             </SettingsPart>
           ) : null}
