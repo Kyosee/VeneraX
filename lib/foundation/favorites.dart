@@ -1,18 +1,17 @@
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_provider/local_favorite_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/utils/tags_translation.dart';
-import 'dart:io';
 
 import 'app.dart';
 import 'comic_source/comic_source.dart';
@@ -212,7 +211,8 @@ class LocalFavoritesManager with ChangeNotifier {
     'sqlite_sequence',
   };
 
-  late Database _db;
+  late CommonDatabase _db;
+  late String _dbPath;
 
   late Map<String, int> counts;
 
@@ -228,7 +228,8 @@ class LocalFavoritesManager with ChangeNotifier {
 
   Future<void> init() async {
     counts = {};
-    _db = sqlite3.open("${App.dataPath}/local_favorite.db");
+    _dbPath = "${App.dataPath}/local_favorite.db";
+    _db = openSqliteDatabase(_dbPath);
     _db.execute("""
       create table if not exists folder_order (
         folder_name text primary key,
@@ -262,14 +263,14 @@ class LocalFavoritesManager with ChangeNotifier {
     for (var folder in folderNames) {
       counts[folder] = count(folder);
     }
-    _initHashedIds(folderNames, _db.handle).then((value) {
+    _initHashedIds(folderNames, _dbPath).then((value) {
       _hashedIds = value;
       notifyListeners();
     });
   }
 
   void refreshHashedIds() {
-    _initHashedIds(folderNames, _db.handle).then((value) {
+    _initHashedIds(folderNames, _dbPath).then((value) {
       _hashedIds = value;
       notifyListeners();
     });
@@ -288,24 +289,33 @@ class LocalFavoritesManager with ChangeNotifier {
 
   static Future<Map<int, int>> _initHashedIds(
     List<String> folders,
-    Pointer<void> p,
+    String dbPath,
   ) {
+    if (kIsWeb) {
+      return withDatabase(dbPath, (db) async => _queryHashedIds(folders, db));
+    }
     return Isolate.run(() {
-      var db = sqlite3.fromPointer(p);
-      var hashedIds = <int, int>{};
-      for (var folder in folders) {
-        var rows = db.select("""
-          select id, type from "$folder";
-        """);
-        for (var row in rows) {
-          var id = row["id"] as String;
-          var type = row["type"] as int;
-          var hash = id.hashCode ^ type;
-          hashedIds[hash] = (hashedIds[hash] ?? 0) + 1;
-        }
-      }
-      return hashedIds;
+      return withDatabase(dbPath, (db) async => _queryHashedIds(folders, db));
     });
+  }
+
+  static Map<int, int> _queryHashedIds(
+    List<String> folders,
+    CommonDatabase db,
+  ) {
+    var hashedIds = <int, int>{};
+    for (var folder in folders) {
+      var rows = db.select("""
+        select id, type from "$folder";
+      """);
+      for (var row in rows) {
+        var id = row["id"] as String;
+        var type = row["type"] as int;
+        var hash = id.hashCode ^ type;
+        hashedIds[hash] = (hashedIds[hash] ?? 0) + 1;
+      }
+    }
+    return hashedIds;
   }
 
   List<String> find(String id, ComicType type) {
@@ -499,21 +509,30 @@ class LocalFavoritesManager with ChangeNotifier {
 
   static Future<List<FavoriteItem>> _getFolderComicsAsync(
     String folder,
-    Pointer<void> p,
+    String dbPath,
   ) {
+    if (kIsWeb) {
+      return withDatabase(dbPath, (db) async => _queryFolderComics(folder, db));
+    }
     return Isolate.run(() {
-      var db = sqlite3.fromPointer(p);
-      var rows = db.select("""
-        select * from "$folder"
-        ORDER BY display_order;
-      """);
-      return rows.map((element) => FavoriteItem.fromRow(element)).toList();
+      return withDatabase(dbPath, (db) async => _queryFolderComics(folder, db));
     });
+  }
+
+  static List<FavoriteItem> _queryFolderComics(
+    String folder,
+    CommonDatabase db,
+  ) {
+    var rows = db.select("""
+      select * from "$folder"
+      ORDER BY display_order;
+    """);
+    return rows.map((element) => FavoriteItem.fromRow(element)).toList();
   }
 
   /// Start a new isolate to get the comics in the folder
   Future<List<FavoriteItem>> getFolderComicsAsync(String folder) {
-    return _getFolderComicsAsync(folder, _db.handle);
+    return _getFolderComicsAsync(folder, _dbPath);
   }
 
   List<FavoriteItem> getAllComics() {
@@ -529,24 +548,33 @@ class LocalFavoritesManager with ChangeNotifier {
 
   static Future<List<FavoriteItem>> _getAllComicsAsync(
     List<String> folders,
-    Pointer<void> p,
+    String dbPath,
   ) {
+    if (kIsWeb) {
+      return withDatabase(dbPath, (db) async => _queryAllComics(folders, db));
+    }
     return Isolate.run(() {
-      var db = sqlite3.fromPointer(p);
-      var res = <FavoriteItem>{};
-      for (final folder in folders) {
-        var comics = db.select("""
-          select * from "$folder";
-        """);
-        res.addAll(comics.map((element) => FavoriteItem.fromRow(element)));
-      }
-      return res.toList();
+      return withDatabase(dbPath, (db) async => _queryAllComics(folders, db));
     });
+  }
+
+  static List<FavoriteItem> _queryAllComics(
+    List<String> folders,
+    CommonDatabase db,
+  ) {
+    var res = <FavoriteItem>{};
+    for (final folder in folders) {
+      var comics = db.select("""
+        select * from "$folder";
+      """);
+      res.addAll(comics.map((element) => FavoriteItem.fromRow(element)));
+    }
+    return res.toList();
   }
 
   /// Start a new isolate to get all the comics
   Future<List<FavoriteItem>> getAllComicsAsync() {
-    return _getAllComicsAsync(folderNames, _db.handle);
+    return _getAllComicsAsync(folderNames, _dbPath);
   }
 
   void addTagTo(String folder, String id, String tag) {
@@ -1039,7 +1067,7 @@ class LocalFavoritesManager with ChangeNotifier {
 
   Future<void> clearAll() async {
     _db.dispose();
-    File("${App.dataPath}/local_favorite.db").deleteSync();
+    await deleteSqliteDatabase(_dbPath);
     await init();
   }
 
@@ -1469,6 +1497,7 @@ class LocalFavoritesManager with ChangeNotifier {
 
   void close() {
     _db.dispose();
+    closeSqliteDatabase(_dbPath);
   }
 
   void notifyChanges() {

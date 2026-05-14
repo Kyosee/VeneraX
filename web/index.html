@@ -1,13 +1,131 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#625bff" />
-    <title>Venera</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Venera - Comic Reader">
+
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Venera">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
+
+  <!-- Android PWA -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#000000">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Venera PWA</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      width: 100%;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    (function () {
+      const isIOS =
+        /iP(ad|hone|od)/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true;
+      if (!isIOS || !isStandalone) return;
+
+      // Prevent iOS standalone edge-swipe back from navigating to a blank page.
+      let trackingEdgeSwipe = false;
+      let startX = 0;
+      let startY = 0;
+      window.addEventListener(
+        "touchstart",
+        (event) => {
+          if (!event.touches || event.touches.length !== 1) {
+            trackingEdgeSwipe = false;
+            return;
+          }
+          const touch = event.touches[0];
+          startX = touch.clientX;
+          startY = touch.clientY;
+          trackingEdgeSwipe = startX <= 24;
+        },
+        { passive: true },
+      );
+      window.addEventListener(
+        "touchmove",
+        (event) => {
+          if (!trackingEdgeSwipe || !event.touches || event.touches.length !== 1) {
+            return;
+          }
+          const touch = event.touches[0];
+          const dx = touch.clientX - startX;
+          const dy = Math.abs(touch.clientY - startY);
+          if (dx > 10 && dx > dy) {
+            event.preventDefault();
+          }
+        },
+        { passive: false },
+      );
+      window.addEventListener(
+        "touchend",
+        () => {
+          trackingEdgeSwipe = false;
+        },
+        { passive: true },
+      );
+      window.addEventListener(
+        "touchcancel",
+        () => {
+          trackingEdgeSwipe = false;
+        },
+        { passive: true },
+      );
+    })();
+  </script>
+  <script src="venera_runtime.js"></script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
 </html>

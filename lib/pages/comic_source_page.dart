@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' as io;
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' hide Cookie;
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
@@ -1312,7 +1311,10 @@ class _LoginPageState extends State<_LoginPage> {
         await widget.source.saveData();
         SingleInstanceCookieJar.instance?.saveFromResponse(
           Uri.parse(url),
-          cookies,
+          cookiesFromPlatformCookies(
+            cookies,
+            fallbackDomain: Uri.parse(url).host,
+          ),
         );
         success = true;
         widget.config.onLoginWithWebviewSuccess?.call();
@@ -1363,9 +1365,9 @@ class _LoginPageState extends State<_LoginPage> {
       if (widget.config.checkLoginStatus != null &&
           widget.config.checkLoginStatus!(url, title)) {
         var cookiesMap = await webview.getCookies(url);
-        var cookies = <io.Cookie>[];
+        var cookies = <Cookie>[];
         cookiesMap.forEach((key, value) {
-          cookies.add(io.Cookie(key, value));
+          cookies.add(Cookie(key, value));
         });
         SingleInstanceCookieJar.instance?.saveFromResponse(
           Uri.parse(url),

@@ -8,12 +8,12 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
+import 'package:venera/utils/archive.dart';
 import 'package:venera/utils/cbz.dart';
 import 'package:venera/utils/epub.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/pdf.dart';
 import 'package:venera/utils/translations.dart';
-import 'package:zip_flutter/zip_flutter.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class LocalComicsPage extends StatefulWidget {
@@ -436,6 +436,9 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
   }
 
   List<MenuEntry> exportActions(List<LocalComic> comics) {
+    if (App.isWeb) {
+      return const [];
+    }
     return [
       MenuEntry(
         icon: Icons.outbox_outlined,
@@ -513,7 +516,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
       // For multiple comics, compress the folder
       loadingController.setProgress(null);
       loadingController.setMessage("Compressing".tl);
-      await ZipFile.compressFolderAsync(cacheDir, outFile);
+      await compressFolderAsync(cacheDir, outFile);
       if (canceled) {
         File(outFile).deleteIgnoreError();
         return;

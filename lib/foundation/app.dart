@@ -1,6 +1,7 @@
-import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart'
+    show kIsWeb, TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/history.dart';
@@ -16,20 +17,23 @@ export "context.dart";
 class _App {
   final version = "1.6.3";
 
-  bool get isAndroid => Platform.isAndroid;
+  bool get isWeb => kIsWeb;
 
-  bool get isIOS => Platform.isIOS;
+  bool get isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  bool get isWindows => Platform.isWindows;
+  bool get isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
-  bool get isLinux => Platform.isLinux;
+  bool get isWindows =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-  bool get isMacOS => Platform.isMacOS;
+  bool get isLinux => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
 
-  bool get isDesktop =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  bool get isMacOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
-  bool get isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get isDesktop => !kIsWeb && (isWindows || isLinux || isMacOS);
+
+  bool get isMobile => !kIsWeb && (isAndroid || isIOS);
 
   // Whether the app has been initialized.
   // If current Isolate is main Isolate, this value is always true.
@@ -50,8 +54,8 @@ class _App {
     return deviceLocale;
   }
 
-  late String dataPath;
-  late String cachePath;
+  String dataPath = '/venera/data';
+  String cachePath = '/venera/cache';
   String? externalStoragePath;
 
   final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -83,22 +87,27 @@ class _App {
   }
 
   Future<void> init() async {
-    cachePath = (await getApplicationCacheDirectory()).path;
-    dataPath = (await getApplicationSupportDirectory()).path;
-    if (isAndroid) {
-      externalStoragePath = (await getExternalStorageDirectory())!.path;
+    if (!kIsWeb) {
+      cachePath = (await getApplicationCacheDirectory()).path;
+      dataPath = (await getApplicationSupportDirectory()).path;
+      if (isAndroid) {
+        externalStoragePath = (await getExternalStorageDirectory())!.path;
+      }
     }
     isInitialized = true;
   }
 
   Future<void> initComponents() async {
-    await Future.wait([
+    final futures = <Future<void>>[
       data.init(),
       history.init(),
       favorites.init(),
-      local.init(),
       domain.init(dataPath),
-    ]);
+    ];
+    if (!kIsWeb) {
+      futures.add(local.init());
+    }
+    await Future.wait(futures);
   }
 
   Function? _forceRebuildHandler;

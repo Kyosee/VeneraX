@@ -11,7 +11,7 @@ ImageProvider? _findImageProvider(Comic comic) {
     if (localComic == null) {
       return null;
     }
-    image = FileImage(localComic.coverFile);
+    image = LocalComicImageProvider(localComic);
   } else {
     image = CachedImageProvider(
       comic.cover,

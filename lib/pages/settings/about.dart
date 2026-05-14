@@ -152,7 +152,7 @@ Map<String, dynamic>? _findWindowsZipAsset(Object? assets) {
     return null;
   }
 
-  final isArm64 = Abi.current() == Abi.windowsArm64;
+  final isArm64 = isWindowsArm64;
   Map<String, dynamic>? preferred;
   for (final asset in candidates) {
     final name = asset["name"]!.toString().toLowerCase();

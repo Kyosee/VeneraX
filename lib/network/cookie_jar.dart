@@ -1,13 +1,51 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/utils/ext.dart';
 
+import 'cookie_jar_io.dart' if (dart.library.html) 'cookie_jar_web.dart';
+
+export 'cookie_jar_io.dart' if (dart.library.html) 'cookie_jar_web.dart';
+
+List<Cookie> cookiesFromPlatformCookies(
+  Iterable<dynamic>? cookies, {
+  String? fallbackDomain,
+}) {
+  if (cookies == null) {
+    return const [];
+  }
+  return cookies.map((cookie) {
+    final result = Cookie(cookie.name.toString(), cookie.value.toString());
+    try {
+      final domain = cookie.domain;
+      result.domain = domain?.toString() ?? fallbackDomain;
+    } catch (_) {
+      result.domain = fallbackDomain;
+    }
+    try {
+      final path = cookie.path;
+      result.path = path?.toString();
+    } catch (_) {}
+    try {
+      final expires = cookie.expires;
+      if (expires is DateTime) {
+        result.expires = expires;
+      }
+    } catch (_) {}
+    try {
+      result.secure = cookie.secure == true;
+    } catch (_) {}
+    try {
+      result.httpOnly = cookie.httpOnly == true;
+    } catch (_) {}
+    return result;
+  }).toList();
+}
+
 class CookieJarSql {
-  late Database _db;
+  late CommonDatabase _db;
 
   final String path;
 
@@ -16,7 +54,7 @@ class CookieJarSql {
   }
 
   void init() {
-    _db = sqlite3.open(path);
+    _db = openSqliteDatabase(path);
     _db.execute('''
       CREATE TABLE IF NOT EXISTS cookies (
         name TEXT NOT NULL,
@@ -229,7 +267,9 @@ class CookieJarSql {
   }
 
   void dispose() {
+    final dbPath = path;
     _db.dispose();
+    closeSqliteDatabase(dbPath);
   }
 }
 

@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/common.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
+import 'package:venera/utils/io.dart';
 
 class DomainComicBaseInfo {
   const DomainComicBaseInfo({
@@ -92,9 +93,10 @@ class DomainDatabase {
   static const dataDirectoryName = 'data';
   static const databaseFileName = 'venera.db';
 
-  Database? _db;
+  CommonDatabase? _db;
+  String? _dbPath;
 
-  Database get db {
+  CommonDatabase get db {
     final database = _db;
     if (database == null) {
       throw StateError('DomainDatabase is not initialized');
@@ -117,13 +119,14 @@ class DomainDatabase {
     }
     final dbPath = databasePathFor(appDataPath);
     Directory(p.dirname(dbPath)).createSync(recursive: true);
+    _dbPath = dbPath;
     _db = _openDatabase(dbPath);
   }
 
-  Database _openDatabase(String dbPath) {
-    Database? database;
+  CommonDatabase _openDatabase(String dbPath) {
+    CommonDatabase? database;
     try {
-      database = sqlite3.open(dbPath);
+      database = openSqliteDatabase(dbPath);
       configure(database);
       createSchema(database);
       return database;
@@ -132,15 +135,20 @@ class DomainDatabase {
       _backupDatabaseFiles(dbPath);
     }
 
-    final recoveredDatabase = sqlite3.open(dbPath);
+    final recoveredDatabase = openSqliteDatabase(dbPath);
     configure(recoveredDatabase);
     createSchema(recoveredDatabase);
     return recoveredDatabase;
   }
 
   void close() {
+    final dbPath = _db == null ? null : _dbPath;
     _db?.dispose();
     _db = null;
+    _dbPath = null;
+    if (dbPath != null) {
+      closeSqliteDatabase(dbPath);
+    }
   }
 
   static void _backupDatabaseFiles(String dbPath) {
@@ -164,19 +172,19 @@ class DomainDatabase {
     return backupPath;
   }
 
-  static void configure(Database db) {
+  static void configure(CommonDatabase db) {
     db.execute('PRAGMA foreign_keys = ON');
     db.execute('PRAGMA journal_mode = WAL');
   }
 
-  static void createSchema(Database db) {
+  static void createSchema(CommonDatabase db) {
     db.execute(_schemaSql);
     migrateSchema(db);
     seedStaticData(db);
     db.execute('PRAGMA user_version = $schemaVersion');
   }
 
-  static void migrateSchema(Database db) {
+  static void migrateSchema(CommonDatabase db) {
     void addColumnIfMissing(String table, String column, String definition) {
       final columns = db.select('PRAGMA table_info("$table");');
       if (!columns.any((element) => element['name'] == column)) {
@@ -211,7 +219,7 @@ class DomainDatabase {
     );
   }
 
-  static void seedStaticData(Database db) {
+  static void seedStaticData(CommonDatabase db) {
     db.execute(
       '''
       INSERT OR IGNORE INTO source_platforms (

@@ -1,13 +1,13 @@
 import 'dart:convert';
-import 'dart:io' as io;
 
 import 'package:dio/dio.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' hide Cookie;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/webview.dart';
+import 'package:venera/utils/io.dart';
 
 import 'cookie_jar.dart';
 
@@ -383,7 +383,7 @@ void _resetCloudflareProfile(Uri uri) {
     return;
   }
   try {
-    var dir = io.Directory(_cloudflareProfilePath(uri));
+    var dir = Directory(_cloudflareProfilePath(uri));
     if (dir.existsSync()) {
       dir.deleteSync(recursive: true);
     }
@@ -429,8 +429,8 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
     SingleInstanceCookieJar.instance?.deleteByName(targetUri, 'cf_clearance');
     SingleInstanceCookieJar.instance?.saveFromResponse(
       targetUri,
-      List<io.Cookie>.generate(cookies.length, (index) {
-        var cookie = io.Cookie(
+      List<Cookie>.generate(cookies.length, (index) {
+        var cookie = Cookie(
           cookies.keys.elementAt(index),
           cookies.values.elementAt(index),
         );
@@ -579,9 +579,14 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           hasVerifiedHtml =
               _cacheVerifiedHtml(currentUri, htmlText) || hasVerifiedHtml;
         }
-        var cookies = <io.Cookie>[];
+        var cookies = <Cookie>[];
         for (var cookieUrl in {url, currentUrl}) {
-          cookies.addAll(await controller.getCookies(cookieUrl) ?? []);
+          cookies.addAll(
+            cookiesFromPlatformCookies(
+              await controller.getCookies(cookieUrl),
+              fallbackDomain: currentUri.host,
+            ),
+          );
         }
         try {
           var rawCookie = await controller.evaluateJavascript(
@@ -590,7 +595,7 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           var jsCookies = _parseCookieHeader(rawCookie?.toString() ?? '');
           cookies.addAll(
             jsCookies.entries.map((e) {
-              var cookie = io.Cookie(e.key, e.value);
+              var cookie = Cookie(e.key, e.value);
               cookie.domain = currentUri.host;
               return cookie;
             }),
@@ -644,7 +649,10 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
           }
           var startedUrl = (await controller.getUrl())?.toString() ?? url;
           var startedUri = Uri.tryParse(startedUrl) ?? uri;
-          var cookies = await controller.getCookies(startedUrl) ?? [];
+          var cookies = cookiesFromPlatformCookies(
+            await controller.getCookies(startedUrl),
+            fallbackDomain: startedUri.host,
+          );
           if (cookies.isNotEmpty) {
             SingleInstanceCookieJar.instance?.saveFromResponse(
               startedUri,

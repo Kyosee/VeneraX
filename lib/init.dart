@@ -1,10 +1,7 @@
 import 'dart:async';
 
-import 'package:display_mode/display_mode.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_saf/flutter_saf.dart';
-import 'package:rhttp/rhttp.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -15,12 +12,11 @@ import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
-import 'package:venera/utils/app_links.dart';
-import 'package:venera/utils/handle_text_share.dart';
 import 'package:venera/utils/opencc.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 import 'foundation/appdata.dart';
+import 'init_native.dart' if (dart.library.html) 'init_web.dart';
 
 extension _FutureInit<T> on Future<T> {
   /// Prevent unhandled exception
@@ -37,12 +33,13 @@ extension _FutureInit<T> on Future<T> {
 
 Future<void> init() async {
   await App.init().wait();
-  await SingleInstanceCookieJar.createInstance();
+  if (!kIsWeb) {
+    await SingleInstanceCookieJar.createInstance();
+  }
   try {
     var futures = [
-      Rhttp.init(),
+      initPlatformServices(),
       App.initComponents(),
-      SAFTaskWorker().init().wait(),
       AppTranslation.init().wait(),
       TagsTranslation.readData().wait(),
       JsEngine().init().wait(),
@@ -57,13 +54,8 @@ Future<void> init() async {
   RelatedSourceTaskManager.instance;
   _checkOldConfigs();
   if (App.isAndroid) {
-    handleLinks();
-    handleTextShare();
-    try {
-      await FlutterDisplayMode.setHighRefreshRate();
-    } catch (e) {
-      Log.error("Display Mode", "Failed to set high refresh rate: $e");
-    }
+    initAndroidExtras();
+    await trySetHighRefreshRate();
   }
   FlutterError.onError = (details) {
     Log.error("Unhandled Exception", "${details.exception}\n${details.stack}");
