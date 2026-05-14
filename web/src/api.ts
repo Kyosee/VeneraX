@@ -193,6 +193,16 @@ export type LibraryItem = {
   page: number | null
   max_page: number | null
   updated_at: string | null
+  source_name: string | null
+  author: string | null
+  update_time: string | null
+  tags: string[]
+  status: string | null
+  progress_text: string | null
+  pages_text: string | null
+  description: string | null
+  latest_title: string | null
+  has_new_update: boolean
 }
 
 export type FavoriteFolder = {

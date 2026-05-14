@@ -350,14 +350,19 @@ function latestChapterTitle(raw: unknown) {
 
 function libraryItemMetaRows(item: LibraryItem): ComicMetaRow[] {
   const progress = firstPresent([
+    item.progress_text,
     item.episode_title,
     item.page != null && item.max_page != null ? `${item.page}/${item.max_page}` : item.page != null ? String(item.page) : null
   ])
   return [
-    { label: '作者', value: item.subtitle ?? '', tone: 'blue' },
-    { label: '来源', value: item.source_key, tone: 'cyan' },
+    { label: '作者', value: firstPresent([item.author, item.subtitle]) ?? '', tone: 'blue' },
+    { label: '更新', value: item.update_time ?? '', tone: 'cyan' },
+    { label: '来源', value: firstPresent([item.source_name, item.source_key]) ?? '', tone: 'cyan' },
+    { label: '标签', value: item.tags.slice(0, 4).join(' / '), tone: 'pink' },
+    { label: '状态', value: item.status ?? '', tone: 'purple' },
     { label: '进度', value: progress ?? '', tone: 'green' },
-    { label: '页数', value: item.max_page != null ? String(item.max_page) : '', tone: 'orange' }
+    { label: '页数', value: item.pages_text ?? (item.max_page != null ? String(item.max_page) : ''), tone: 'orange' },
+    { label: '描述', value: item.description ?? '', tone: 'orange' }
   ].filter((row) => row.value.trim().length > 0) as ComicMetaRow[]
 }
 
@@ -2201,12 +2206,13 @@ function SearchView({
           <div className="comic-grid">
             {results.map((comic) => {
               const sourceKey = aggregatedSearch ? resultSource : selectedSource
+              const sourceLabel = sources.find((source) => source.key === sourceKey)?.name ?? sourceKey
               return (
                 <DetailedComicTile
                   key={`${resultSource}:${comic.id}`}
                   title={comic.title}
                   cover={comic.cover}
-                  rows={searchComicMetaRows(comic, sourceKey)}
+                  rows={searchComicMetaRows(comic, sourceLabel)}
                   latestTitle={latestChapterTitle(comic.raw)}
                   onClick={() => {
                   const sourceKey = aggregatedSearch ? resultSource : selectedSource
@@ -2452,6 +2458,10 @@ function UpdatesView({
     setSelectedFolder(activeFolder ?? folders[0]?.name ?? '')
   }, [activeFolder, folders])
 
+  useEffect(() => {
+    setActiveList('updated')
+  }, [activeFolder])
+
   const chooseFolder = async () => {
     if (!selectedFolder) return
     await onFolderSelect(selectedFolder)
@@ -2480,7 +2490,7 @@ function UpdatesView({
           <div className="follow-config-stats">
             <span>更新 {data.updated_total}</span>
             <span>未读 {data.unread_total}</span>
-            <span>完结 {data.ended_total}</span>
+            <span>已完结 {data.ended_total}</span>
             <span>追踪 {data.all_total}</span>
           </div>
         ) : null}
@@ -2546,7 +2556,7 @@ function UpdatesView({
               aria-selected={activeList === 'ended'}
               onClick={() => setActiveList('ended')}
             >
-              完结
+              已完结
             </button>
           </div>
           <section className="follow-tab-body" aria-label={`追更${activeList}`}>
@@ -2574,7 +2584,7 @@ function UpdatesView({
                     ? '暂无更新'
                     : activeList === 'unread'
                       ? '暂无未读漫画'
-                      : '暂无完结漫画'
+                      : '暂无已完结漫画'
                 }
                 icon={RefreshCw}
                 favorite
@@ -2932,6 +2942,7 @@ function LibraryGrid({
           page={item.page}
           maxPage={item.max_page}
           currentTitle={item.episode_title}
+          latestTitle={item.latest_title}
           onClick={() => onSelect?.(item)}
         />
       ))}
@@ -3349,6 +3360,7 @@ function SourcePagesView({
               loading={listLoading}
               message={listMessage}
               showEmpty={kind === 'explore' || Boolean(listTarget)}
+              sourceName={selectedTab.source.source_name}
               onSelect={handleOpenComic}
             />
             <LoadMoreSentinel
@@ -3502,12 +3514,14 @@ function SourceComicSections({
   loading,
   message,
   showEmpty,
+  sourceName,
   onSelect
 }: {
   response: SourceComicListResponse | null
   loading: boolean
   message: string | null
   showEmpty: boolean
+  sourceName?: string | null
   onSelect: (comic: SearchComic) => void
 }) {
   if (loading && !response) {
@@ -3521,7 +3535,7 @@ function SourceComicSections({
   return (
     <div className="source-list-content">
       {response.comics.length > 0 ? (
-        <SourceComicGrid comics={response.comics} sourceKey={response.source_key} onSelect={onSelect} />
+        <SourceComicGrid comics={response.comics} sourceKey={sourceName ?? response.source_key} onSelect={onSelect} />
       ) : null}
       {response.parts.map((part, index) => (
         <section className="source-comic-section" key={`${part.title}:${index}`}>
@@ -3531,7 +3545,7 @@ function SourceComicSections({
               <span>{part.comics.length}</span>
             </div>
           ) : null}
-          <SourceComicGrid comics={part.comics} sourceKey={response.source_key} onSelect={onSelect} />
+          <SourceComicGrid comics={part.comics} sourceKey={sourceName ?? response.source_key} onSelect={onSelect} />
         </section>
       ))}
       {loading ? <EmptyLine icon={Loader2} text="加载中" /> : null}

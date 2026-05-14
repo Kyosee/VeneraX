@@ -1215,9 +1215,16 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
     let history = {
         let mut statement = database.prepare(
             r#"
-            SELECT source_key, comic_id, title, subtitle, cover, episode_id, episode_title, page, max_page, updated_at
-            FROM reading_history
-            ORDER BY updated_at DESC
+            SELECT h.source_key, h.comic_id, h.title, h.subtitle, h.cover,
+                   h.episode_id, h.episode_title, h.page, h.max_page, h.updated_at,
+                   s.name, COALESCE(m.author, h.subtitle), m.update_time,
+                   NULL, m.tags_json, m.status, NULL,
+                   CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                   m.description, m.latest_title, 0
+            FROM reading_history h
+            LEFT JOIN comic_sources s ON s.source_key = h.source_key
+            LEFT JOIN comic_metadata m ON m.source_key = h.source_key AND m.comic_id = h.comic_id
+            ORDER BY h.updated_at DESC
             LIMIT ?1 OFFSET ?2
             "#,
         )?;
@@ -1226,20 +1233,7 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
                 i64::from(window.history_limit),
                 i64::from(window.history_offset)
             ],
-            |row| {
-                Ok(LibraryItem {
-                    source_key: row.get(0)?,
-                    comic_id: row.get(1)?,
-                    title: row.get(2)?,
-                    subtitle: row.get(3)?,
-                    cover: row.get(4)?,
-                    episode_id: row.get(5)?,
-                    episode_title: row.get(6)?,
-                    page: row.get(7)?,
-                    max_page: row.get(8)?,
-                    updated_at: row.get(9)?,
-                })
-            },
+            library_item_from_query_row,
         )?;
         rows.collect::<Result<Vec<_>, _>>()?
     };
@@ -1252,9 +1246,17 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
         Some(folder_name) => {
             let mut statement = database.prepare(
                 r#"
-                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover, i.created_at
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       NULL, NULL, h.page, h.max_page, i.created_at,
+                       s.name, COALESCE(m.author, f.subtitle), COALESCE(i.last_update_time, m.update_time),
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, i.has_new_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
+                LEFT JOIN reading_history h ON h.source_key = f.source_key AND h.comic_id = f.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.folder_name = ?1
                 ORDER BY datetime(i.created_at) DESC, f.title COLLATE NOCASE ASC, f.comic_id ASC
                 LIMIT ?2 OFFSET ?3
@@ -1266,16 +1268,24 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
                     i64::from(window.favorites_limit),
                     i64::from(window.favorites_offset)
                 ],
-                library_item_from_favorite_row,
+                library_item_from_query_row,
             )?;
             rows.collect::<Result<Vec<_>, _>>()?
         }
         None => {
             let mut statement = database.prepare(
                 r#"
-                SELECT source_key, comic_id, title, subtitle, cover, created_at
-                FROM favorites
-                ORDER BY datetime(created_at) DESC, title COLLATE NOCASE ASC, comic_id ASC
+                SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
+                       NULL, NULL, h.page, h.max_page, f.created_at,
+                       s.name, COALESCE(m.author, f.subtitle), m.update_time,
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, 0
+                FROM favorites f
+                LEFT JOIN reading_history h ON h.source_key = f.source_key AND h.comic_id = f.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
+                ORDER BY datetime(f.created_at) DESC, f.title COLLATE NOCASE ASC, f.comic_id ASC
                 LIMIT ?1 OFFSET ?2
                 "#,
             )?;
@@ -1284,7 +1294,7 @@ fn read_library(state: &AppState, query: LibraryQuery) -> ApiResult<LibraryRespo
                     i64::from(window.favorites_limit),
                     i64::from(window.favorites_offset)
                 ],
-                library_item_from_favorite_row,
+                library_item_from_query_row,
             )?;
             rows.collect::<Result<Vec<_>, _>>()?
         }
@@ -1341,34 +1351,61 @@ fn read_favorite_folders(database: &rusqlite::Connection) -> rusqlite::Result<Ve
     Ok(folders)
 }
 
-fn library_item_from_favorite_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryItem> {
+fn library_item_from_query_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryItem> {
+    let source_key: String = row.get(0)?;
+    let episode_title: Option<String> = row.get(6)?;
+    let page: Option<u32> = row.get(7)?;
+    let max_page: Option<u32> = row.get(8)?;
+    let progress_text: Option<String> = row.get(16)?;
+    let pages_text: Option<String> = row.get(17)?;
+    let has_new_update = row.get::<_, Option<i64>>(20)?.unwrap_or(0) != 0;
     Ok(LibraryItem {
-        source_key: row.get(0)?,
+        source_key,
         comic_id: row.get(1)?,
         title: row.get(2)?,
         subtitle: row.get(3)?,
         cover: row.get(4)?,
-        episode_id: None,
-        episode_title: None,
-        page: None,
-        max_page: None,
-        updated_at: row.get(5)?,
+        episode_id: row.get(5)?,
+        episode_title: episode_title.clone(),
+        page,
+        max_page,
+        updated_at: row.get(9)?,
+        source_name: row.get(10)?,
+        author: row.get(11)?,
+        update_time: row.get(12)?,
+        tags: parse_library_tags(row.get(13)?, row.get(14)?),
+        status: row.get(15)?,
+        progress_text: progress_text.or_else(|| format_progress_text(episode_title, page)),
+        pages_text: pages_text.or_else(|| max_page.map(|value| value.to_string())),
+        description: row.get(18)?,
+        latest_title: row.get(19)?,
+        has_new_update,
     })
 }
 
-fn library_item_from_follow_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryItem> {
-    Ok(LibraryItem {
-        source_key: row.get(0)?,
-        comic_id: row.get(1)?,
-        title: row.get(2)?,
-        subtitle: row.get(3)?,
-        cover: row.get(4)?,
-        episode_id: None,
-        episode_title: None,
-        page: row.get(5)?,
-        max_page: row.get(6)?,
-        updated_at: row.get(7)?,
-    })
+fn parse_library_tags(favorite_tags: Option<String>, metadata_tags: Option<String>) -> Vec<String> {
+    let mut tags = metadata_tags
+        .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+        .unwrap_or_default();
+    if tags.is_empty() {
+        tags = favorite_tags
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .collect();
+    }
+    tags
+}
+
+fn format_progress_text(episode_title: Option<String>, page: Option<u32>) -> Option<String> {
+    match (episode_title, page) {
+        (Some(episode), Some(page)) => Some(format!("{episode} - 第 {page} 页")),
+        (Some(episode), None) => Some(episode),
+        (None, Some(page)) => Some(format!("第 {page} 页")),
+        (None, None) => None,
+    }
 }
 
 fn read_follow_updates(
@@ -1407,7 +1444,7 @@ fn read_follow_updates(
                 FROM favorite_folder_items i
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
                 WHERE i.folder_name = ?1
-                  AND (h.max_page IS NULL OR h.page IS NULL OR h.page < h.max_page)
+                  AND h.source_key IS NULL
                 "#,
                 params![folder_name],
                 |row| row.get::<_, u64>(0),
@@ -1428,10 +1465,16 @@ fn read_follow_updates(
             let mut statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       h.page, h.max_page, COALESCE(i.last_update_time, i.created_at)
+                       NULL, NULL, h.page, h.max_page, COALESCE(i.last_update_time, i.created_at),
+                       s.name, COALESCE(m.author, f.subtitle), COALESCE(i.last_update_time, m.update_time),
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, i.has_new_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.folder_name = ?1 AND i.has_new_update != 0
                 ORDER BY COALESCE(i.last_update_time, i.created_at) DESC
                 LIMIT ?2 OFFSET ?3
@@ -1439,34 +1482,46 @@ fn read_follow_updates(
             )?;
             let rows = statement.query_map(
                 params![folder_name, i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let updated = rows.collect::<Result<Vec<_>, _>>()?;
             let mut unread_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       h.page, h.max_page, COALESCE(i.last_update_time, i.created_at)
+                       NULL, NULL, h.page, h.max_page, COALESCE(i.last_update_time, i.created_at),
+                       s.name, COALESCE(m.author, f.subtitle), COALESCE(i.last_update_time, m.update_time),
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, i.has_new_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.folder_name = ?1
-                  AND (h.max_page IS NULL OR h.page IS NULL OR h.page < h.max_page)
+                  AND h.source_key IS NULL
                 ORDER BY i.has_new_update DESC, COALESCE(i.last_update_time, i.created_at) DESC
                 LIMIT ?2 OFFSET ?3
                 "#,
             )?;
             let unread_rows = unread_statement.query_map(
                 params![folder_name, i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let unread = unread_rows.collect::<Result<Vec<_>, _>>()?;
             let mut ended_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       h.page, h.max_page, COALESCE(i.last_update_time, i.created_at)
+                       NULL, NULL, h.page, h.max_page, COALESCE(i.last_update_time, i.created_at),
+                       s.name, COALESCE(m.author, f.subtitle), COALESCE(i.last_update_time, m.update_time),
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, i.has_new_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.folder_name = ?1
                   AND h.max_page IS NOT NULL
                   AND h.page IS NOT NULL
@@ -1477,16 +1532,22 @@ fn read_follow_updates(
             )?;
             let ended_rows = ended_statement.query_map(
                 params![folder_name, i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let ended = ended_rows.collect::<Result<Vec<_>, _>>()?;
             let mut all_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       h.page, h.max_page, COALESCE(i.last_update_time, i.created_at)
+                       NULL, NULL, h.page, h.max_page, COALESCE(i.last_update_time, i.created_at),
+                       s.name, COALESCE(m.author, f.subtitle), COALESCE(i.last_update_time, m.update_time),
+                       f.tags, m.tags_json, m.status, NULL,
+                       CASE WHEN m.page_count IS NOT NULL THEN CAST(m.page_count AS TEXT) ELSE NULL END,
+                       m.description, m.latest_title, i.has_new_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.folder_name = ?1
                 ORDER BY i.has_new_update DESC, COALESCE(i.last_update_time, i.created_at) DESC
                 LIMIT ?2 OFFSET ?3
@@ -1494,7 +1555,7 @@ fn read_follow_updates(
             )?;
             let all_rows = all_statement.query_map(
                 params![folder_name, i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             (
                 all_total,
@@ -1530,7 +1591,7 @@ fn read_follow_updates(
                 SELECT COUNT(DISTINCT i.source_key || char(31) || i.comic_id)
                 FROM favorite_folder_items i
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
-                WHERE h.max_page IS NULL OR h.page IS NULL OR h.page < h.max_page
+                WHERE h.source_key IS NULL
                 "#,
                 [],
                 |row| row.get::<_, u64>(0),
@@ -1550,11 +1611,18 @@ fn read_follow_updates(
             let mut statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       MAX(h.page) AS page, MAX(h.max_page) AS max_page,
-                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at
+                       NULL, NULL, MAX(h.page) AS page, MAX(h.max_page) AS max_page,
+                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at,
+                       MAX(s.name), COALESCE(MAX(m.author), f.subtitle),
+                       COALESCE(MAX(i.last_update_time), MAX(m.update_time)),
+                       f.tags, MAX(m.tags_json), MAX(m.status), NULL,
+                       CASE WHEN MAX(m.page_count) IS NOT NULL THEN CAST(MAX(m.page_count) AS TEXT) ELSE NULL END,
+                       MAX(m.description), MAX(m.latest_title), MAX(i.has_new_update)
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE i.has_new_update != 0
                 GROUP BY f.source_key, f.comic_id
                 ORDER BY updated_at DESC
@@ -1563,19 +1631,25 @@ fn read_follow_updates(
             )?;
             let rows = statement.query_map(
                 params![i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let updated = rows.collect::<Result<Vec<_>, _>>()?;
             let mut unread_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       MAX(h.page) AS page, MAX(h.max_page) AS max_page,
+                       NULL, NULL, MAX(h.page) AS page, MAX(h.max_page) AS max_page,
                        MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at,
-                       MAX(i.has_new_update) AS has_update
+                       MAX(s.name), COALESCE(MAX(m.author), f.subtitle),
+                       COALESCE(MAX(i.last_update_time), MAX(m.update_time)),
+                       f.tags, MAX(m.tags_json), MAX(m.status), NULL,
+                       CASE WHEN MAX(m.page_count) IS NOT NULL THEN CAST(MAX(m.page_count) AS TEXT) ELSE NULL END,
+                       MAX(m.description), MAX(m.latest_title), MAX(i.has_new_update) AS has_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
-                WHERE h.max_page IS NULL OR h.page IS NULL OR h.page < h.max_page
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
+                WHERE h.source_key IS NULL
                 GROUP BY f.source_key, f.comic_id
                 ORDER BY has_update DESC, updated_at DESC
                 LIMIT ?1 OFFSET ?2
@@ -1583,17 +1657,24 @@ fn read_follow_updates(
             )?;
             let unread_rows = unread_statement.query_map(
                 params![i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let unread = unread_rows.collect::<Result<Vec<_>, _>>()?;
             let mut ended_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       MAX(h.page) AS page, MAX(h.max_page) AS max_page,
-                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at
+                       NULL, NULL, MAX(h.page) AS page, MAX(h.max_page) AS max_page,
+                       MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at,
+                       MAX(s.name), COALESCE(MAX(m.author), f.subtitle),
+                       COALESCE(MAX(i.last_update_time), MAX(m.update_time)),
+                       f.tags, MAX(m.tags_json), MAX(m.status), NULL,
+                       CASE WHEN MAX(m.page_count) IS NOT NULL THEN CAST(MAX(m.page_count) AS TEXT) ELSE NULL END,
+                       MAX(m.description), MAX(m.latest_title), MAX(i.has_new_update)
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 WHERE h.max_page IS NOT NULL
                   AND h.page IS NOT NULL
                   AND h.page >= h.max_page
@@ -1604,18 +1685,24 @@ fn read_follow_updates(
             )?;
             let ended_rows = ended_statement.query_map(
                 params![i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             let ended = ended_rows.collect::<Result<Vec<_>, _>>()?;
             let mut all_statement = database.prepare(
                 r#"
                 SELECT f.source_key, f.comic_id, f.title, f.subtitle, f.cover,
-                       MAX(h.page) AS page, MAX(h.max_page) AS max_page,
+                       NULL, NULL, MAX(h.page) AS page, MAX(h.max_page) AS max_page,
                        MAX(COALESCE(i.last_update_time, i.created_at)) AS updated_at,
-                       MAX(i.has_new_update) AS has_update
+                       MAX(s.name), COALESCE(MAX(m.author), f.subtitle),
+                       COALESCE(MAX(i.last_update_time), MAX(m.update_time)),
+                       f.tags, MAX(m.tags_json), MAX(m.status), NULL,
+                       CASE WHEN MAX(m.page_count) IS NOT NULL THEN CAST(MAX(m.page_count) AS TEXT) ELSE NULL END,
+                       MAX(m.description), MAX(m.latest_title), MAX(i.has_new_update) AS has_update
                 FROM favorite_folder_items i
                 JOIN favorites f ON f.source_key = i.source_key AND f.comic_id = i.comic_id
                 LEFT JOIN reading_history h ON h.source_key = i.source_key AND h.comic_id = i.comic_id
+                LEFT JOIN comic_sources s ON s.source_key = f.source_key
+                LEFT JOIN comic_metadata m ON m.source_key = f.source_key AND m.comic_id = f.comic_id
                 GROUP BY f.source_key, f.comic_id
                 ORDER BY has_update DESC, updated_at DESC
                 LIMIT ?1 OFFSET ?2
@@ -1623,7 +1710,7 @@ fn read_follow_updates(
             )?;
             let all_rows = all_statement.query_map(
                 params![i64::from(limit), i64::from(offset)],
-                library_item_from_follow_row,
+                library_item_from_query_row,
             )?;
             (
                 all_total,

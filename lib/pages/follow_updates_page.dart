@@ -262,9 +262,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   }
 
   Widget buildConfiguredTabs(BuildContext context) {
-    final unreadComics = allComics
-        .where((comic) => !_isReadCompleted(comic))
-        .toList();
+    final unreadComics = allComics.where(_isUnread).toList();
     final completedComics = allComics.where(_isReadCompleted).toList();
     return DefaultTabController(
       length: 3,
@@ -306,7 +304,18 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
       comic.id,
       ComicType.fromKey(comic.sourceKey),
     );
-    return history != null && history.page == history.maxPage;
+    return history != null &&
+        history.maxPage != null &&
+        history.maxPage! > 0 &&
+        history.page >= history.maxPage!;
+  }
+
+  bool _isUnread(FavoriteItemWithUpdateInfo comic) {
+    return HistoryManager().find(
+          comic.id,
+          ComicType.fromKey(comic.sourceKey),
+        ) ==
+        null;
   }
 
   Widget buildUpdatedComicsHint() {

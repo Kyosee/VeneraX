@@ -33,7 +33,22 @@ CREATE TABLE IF NOT EXISTS favorites (
     title TEXT NOT NULL,
     subtitle TEXT,
     cover TEXT,
+    tags TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source_key, comic_id)
+);
+
+CREATE TABLE IF NOT EXISTS comic_metadata (
+    source_key TEXT NOT NULL,
+    comic_id TEXT NOT NULL,
+    author TEXT,
+    status TEXT,
+    update_time TEXT,
+    description TEXT,
+    tags_json TEXT,
+    page_count INTEGER,
+    latest_title TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source_key, comic_id)
 );
 

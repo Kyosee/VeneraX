@@ -44,9 +44,13 @@ struct ImportedLibraryItem {
     title: String,
     subtitle: Option<String>,
     cover: Option<String>,
+    tags: Option<String>,
     episode_id: Option<String>,
     episode_title: Option<String>,
+    page: Option<i64>,
+    max_page: Option<i64>,
     timestamp_ms: Option<i64>,
+    metadata: Option<ComicRecord>,
 }
 
 struct ImportedFavoriteFolder {
@@ -218,12 +222,13 @@ pub async fn apply_backup(
         for favorite in &plan.favorites {
             transaction.execute(
                 r#"
-                INSERT INTO favorites (source_key, comic_id, title, subtitle, cover, created_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(datetime(?6 / 1000, 'unixepoch'), CURRENT_TIMESTAMP))
+                INSERT INTO favorites (source_key, comic_id, title, subtitle, cover, tags, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(datetime(?7 / 1000, 'unixepoch'), CURRENT_TIMESTAMP))
                 ON CONFLICT(source_key, comic_id) DO UPDATE SET
                     title = excluded.title,
                     subtitle = excluded.subtitle,
-                    cover = excluded.cover
+                    cover = excluded.cover,
+                    tags = excluded.tags
                 "#,
                 params![
                     &favorite.source_key,
@@ -231,9 +236,11 @@ pub async fn apply_backup(
                     &favorite.title,
                     &favorite.subtitle,
                     &favorite.cover,
+                    &favorite.tags,
                     favorite.timestamp_ms,
                 ],
             )?;
+            upsert_comic_metadata(&transaction, favorite)?;
         }
 
         transaction.execute("DELETE FROM favorite_folder_items", [])?;
@@ -286,11 +293,12 @@ pub async fn apply_backup(
             transaction.execute(
                 r#"
                 INSERT INTO reading_history (
-                    source_key, comic_id, title, subtitle, cover, episode_id, episode_title, updated_at
+                    source_key, comic_id, title, subtitle, cover, episode_id, episode_title,
+                    page, max_page, updated_at
                 )
                 VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                    COALESCE(datetime(?8 / 1000, 'unixepoch'), CURRENT_TIMESTAMP)
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,
+                    COALESCE(datetime(?10 / 1000, 'unixepoch'), CURRENT_TIMESTAMP)
                 )
                 ON CONFLICT(source_key, comic_id) DO UPDATE SET
                     title = excluded.title,
@@ -298,6 +306,8 @@ pub async fn apply_backup(
                     cover = excluded.cover,
                     episode_id = excluded.episode_id,
                     episode_title = excluded.episode_title,
+                    page = excluded.page,
+                    max_page = excluded.max_page,
                     updated_at = excluded.updated_at
                 "#,
                 params![
@@ -308,9 +318,12 @@ pub async fn apply_backup(
                     &history.cover,
                     &history.episode_id,
                     &history.episode_title,
+                    history.page,
+                    history.max_page,
                     history.timestamp_ms,
                 ],
             )?;
+            upsert_comic_metadata(&transaction, history)?;
         }
 
         transaction.commit()?;
@@ -330,6 +343,45 @@ pub async fn apply_backup(
         favorites_skipped: plan.favorites_skipped,
         history_skipped: plan.history_skipped,
     })
+}
+
+fn upsert_comic_metadata(
+    transaction: &rusqlite::Transaction<'_>,
+    item: &ImportedLibraryItem,
+) -> rusqlite::Result<()> {
+    let Some(metadata) = &item.metadata else {
+        return Ok(());
+    };
+    transaction.execute(
+        r#"
+        INSERT INTO comic_metadata (
+            source_key, comic_id, author, status, update_time, description,
+            tags_json, page_count, latest_title, updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP)
+        ON CONFLICT(source_key, comic_id) DO UPDATE SET
+            author = excluded.author,
+            status = excluded.status,
+            update_time = excluded.update_time,
+            description = excluded.description,
+            tags_json = excluded.tags_json,
+            page_count = excluded.page_count,
+            latest_title = excluded.latest_title,
+            updated_at = CURRENT_TIMESTAMP
+        "#,
+        params![
+            &item.source_key,
+            &item.comic_id,
+            &metadata.author,
+            &metadata.status,
+            &metadata.update_time,
+            &metadata.description,
+            &metadata.tags_json,
+            metadata.page_count,
+            &metadata.latest_title,
+        ],
+    )?;
+    Ok(())
 }
 
 fn inspect_backup(
@@ -519,6 +571,13 @@ struct ComicRecord {
     title: String,
     subtitle: Option<String>,
     cover: Option<String>,
+    author: Option<String>,
+    status: Option<String>,
+    update_time: Option<String>,
+    description: Option<String>,
+    tags_json: Option<String>,
+    page_count: Option<i64>,
+    latest_title: Option<String>,
     timestamp_ms: Option<i64>,
 }
 
@@ -533,6 +592,23 @@ impl DomainIndex {
                 c.title,
                 c.subtitle,
                 c.cover_uri,
+                c.author,
+                c.status,
+                c.update_time,
+                c.description,
+                c.tags_json,
+                c.page_count,
+                (
+                    SELECT COALESCE(NULLIF(csx.source_title, ''), chx.title)
+                    FROM comic_sources srcx
+                    JOIN chapter_sources csx ON csx.comic_source_id = srcx.comic_source_id
+                    JOIN chapters chx ON chx.chapter_id = csx.chapter_id
+                    WHERE srcx.platform_id = cs.platform_id
+                      AND srcx.source_comic_id = cs.source_comic_id
+                    ORDER BY COALESCE(csx.source_chapter_index, chx.chapter_index) DESC,
+                             chx.chapter_index DESC
+                    LIMIT 1
+                ),
                 COALESCE(c.updated_at, c.created_at)
             FROM comic_sources cs
             JOIN source_platforms sp ON sp.platform_id = cs.platform_id
@@ -547,7 +623,14 @@ impl DomainIndex {
                 title: row.get(2)?,
                 subtitle: row.get(3)?,
                 cover: row.get(4)?,
-                timestamp_ms: row.get(5)?,
+                author: row.get(5)?,
+                status: row.get(6)?,
+                update_time: row.get(7)?,
+                description: row.get(8)?,
+                tags_json: row.get(9)?,
+                page_count: row.get(10)?,
+                latest_title: row.get(11)?,
+                timestamp_ms: row.get(12)?,
             })
         })?;
 
@@ -872,9 +955,13 @@ fn import_favorites(
                 .unwrap_or_else(|| "Untitled".to_string()),
             subtitle: first_non_empty(row.author, record.and_then(|value| value.subtitle.clone())),
             cover: first_non_empty(row.cover, record.and_then(|value| value.cover.clone())),
+            tags: row.tags,
             episode_id: None,
             episode_title: None,
+            page: None,
+            max_page: None,
             timestamp_ms,
+            metadata: record.cloned(),
         });
     })?;
 
@@ -921,11 +1008,15 @@ fn import_history(
                 record.and_then(|value| value.subtitle.clone()),
             ),
             cover: first_non_empty(row.cover, record.and_then(|value| value.cover.clone())),
+            tags: None,
             episode_id,
             episode_title,
+            page: row.page,
+            max_page: row.max_page,
             timestamp_ms: row
                 .time_ms
                 .or_else(|| record.and_then(|value| value.timestamp_ms)),
+            metadata: record.cloned(),
         });
     })?;
 
@@ -938,6 +1029,7 @@ struct FavoriteRow {
     title: Option<String>,
     author: Option<String>,
     cover: Option<String>,
+    tags: Option<String>,
     time: Option<String>,
     type_value: i64,
     last_update_time: Option<String>,
@@ -953,6 +1045,8 @@ struct HistoryRow {
     time_ms: Option<i64>,
     type_value: i64,
     episode: Option<i64>,
+    page: Option<i64>,
+    max_page: Option<i64>,
 }
 
 fn read_favorite_folder_order(path: &Path) -> rusqlite::Result<HashMap<String, i64>> {
@@ -1017,8 +1111,9 @@ fn scan_favorite_rows(path: &Path, mut visit: impl FnMut(FavoriteRow)) -> rusqli
         let last_update_expr = optional_column_expr(&columns, "last_update_time");
         let has_new_update_expr = optional_column_expr(&columns, "has_new_update");
         let last_check_expr = optional_column_expr(&columns, "last_check_time");
+        let tags_expr = optional_column_expr(&columns, "tags");
         let mut statement = connection.prepare(&format!(
-            "SELECT id, name, author, cover_path, time, type, {last_update_expr}, {has_new_update_expr}, {last_check_expr} FROM {identifier}"
+            "SELECT id, name, author, cover_path, {tags_expr}, time, type, {last_update_expr}, {has_new_update_expr}, {last_check_expr} FROM {identifier}"
         ))?;
         let rows = statement.query_map([], |row| {
             Ok(FavoriteRow {
@@ -1027,11 +1122,12 @@ fn scan_favorite_rows(path: &Path, mut visit: impl FnMut(FavoriteRow)) -> rusqli
                 title: row.get(1)?,
                 author: row.get(2)?,
                 cover: row.get(3)?,
-                time: row.get(4)?,
-                type_value: row.get(5)?,
-                last_update_time: row.get(6)?,
-                has_new_update: row.get(7)?,
-                last_check_time: row.get(8)?,
+                tags: row.get(4)?,
+                time: row.get(5)?,
+                type_value: row.get(6)?,
+                last_update_time: row.get(7)?,
+                has_new_update: row.get(8)?,
+                last_check_time: row.get(9)?,
             })
         })?;
         for row in rows {
@@ -1056,9 +1152,12 @@ fn scan_history_rows(path: &Path, mut visit: impl FnMut(HistoryRow)) -> rusqlite
         return Ok(());
     }
 
-    let mut statement = connection.prepare(
-        "SELECT id, title, subtitle, cover, time, type, ep FROM history ORDER BY time DESC",
-    )?;
+    let columns = sqlite_columns(&connection, "history")?;
+    let page_expr = optional_column_expr(&columns, "page");
+    let max_page_expr = optional_column_expr(&columns, "max_page");
+    let mut statement = connection.prepare(&format!(
+        "SELECT id, title, subtitle, cover, time, type, ep, {page_expr}, {max_page_expr} FROM history ORDER BY time DESC"
+    ))?;
     let rows = statement.query_map([], |row| {
         Ok(HistoryRow {
             comic_id: row.get(0)?,
@@ -1068,6 +1167,8 @@ fn scan_history_rows(path: &Path, mut visit: impl FnMut(HistoryRow)) -> rusqlite
             time_ms: row.get(4)?,
             type_value: row.get(5)?,
             episode: row.get(6)?,
+            page: row.get(7)?,
+            max_page: row.get(8)?,
         })
     })?;
     for row in rows {

@@ -301,6 +301,16 @@ pub struct LibraryItem {
     pub page: Option<u32>,
     pub max_page: Option<u32>,
     pub updated_at: Option<String>,
+    pub source_name: Option<String>,
+    pub author: Option<String>,
+    pub update_time: Option<String>,
+    pub tags: Vec<String>,
+    pub status: Option<String>,
+    pub progress_text: Option<String>,
+    pub pages_text: Option<String>,
+    pub description: Option<String>,
+    pub latest_title: Option<String>,
+    pub has_new_update: bool,
 }
 
 #[derive(Serialize)]

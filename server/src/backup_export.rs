@@ -32,6 +32,7 @@ struct ExportFavorite {
     title: String,
     subtitle: Option<String>,
     cover: Option<String>,
+    tags: Option<String>,
     timestamp_ms: i64,
     last_update_time: Option<String>,
     has_new_update: bool,
@@ -46,6 +47,8 @@ struct ExportHistory {
     subtitle: Option<String>,
     cover: Option<String>,
     episode_index: Option<i64>,
+    page: Option<i64>,
+    max_page: Option<i64>,
     timestamp_ms: i64,
 }
 
@@ -170,7 +173,7 @@ fn read_all_favorites(
     let fallback_time = current_unix_millis();
     let mut statement = database.prepare(
         r#"
-        SELECT source_key, comic_id, title, subtitle, cover,
+        SELECT source_key, comic_id, title, subtitle, cover, tags,
                COALESCE(CAST(strftime('%s', created_at) AS INTEGER) * 1000, ?1)
         FROM favorites
         ORDER BY created_at DESC
@@ -185,7 +188,8 @@ fn read_all_favorites(
             title: row.get(2)?,
             subtitle: row.get(3)?,
             cover: row.get(4)?,
-            timestamp_ms: row.get(5)?,
+            tags: row.get(5)?,
+            timestamp_ms: row.get(6)?,
             last_update_time: None,
             has_new_update: false,
             last_check_time: None,
@@ -206,7 +210,7 @@ fn read_folder_favorites(
     let fallback_time = current_unix_millis();
     let mut statement = database.prepare(
         r#"
-        SELECT ffi.folder_name, ffi.source_key, ffi.comic_id, f.title, f.subtitle, f.cover,
+        SELECT ffi.folder_name, ffi.source_key, ffi.comic_id, f.title, f.subtitle, f.cover, f.tags,
                COALESCE(CAST(strftime('%s', ffi.created_at) AS INTEGER) * 1000, ?1),
                ffi.last_update_time, ffi.has_new_update, ffi.last_check_time
         FROM favorite_folder_items ffi
@@ -223,10 +227,11 @@ fn read_folder_favorites(
             title: row.get(3)?,
             subtitle: row.get(4)?,
             cover: row.get(5)?,
-            timestamp_ms: row.get(6)?,
-            last_update_time: row.get(7)?,
-            has_new_update: row.get::<_, i64>(8)? != 0,
-            last_check_time: row.get(9)?,
+            tags: row.get(6)?,
+            timestamp_ms: row.get(7)?,
+            last_update_time: row.get(8)?,
+            has_new_update: row.get::<_, i64>(9)? != 0,
+            last_check_time: row.get(10)?,
         })
     })?;
     rows.filter_map(|row| match row {
@@ -244,7 +249,7 @@ fn read_history(
     let fallback_time = current_unix_millis();
     let mut statement = database.prepare(
         r#"
-        SELECT source_key, comic_id, title, subtitle, cover, episode_id,
+        SELECT source_key, comic_id, title, subtitle, cover, episode_id, page, max_page,
                COALESCE(CAST(strftime('%s', updated_at) AS INTEGER) * 1000, ?1)
         FROM reading_history
         ORDER BY updated_at DESC
@@ -260,7 +265,9 @@ fn read_history(
             subtitle: row.get(3)?,
             cover: row.get(4)?,
             episode_index: episode_id.and_then(|value| value.parse::<i64>().ok()),
-            timestamp_ms: row.get(6)?,
+            page: row.get(6)?,
+            max_page: row.get(7)?,
+            timestamp_ms: row.get(8)?,
         })
     })?;
     rows.filter_map(|row| match row {
@@ -357,7 +364,11 @@ fn create_history_db(path: &Path, snapshot: &ExportSnapshot) -> ApiResult<()> {
             cover TEXT,
             time INTEGER,
             type INTEGER NOT NULL,
-            ep INTEGER
+            ep INTEGER,
+            page INTEGER NOT NULL DEFAULT 0,
+            readEpisode TEXT NOT NULL DEFAULT '',
+            max_page INTEGER,
+            chapter_group INTEGER
         );
         "#,
     )?;
@@ -367,7 +378,7 @@ fn create_history_db(path: &Path, snapshot: &ExportSnapshot) -> ApiResult<()> {
             continue;
         };
         connection.execute(
-            "INSERT INTO history (id, title, subtitle, cover, time, type, ep) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO history (id, title, subtitle, cover, time, type, ep, page, readEpisode, max_page, chapter_group) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, '', ?9, NULL)",
             params![
                 &item.comic_id,
                 &item.title,
@@ -375,7 +386,9 @@ fn create_history_db(path: &Path, snapshot: &ExportSnapshot) -> ApiResult<()> {
                 &item.cover,
                 item.timestamp_ms,
                 type_value,
-                item.episode_index
+                item.episode_index.unwrap_or(0),
+                item.page.unwrap_or(0),
+                item.max_page
             ],
         )?;
     }
@@ -428,6 +441,7 @@ fn create_favorites_db(path: &Path, snapshot: &ExportSnapshot) -> ApiResult<()> 
                 id TEXT NOT NULL,
                 name TEXT,
                 author TEXT,
+                tags TEXT,
                 cover_path TEXT,
                 time TEXT,
                 type INTEGER NOT NULL,
@@ -443,12 +457,13 @@ fn create_favorites_db(path: &Path, snapshot: &ExportSnapshot) -> ApiResult<()> 
             };
             connection.execute(
                 &format!(
-                    "INSERT INTO {table} (id, name, author, cover_path, time, type, last_update_time, has_new_update, last_check_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+                    "INSERT INTO {table} (id, name, author, tags, cover_path, time, type, last_update_time, has_new_update, last_check_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
                 ),
                 params![
                     &item.comic_id,
                     &item.title,
                     &item.subtitle,
+                    &item.tags,
                     &item.cover,
                     item.timestamp_ms.to_string(),
                     type_value,

@@ -40,6 +40,25 @@ fn ensure_schema_upgrades(connection: &Connection) -> rusqlite::Result<()> {
     )?;
     add_column_if_missing(connection, "reading_history", "page", "page INTEGER")?;
     add_column_if_missing(connection, "reading_history", "max_page", "max_page INTEGER")?;
+    add_column_if_missing(connection, "favorites", "tags", "tags TEXT")?;
+    connection.execute(
+        r#"
+        CREATE TABLE IF NOT EXISTS comic_metadata (
+            source_key TEXT NOT NULL,
+            comic_id TEXT NOT NULL,
+            author TEXT,
+            status TEXT,
+            update_time TEXT,
+            description TEXT,
+            tags_json TEXT,
+            page_count INTEGER,
+            latest_title TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (source_key, comic_id)
+        )
+        "#,
+        [],
+    )?;
     connection.execute(
         r#"
         CREATE INDEX IF NOT EXISTS idx_favorite_folder_items_updates
