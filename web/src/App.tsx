@@ -2474,8 +2474,7 @@ function LibraryView({
       ) : null}
       {standalone ? (
         <section className="search-strip app-page-search" aria-label="搜索">
-          <Search size={20} />
-          <input placeholder="搜索" disabled />
+          <TextField leading={<Search size={20} />} placeholder="搜索" disabled />
         </section>
       ) : null}
       <Panel title={title} action={String(total)}>
