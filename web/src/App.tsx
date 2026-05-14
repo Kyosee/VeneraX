@@ -274,15 +274,6 @@ function firstPresent(values: Array<string | null | undefined>) {
   return values.find((value) => value != null && value.trim().length > 0) ?? null
 }
 
-function libraryItemMetaRows(item: LibraryItem): ComicMetaRow[] {
-  return [
-    { label: 'Source', value: item.source_key, tone: 'cyan' },
-    { label: 'Authors', value: item.subtitle ?? '', tone: 'blue' },
-    { label: 'Progress', value: item.episode_title ?? '', tone: 'green' },
-    { label: 'Update', value: formatDateOnly(item.updated_at) ?? '', tone: 'orange' }
-  ].filter((row) => row.value.trim().length > 0) as ComicMetaRow[]
-}
-
 function searchComicMetaRows(comic: SearchComic): ComicMetaRow[] {
   return [
     { label: 'Authors', value: comic.subtitle ?? '', tone: 'blue' },
@@ -2585,40 +2576,6 @@ function LibraryGrid({
         />
       ))}
     </div>
-  )
-}
-
-function ComicTile({
-  item,
-  compact = false,
-  onSelect
-}: {
-  item: LibraryItem
-  compact?: boolean
-  onSelect?: (item: LibraryItem) => void
-}) {
-  const rows = libraryItemMetaRows(item)
-  if (compact) {
-    return (
-      <button className="comic-tile compact" type="button" onClick={() => onSelect?.(item)} title={item.title}>
-        <div className="comic-tile-cover">
-          <CoverImage url={item.cover} iconSize={18} />
-        </div>
-        <strong>{item.title}</strong>
-      </button>
-    )
-  }
-
-  return (
-    <button className="comic-tile" type="button" onClick={() => onSelect?.(item)} title={item.title}>
-      <div className="comic-tile-cover">
-        <CoverImage url={item.cover} iconSize={18} />
-      </div>
-      <div className="comic-tile-main">
-        <strong>{item.title}</strong>
-        <ComicMetaRows rows={rows} />
-      </div>
-    </button>
   )
 }
 
