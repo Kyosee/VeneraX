@@ -49,13 +49,8 @@ class DataSync with ChangeNotifier {
   }
 
   void onDataChanged() {
-    if (isEnabled) {
-      _pendingAutoUpload?.cancel();
-      _pendingAutoUpload = Timer(const Duration(seconds: 2), () {
-        _pendingAutoUpload = null;
-        uploadData();
-      });
-    }
+    _pendingAutoUpload?.cancel();
+    _pendingAutoUpload = null;
   }
 
   List<String>? _validateConfig() {
@@ -117,16 +112,40 @@ class DataSync with ChangeNotifier {
     throw StateError('Unexpected helper response');
   }
 
-  int _backupTimestamp(String fileName) {
-    return int.tryParse(fileName.replaceAll('.venera', '').split('-').first) ??
-        0;
+  int _backupDay(String fileName) {
+    final value =
+        int.tryParse(fileName.replaceAll('.venera', '').split('-').first) ?? 0;
+    if (value > 1000000000) {
+      return value ~/ 86400000;
+    }
+    return value;
+  }
+
+  int _backupVersion(String fileName) {
+    final parts = fileName.replaceAll('.venera', '').split('-');
+    if (parts.length < 2) {
+      return -1;
+    }
+    return int.tryParse(parts[1]) ?? -1;
+  }
+
+  int _compareBackups(String a, String b) {
+    final dayCompare = _backupDay(a).compareTo(_backupDay(b));
+    if (dayCompare != 0) {
+      return dayCompare;
+    }
+    final versionCompare = _backupVersion(a).compareTo(_backupVersion(b));
+    if (versionCompare != 0) {
+      return versionCompare;
+    }
+    return a.compareTo(b);
   }
 
   List<String> _cleanupFiles(List<String> files) {
     final backups = files
         .where((e) => e.endsWith('.venera') && e != 'latest.venera')
         .toList();
-    backups.sort((a, b) => _backupTimestamp(a).compareTo(_backupTimestamp(b)));
+    backups.sort(_compareBackups);
     final remove = <String>[];
     while (backups.length - remove.length > 10) {
       remove.add(backups[remove.length]);
@@ -157,6 +176,7 @@ class DataSync with ChangeNotifier {
   Future<Res<bool>> uploadData() async {
     _pendingAutoUpload?.cancel();
     _pendingAutoUpload = null;
+    if (isDownloading) return const Res(true);
     if (_haveWaitingTask) return const Res(true);
     while (isDownloading || isUploading) {
       _haveWaitingTask = true;
@@ -186,7 +206,9 @@ class DataSync with ChangeNotifier {
           appdata.settings['disableSyncFields'].toString().isNotEmpty,
         );
         final bytes = await data.readAsBytes();
-        final fileName = '${DateTime.now().millisecondsSinceEpoch}.venera';
+        final daysSinceEpoch =
+            DateTime.now().millisecondsSinceEpoch ~/ 86400000;
+        final fileName = '$daysSinceEpoch-$nextVersion.venera';
         final uploadResult = await _callHelper('upload', {
           ..._webDavPayload(config),
           'fileName': fileName,
