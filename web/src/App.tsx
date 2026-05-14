@@ -96,6 +96,7 @@ import { SnackbarHost } from './ui/Snackbar'
 import { Ripple } from './ui/Ripple'
 import { IconButton } from './ui/IconButton'
 import { CircularProgress, LinearProgress } from './ui/ProgressIndicator'
+import { Switch } from './ui/Switch'
 import { AppDataProvider } from './context/AppDataContext'
 import { LibraryProvider } from './context/LibraryContext'
 import { TasksProvider } from './context/TasksContext'
@@ -3923,14 +3924,10 @@ function SourceList({
                   }
                 />
                 {onToggle && source.runtime_status === 'registered' ? (
-                  <label className="source-toggle" title={source.enabled ? '停用' : '启用'}>
-                    <input
-                      type="checkbox"
-                      checked={source.enabled}
-                      onChange={(event) => onToggle(source.key, event.target.checked)}
-                    />
-                    <span />
-                  </label>
+                  <Switch
+                    checked={source.enabled}
+                    onChange={(checked) => onToggle(source.key, checked)}
+                  />
                 ) : null}
                 {onDelete ? (
                   <button
@@ -4064,15 +4061,11 @@ function SourceSettingControl({
           <strong>{item.title}</strong>
           <span>{settingValueText(currentValue)}</span>
         </div>
-        <label className="source-toggle" title={Boolean(currentValue) ? '关闭' : '开启'}>
-          <input
-            type="checkbox"
-            checked={Boolean(currentValue)}
-            disabled={saving}
-            onChange={(event) => onSave(event.target.checked)}
-          />
-          <span />
-        </label>
+        <Switch
+          checked={Boolean(currentValue)}
+          disabled={saving}
+          onChange={(checked) => onSave(checked)}
+        />
       </div>
     )
   }
