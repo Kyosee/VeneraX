@@ -135,17 +135,21 @@ type WebDavSyncState = {
 
 type ComicOpenRequest = {
   sourceKey: string
+  sourceName?: string | null
   comicId: string
   title: string
   subtitle: string | null
   cover: string | null
   initialComic?: ComicInfo
+  libraryItem?: LibraryItem
 }
 
 type ReaderOpenRequest = {
   sourceKey: string
+  sourceName?: string | null
   comic: ComicInfo
   episode: ComicEpisode
+  libraryItem?: LibraryItem
 }
 
 type AppRoute =
@@ -160,6 +164,8 @@ type ReaderMode =
   | 'continuousLeftToRight'
   | 'continuousRightToLeft'
   | 'continuousTopToBottom'
+
+type FollowListKey = 'updated' | 'unread' | 'ended'
 
 const readerModeOptions = [
   { key: 'galleryLeftToRight', label: '单页 左到右' },
@@ -221,6 +227,7 @@ const idleWebDavSync: WebDavSyncState = {
 }
 
 const libraryPageStep = 100
+const followUpdatesPageStep = 100
 
 function emptyFollowUpdates(folder: string | null): FollowUpdatesResponse {
   return {
@@ -234,6 +241,22 @@ function emptyFollowUpdates(folder: string | null): FollowUpdatesResponse {
     ended: [],
     all: []
   }
+}
+
+function followListItems(data: FollowUpdatesResponse, list: FollowListKey) {
+  return list === 'updated' ? data.updated : list === 'unread' ? data.unread : data.ended
+}
+
+function followListTotal(data: FollowUpdatesResponse, list: FollowListKey) {
+  return list === 'updated'
+    ? data.updated_total
+    : list === 'unread'
+      ? data.unread_total
+      : data.ended_total
+}
+
+function canLoadMorePaged(page: number, maxPage: number | null, next: string | null) {
+  return (maxPage != null && page < maxPage) || (maxPage == null && next != null)
 }
 
 function storedFollowFolder(settings: SettingsResponse, folders: FavoriteFolder[]) {
@@ -368,6 +391,19 @@ function displayComicTags(tags: string[], author?: string | null) {
     .join(' / ')
 }
 
+function tagValueWithNamespace(tags: string[] | null | undefined, namespaces: string[]) {
+  const allowed = new Set(namespaces.map((value) => value.trim().toLowerCase().replace(/\s+/g, '')))
+  for (const tag of tags ?? []) {
+    const separatorIndex = tag.search(/[:：]/)
+    if (separatorIndex <= 0) continue
+    const namespace = tag.slice(0, separatorIndex).trim().toLowerCase().replace(/\s+/g, '')
+    if (!allowed.has(namespace)) continue
+    const value = tag.slice(separatorIndex + 1).trim()
+    if (value) return value
+  }
+  return null
+}
+
 function latestChapterTitle(raw: unknown) {
   return rawText(raw, [
     'latest',
@@ -393,21 +429,31 @@ function libraryItemMetaRows(item: LibraryItem): ComicMetaRow[] {
   ].filter((row) => row.value.trim().length > 0) as ComicMetaRow[]
 }
 
-function comicInfoRows(comic: ComicInfo, sourceKey: string, progressText?: string | null): ComicMetaRow[] {
-  const update = firstPresent([
-    rawText(comic.raw, ['updateTime', 'update_time', 'lastUpdate', 'last_update']),
-    rawText(comic.raw, ['uploadTime', 'upload_time'])
+function comicInfoRows(comic: ComicInfo, sourceLabel: string, item?: LibraryItem | null): ComicMetaRow[] {
+  const author = firstPresent([
+    item?.author,
+    comic.subtitle,
+    rawText(comic.raw, ['author', 'authors', 'uploader', 'artist']),
+    tagValueWithNamespace(comic.tags, ['author', 'authors', 'artist', 'artists', '作者', '作家', '作画', '作畫'])
   ])
-  const pages = rawText(comic.raw, ['maxPage', 'pages', 'pageCount'])
-  const status = rawText(comic.raw, ['status', 'state'])
+  const update = firstPresent([
+    item?.update_time,
+    rawText(comic.raw, ['updateTime', 'update_time', 'lastUpdate', 'last_update']),
+    rawText(comic.raw, ['uploadTime', 'upload_time']),
+    tagValueWithNamespace(comic.tags, ['date', 'lastupdate', 'time', 'update', 'updated', '更新', '最後更新', '最后更新'])
+  ])
+  const status = firstPresent([
+    item?.status,
+    rawText(comic.raw, ['status', 'state']),
+    tagValueWithNamespace(comic.tags, ['status', 'state', 'serialization', '連載', '连载', '狀態', '状态'])
+  ])
+  const tags = comic.tags.length > 0 ? comic.tags : (item?.tags ?? [])
   return [
-    { label: 'Authors', value: firstPresent([comic.subtitle, rawText(comic.raw, ['author', 'uploader', 'artist'])]) ?? '', tone: 'blue' },
-    { label: 'Update', value: update ?? '', tone: 'cyan' },
-    { label: 'Source', value: sourceKey, tone: 'cyan' },
-    { label: 'Tags', value: comic.tags.slice(0, 4).join(', '), tone: 'pink' },
-    { label: 'Status', value: status ?? '', tone: 'purple' },
-    { label: 'Progress', value: progressText ?? '', tone: 'green' },
-    { label: 'Pages', value: pages ?? '', tone: 'orange' }
+    { label: '作者', value: author ?? '', tone: 'blue' },
+    { label: '更新', value: update ?? '', tone: 'cyan' },
+    { label: '来源', value: sourceLabel, tone: 'cyan' },
+    { label: '标签', value: displayComicTags(tags, author), tone: 'pink' },
+    { label: '状态', value: status ?? '', tone: 'purple' }
   ].filter((row) => row.value.trim().length > 0) as ComicMetaRow[]
 }
 
@@ -435,22 +481,62 @@ function isPrimaryTabKey(value: TabKey): value is PrimaryTabKey {
 function libraryItemToOpenRequest(item: LibraryItem): ComicOpenRequest {
   return {
     sourceKey: item.source_key,
+    sourceName: item.source_name,
     comicId: item.comic_id,
     title: item.title,
     subtitle: item.subtitle,
     cover: item.cover,
-    initialComic: undefined
+    initialComic: undefined,
+    libraryItem: item
   }
 }
 
-function searchComicToOpenRequest(sourceKey: string, comic: SearchComic): ComicOpenRequest {
+function searchComicToOpenRequest(sourceKey: string, comic: SearchComic, sourceName?: string | null): ComicOpenRequest {
   return {
     sourceKey,
+    sourceName,
     comicId: comic.id,
     title: comic.title,
     subtitle: comic.subtitle,
     cover: comic.cover
   }
+}
+
+function sameLibraryComic(item: LibraryItem, sourceKey: string, requestComicId: string, loadedComicId?: string | null) {
+  return item.source_key === sourceKey && (item.comic_id === requestComicId || item.comic_id === loadedComicId)
+}
+
+function lastReadText(item: LibraryItem | null | undefined) {
+  if (!item) return null
+  const episode = item.episode_title?.trim() || item.episode_id?.trim()
+  const page = item.page != null && item.page > 0 ? ` P${item.page}` : ''
+  if (episode) return `上次阅读：${episode}${page}`
+  return page ? `上次阅读：${page.trim()}` : null
+}
+
+function normalizeEpisodeTitle(value: string | null | undefined) {
+  return (value ?? '')
+    .replace(/\s+/g, '')
+    .replace(/话/g, '話')
+    .replace(/(\D)0+(\d)/g, '$1$2')
+    .trim()
+}
+
+function isHistoryEpisode(episode: ComicEpisode, item: LibraryItem | null | undefined) {
+  if (!item?.episode_id && !item?.episode_title) return false
+  return (
+    episode.id === item?.episode_id ||
+    normalizeEpisodeTitle(episode.title) === normalizeEpisodeTitle(item?.episode_title)
+  )
+}
+
+function episodeFromHistory(item: LibraryItem | null | undefined, episodes: ComicEpisode[]) {
+  if (!item?.episode_id) return null
+  return (
+    episodes.find((episode) => episode.id === item.episode_id) ??
+    episodes.find((episode) => isHistoryEpisode(episode, item)) ??
+    { id: item.episode_id, title: item.episode_title ?? item.episode_id }
+  )
 }
 
 function normalizeReaderMode(value: unknown): ReaderMode {
@@ -475,6 +561,7 @@ export default function App() {
   const [data, setData] = useState<AppData>(emptyData)
   const [loading, setLoading] = useState(true)
   const [loadingMoreLibrary, setLoadingMoreLibrary] = useState<'history' | 'favorites' | null>(null)
+  const [loadingMoreFollowUpdates, setLoadingMoreFollowUpdates] = useState<FollowListKey | null>(null)
   const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null>(null)
   const [activeFollowFolder, setActiveFollowFolder] = useState<string | null>(null)
   const [loadingFollowUpdates, setLoadingFollowUpdates] = useState(false)
@@ -761,6 +848,7 @@ export default function App() {
   const selectFollowFolder = async (folder: string | null) => {
     setActiveFollowFolder(folder)
     setLoadingFollowUpdates(true)
+    setLoadingMoreFollowUpdates(null)
     setError(null)
     try {
       const [settings, followUpdates] = await Promise.all([
@@ -824,11 +912,56 @@ export default function App() {
   const refreshFollowUpdates = async () => {
     if (!activeFollowFolder) return
     setLoadingFollowUpdates(true)
+    setLoadingMoreFollowUpdates(null)
     setError(null)
     try {
       await refreshFollowFolder(activeFollowFolder)
     } finally {
       setLoadingFollowUpdates(false)
+    }
+  }
+
+  const loadMoreFollowUpdates = async (kind: FollowListKey) => {
+    if (!activeFollowFolder || loadingMoreFollowUpdates) return
+    const currentItems = followListItems(data.followUpdates, kind)
+    const currentTotal = followListTotal(data.followUpdates, kind)
+    if (currentItems.length >= currentTotal) return
+    setLoadingMoreFollowUpdates(kind)
+    setError(null)
+    try {
+      const followUpdates = await getFollowUpdates({
+        folder: activeFollowFolder,
+        limit: followUpdatesPageStep,
+        offset: currentItems.length
+      })
+      setData((current) => {
+        if (current.followUpdates.folder !== followUpdates.folder) {
+          return current
+        }
+        const mergedItems = mergeLibraryItems(
+          followListItems(current.followUpdates, kind),
+          followListItems(followUpdates, kind)
+        )
+        return {
+          ...current,
+          followUpdates: {
+            ...current.followUpdates,
+            folder: followUpdates.folder,
+            updated_total: followUpdates.updated_total,
+            unread_total: followUpdates.unread_total,
+            ended_total: followUpdates.ended_total,
+            all_total: followUpdates.all_total,
+            updated: kind === 'updated' ? mergedItems : current.followUpdates.updated,
+            unread: kind === 'unread' ? mergedItems : current.followUpdates.unread,
+            ended: kind === 'ended' ? mergedItems : current.followUpdates.ended
+          }
+        }
+      })
+      setLastUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '追更加载失败')
+    } finally {
+      setLoadingMoreFollowUpdates(null)
     }
   }
 
@@ -907,11 +1040,13 @@ export default function App() {
       kind: 'detail',
       request: {
         sourceKey: request.sourceKey,
+        sourceName: request.sourceName,
         comicId: request.comic.id,
         title: request.comic.title,
         subtitle: request.comic.subtitle,
         cover: request.comic.cover,
-        initialComic: request.comic
+        initialComic: request.comic,
+        libraryItem: request.libraryItem
       }
     })
   }
@@ -963,6 +1098,7 @@ export default function App() {
           {route.kind === 'detail' ? (
             <ComicDetailPage
               request={route.request}
+              historyItems={data.library.history}
               favorites={data.library.favorites}
               onBack={() => setRoute({ kind: 'main' })}
               onOpenReader={openReader}
@@ -1046,10 +1182,12 @@ export default function App() {
               folders={data.library.favorite_folders}
               activeFolder={activeFollowFolder}
               loading={loadingFollowUpdates}
+              loadingMore={loadingMoreFollowUpdates}
               task={activeFollowTask ?? null}
               onBack={closeStandalonePage}
               onFolderSelect={selectFollowFolder}
               onRefresh={refreshFollowUpdates}
+              onLoadMore={loadMoreFollowUpdates}
               onCheck={checkFollowUpdates}
               onMarkRead={markFollowUpdatesAsRead}
               onOpenComic={openDetail}
@@ -1547,6 +1685,7 @@ function LoadMoreSentinel({
 
 function ComicDetailPage({
   request,
+  historyItems,
   favorites,
   onBack,
   onOpenReader,
@@ -1554,6 +1693,7 @@ function ComicDetailPage({
   onSearchTag
 }: {
   request: ComicOpenRequest
+  historyItems: LibraryItem[]
   favorites: LibraryItem[]
   onBack: () => void
   onOpenReader: (request: ReaderOpenRequest) => void
@@ -1566,7 +1706,6 @@ function ComicDetailPage({
   const [favoriteBusy, setFavoriteBusy] = useState(false)
   const [descriptionExpanded, setDescriptionExpanded] = useState(false)
   const [chaptersReversed, setChaptersReversed] = useState(false)
-  const [readingProgress, setReadingProgress] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1575,7 +1714,6 @@ function ComicDetailPage({
     setMessage(null)
     setDescriptionExpanded(false)
     setChaptersReversed(false)
-    setReadingProgress(null)
     if (request.initialComic) return
     void getComicInfo(request.sourceKey, request.comicId)
       .then((response) => {
@@ -1594,19 +1732,21 @@ function ComicDetailPage({
     }
   }, [request.comicId, request.initialComic, request.sourceKey])
 
-  useEffect(() => {
-    if (!comic) return
-    const item = favorites.find(
-      (fav) => fav.source_key === request.sourceKey && fav.comic_id === comic.id
-    )
-    setReadingProgress(item?.episode_title ?? null)
-  }, [favorites, comic, request.sourceKey])
-
-  const isFavorite = Boolean(
-    comic && favorites.some((item) => item.source_key === request.sourceKey && item.comic_id === comic.id)
-  )
+  const favoriteItem = comic
+    ? favorites.find((item) => sameLibraryComic(item, request.sourceKey, request.comicId, comic.id))
+    : null
+  const historyItem = comic
+    ? historyItems.find((item) => item.episode_id && sameLibraryComic(item, request.sourceKey, request.comicId, comic.id))
+    : null
+  const requestHistoryItem = request.libraryItem?.episode_id ? request.libraryItem : null
+  const progressItem = historyItem ?? requestHistoryItem
+  const metadataItem = favoriteItem ?? progressItem ?? request.libraryItem ?? null
+  const isFavorite = Boolean(favoriteItem)
   const firstEpisode = comic?.episodes[0]
-  const detailRows = comic ? comicInfoRows(comic, request.sourceKey, readingProgress) : []
+  const continueEpisode = comic ? episodeFromHistory(progressItem, comic.episodes) : null
+  const sourceLabel = firstPresent([request.sourceName, metadataItem?.source_name, request.sourceKey]) ?? request.sourceKey
+  const detailRows = comic ? comicInfoRows(comic, sourceLabel, metadataItem) : []
+  const historyText = lastReadText(progressItem)
   const orderedEpisodes = comic
     ? chaptersReversed
       ? [...comic.episodes].reverse()
@@ -1632,32 +1772,16 @@ function ComicDetailPage({
     }
   }
 
-  const handleTagClick = (tag: string) => {
-    onSearchTag?.(request.sourceKey, tag)
-  }
-
   const openEpisode = (episode: ComicEpisode) => {
     if (!comic) return
-    onOpenReader({ sourceKey: request.sourceKey, comic, episode })
+    onOpenReader({
+      sourceKey: request.sourceKey,
+      sourceName: request.sourceName,
+      comic,
+      episode,
+      libraryItem: progressItem ?? request.libraryItem
+    })
   }
-
-  const tags = comic?.tags ?? []
-  const tagChips = tags.length > 0 ? (
-    <div className="metadata-chips">
-      {tags.map((tag) => (
-        <span
-          key={tag}
-          role="button"
-          tabIndex={0}
-          onClick={() => handleTagClick(tag)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleTagClick(tag) }}
-          style={{ cursor: 'pointer' }}
-        >
-          {tag}
-        </span>
-      ))}
-    </div>
-  ) : null
 
   return (
     <article className="comic-detail-page">
@@ -1673,12 +1797,16 @@ function ComicDetailPage({
             <CoverImage url={comic.cover ?? request.cover} iconSize={28} />
             <div className="detail-hero-main">
               <h2>{comic.title}</h2>
-              {comic.subtitle ? <p>{comic.subtitle}</p> : null}
-              {tagChips}
               <ComicMetaRows rows={detailRows} />
             </div>
           </section>
           <section className="detail-action-row" aria-label="漫画操作">
+            {continueEpisode ? (
+              <button className="detail-action continue" type="button" onClick={() => openEpisode(continueEpisode)}>
+                <BookOpen size={18} />
+                <span>继续</span>
+              </button>
+            ) : null}
             {firstEpisode ? (
               <button className="detail-action primary" type="button" onClick={() => openEpisode(firstEpisode)}>
                 <Play size={18} />
@@ -1706,6 +1834,12 @@ function ComicDetailPage({
               <span>复制</span>
             </button>
           </section>
+          {historyText ? (
+            <div className="detail-history-chip">
+              <History size={18} />
+              <span>{historyText}</span>
+            </div>
+          ) : null}
           {message ? <EmptyLine icon={BookOpen} text={message} /> : null}
           {comic.description ? (
             <section className="detail-section">
@@ -1744,7 +1878,12 @@ function ComicDetailPage({
             ) : (
               <div className="chapter-grid">
                 {orderedEpisodes.map((episode) => (
-                  <button key={episode.id} className="chapter-cell" type="button" onClick={() => openEpisode(episode)}>
+                  <button
+                    key={episode.id}
+                    className={isHistoryEpisode(episode, progressItem) ? 'chapter-cell current' : 'chapter-cell'}
+                    type="button"
+                    onClick={() => openEpisode(episode)}
+                  >
                     {episode.title}
                   </button>
                 ))}
@@ -1966,6 +2105,7 @@ function SearchView({
   const [resultSource, setResultSource] = useState('')
   const [resultPage, setResultPage] = useState(1)
   const [resultMaxPage, setResultMaxPage] = useState<number | null>(null)
+  const [resultNext, setResultNext] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadSearchHistory())
   const [sourceMessage, setSourceMessage] = useState<string | null>(null)
@@ -1980,6 +2120,7 @@ function SearchView({
     setSelectedSource(nextSource)
     setResults([])
     setSearchMessage(null)
+    setResultNext(null)
     if (!nextSource) {
       setKeyword('')
     }
@@ -2000,6 +2141,7 @@ function SearchView({
     setSearchMessage(null)
     setResultPage(1)
     setResultMaxPage(null)
+    setResultNext(null)
     onConsumePreset?.()
 
     void (async () => {
@@ -2008,6 +2150,9 @@ function SearchView({
         const response = await searchComics(current.sourceKey, current.keyword, 1)
         setResults(response.comics)
         setResultSource(current.sourceKey)
+        setResultPage(1)
+        setResultMaxPage(response.max_page)
+        setResultNext(response.next)
         addToHistory(current.keyword)
         setSearchMessage(response.comics.length === 0 ? '没有结果' : null)
       } catch (err) {
@@ -2027,6 +2172,7 @@ function SearchView({
     setSearchMessage(null)
     setResultPage(1)
     setResultMaxPage(null)
+    setResultNext(null)
   }
 
   const doSearch = async (text: string, sourceKey: string, page: number) => {
@@ -2086,12 +2232,16 @@ function SearchView({
       }
       setResultPage(page)
       setResultMaxPage(response.max_page)
+      setResultNext(response.next)
       setSearchMessage(
         response.comics.length === 0 && page === 1 ? '没有结果' : null
       )
     } catch (err) {
       if (page === 1) {
         setResults([])
+        setResultPage(1)
+        setResultMaxPage(null)
+        setResultNext(null)
         setSearchMessage(err instanceof Error ? err.message : '搜索失败')
       }
     } finally {
@@ -2106,7 +2256,7 @@ function SearchView({
   }
 
   const handleLoadMore = () => {
-    if (loadingMore || resultMaxPage == null || resultPage >= resultMaxPage) return
+    if (loadingMore || !canLoadMorePaged(resultPage, resultMaxPage, resultNext)) return
     handleSearch(keyword, resultPage + 1)
   }
 
@@ -2145,7 +2295,7 @@ function SearchView({
   }
 
   const hasResults = results.length > 0
-  const hasMore = resultMaxPage != null && resultPage < resultMaxPage
+  const hasMore = canLoadMorePaged(resultPage, resultMaxPage, resultNext)
 
   return (
     <div className="view-stack">
@@ -2188,6 +2338,7 @@ function SearchView({
               setSearchMessage(null)
               setResultPage(1)
               setResultMaxPage(null)
+              setResultNext(null)
             }}
           >
             聚合搜索
@@ -2242,9 +2393,9 @@ function SearchView({
                   rows={searchComicMetaRows(comic, sourceLabel)}
                   latestTitle={latestChapterTitle(comic.raw)}
                   onClick={() => {
-                  const sourceKey = aggregatedSearch ? resultSource : selectedSource
-                  if (sourceKey) onOpenComic(searchComicToOpenRequest(sourceKey, comic))
-                }}
+                    const sourceKey = aggregatedSearch ? resultSource : selectedSource
+                    if (sourceKey) onOpenComic(searchComicToOpenRequest(sourceKey, comic, sourceLabel))
+                  }}
                 />
               )
             })}
@@ -2444,10 +2595,12 @@ function UpdatesView({
   folders,
   activeFolder,
   loading,
+  loadingMore,
   task,
   onBack,
   onFolderSelect,
   onRefresh,
+  onLoadMore,
   onCheck,
   onMarkRead,
   onOpenComic
@@ -2456,19 +2609,22 @@ function UpdatesView({
   folders: FavoriteFolder[]
   activeFolder: string | null
   loading: boolean
+  loadingMore: FollowListKey | null
   task: TaskSummary | null
   onBack: () => void
   onFolderSelect: (folder: string | null) => Promise<void>
   onRefresh: () => Promise<void>
+  onLoadMore: (list: FollowListKey) => Promise<void>
   onCheck: () => Promise<void>
   onMarkRead: () => Promise<void>
   onOpenComic: (request: ComicOpenRequest) => void
 }) {
-  const [activeList, setActiveList] = useState<'updated' | 'unread' | 'ended'>('updated')
+  const [activeList, setActiveList] = useState<FollowListKey>('updated')
   const [selectorOpen, setSelectorOpen] = useState(false)
   const [selectedFolder, setSelectedFolder] = useState(activeFolder ?? folders[0]?.name ?? '')
-  const visibleItems =
-    activeList === 'updated' ? data.updated : activeList === 'unread' ? data.unread : data.ended
+  const visibleItems = followListItems(data, activeList)
+  const visibleTotal = followListTotal(data, activeList)
+  const canLoadMore = visibleItems.length < visibleTotal
   const activeFolderTitle =
     activeFolder == null
       ? '未配置'
@@ -2612,6 +2768,11 @@ function UpdatesView({
                 onSelect={(item) => onOpenComic(libraryItemToOpenRequest(item))}
               />
             )}
+            <LoadMoreSentinel
+              loading={loadingMore === activeList}
+              onLoadMore={!loading && canLoadMore ? () => { void onLoadMore(activeList) } : undefined}
+              label={`${visibleItems.length}/${visibleTotal}`}
+            />
           </section>
         </>
       ) : null}
@@ -3337,7 +3498,7 @@ function SourcePagesView({
   const handleOpenComic = async (comic: SearchComic) => {
     const sourceKey = list?.source_key ?? selectedTab?.source.source_key
     if (!sourceKey) return
-    onOpenComic(searchComicToOpenRequest(sourceKey, comic))
+    onOpenComic(searchComicToOpenRequest(sourceKey, comic, selectedTab?.source.source_name))
   }
 
   return (
@@ -3619,7 +3780,7 @@ function hasSourceComics(response: SourceComicListResponse) {
 }
 
 function canLoadMoreSourceList(response: SourceComicListResponse) {
-  return response.max_page != null && response.page < response.max_page
+  return canLoadMorePaged(response.page, response.max_page, response.next)
 }
 
 function categoryItemKey(tab: SourcePageTab, part: SourceCategoryPart, item: SourceCategoryItem) {

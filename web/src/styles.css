@@ -2208,7 +2208,14 @@ body,
   font-weight: 500;
 }
 
-/* Chapter cell: rounded pill style like Flutter ChoiceChip */
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+
+/* Chapter cell: rounded tile style like the Flutter detail grid */
 .chapter-cell {
   min-height: 48px;
   overflow: hidden;
@@ -2226,6 +2233,12 @@ body,
 .chapter-cell:hover {
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+.chapter-cell.current {
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 600;
 }
 
 .source-chip,
@@ -2430,6 +2443,7 @@ body,
   font-size: 14px;
 }
 
+.detail-action.continue,
 .detail-action.primary,
 .detail-action.active {
   color: #004f4a;
@@ -2439,6 +2453,32 @@ body,
 .detail-action:disabled {
   opacity: 0.42;
   cursor: default;
+}
+
+.detail-history-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  max-width: 100%;
+  gap: 8px;
+  margin: -2px 0 4px;
+  padding: 6px 12px;
+  border-radius: 24px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.detail-history-chip svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.detail-history-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-section {
