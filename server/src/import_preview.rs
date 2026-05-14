@@ -151,11 +151,29 @@ pub async fn apply_backup(
         ));
     }
 
+    tracing::info!(
+        backup_path = %backup_path.display(),
+        size_bytes = metadata.len(),
+        "apply_backup: start"
+    );
+
     let tmp_dir = state.config.tmp_dir().join("backup-import");
     let plan =
         task::spawn_blocking(move || build_import_plan(&backup_path, &tmp_dir, relative_path))
             .await
             .map_err(|err| ApiError::State(format!("import task failed: {err}")))??;
+
+    tracing::info!(
+        sources = plan.sources.len(),
+        source_data_files = plan.source_data_files.len(),
+        favorites = plan.favorites.len(),
+        favorites_skipped = plan.favorites_skipped,
+        favorite_folders = plan.favorite_folders.len(),
+        favorite_folder_items = plan.favorite_folder_items.len(),
+        history = plan.history.len(),
+        history_skipped = plan.history_skipped,
+        "apply_backup: plan built from zip"
+    );
 
     async_fs::create_dir_all(state.config.sources_dir()).await?;
     for source in &plan.sources {
