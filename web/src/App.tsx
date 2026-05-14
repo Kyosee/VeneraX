@@ -95,6 +95,7 @@ import { ThemeProvider } from './theme/ThemeProvider'
 import { SnackbarHost } from './ui/Snackbar'
 import { Ripple } from './ui/Ripple'
 import { IconButton } from './ui/IconButton'
+import { CircularProgress } from './ui/ProgressIndicator'
 import { AppDataProvider } from './context/AppDataContext'
 import { LibraryProvider } from './context/LibraryContext'
 import { TasksProvider } from './context/TasksContext'
@@ -1002,7 +1003,7 @@ function TopBar({
         <StatusPill ok={isNormal} text={isNormal ? '正常' : '异常'} />
         {lastUpdated ? <span className="muted-text">{lastUpdated}</span> : null}
         <IconButton type="button" onClick={onRefresh} aria-label="刷新">
-          {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
+          {loading ? <CircularProgress size={18} /> : <RefreshCw size={18} />}
         </IconButton>
       </div>
     </header>
