@@ -629,27 +629,27 @@ test("json mode forwards base64 body and returns binary response", async () => {
   }
 });
 
-test("sync WebDAV upload updates latest with If-Match when an ETag exists", async () => {
+test("sync WebDAV upload stores only the requested backup file", async () => {
   const uploaded = new Map();
+  const seenRequests = [];
   const backupBytes = buildZipArchive([
     { name: "appdata.json", data: Buffer.from("{}"), compression: 0 },
   ]);
-  let latestIfMatch = "";
 
   const upstream = createHttpServer(async (req, res) => {
+    seenRequests.push(`${req.method} ${req.url}`);
+
     if (req.method === "HEAD" && req.url === "/latest.venera") {
-      res.writeHead(200, { ETag: '"latest-old"' });
-      res.end();
+      res.writeHead(500);
+      res.end("unexpected latest read");
       return;
     }
 
     if (req.method === "PUT") {
+      assert.equal(req.url, "/1700000000000.venera");
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       uploaded.set(req.url, Buffer.concat(chunks));
-      if (req.url === "/latest.venera") {
-        latestIfMatch = req.headers["if-match"] || "";
-      }
       res.writeHead(201);
       res.end();
       return;
@@ -688,24 +688,29 @@ test("sync WebDAV upload updates latest with If-Match when an ETag exists", asyn
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.ok, true);
-    assert.equal(latestIfMatch, '"latest-old"');
     assert.deepEqual(uploaded.get("/1700000000000.venera"), backupBytes);
-    assert.deepEqual(uploaded.get("/latest.venera"), backupBytes);
+    assert.equal(uploaded.has("/latest.venera"), false);
+    assert.deepEqual(payload.files, ["1700000000000.venera"]);
+    assert.equal(seenRequests.includes("HEAD /latest.venera"), false);
+    assert.equal(seenRequests.includes("PUT /latest.venera"), false);
   } finally {
     await close(helper);
     await close(upstream);
   }
 });
 
-test("sync WebDAV upload reports conflict when latest changes during upload", async () => {
+test("sync WebDAV upload ignores latest conflicts", async () => {
   const backupBytes = buildZipArchive([
     { name: "appdata.json", data: Buffer.from("{}"), compression: 0 },
   ]);
+  let latestHeadSeen = false;
+  let latestPutSeen = false;
   let timestampUploadSeen = false;
   let timestampUploadDeleted = false;
 
   const upstream = createHttpServer(async (req, res) => {
     if (req.method === "HEAD" && req.url === "/latest.venera") {
+      latestHeadSeen = true;
       res.writeHead(200, { ETag: '"latest-old"' });
       res.end();
       return;
@@ -722,6 +727,7 @@ test("sync WebDAV upload reports conflict when latest changes during upload", as
     }
 
     if (req.method === "PUT" && req.url === "/latest.venera") {
+      latestPutSeen = true;
       assert.equal(req.headers["if-match"], '"latest-old"');
       for await (const _ of req) {
         // drain body
@@ -758,11 +764,13 @@ test("sync WebDAV upload reports conflict when latest changes during upload", as
       }),
     });
 
-    assert.equal(response.status, 409);
+    assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.conflict, true);
+    assert.equal(payload.ok, true);
     assert.equal(timestampUploadSeen, true);
-    assert.equal(timestampUploadDeleted, true);
+    assert.equal(timestampUploadDeleted, false);
+    assert.equal(latestHeadSeen, false);
+    assert.equal(latestPutSeen, false);
   } finally {
     await close(helper);
     await close(upstream);

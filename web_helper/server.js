@@ -1783,7 +1783,10 @@ function parseWebDavFileNames(xmlBody, baseUrl) {
     const segments = parsed.pathname.split("/").filter(Boolean);
     if (segments.length === 0) continue;
     const last = decodeURIComponent(segments[segments.length - 1]);
-    if (last.toLowerCase().endsWith(".venera")) {
+    if (
+      last.toLowerCase().endsWith(".venera") &&
+      last.toLowerCase() !== "latest.venera"
+    ) {
       names.add(last);
     }
   }
@@ -2276,11 +2279,6 @@ function canFallbackToLatest(error) {
   );
 }
 
-function isWebDavPreconditionFailed(error) {
-  const statusCode = Number(error?.statusCode || 0);
-  return statusCode === 409 || statusCode === 412;
-}
-
 async function webDavRequest({
   config,
   path = "",
@@ -2318,51 +2316,6 @@ async function webDavRequest({
     headers: responseHeaders(response),
     body: responseBody,
   };
-}
-
-async function readWebDavETag({
-  config,
-  path,
-  cookieJar,
-  persistCookieJar,
-  recordProxyRequest,
-}) {
-  try {
-    const result = await webDavRequest({
-      config,
-      path,
-      method: "HEAD",
-      cookieJar,
-      persistCookieJar,
-      recordProxyRequest,
-    });
-    return { exists: true, eTag: result.headers.etag || null };
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 0);
-    if (statusCode === 404) {
-      return { exists: false, eTag: null };
-    }
-    if (statusCode !== 405 && statusCode !== 501) {
-      throw error;
-    }
-  }
-
-  try {
-    const result = await webDavRequest({
-      config,
-      path,
-      method: "GET",
-      cookieJar,
-      persistCookieJar,
-      recordProxyRequest,
-    });
-    return { exists: true, eTag: result.headers.etag || null };
-  } catch (error) {
-    if (Number(error?.statusCode || 0) === 404) {
-      return { exists: false, eTag: null };
-    }
-    throw error;
-  }
 }
 
 async function listWebDavBackupFiles({
@@ -2546,14 +2499,6 @@ async function handleSyncWebDavRoute({
     }
     assertLooksLikeVeneraBackup(bytes, fileName);
 
-    const latestState = await readWebDavETag({
-      config,
-      path: "latest.venera",
-      cookieJar,
-      persistCookieJar,
-      recordProxyRequest,
-    });
-
     await webDavRequest({
       config,
       path: fileName,
@@ -2567,47 +2512,6 @@ async function handleSyncWebDavRoute({
       persistCookieJar,
       recordProxyRequest,
     });
-    try {
-      await webDavRequest({
-        config,
-        path: "latest.venera",
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(bytes.length),
-          ...(latestState.eTag ? { "If-Match": latestState.eTag } : {}),
-          ...(!latestState.exists ? { "If-None-Match": "*" } : {}),
-        },
-        body: bytes,
-        cookieJar,
-        persistCookieJar,
-        recordProxyRequest,
-      });
-    } catch (error) {
-      if (!isWebDavPreconditionFailed(error)) {
-        throw error;
-      }
-      try {
-        await webDavRequest({
-          config,
-          path: fileName,
-          method: "DELETE",
-          cookieJar,
-          persistCookieJar,
-          recordProxyRequest,
-        });
-      } catch (deleteError) {
-        if (Number(deleteError?.statusCode || 0) !== 404) {
-          throw deleteError;
-        }
-      }
-      sendJson(res, 409, {
-        ok: false,
-        conflict: true,
-        error: "Remote WebDAV backup changed while uploading",
-      });
-      return true;
-    }
 
     for (const removeName of removeFileNames) {
       if (!removeName) continue;
