@@ -416,10 +416,6 @@ export default function App() {
     [data.settings]
   )
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode === 'dark' ? 'dark' : 'light'
-  }, [themeMode])
-
   const setThemeMode = async (value: string) => {
     const next = await updateSettings({ themeMode: value })
     setData((current) => ({ ...current, settings: next }))
