@@ -4178,9 +4178,10 @@ function settingValuesEqual(left: SourceSettingValue, right: SourceSettingValue)
 }
 
 function EmptyLine({ icon: Icon, text }: { icon: typeof Home; text: string }) {
+  const isLoader = Icon === Loader2
   return (
     <div className="empty-line">
-      <Icon size={18} />
+      {isLoader ? <CircularProgress size={18} /> : <Icon size={18} />}
       <span>{text}</span>
     </div>
   )
