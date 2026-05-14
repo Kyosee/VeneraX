@@ -429,3 +429,86 @@ test("server-db sync stores WebDAV backup on helper disk", async () => {
     await rm(serverDataDir, { recursive: true, force: true });
   }
 });
+
+test("server-db history write APIs upsert, delete and clear rows", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+
+  const post = (path, body) =>
+    fetch(`${helperUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile: "reader", ...body }),
+    });
+
+  try {
+    const upsertResponse = await post("/api/server-db/history/upsert", {
+      history: {
+        id: "comic-1",
+        title: "first title",
+        subtitle: "sub",
+        cover: "cover.jpg",
+        time: 1000,
+        type: 1,
+        ep: 2,
+        page: 3,
+        readEpisode: ["1", "2"],
+        max_page: 8,
+        chapter_group: 4,
+      },
+    });
+    assert.equal(upsertResponse.status, 200);
+    assert.equal((await upsertResponse.json()).ok, true);
+
+    const replaceResponse = await post("/api/server-db/history/upsert", {
+      history: {
+        id: "comic-1",
+        title: "second title",
+        time: 2000,
+        type: 1,
+        ep: 5,
+        page: 6,
+        readEpisode: [],
+      },
+    });
+    assert.equal(replaceResponse.status, 200);
+
+    let listPayload = await (
+      await post("/api/server-db/history/list", { limit: 20 })
+    ).json();
+    assert.equal(listPayload.total, 1);
+    assert.equal(listPayload.items[0].title, "second title");
+    assert.equal(listPayload.items[0].time, 2000);
+    assert.equal(listPayload.items[0].ep, 5);
+
+    const deleteResponse = await post("/api/server-db/history/delete", {
+      id: "comic-1",
+      type: 1,
+    });
+    assert.equal(deleteResponse.status, 200);
+    listPayload = await (
+      await post("/api/server-db/history/list", { limit: 20 })
+    ).json();
+    assert.equal(listPayload.total, 0);
+
+    await post("/api/server-db/history/upsert", {
+      history: { id: "comic-2", title: "kept", time: 3000, type: 2 },
+    });
+    const clearResponse = await post("/api/server-db/history/clear", {});
+    assert.equal(clearResponse.status, 200);
+    listPayload = await (
+      await post("/api/server-db/history/list", { limit: 20 })
+    ).json();
+    assert.equal(listPayload.total, 0);
+
+    const statusPayload = await (
+      await fetch(`${helperUrl}/api/server-db/status?profile=reader`)
+    ).json();
+    assert.equal(statusPayload.metadata.dirty, true);
+    assert.equal(statusPayload.metadata.dirtyReason, "history-clear");
+  } finally {
+    await close(helper);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});

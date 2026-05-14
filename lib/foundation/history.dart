@@ -14,6 +14,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/utils/channel.dart';
 import 'package:venera/utils/ext.dart';
+import 'package:venera/utils/server_db.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'app.dart';
@@ -328,6 +329,52 @@ class HistoryManager with ChangeNotifier {
     ];
   }
 
+  Future<bool> _upsertServerHistory(History newItem) async {
+    if (!kIsWeb) return false;
+    try {
+      return await const ServerDbClient().upsertHistory(newItem);
+    } catch (e, s) {
+      Log.error('Server DB History', e, s);
+      return false;
+    }
+  }
+
+  Future<bool> _deleteServerHistory(String id, ComicType type) async {
+    if (!kIsWeb) return false;
+    try {
+      return await const ServerDbClient().deleteHistory(id, type);
+    } catch (e, s) {
+      Log.error('Server DB History', e, s);
+      return false;
+    }
+  }
+
+  Future<bool> _clearServerHistory() async {
+    if (!kIsWeb) return false;
+    try {
+      return await const ServerDbClient().clearHistory();
+    } catch (e, s) {
+      Log.error('Server DB History', e, s);
+      return false;
+    }
+  }
+
+  void _writeLocalHistory(History newItem) {
+    _db.execute(_insertHistorySql, _historySqlArgs(newItem));
+  }
+
+  void _cacheAddedHistory(History newItem) {
+    if (_cachedHistoryIds == null) {
+      updateCache();
+    } else {
+      _cachedHistoryIds![_cacheKey(newItem.id, newItem.type)] = true;
+    }
+    cachedHistories[_cacheKey(newItem.id, newItem.type)] = newItem;
+    if (cachedHistories.length > 10) {
+      cachedHistories.remove(cachedHistories.keys.first);
+    }
+  }
+
   bool _haveAsyncTask = false;
 
   /// Create a isolate to add history to prevent blocking the UI thread.
@@ -339,20 +386,13 @@ class HistoryManager with ChangeNotifier {
 
     _haveAsyncTask = true;
     if (kIsWeb) {
-      _db.execute(_insertHistorySql, _historySqlArgs(newItem));
+      await _upsertServerHistory(newItem);
+      _writeLocalHistory(newItem);
     } else {
       await _addHistoryAsync(_dbPath, newItem);
     }
     _haveAsyncTask = false;
-    if (_cachedHistoryIds == null) {
-      updateCache();
-    } else {
-      _cachedHistoryIds![_cacheKey(newItem.id, newItem.type)] = true;
-    }
-    cachedHistories[_cacheKey(newItem.id, newItem.type)] = newItem;
-    if (cachedHistories.length > 10) {
-      cachedHistories.remove(cachedHistories.keys.first);
-    }
+    _cacheAddedHistory(newItem);
     notifyListeners();
   }
 
@@ -361,21 +401,31 @@ class HistoryManager with ChangeNotifier {
   /// This function would be called when user start reading.
   void addHistory(History newItem) {
     if (!isInitialized) return;
-    _db.execute(_insertHistorySql, _historySqlArgs(newItem));
-    if (_cachedHistoryIds == null) {
-      updateCache();
-    } else {
-      _cachedHistoryIds![_cacheKey(newItem.id, newItem.type)] = true;
+    if (kIsWeb) {
+      unawaited(() async {
+        await _upsertServerHistory(newItem);
+        _writeLocalHistory(newItem);
+        _cacheAddedHistory(newItem);
+        notifyListeners();
+      }());
+      return;
     }
-    cachedHistories[_cacheKey(newItem.id, newItem.type)] = newItem;
-    if (cachedHistories.length > 10) {
-      cachedHistories.remove(cachedHistories.keys.first);
-    }
+    _writeLocalHistory(newItem);
+    _cacheAddedHistory(newItem);
     notifyListeners();
   }
 
   void clearHistory() {
     if (!isInitialized) return;
+    if (kIsWeb) {
+      unawaited(() async {
+        await _clearServerHistory();
+        _db.execute("delete from history;");
+        updateCache();
+        notifyListeners();
+      }());
+      return;
+    }
     _db.execute("delete from history;");
     updateCache();
     notifyListeners();
@@ -412,6 +462,9 @@ class HistoryManager with ChangeNotifier {
 
   void remove(String id, ComicType type) async {
     if (!isInitialized) return;
+    if (kIsWeb) {
+      await _deleteServerHistory(id, type);
+    }
     _db.execute(
       """
       delete from history

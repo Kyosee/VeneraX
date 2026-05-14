@@ -2477,6 +2477,95 @@ function historyRowsFromServerDb(profileRoot, { limit = 100, offset = 0 } = {}) 
   };
 }
 
+async function openWritableSqliteDatabase(filePath) {
+  let sqlite;
+  try {
+    sqlite = await import("node:sqlite");
+  } catch {
+    throw createHttpError(501, "SQLite write support requires node:sqlite");
+  }
+  mkdirSync(dirname(filePath), { recursive: true });
+  return new sqlite.DatabaseSync(filePath);
+}
+
+function ensureHistoryDbSchema(db) {
+  db.exec(`
+    create table if not exists history (
+      id text,
+      title text,
+      subtitle text,
+      cover text,
+      time int,
+      type int,
+      ep int,
+      page int,
+      readEpisode text,
+      max_page int,
+      chapter_group int,
+      primary key (id, type)
+    );
+  `);
+  const columns = db.prepare("PRAGMA table_info(history);").all();
+  if (!columns.some((column) => column.name === "chapter_group")) {
+    db.exec("alter table history add column chapter_group int;");
+  }
+}
+
+function normalizeHistoryPayload(payload) {
+  const history = payload?.history;
+  if (!history || typeof history !== "object") {
+    throw createHttpError(400, "Missing history payload");
+  }
+  const id = String(history.id || "").trim();
+  const title = String(history.title || "");
+  const type = Number(history.type);
+  if (!id || !Number.isInteger(type)) {
+    throw createHttpError(400, "Invalid history payload");
+  }
+  const readEpisode = Array.isArray(history.readEpisode)
+    ? history.readEpisode.map((item) => String(item)).filter(Boolean).join(",")
+    : String(history.readEpisode || "");
+  const nullableNumber = (value) => {
+    if (value == null || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  return {
+    id,
+    title,
+    subtitle: String(history.subtitle || ""),
+    cover: String(history.cover || ""),
+    time: nullableNumber(history.time) || Date.now(),
+    type,
+    ep: nullableNumber(history.ep) || 0,
+    page: nullableNumber(history.page) || 0,
+    readEpisode,
+    maxPage: nullableNumber(history.max_page),
+    chapterGroup: nullableNumber(history.chapter_group),
+  };
+}
+
+async function withWritableHistoryDb(profileRoot, callback) {
+  const filePath = serverDbEntryPath(profileRoot, "history.db");
+  const db = await openWritableSqliteDatabase(filePath);
+  try {
+    ensureHistoryDbSchema(db);
+    return callback(db);
+  } finally {
+    db.close();
+  }
+}
+
+function markServerDbDirty(profileRoot, reason) {
+  const metadata = readServerDbMetadata(profileRoot);
+  writeServerDbMetadata(profileRoot, {
+    ...metadata,
+    dirty: true,
+    dirtyReason: reason,
+    dirtyAt: new Date().toISOString(),
+  });
+}
+
 function listServerDbProfiles(serverDataRoot) {
   const profilesRoot = join(resolve(serverDataRoot), "profiles");
   if (!existsSync(profilesRoot)) return [];
@@ -2643,6 +2732,68 @@ async function handleServerDbRoute({
       profile: profileId,
       ...data,
     });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/history/upsert") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const history = normalizeHistoryPayload(payload);
+    await withWritableHistoryDb(profileRoot, (db) => {
+      db.prepare(`
+        insert or replace into history (
+          id, title, subtitle, cover, time, type, ep, page,
+          readEpisode, max_page, chapter_group
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `).run(
+        history.id,
+        history.title,
+        history.subtitle,
+        history.cover,
+        history.time,
+        history.type,
+        history.ep,
+        history.page,
+        history.readEpisode,
+        history.maxPage,
+        history.chapterGroup,
+      );
+    });
+    markServerDbDirty(profileRoot, "history-upsert");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/history/delete") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const id = String(payload.id || "").trim();
+    const type = Number(payload.type);
+    if (!id || !Number.isInteger(type)) {
+      throw createHttpError(400, "Invalid history delete payload");
+    }
+    await withWritableHistoryDb(profileRoot, (db) => {
+      db.prepare("delete from history where id = ? and type = ?;").run(id, type);
+    });
+    markServerDbDirty(profileRoot, "history-delete");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/history/clear") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    await withWritableHistoryDb(profileRoot, (db) => {
+      db.exec("delete from history;");
+    });
+    markServerDbDirty(profileRoot, "history-clear");
+    sendJson(res, 200, { ok: true, profile: profileId });
     return true;
   }
 
