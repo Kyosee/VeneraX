@@ -30,17 +30,23 @@ export const useFavoritesStore = defineStore('favorites', () => {
   }
 
   async function addFavorite(data: Partial<FavoriteItem> & { folderId?: string }) {
-    await apiAddFavorite(data)
+    await apiAddFavorite({ ...data, folder: data.folderId ?? currentFolder.value ?? undefined } as Partial<FavoriteItem>)
     await fetchItems(currentFolder.value ?? undefined)
   }
 
   async function removeFavorite(id: string) {
-    await apiRemoveFavorite(id)
+    const item = items.value.find(i => i.id === id)
+    if (currentFolder.value && item) {
+      await apiRemoveFavorite(currentFolder.value, item.id, item.type)
+    }
     items.value = items.value.filter(i => i.id !== id)
   }
 
   async function moveFavorite(id: string, folderId: string) {
-    await apiMoveFavorite(id, folderId)
+    const item = items.value.find(i => i.id === id)
+    if (currentFolder.value && item) {
+      await apiMoveFavorite(currentFolder.value, folderId, item.id, item.type)
+    }
     if (currentFolder.value && currentFolder.value !== folderId) {
       items.value = items.value.filter(i => i.id !== id)
     }

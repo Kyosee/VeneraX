@@ -72,6 +72,8 @@ const filteredFavorites = computed(() => {
   return favorites.value.filter(f => f.name.toLowerCase().includes(q))
 })
 
+const selectedFavorites = computed(() => favorites.value.filter(item => selectedIds.value.has(item.id)))
+
 function escapeHtmlAttribute(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -115,7 +117,6 @@ async function handleRenameFolder() {
   showFolderActions.value = false
   const oldName = contextFolder.value.name
   const escapedOldName = escapeHtmlAttribute(oldName)
-  const folderId = contextFolder.value.id
   let newName = ''
   try {
     await new Promise<void>((resolve, reject) => {
@@ -136,7 +137,7 @@ async function handleRenameFolder() {
   } catch { return }
   if (!newName) return
   try {
-    await renameFolder(folderId, newName)
+    await renameFolder(oldName, newName)
     showToast('重命名成功')
     await loadData()
   } catch { showToast('重命名失败') }
@@ -190,7 +191,7 @@ async function onDrop(index: number) {
   arr.splice(index, 0, moved)
   folders.value = arr
   dragIndex.value = null; dragOverIndex.value = null
-  try { await reorderFolders(arr.map(f => f.id)) }
+  try { await reorderFolders(arr.map(f => f.name)) }
   catch { showToast('排序失败'); await loadData() }
 }
 function onDragEnd() { dragIndex.value = null; dragOverIndex.value = null }
@@ -219,7 +220,7 @@ async function handleBatchDelete() {
     })
   } catch { return }
   try {
-    await batchDeleteFavorites([...selectedIds.value])
+    await batchDeleteFavorites(selectedFavorites.value, selectedFolderId.value ?? undefined)
     showToast('删除成功')
     exitMultiSelect()
     await loadFavorites()
@@ -231,7 +232,7 @@ async function handleBatchMove(targetFolderId: string) {
   if (selectedIds.value.size === 0) return
   showMovePopup.value = false
   try {
-    await batchMoveFavorites([...selectedIds.value], targetFolderId)
+    await batchMoveFavorites(selectedFavorites.value, targetFolderId, selectedFolderId.value ?? undefined)
     showToast('移动成功')
     exitMultiSelect()
     await loadFavorites()

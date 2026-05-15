@@ -2,6 +2,8 @@ import { apiPost } from './api'
 import type { History, FavoriteItem, FavoriteFolder, ComicSource } from '../types'
 import { normalizeComicSources, sourceKeyFromType } from '../utils/source'
 
+type FavoritePayloadItem = Pick<FavoriteItem, 'id' | 'type'> & { folder?: string }
+
 function normalizeHistory(item: any): History {
   const type = Number(item?.type ?? 0)
   const readEpisode = Array.isArray(item?.readEpisode)
@@ -38,48 +40,86 @@ export async function clearHistory(): Promise<void> {
 
 export async function listFolders(): Promise<FavoriteFolder[]> {
   const res = await apiPost<any>('/api/server-db/favorites/folders')
-  return res?.folders ?? res ?? []
+  const folders = res?.folders ?? res ?? []
+  return folders.map((folder: any) => ({
+    ...folder,
+    id: folder.id ?? folder.name,
+  }))
 }
 
-export async function listFavorites(folderId?: string): Promise<FavoriteItem[]> {
-  const res = await apiPost<any>('/api/server-db/favorites/list', { folderId })
-  return res?.favorites ?? res ?? []
+export async function listFavorites(folder?: string): Promise<FavoriteItem[]> {
+  if (!folder) {
+    const folders = await listFolders()
+    const pages = await Promise.all(folders.map(item => listFavorites(item.name)))
+    return pages.flat()
+  }
+  const res = await apiPost<any>('/api/server-db/favorites/list', { folder })
+  return res?.items ?? res?.favorites ?? res ?? []
 }
 
 export async function addFavorite(data: Partial<FavoriteItem>): Promise<void> {
-  await apiPost('/api/server-db/favorites/add', data)
+  await apiPost('/api/server-db/favorites/add', { folder: (data as any).folder, item: data })
 }
 
-export async function deleteFavorite(favoriteId: string): Promise<void> {
-  await apiPost('/api/server-db/favorites/delete', { favoriteId })
+export async function deleteFavorite(folder: string, id: string, type: number): Promise<void> {
+  await apiPost('/api/server-db/favorites/delete', { folder, id, type })
 }
 
-export async function moveFavorite(favoriteId: string, folderId: string): Promise<void> {
-  await apiPost('/api/server-db/favorites/move', { favoriteId, folderId })
+export async function moveFavorite(sourceFolder: string, targetFolder: string, id: string, type: number): Promise<void> {
+  await apiPost('/api/server-db/favorites/move', { sourceFolder, targetFolder, id, type })
 }
 
 export async function createFolder(name: string): Promise<void> {
   await apiPost('/api/server-db/favorites/folder/create', { name })
 }
 
-export async function deleteFolder(folderId: string): Promise<void> {
-  await apiPost('/api/server-db/favorites/folder/delete', { folderId })
+export async function deleteFolder(name: string): Promise<void> {
+  await apiPost('/api/server-db/favorites/folder/delete', { name })
 }
 
-export async function renameFolder(folderId: string, name: string): Promise<void> {
-  await apiPost('/api/server-db/favorites/folder/rename', { folderId, name })
+export async function renameFolder(before: string, after: string): Promise<void> {
+  await apiPost('/api/server-db/favorites/folder/rename', { before, after })
 }
 
-export async function reorderFolders(folderIds: string[]): Promise<void> {
-  await apiPost('/api/server-db/favorites/folder/order', { folderIds })
+export async function reorderFolders(folders: string[]): Promise<void> {
+  await apiPost('/api/server-db/favorites/folder/order', { folders })
 }
 
-export async function batchDeleteFavorites(favoriteIds: string[]): Promise<void> {
-  await apiPost('/api/server-db/favorites/batch-delete', { favoriteIds })
+function favoritePayloadItems(items: FavoritePayloadItem[]) {
+  return items.map(item => ({ id: item.id, type: item.type }))
 }
 
-export async function batchMoveFavorites(favoriteIds: string[], folderId: string): Promise<void> {
-  await apiPost('/api/server-db/favorites/batch-move', { favoriteIds, folderId })
+export async function batchDeleteFavorites(items: FavoritePayloadItem[], folder?: string): Promise<void> {
+  const payloadItems = favoritePayloadItems(items)
+  if (folder) {
+    await apiPost('/api/server-db/favorites/batch-delete', { folder, items: payloadItems })
+    return
+  }
+  await apiPost('/api/server-db/favorites/batch-delete-all', { items: payloadItems })
+}
+
+export async function batchMoveFavorites(items: FavoritePayloadItem[], targetFolder: string, sourceFolder?: string): Promise<void> {
+  if (sourceFolder) {
+    await apiPost('/api/server-db/favorites/batch-move', {
+      sourceFolder,
+      targetFolder,
+      items: favoritePayloadItems(items),
+    })
+    return
+  }
+
+  const itemsByFolder = new Map<string, FavoritePayloadItem[]>()
+  for (const item of items) {
+    if (!item.folder) continue
+    itemsByFolder.set(item.folder, [...(itemsByFolder.get(item.folder) ?? []), item])
+  }
+  await Promise.all([...itemsByFolder.entries()].map(([folder, folderItems]) =>
+    apiPost('/api/server-db/favorites/batch-move', {
+      sourceFolder: folder,
+      targetFolder,
+      items: favoritePayloadItems(folderItems),
+    }),
+  ))
 }
 
 export async function getAppdata(): Promise<Record<string, any>> {

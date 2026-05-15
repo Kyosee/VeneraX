@@ -5,6 +5,7 @@ import { listHistory, getComicSources, deleteHistory, clearHistory } from '@/ser
 import { imageProxyUrl } from '@/services/api'
 import { showToast, showConfirmDialog } from 'vant'
 import type { History, ComicSource } from '@/types'
+import { resolveSourceKey } from '@/utils/source'
 
 const router = useRouter()
 const items = ref<History[]>([])
@@ -53,13 +54,18 @@ async function loadData() {
   }
 }
 
-function getSourceName(type: number): string {
-  const s = sources.value.find(x => String(x.key) === String(type))
-  return s?.name ?? `Source ${type}`
+function itemSourceKey(item: History): string {
+  return resolveSourceKey(item, sources.value)
+}
+
+function getSourceName(item: History): string {
+  const key = itemSourceKey(item)
+  const source = sources.value.find(x => String(x.key) === key)
+  return source?.name ?? `Source ${key}`
 }
 
 function itemKey(item: History): string {
-  return `${item.id}::${item.type}`
+  return `${item.id}::${itemSourceKey(item)}`
 }
 
 function parseReadEpisode(raw: History['readEpisode']): string[] {
@@ -84,8 +90,12 @@ function isCompleted(item: History): boolean {
 }
 
 const availableSources = computed(() => {
-  const typeSet = new Set(items.value.map(i => i.type))
-  return Array.from(typeSet).map(t => ({ key: String(t), name: getSourceName(t) }))
+  const sourceItems = new Map<string, History>()
+  for (const item of items.value) {
+    const key = itemSourceKey(item)
+    if (!sourceItems.has(key)) sourceItems.set(key, item)
+  }
+  return Array.from(sourceItems.entries()).map(([key, item]) => ({ key, name: getSourceName(item) }))
 })
 
 const hasActiveFilters = computed(() => {
@@ -102,7 +112,7 @@ const filteredItems = computed(() => {
     )
   }
   if (selectedSources.value.size > 0) {
-    list = list.filter(item => selectedSources.value.has(String(item.type)))
+    list = list.filter(item => selectedSources.value.has(itemSourceKey(item)))
   }
   if (readingStatusFilter.value === 'completed') {
     list = list.filter(item => isCompleted(item))
@@ -132,7 +142,7 @@ function formatDate(ts: number): string {
 
 function goComic(item: History) {
   if (multiSelectMode.value) { toggleSelect(item); return }
-  router.push(`/comic/${item.type}/${encodeURIComponent(item.id)}`)
+  router.push(`/comic/${encodeURIComponent(itemSourceKey(item))}/${encodeURIComponent(item.id)}`)
 }
 
 function toggleSort() { sortAsc.value = !sortAsc.value }
@@ -316,7 +326,7 @@ function setStatusFilter(status: 'all' | 'uncompleted' | 'completed') {
           <div class="history-grid" :class="{ brief: viewMode === 'brief' }">
             <div
               v-for="item in thisWeekItems"
-              :key="`${item.id}-${item.type}-w`"
+              :key="`${itemKey(item)}-w`"
               class="history-card"
               :class="{ 'card-brief': viewMode === 'brief', selected: isSelected(item) }"
               @click="onCardClick(item)"
@@ -352,7 +362,7 @@ function setStatusFilter(status: 'all' | 'uncompleted' | 'completed') {
                 </div>
                 <div class="info-row">
                   <span class="info-label">来源:</span>
-                  <span class="info-value source-tag">{{ getSourceName(item.type) }}</span>
+                  <span class="info-value source-tag">{{ getSourceName(item) }}</span>
                 </div>
                 <div v-if="item.maxPage" class="info-row">
                   <span class="info-label">页数:</span>
@@ -372,7 +382,7 @@ function setStatusFilter(status: 'all' | 'uncompleted' | 'completed') {
           <div class="history-grid" :class="{ brief: viewMode === 'brief' }">
             <div
               v-for="item in earlierItems"
-              :key="`${item.id}-${item.type}-e`"
+              :key="`${itemKey(item)}-e`"
               class="history-card"
               :class="{ 'card-brief': viewMode === 'brief', selected: isSelected(item) }"
               @click="onCardClick(item)"
@@ -408,7 +418,7 @@ function setStatusFilter(status: 'all' | 'uncompleted' | 'completed') {
                 </div>
                 <div class="info-row">
                   <span class="info-label">来源:</span>
-                  <span class="info-value source-tag">{{ getSourceName(item.type) }}</span>
+                  <span class="info-value source-tag">{{ getSourceName(item) }}</span>
                 </div>
                 <div v-if="item.maxPage" class="info-row">
                   <span class="info-label">页数:</span>
