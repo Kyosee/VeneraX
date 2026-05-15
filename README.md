@@ -7,28 +7,18 @@
 
 Venera 是一款基于 Flutter 的漫画阅读器，支持本地阅读、网络阅读、收藏、下载、历史记录、追更、WebDAV 同步和 Headless 模式。
 
-这是一个个人维护版本。下面只列出当前分支相对原版 `v1.6.3` 更容易感知的功能变化，不代表基础阅读能力都是最近加入的。
+这是个人维护版本。下面只列当前分支相对原版 `v1.6.3` 的主要变化，基础阅读能力不重复展开。
 
-## 新增功能
+## 相比原版 v1.6.3
 
-| 功能 | 说明 |
+| 类型 | 变化 |
 |------|------|
-| Web/PWA 自托管 | 可以在 NAS、服务器或本机 Docker 中运行网页版本 |
-| 一体化 Web 后端 | `web_helper` 同源处理代理、登录辅助、Cookie、WebDAV 和图片请求 |
-| Rust 网络 sidecar | `venera-fetch` 负责更稳定的后端请求转发 |
-| Web 数据持久化 | Web 端历史、收藏、WebDAV 配置和备份数据可持久保存 |
-| Windows 自更新 | Windows 打包产物包含 `venera_updater.exe` |
-
-## 功能改进
-
-| 方向 | 改进 |
-|------|------|
-| WebDAV 同步 | Web 端备份导入、上传、远端清理更稳，并支持更大的备份上传 |
-| 阅读体验 | 支持无缝连续章节阅读，卡片显示章节进度，修复多处手势和设置布局问题 |
-| 收藏、历史、追更 | 增强本地书库历史/收藏、收藏夹管理、追更任务、历史排序和任务时间显示 |
-| 登录与网络兼容 | 增强 Cookie 同步、网页登录辅助和 Cloudflare 验证回退 |
-| Web 界面 | 首页、搜索、详情、设置、导航和基础控件更接近桌面/移动端体验 |
-| 构建维护 | 完善 Windows x64/arm64 打包流程，拆分 Native/Web 实现，补充 Web 数据和 helper 相关测试 |
+| 新增 | Web/PWA 自托管：可在 NAS、服务器或本机 Docker 跑网页端，内置代理、登录辅助、WebDAV 和数据持久化 |
+| 新增 | Windows 自更新：打包产物包含 `venera_updater.exe` |
+| 改进 | 阅读体验：无缝连续章节、卡片章节进度、手势和设置布局修复 |
+| 改进 | 收藏/历史/追更：收藏夹管理、本地书库状态、追更任务、历史排序和任务时间显示更完整 |
+| 改进 | 同步和登录：WebDAV 备份导入/上传/清理更稳，Cookie 同步和 Cloudflare 验证回退更可靠 |
+| 改进 | 构建维护：完善 Windows x64/arm64 打包，拆分 Native/Web 实现，补充 Web 数据和 helper 测试 |
 
 ## Web/PWA 快速启动
 
@@ -40,9 +30,6 @@ docker compose -f docker-compose.webpwa.yml up -d --build
 | 项目 | 默认值 |
 |------|--------|
 | 访问地址 | `http://localhost:60098` |
-| 浏览器数据 | IndexedDB/localStorage |
-| Docker 浏览器数据卷 | `webpwa-browser-data` |
-| Docker 服务端数据卷 | `webpwa-server-data` |
 
 ## 迁移提示
 
