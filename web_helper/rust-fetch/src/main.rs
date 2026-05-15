@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -22,6 +22,8 @@ use base64::Engine;
 use bytes::Bytes;
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
+
+const DEFAULT_PROXY_BODY_LIMIT_BYTES: usize = 256 * 1024 * 1024;
 
 #[derive(Clone)]
 struct AppState {
@@ -65,11 +67,13 @@ async fn main() -> anyhow::Result<()> {
     let client = build_client(reqwest::redirect::Policy::limited(5), &http_mode)?;
 
     let state = AppState { client, http_mode };
+    let proxy_body_limit = proxy_body_limit_bytes();
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/proxy", post(proxy_handler))
-        .with_state(state);
+        .with_state(state)
+        .layer(DefaultBodyLimit::max(proxy_body_limit));
 
     let port: u16 = std::env::var("VENERA_FETCH_PORT")
         .ok()
@@ -79,9 +83,22 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", bind, port);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("venera-fetch listening on {}", addr);
+    tracing::info!(
+        proxy_body_limit_bytes = proxy_body_limit,
+        "venera-fetch listening on {}",
+        addr
+    );
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn proxy_body_limit_bytes() -> usize {
+    std::env::var("VENERA_FETCH_PROXY_BODY_LIMIT_MB")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .and_then(|mb| mb.checked_mul(1024 * 1024))
+        .filter(|bytes| *bytes > 0)
+        .unwrap_or(DEFAULT_PROXY_BODY_LIMIT_BYTES)
 }
 
 async fn proxy_handler(
