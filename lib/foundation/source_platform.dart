@@ -53,6 +53,33 @@ class SourcePlatformResolver {
     4: 'wnacg',
     5: 'nhentai',
     6: 'nhentai',
+    29663848: 'hot_manga',
+    42816288: 'manwaba',
+    150465061: 'zaimanhua',
+    233488852: 'baozi',
+    236897507: 'hcomic',
+    258019538: 'hitomi',
+    264196719: 'nhentai',
+    331263271: 'shonen_jump_plus',
+    385625716: 'ehentai',
+    550146035: 'goda',
+    553570794: 'picacg',
+    557997769: 'copy_manga',
+    577341847: 'mh1234',
+    577718694: 'manga_dex',
+    631413104: 'manhuaren',
+    637999886: 'Komiic',
+    716010982: 'ikmmh',
+    740690276: 'jcomic',
+    769844263: 'jm',
+    771282371: 'mxs',
+    778108598: 'mh18',
+    798816513: 'ykmh',
+    807338462: 'ccc',
+    823512256: 'wnacg',
+    964788560: 'comick',
+    977805693: 'happy',
+    981441865: 'ManHuaGui',
   };
 
   static final _runtimeLegacySourceKeys = <int, String>{};
@@ -86,6 +113,23 @@ class SourcePlatformResolver {
   static String? sourceKeyFromLegacyInt(int legacyIntType) {
     return _runtimeLegacySourceKeys[legacyIntType] ??
         _legacyRemoteSourceKeys[legacyIntType];
+  }
+
+  static int? legacyIntFromSourceKey(String sourceKey) {
+    if (isLocalKey(sourceKey)) {
+      return 0;
+    }
+    for (var entry in _legacyRemoteSourceKeys.entries) {
+      if (entry.key > 6 && entry.value == sourceKey) {
+        return entry.key;
+      }
+    }
+    for (var entry in _runtimeLegacySourceKeys.entries) {
+      if (entry.value == sourceKey) {
+        return entry.key;
+      }
+    }
+    return null;
   }
 
   static SourcePlatformRef? fromLegacyInt(int legacyIntType, {String? name}) {

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/source_platform.dart';
 
 void main() {
@@ -31,6 +32,20 @@ void main() {
     expect(platform?.matchedAlias, '5');
     expect(platform?.matchedAliasType, SourceAliasType.legacyInt);
     expect(platform?.legacyIntType, 5);
+  });
+
+  test('resolves native persisted source hashes on web', () {
+    expect(
+      SourcePlatformResolver.sourceKeyFromLegacyInt(557997769),
+      'copy_manga',
+    );
+    expect(SourcePlatformResolver.sourceKeyFromLegacyInt(769844263), 'jm');
+    expect(
+      SourcePlatformResolver.legacyIntFromSourceKey('copy_manga'),
+      557997769,
+    );
+    expect(ComicType.fromKey('copy_manga').value, 557997769);
+    expect(ComicType.fromKey('nhentai').value, 264196719);
   });
 
   test('keeps unknown legacy source ints as stable platform refs', () {

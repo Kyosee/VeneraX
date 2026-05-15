@@ -10,6 +10,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/category_comics_page.dart';
 import 'package:venera/pages/search_result_page.dart';
 import 'package:venera/utils/data_sync.dart';
@@ -48,7 +49,11 @@ class ComicSourceManager with ChangeNotifier, Init {
       _sources.firstWhereOrNull((element) => element.key == key);
 
   ComicSource? fromIntKey(int key) =>
-      _sources.firstWhereOrNull((element) => element.key.hashCode == key);
+      _sources.firstWhereOrNull((element) => element.key.hashCode == key) ??
+      switch (SourcePlatformResolver.sourceKeyFromLegacyInt(key)) {
+        final sourceKey? => find(sourceKey),
+        null => null,
+      };
 
   @override
   @protected
@@ -104,6 +109,10 @@ class ComicSourceManager with ChangeNotifier, Init {
       return false;
     }
     _sources.add(source);
+    SourcePlatformResolver.registerLegacyIntSourceKey(
+      source.key.hashCode,
+      source.key,
+    );
     return true;
   }
 

@@ -10,7 +10,6 @@ import 'package:venera/foundation/image_provider/local_favorite_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
-import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/utils/server_db.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -130,10 +129,7 @@ class FavoriteItem implements Comic {
   static FavoriteItem fromJson(Map<String, dynamic> json) {
     var type = json["type"] as int;
     if (type == 0 && json['coverPath'].toString().startsWith('http')) {
-      type = 'picacg'.hashCode;
-    } else if (type != 0) {
-      type =
-          SourcePlatformResolver.sourceKeyFromLegacyInt(type)?.hashCode ?? type;
+      type = ComicType.fromKey('picacg').value;
     }
     final favorite = FavoriteItem(
       id: json["id"] ?? json['target'],

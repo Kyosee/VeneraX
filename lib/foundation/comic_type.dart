@@ -35,7 +35,10 @@ class ComicType {
     if (platform.kind == SourcePlatformKind.local) {
       return local;
     } else {
-      return ComicType(platform.canonicalKey.hashCode);
+      return ComicType(
+        SourcePlatformResolver.legacyIntFromSourceKey(platform.canonicalKey) ??
+            platform.canonicalKey.hashCode,
+      );
     }
   }
 }
