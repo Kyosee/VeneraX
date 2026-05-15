@@ -925,6 +925,265 @@ test("server-db favorites write APIs create add info tags move copy delete renam
   }
 });
 
+test("server-db favorites update-time check-time mark-read read and batch-delete-all", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const profileDbDir = join(serverDataDir, "profiles", "writer", "db");
+  await mkdir(profileDbDir, { recursive: true });
+  const { DatabaseSync } = await import("node:sqlite");
+  const favoriteDb = new DatabaseSync(join(profileDbDir, "local_favorite.db"));
+  try {
+    favoriteDb.exec(`
+      create table folder_order (
+        folder_name text primary key,
+        order_value int
+      );
+      create table folder_sync (
+        folder_name text primary key,
+        source_key text,
+        source_folder text
+      );
+      create table "Main" (
+        id text,
+        name text,
+        author text,
+        type int,
+        tags text,
+        cover_path text,
+        time text,
+        display_order int,
+        translated_tags text,
+        last_update_time text,
+        has_new_update int,
+        last_check_time int,
+        primary key (id, type)
+      );
+      create table "Other" (
+        id text,
+        name text,
+        author text,
+        type int,
+        tags text,
+        cover_path text,
+        time text,
+        display_order int,
+        translated_tags text,
+        last_update_time text,
+        has_new_update int,
+        last_check_time int,
+        primary key (id, type)
+      );
+    `);
+    favoriteDb.prepare("insert into folder_order values (?, ?);").run("Main", 0);
+    favoriteDb.prepare("insert into folder_order values (?, ?);").run("Other", 1);
+    favoriteDb
+      .prepare('insert into "Main" values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
+      .run(
+        "comic-read",
+        "read target",
+        "author",
+        1,
+        "",
+        "cover.jpg",
+        "2026-05-15 10:00:00",
+        10,
+        "",
+        "2026-05-15 09:00:00",
+        0,
+        111,
+      );
+    favoriteDb
+      .prepare('insert into "Main" values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
+      .run(
+        "comic-anchor",
+        "anchor",
+        "author",
+        3,
+        "",
+        "cover3.jpg",
+        "2026-05-15 09:30:00",
+        5,
+        "",
+        null,
+        0,
+        null,
+      );
+    favoriteDb
+      .prepare('insert into "Main" values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
+      .run(
+        "comic-sibling",
+        "sibling",
+        "author",
+        2,
+        "",
+        "cover2.jpg",
+        "2026-05-15 11:00:00",
+        20,
+        "",
+        null,
+        0,
+        null,
+      );
+    favoriteDb
+      .prepare('insert into "Other" values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
+      .run(
+        "comic-read",
+        "read target",
+        "author",
+        1,
+        "",
+        "cover.jpg",
+        "2026-05-15 10:00:00",
+        30,
+        "",
+        "2026-05-15 09:00:00",
+        1,
+        222,
+      );
+  } finally {
+    favoriteDb.close();
+  }
+
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+  const post = (path, body) =>
+    fetch(`${helperUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile: "writer", ...body }),
+    });
+  const readRows = () => {
+    const db = new DatabaseSync(join(profileDbDir, "local_favorite.db"));
+    try {
+      return {
+        mainRead: db
+          .prepare('select * from "Main" where id = ? and type = ?;')
+          .get("comic-read", 1),
+        mainSibling: db
+          .prepare('select * from "Main" where id = ? and type = ?;')
+          .get("comic-sibling", 2),
+        otherRead: db
+          .prepare('select * from "Other" where id = ? and type = ?;')
+          .get("comic-read", 1),
+      };
+    } finally {
+      db.close();
+    }
+  };
+
+  try {
+    const batchDeleteAllResponse = await post(
+      "/api/server-db/favorites/batch-delete-all",
+      {
+        items: [
+          { id: "missing", type: 99 },
+          { id: "comic-read", type: 1 },
+        ],
+      },
+    );
+    assert.equal(batchDeleteAllResponse.status, 200);
+    let rows = readRows();
+    assert.equal(rows.mainRead, undefined);
+    assert.equal(rows.otherRead, undefined);
+    assert.equal(rows.mainSibling.name, "sibling");
+
+    let response = await post("/api/server-db/favorites/update-time", {
+      folder: "Main",
+      id: "comic-sibling",
+      type: 2,
+      updateTime: "2026-05-15 12:30:00",
+      lastCheckTime: 3000,
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainSibling.last_update_time, "2026-05-15 12:30:00");
+    assert.equal(rows.mainSibling.has_new_update, 1);
+    assert.equal(rows.mainSibling.last_check_time, 3000);
+
+    response = await post("/api/server-db/favorites/check-time", {
+      folder: "Main",
+      id: "comic-sibling",
+      type: 2,
+      lastCheckTime: 4000,
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainSibling.last_check_time, 4000);
+
+    response = await post("/api/server-db/favorites/mark-read", {
+      folder: "Main",
+      id: "comic-sibling",
+      type: 2,
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainSibling.has_new_update, 0);
+
+    response = await post("/api/server-db/favorites/update-time", {
+      folder: "Main",
+      id: "comic-sibling",
+      type: 2,
+      updateTime: "2026-05-15 13:00:00",
+      lastCheckTime: 5000,
+    });
+    assert.equal(response.status, 200);
+
+    response = await post("/api/server-db/favorites/read", {
+      id: "comic-sibling",
+      type: 2,
+      moveMode: "none",
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainSibling.time.length, 19);
+    assert.equal(rows.mainSibling.display_order, 20);
+    assert.equal(rows.mainSibling.has_new_update, 1);
+
+    response = await post("/api/server-db/favorites/read", {
+      id: "comic-sibling",
+      type: 2,
+      moveMode: "start",
+      followUpdatesFolder: "Main",
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainSibling.display_order, 4);
+    assert.equal(rows.mainSibling.has_new_update, 0);
+
+    response = await post("/api/server-db/favorites/read", {
+      id: "comic-anchor",
+      type: 3,
+      moveMode: "end",
+      followUpdatesFolder: "Main",
+    });
+    assert.equal(response.status, 200);
+    rows = readRows();
+    assert.equal(rows.mainRead, undefined);
+    assert.equal(rows.mainSibling.display_order, 4);
+    assert.equal(rows.mainSibling.has_new_update, 0);
+    assert.equal(rows.mainSibling.time.length, 19);
+    const dbForAnchor = new DatabaseSync(join(profileDbDir, "local_favorite.db"));
+    try {
+      const anchorRow = dbForAnchor
+        .prepare('select * from "Main" where id = ? and type = ?;')
+        .get("comic-anchor", 3);
+      assert.equal(anchorRow.display_order, 6);
+      assert.equal(anchorRow.has_new_update, 0);
+      assert.equal(anchorRow.time.length, 19);
+    } finally {
+      dbForAnchor.close();
+    }
+
+    const statusPayload = await (
+      await fetch(`${helperUrl}/api/server-db/status?profile=writer`)
+    ).json();
+    assert.equal(statusPayload.metadata.dirty, true);
+    assert.equal(statusPayload.metadata.dirtyReason, "favorites-read");
+  } finally {
+    await close(helper);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});
+
 test("server-db upload reuses helper-side comic sources", async () => {
   const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
   let uploaded = null;
