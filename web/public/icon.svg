@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Venera">
-  <rect width="512" height="512" rx="112" fill="#625bff"/>
-  <path d="M142 128h228c17.7 0 32 14.3 32 32v192c0 17.7-14.3 32-32 32H142c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32Z" fill="#f7f8fb"/>
-  <path d="M160 180h192v34H160v-34Zm0 66h128v34H160v-34Zm0 66h166v34H160v-34Z" fill="#24262f"/>
-  <path d="M360 214c25.4 0 46 20.6 46 46s-20.6 46-46 46-46-20.6-46-46 20.6-46 46-46Z" fill="#00a6a6"/>
-</svg>

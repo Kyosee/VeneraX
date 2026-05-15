@@ -1,6 +1,0 @@
-.slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
-          background: var(--md-sys-color-secondary-container); border-radius: var(--md-shape-full); outline: none; }
-.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px;
-          border-radius: 50%; background: var(--md-sys-color-primary); cursor: pointer; border: none; }
-.slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%;
-          background: var(--md-sys-color-primary); cursor: pointer; border: none; }

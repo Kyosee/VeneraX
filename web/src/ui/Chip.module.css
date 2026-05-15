@@ -1,5 +1,0 @@
-.chip { height: 32px; padding: 0 12px; border-radius: var(--md-shape-sm); background: transparent;
-        box-shadow: inset 0 0 0 1px var(--md-sys-color-outline); color: var(--md-sys-color-on-surface-variant);
-        font: var(--md-typescale-label-large); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-.on   { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: none; }
-.icon { width: 18px; height: 18px; }

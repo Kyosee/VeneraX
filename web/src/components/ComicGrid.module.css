@@ -1,4 +1,0 @@
-.grid { display: grid; gap: 16px; padding: 16px;
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-@media (min-width: 600px) { .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); } }
-@media (min-width: 1200px) { .grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); } }

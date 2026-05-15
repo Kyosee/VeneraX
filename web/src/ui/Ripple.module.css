@@ -1,8 +1,0 @@
-.host { position: relative; display: inline-flex; overflow: hidden; }
-.dot {
-  position: absolute; border-radius: 50%;
-  background: currentColor; opacity: 0.12; pointer-events: none;
-  transform: scale(0);
-  animation: ripple var(--md-motion-med-1) var(--md-motion-easing-standard) forwards;
-}
-@keyframes ripple { to { transform: scale(1); opacity: 0; } }

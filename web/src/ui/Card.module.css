@@ -1,4 +1,0 @@
-.card { border-radius: var(--md-shape-md); padding: 16px; }
-.filled   { background: var(--md-sys-color-surface-container-highest); }
-.outlined { background: var(--md-sys-color-surface); box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant); }
-.elevated { background: var(--md-sys-color-surface); box-shadow: var(--md-elev-1); }

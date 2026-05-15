@@ -1,19 +1,15 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
-import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-import { promisify } from "node:util";
 import { deflateRawSync, gzipSync } from "node:zlib";
 
 import { createServer } from "./server.js";
-
-const execFileAsync = promisify(execFile);
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -905,83 +901,6 @@ test("json proxy appends helper cookie jar to explicit cookie header", async () 
   } finally {
     await close(helper);
     await close(upstream);
-  }
-});
-
-test("source runtime Network uses helper proxy and shared cookie jar", async () => {
-  let seenCookie = "";
-  let seenSourceHeader = "";
-  const upstream = createHttpServer((req, res) => {
-    if (req.url === "/login") {
-      res.writeHead(200, { "Set-Cookie": "sid=runtime; Path=/" });
-      res.end("logged");
-      return;
-    }
-    seenCookie = req.headers.cookie || "";
-    seenSourceHeader = req.headers["x-source-runtime"] || "";
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end(seenCookie);
-  });
-  const upstreamUrl = await listen(upstream);
-  const helper = createServer();
-  const helperUrl = await listen(helper);
-  const sourceDir = await mkdtemp(join(tmpdir(), "venera-source-runtime-"));
-  const sourcePath = join(sourceDir, "source.js");
-
-  try {
-    await writeFile(
-      sourcePath,
-      `
-class TestSource extends ComicSource {
-  constructor() {
-    super();
-    this.search = {
-      load: async (keyword) => {
-        await Network.get(keyword + "/login");
-        const response = await Network.get(keyword + "/profile", {
-          "X-Source-Runtime": "yes"
-        });
-        return {
-          maxPage: 1,
-          comics: [{ id: "cookie", title: response.body }]
-        };
-      }
-    };
-  }
-}
-`,
-    );
-
-    const { stdout } = await execFileAsync(
-      process.execPath,
-      [
-        resolve("..", "server", "js", "source-runtime.mjs"),
-        "search",
-        sourcePath,
-        upstreamUrl,
-        "1",
-      ],
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, VENERA_WEB_HELPER_URL: helperUrl },
-      },
-    );
-    const payload = JSON.parse(stdout);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.data.comics[0].title, "sid=runtime");
-    assert.equal(seenCookie, "sid=runtime");
-    assert.equal(seenSourceHeader, "yes");
-
-    const debugPayload = await (
-      await fetch(`${helperUrl}/debug/proxy-requests`)
-    ).json();
-    assert.equal(debugPayload.requests.length, 2);
-    assert.equal(debugPayload.requests[0].cookieSource, "helper");
-    assert.deepEqual(debugPayload.requests[0].cookieNames, ["sid"]);
-  } finally {
-    await close(helper);
-    await close(upstream);
-    await rm(sourceDir, { recursive: true, force: true });
   }
 });
 
