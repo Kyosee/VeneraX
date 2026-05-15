@@ -363,6 +363,7 @@ class NaviPaneState extends State<NaviPane>
                   child: value == 3
                       ? Row(
                           children: [
+                            const SizedBox(width: 8),
                             buildAppLogo(),
                             const SizedBox(width: 10),
                             const Text(
