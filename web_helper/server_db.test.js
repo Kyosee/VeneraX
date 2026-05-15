@@ -357,6 +357,16 @@ test("WebDAV sync can persist and reuse helper-side configuration", async () => 
     assert.deepEqual((await listResponse.json()).files, ["1700000000100.venera"]);
     assert.deepEqual(seenRequests, ["PROPFIND /"]);
 
+    seenRequests.length = 0;
+    const testResponse = await fetch(`${helperUrl}/sync/webdav/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(testResponse.status, 200);
+    assert.deepEqual((await testResponse.json()).files, ["1700000000100.venera"]);
+    assert.deepEqual(seenRequests, ["PROPFIND /"]);
+
     const clearResponse = await fetch(`${helperUrl}/sync/webdav/config/clear`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1735,6 +1745,176 @@ class DemoSource extends ComicSource {
       chapterId: "1",
     });
     assert.equal(badSourceResponse.status, 400);
+  } finally {
+    await close(helper);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});
+
+test("server-db source runtime supports canonical fallback and Map chapters", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const sourceDir = join(serverDataDir, "profiles", "reader", "comic_source");
+  await mkdir(sourceDir, { recursive: true });
+  const seenRequests = [];
+
+  const upstream = createHttpServer(async (req, res) => {
+    seenRequests.push({
+      method: req.method,
+      url: req.url,
+      sig: req.headers["x-sig"] || "",
+      body: await new Promise((resolve) => {
+        const chunks = [];
+        req.on("data", (chunk) => chunks.push(chunk));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+      }),
+    });
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(req.method === "POST" ? "posted" : "ok");
+  });
+
+  const upstreamUrl = await listen(upstream);
+  await writeFile(
+    join(sourceDir, "copy_manga.js"),
+    `
+class CopyManga extends ComicSource {
+  key = "copy_manga";
+  name = "Copy Manga";
+  get endpoint() { return this.loadSetting("endpoint"); }
+  async getComicInfo(id) {
+    const secret = Convert.encodeBase64(Convert.encodeUtf8("secret"));
+    const sig = Convert.hmacString(
+      Convert.decodeBase64(secret),
+      Convert.encodeUtf8(String(randomInt(1, 1))),
+      "sha256"
+    );
+    await Network.get(this.endpoint + "/detail", { "X-Sig": sig });
+    this.saveData("lastComicId", id);
+    return {
+      id,
+      title: "章节 Map",
+      chapters: new Map([
+        ["卷一", new Map([["chapter-1", "第一话"]])],
+        ["chapter-2", { title: "第二话" }]
+      ])
+    };
+  }
+  async getPages(id, chapterId) {
+    const res = await Network.post(
+      this.endpoint + "/pages",
+      { "X-Sig": "native-order" },
+      "chapter=" + chapterId
+    );
+    return { images: [res.body] };
+  }
+}
+`,
+  );
+  await writeFile(
+    join(sourceDir, "copy_manga.data"),
+    JSON.stringify({ settings: { endpoint: upstreamUrl } }),
+  );
+
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+  const post = (path, body) =>
+    fetch(`${helperUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile: "reader", ...body }),
+    });
+
+  try {
+    const detailResponse = await post("/api/server-db/comic/detail", {
+      sourceKey: "copy_manga(0)",
+      comicId: "comic-1",
+    });
+    assert.equal(detailResponse.status, 200);
+    const detailPayload = await detailResponse.json();
+    assert.equal(detailPayload.comic.sourceKey, "copy_manga(0)");
+    assert.deepEqual(
+      detailPayload.chapters.find((item) => item.title === "卷一"),
+      { title: "卷一", chapters: [{ id: "chapter-1", title: "第一话" }] },
+    );
+    assert.deepEqual(
+      detailPayload.chapters.find((item) => item.id === "chapter-2"),
+      { id: "chapter-2", title: "第二话" },
+    );
+    assert.equal(seenRequests[0].method, "GET");
+    assert.ok(seenRequests[0].sig);
+
+    const pagesResponse = await post("/api/server-db/reader/pages", {
+      sourceKey: "copy_manga(0)",
+      comicId: "comic-1",
+      chapterId: "chapter-1",
+    });
+    assert.equal(pagesResponse.status, 200);
+    const pagesPayload = await pagesResponse.json();
+    assert.deepEqual(pagesPayload.data, ["posted"]);
+    assert.equal(seenRequests[1].method, "POST");
+    assert.equal(seenRequests[1].sig, "native-order");
+    assert.equal(seenRequests[1].body, "chapter=chapter-1");
+
+    const sourceData = JSON.parse(
+      await readFile(join(sourceDir, "copy_manga.data"), "utf8"),
+    );
+    assert.equal(sourceData.lastComicId, "comic-1");
+  } finally {
+    await close(helper);
+    await close(upstream);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});
+
+test("server-db supports full JSON dump import and source update check route", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const profileRoot = join(serverDataDir, "profiles", "reader");
+  const sourceDir = join(profileRoot, "comic_source");
+  await mkdir(sourceDir, { recursive: true });
+  await writeFile(
+    join(profileRoot, "appdata.json"),
+    JSON.stringify({ settings: { theme: "dark" } }),
+  );
+  await writeFile(join(sourceDir, "demo.js"), "class Demo extends ComicSource {}\n");
+  await writeFile(join(sourceDir, "demo.data"), JSON.stringify({ enabled: true }));
+
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+  const post = (path, body) =>
+    fetch(`${helperUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  try {
+    const dumpResponse = await post("/api/server-db/dump", { profile: "reader" });
+    assert.equal(dumpResponse.status, 200);
+    const dumpPayload = await dumpResponse.json();
+    assert.equal(dumpPayload.format, "venera-server-db-dump-v1");
+    assert.equal(dumpPayload.appdata.settings.theme, "dark");
+    assert.equal(dumpPayload.comicSources.length, 2);
+
+    const importResponse = await post("/api/server-db/import", {
+      profile: "imported",
+      data: dumpPayload,
+    });
+    assert.equal(importResponse.status, 200);
+    const importedAppdata = await (
+      await post("/api/server-db/appdata", { profile: "imported" })
+    ).json();
+    assert.equal(importedAppdata.data.settings.theme, "dark");
+    const importedSources = await (
+      await post("/api/server-db/comic-sources", { profile: "imported" })
+    ).json();
+    assert.equal(importedSources.items.length, 2);
+
+    const checkResponse = await post("/api/source/check-update", {
+      sourceKey: "demo",
+    });
+    assert.equal(checkResponse.status, 200);
+    const checkPayload = await checkResponse.json();
+    assert.equal(checkPayload.ok, true);
+    assert.equal(checkPayload.updateAvailable, false);
   } finally {
     await close(helper);
     await rm(serverDataDir, { recursive: true, force: true });

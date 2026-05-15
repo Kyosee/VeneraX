@@ -2,8 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiPost } from '@/services/api'
-import { getComicSources, listHistory } from '@/services/server-db'
-import { resolveSourceKey } from '@/utils/source'
+import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory } from '@/services/server-db'
+import { resolveSourceKey, sourceTypeFromKey } from '@/utils/source'
 import ProxiedImage from '@/components/ProxiedImage.vue'
 import { showToast } from 'vant'
 import type { Comic, Chapter, ChapterGroup, Comment, ComicSource, History } from '@/types'
@@ -19,7 +19,7 @@ const comments = ref<Comment[]>([])
 const loading = ref(true)
 const error = ref('')
 const isFavorite = ref(false)
-const favoriteId = ref<string | null>(null)
+const favoriteFolder = ref<string | null>(null)
 const favoriteLoading = ref(false)
 const descExpanded = ref(false)
 const activeTab = ref(0)
@@ -109,6 +109,35 @@ async function findHistoryEntry() {
   })
 }
 
+function favoriteType() {
+  return sourceTypeFromKey(sourceKey.value)
+}
+
+async function refreshFavoriteState() {
+  if (!comic.value) return
+  try {
+    const type = favoriteType()
+    const items = await listFavorites()
+    const item = items.find(fav => fav.id === comicId.value && fav.type === type)
+    isFavorite.value = !!item
+    favoriteFolder.value = item ? ((item as any).folder ?? null) : null
+  } catch {
+    isFavorite.value = false
+    favoriteFolder.value = null
+  }
+}
+
+async function firstFavoriteFolder() {
+  const folders = await listFolders()
+  const folder = folders[0]?.name || folders[0]?.id
+  if (!folder) throw new Error('请先创建收藏文件夹')
+  return folder
+}
+
+function favoriteTime() {
+  return new Date().toLocaleString('sv-SE', { hour12: false })
+}
+
 async function hydrateFromHistoryFallback(message: string) {
   try {
     const entry = await findHistoryEntry()
@@ -163,8 +192,7 @@ async function fetchDetail() {
     const detailComments = Array.isArray(res.comments) ? res.comments : []
     comments.value = detailComments
     commentsHasMore.value = detailComments.length >= 20
-    isFavorite.value = !!res.comic.favoriteId
-    favoriteId.value = res.comic.favoriteId || null
+    await refreshFavoriteState()
   } catch (e: any) {
     const message = e.message || '加载失败'
     const recovered = await hydrateFromHistoryFallback(message)
@@ -229,21 +257,33 @@ async function toggleFavorite() {
   if (!comic.value) return
   favoriteLoading.value = true
   try {
-    if (isFavorite.value && favoriteId.value) {
-      await apiPost('/api/server-db/favorites/delete', { favoriteId: favoriteId.value })
+    const type = favoriteType()
+    if (isFavorite.value) {
+      if (!favoriteFolder.value) await refreshFavoriteState()
+      if (!favoriteFolder.value) throw new Error('未找到收藏所在文件夹')
+      await deleteFavorite(favoriteFolder.value, comicId.value, type)
       isFavorite.value = false
-      favoriteId.value = null
+      favoriteFolder.value = null
     } else {
-      const res = await apiPost<{ favoriteId: string }>('/api/server-db/favorites/add', {
-        sourceKey: sourceKey.value,
-        comicId: comicId.value,
+      const folder = await firstFavoriteFolder()
+      await addFavorite({
+        folder,
+        id: comicId.value,
+        type,
+        name: comic.value.title,
+        author: comic.value.subtitle || '',
+        tags: comic.value.tags || [],
+        coverPath: comic.value.cover,
+        time: favoriteTime(),
         title: comic.value.title,
         cover: comic.value.cover,
-      })
+      } as any)
       isFavorite.value = true
-      favoriteId.value = res.favoriteId || 'added'
+      favoriteFolder.value = folder
     }
-  } catch { /* ignore */ }
+  } catch (e: any) {
+    showToast(e.message || '收藏操作失败')
+  }
   finally { favoriteLoading.value = false }
 }
 

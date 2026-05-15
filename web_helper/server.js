@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createGzip, deflateRawSync, inflateRawSync } from "node:zlib";
 import vm from "node:vm";
 import {
@@ -2742,6 +2742,107 @@ function buildServerDbBackup(profileRoot, appdataPayload, comicSourcesPayload) {
   };
 }
 
+function readServerDbJsonDump(profileRoot) {
+  const databases = {};
+  for (const entryName of serverDbEntryNames) {
+    const filePath = serverDbEntryPath(profileRoot, entryName);
+    if (!existsSync(filePath)) continue;
+    const data = readFileSync(filePath);
+    let extracted = null;
+    try {
+      extracted = extractSqliteData(data);
+    } catch { /* keep raw dump for unsupported sqlite shapes */ }
+    databases[entryName] = {
+      dataBase64: data.toString("base64"),
+      ...(extracted || {}),
+    };
+  }
+
+  const appdataPath = join(profileRoot, "appdata.json");
+  let appdata = null;
+  if (existsSync(appdataPath)) {
+    try {
+      appdata = JSON.parse(readFileSync(appdataPath, "utf8"));
+    } catch {
+      appdata = {
+        dataBase64: readFileSync(appdataPath).toString("base64"),
+      };
+    }
+  }
+
+  return {
+    format: "venera-server-db-dump-v1",
+    appdata,
+    comicSources: readServerDbComicSourcePayload(profileRoot),
+    databases,
+  };
+}
+
+function writeServerDbJsonDump(profileRoot, data) {
+  if (!data || typeof data !== "object") {
+    throw createHttpError(400, "Invalid server DB import payload");
+  }
+
+  if (data.dataBase64 || data.backupDataBase64) {
+    const backup = Buffer.from(String(data.dataBase64 || data.backupDataBase64), "base64");
+    assertLooksLikeVeneraBackup(backup, "imported backup");
+    const entries = extractZipEntries(
+      backup,
+      (name) =>
+        serverDbBackupEntryNames.includes(name) ||
+        isComicSourceBackupEntryName(name),
+    );
+    return writeServerDbBackup(profileRoot, entries);
+  }
+
+  let writtenDatabases = 0;
+  const databases = data.databases && typeof data.databases === "object"
+    ? data.databases
+    : {};
+  for (const entryName of serverDbEntryNames) {
+    const entry = databases[entryName];
+    const dataBase64 = typeof entry === "string" ? entry : entry?.dataBase64;
+    if (!dataBase64) continue;
+    const bytes = Buffer.from(String(dataBase64), "base64");
+    const filePath = serverDbEntryPath(profileRoot, entryName);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, bytes);
+    writtenDatabases += 1;
+  }
+
+  let writtenAppdata = false;
+  if (data.appdata != null) {
+    if (
+      data.appdata &&
+      typeof data.appdata === "object" &&
+      typeof data.appdata.dataBase64 === "string"
+    ) {
+      mkdirSync(profileRoot, { recursive: true });
+      writeFileSync(
+        join(profileRoot, "appdata.json"),
+        Buffer.from(data.appdata.dataBase64, "base64"),
+      );
+    } else {
+      writeServerDbAppdata(profileRoot, data.appdata);
+    }
+    writtenAppdata = true;
+  }
+
+  const comicSourceEntries = normalizeComicSourceBackupEntries(data.comicSources);
+  const comicSources = Array.isArray(data.comicSources)
+    ? writeServerDbComicSources(
+        profileRoot,
+        new Map(comicSourceEntries.map((entry) => [entry.name, entry.data])),
+        { replace: true },
+      )
+    : { writtenComicSources: 0 };
+
+  if (writtenDatabases === 0 && !writtenAppdata && comicSources.writtenComicSources === 0) {
+    throw createHttpError(422, "Import payload does not contain supported data");
+  }
+  return { writtenDatabases, writtenAppdata, ...comicSources };
+}
+
 function historyRowsFromServerDb(profileRoot, { limit = 100, offset = 0 } = {}) {
   const filePath = serverDbEntryPath(profileRoot, "history.db");
   if (!existsSync(filePath)) {
@@ -3465,6 +3566,48 @@ function validateComicSourceKey(sourceKey) {
   return key;
 }
 
+function canonicalComicSourceKey(sourceKey) {
+  return String(sourceKey || "")
+    .trim()
+    .replace(/\.js$/i, "")
+    .replace(/\s*\(\d+\)$/u, "");
+}
+
+function resolveComicSourceFiles(sourceDir, sourceKey) {
+  const key = validateComicSourceKey(sourceKey).replace(/\.js$/i, "");
+  const candidates = [];
+  const addCandidate = (value) => {
+    const candidate = validateComicSourceKey(value).replace(/\.js$/i, "");
+    if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
+  };
+  addCandidate(key);
+  const canonicalKey = canonicalComicSourceKey(key);
+  if (canonicalKey && canonicalKey !== key) addCandidate(canonicalKey);
+
+  let selectedKey = "";
+  let sourceFile = "";
+  for (const candidate of candidates) {
+    const filePath = join(sourceDir, `${candidate}.js`);
+    if (existsSync(filePath)) {
+      selectedKey = candidate;
+      sourceFile = filePath;
+      break;
+    }
+  }
+  if (!sourceFile) {
+    throw createHttpError(404, `Comic source "${key}" not found`);
+  }
+
+  let dataFile = join(sourceDir, `${selectedKey}.data`);
+  if (!existsSync(dataFile)) {
+    const canonicalDataFile = join(sourceDir, `${canonicalKey || selectedKey}.data`);
+    if (canonicalDataFile !== dataFile && existsSync(canonicalDataFile)) {
+      dataFile = canonicalDataFile;
+    }
+  }
+  return { requestedKey: key, selectedKey, sourceFile, dataFile };
+}
+
 function comicSourceClassNames(sourceCode) {
   return Array.from(
     String(sourceCode || "").matchAll(
@@ -3483,7 +3626,7 @@ function normalizeComicChapters(chapters) {
           return { id: String(index), title: item };
         }
         if (!item || typeof item !== "object") return null;
-        if (Array.isArray(item.chapters)) {
+        if (item.chapters != null) {
           return { ...item, chapters: normalizeComicChapters(item.chapters) };
         }
         return item;
@@ -3492,7 +3635,12 @@ function normalizeComicChapters(chapters) {
   }
   if (typeof chapters !== "object") return [];
 
-  return Object.entries(chapters).map(([key, value]) => {
+  const entries =
+    chapters instanceof Map || chapters.constructor?.name === "Map"
+      ? Array.from(chapters.entries())
+      : Object.entries(chapters);
+
+  return entries.map(([key, value]) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
       const hasChapterShape = "id" in value || "title" in value;
       if (hasChapterShape) return { id: String(key), ...value };
@@ -3550,19 +3698,54 @@ async function executeSourceMethod({
   recordProxyRequest,
 }) {
   const sourceDir = join(profileRoot, "comic_source");
-  sourceKey = validateComicSourceKey(sourceKey);
-  const sourceFile = join(sourceDir, `${sourceKey}.js`);
-  if (!existsSync(sourceFile)) {
-    throw createHttpError(404, `Comic source "${sourceKey}" not found`);
-  }
-  const sourceCode = readFileSync(sourceFile, "utf-8");
+  const sourceInfo = resolveComicSourceFiles(sourceDir, sourceKey);
+  sourceKey = sourceInfo.requestedKey;
+  const sourceCode = readFileSync(sourceInfo.sourceFile, "utf-8");
   const sourceClassNames = comicSourceClassNames(sourceCode);
 
   // Build a sandboxed Network object that uses proxyFetch
+  function normalizeNetworkArgs(secondArg = {}, thirdArg = undefined) {
+    if (thirdArg !== undefined) {
+      return { headers: secondArg || {}, body: thirdArg, options: {} };
+    }
+    if (
+      secondArg &&
+      typeof secondArg === "object" &&
+      !Buffer.isBuffer(secondArg) &&
+      ("headers" in secondArg || "body" in secondArg || "method" in secondArg)
+    ) {
+      return {
+        headers: secondArg.headers || {},
+        body: secondArg.body,
+        options: secondArg,
+      };
+    }
+    return { headers: secondArg || {}, body: undefined, options: {} };
+  }
+
+  function normalizeNetworkGetHeaders(options = {}) {
+    return normalizeNetworkArgs(options).headers || {};
+  }
+
+  function normalizeNetworkPost(firstArg, secondArg = undefined) {
+    if (secondArg !== undefined) {
+      return normalizeNetworkArgs(firstArg, secondArg);
+    }
+    if (
+      firstArg &&
+      typeof firstArg === "object" &&
+      !Buffer.isBuffer(firstArg) &&
+      ("headers" in firstArg || "body" in firstArg || "method" in firstArg)
+    ) {
+      return normalizeNetworkArgs(firstArg);
+    }
+    return { headers: {}, body: firstArg, options: {} };
+  }
+
   function createNetworkObj() {
     return {
       async get(url, options = {}) {
-        const headers = options.headers || {};
+        const headers = normalizeNetworkGetHeaders(options);
         const response = await proxyFetch({
           url,
           method: "GET",
@@ -3578,11 +3761,15 @@ async function executeSourceMethod({
           body,
         };
       },
-      async post(url, bodyData, options = {}) {
-        const headers = options.headers || {};
-        let body = bodyData;
-        if (typeof bodyData === "object" && bodyData !== null) {
-          body = JSON.stringify(bodyData);
+      async post(url, firstArg, secondArg = undefined) {
+        const { headers, body } = normalizeNetworkPost(firstArg, secondArg);
+        let requestBody = body;
+        if (
+          requestBody != null &&
+          typeof requestBody === "object" &&
+          !Buffer.isBuffer(requestBody)
+        ) {
+          requestBody = JSON.stringify(requestBody);
           if (!headers["Content-Type"] && !headers["content-type"]) {
             headers["Content-Type"] = "application/json";
           }
@@ -3591,7 +3778,7 @@ async function executeSourceMethod({
           url,
           method: "POST",
           headers,
-          body,
+          body: requestBody,
           cookieJar,
           persistCookieJar,
           recordProxyRequest,
@@ -3605,7 +3792,7 @@ async function executeSourceMethod({
       },
       async request(url, options = {}) {
         const reqMethod = options.method || "GET";
-        const headers = options.headers || {};
+        const headers = normalizeNetworkGetHeaders(options);
         const response = await proxyFetch({
           url,
           method: reqMethod,
@@ -3740,13 +3927,35 @@ async function executeSourceMethod({
   }
 
   // Data file support (source .data files)
-  let sourceData = null;
-  const dataFile = join(sourceDir, `${sourceKey}.data`);
+  let sourceData = {};
+  const dataFile = sourceInfo.dataFile;
   if (existsSync(dataFile)) {
     try {
       sourceData = JSON.parse(readFileSync(dataFile, "utf-8"));
     } catch { sourceData = {}; }
   }
+  const sourceDataShouldPersist = () =>
+    sourceData && typeof sourceData === "object" && Object.keys(sourceData).length > 0;
+
+  const convertObj = {
+    encodeUtf8(value) {
+      return Buffer.from(String(value ?? ""), "utf8");
+    },
+    decodeUtf8(value) {
+      return Buffer.from(value || []).toString("utf8");
+    },
+    encodeBase64(value) {
+      return Buffer.from(value || []).toString("base64");
+    },
+    decodeBase64(value) {
+      return Buffer.from(String(value || ""), "base64");
+    },
+    hmacString(key, data, algorithm = "sha256") {
+      return createHmac(String(algorithm || "sha256"), Buffer.from(key || []))
+        .update(Buffer.from(data || []))
+        .digest("hex");
+    },
+  };
 
   // Build the sandbox context
   const networkObj = createNetworkObj();
@@ -3785,9 +3994,29 @@ async function executeSourceMethod({
     Symbol,
     Uint8Array,
     Buffer,
+    randomInt(min, max) {
+      const low = Math.ceil(Number(min));
+      const high = Math.floor(Number(max));
+      if (!Number.isFinite(low) || !Number.isFinite(high) || high < low) {
+        return 0;
+      }
+      return Math.floor(Math.random() * (high - low + 1)) + low;
+    },
+    fetch(url, options = {}) {
+      return proxyFetch({
+        url: String(url),
+        method: options.method || "GET",
+        headers: options.headers || {},
+        body: options.body,
+        cookieJar,
+        persistCookieJar,
+        recordProxyRequest,
+      });
+    },
     URL,
     URLSearchParams: globalThis.URLSearchParams,
     Network: networkObj,
+    Convert: convertObj,
     HtmlDom: createHtmlDom,
     APP: { locale: "zh_CN", version: "web" },
     sendMessage(payload = {}) {
@@ -3809,6 +4038,7 @@ async function executeSourceMethod({
     },
     __sourceData: sourceData,
     __sourceKey: sourceKey,
+    __selectedSourceKey: sourceInfo.selectedKey,
     __result: null,
     __error: null,
   };
@@ -3876,7 +4106,10 @@ async function executeSourceMethod({
       if (typeof Constructor === 'function') addCandidate(new Constructor());
     } catch {}
   }
-  let sourceInstance = candidates.find((item) => String(item.key || '') === __sourceKey) || candidates[0] || null;
+  let sourceInstance = candidates.find((item) => {
+    const key = String(item.key || '');
+    return key === __sourceKey || key === __selectedSourceKey;
+  }) || candidates[0] || null;
   if (sourceInstance && typeof sourceInstance.init === 'function') {
     await sourceInstance.init();
   }
@@ -3929,6 +4162,10 @@ async function executeSourceMethod({
   if (sandbox.__error) {
     throw createHttpError(500, `Source error: ${sandbox.__error}`);
   }
+  if (sourceDataShouldPersist()) {
+    mkdirSync(dirname(dataFile), { recursive: true });
+    writeFileSync(dataFile, JSON.stringify(sourceData, null, 2));
+  }
   return sandbox.__result;
 }
 
@@ -3979,6 +4216,14 @@ async function handleServerDbRoute({
       return true;
     }
     const database = String(payload.database || "").trim();
+    if (!database) {
+      sendJson(res, 200, {
+        ok: true,
+        profile: profileId,
+        ...readServerDbJsonDump(profileRoot),
+      });
+      return true;
+    }
     const filePath = serverDbEntryPath(profileRoot, database);
     if (!existsSync(filePath)) {
       throw createHttpError(404, "Server DB entry not found");
@@ -3988,6 +4233,22 @@ async function handleServerDbRoute({
       profile: profileId,
       database,
       ...extractSqliteData(readFileSync(filePath)),
+    });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/import") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const written = writeServerDbJsonDump(profileRoot, payload.data || payload);
+    markServerDbDirty(profileRoot, "server-db-import");
+    sendJson(res, 200, {
+      ok: true,
+      profile: profileId,
+      written,
+      status: serverDbStatus(serverDataRoot, profileId),
     });
     return true;
   }
@@ -5482,6 +5743,17 @@ async function handleSyncWebDavRoute({
 
   const config = resolveWebDavConfig(payload, webDavConfigPath);
 
+  if (parsedUrl.pathname === "/sync/webdav/test") {
+    const files = await listWebDavBackupFiles({
+      config,
+      cookieJar,
+      persistCookieJar,
+      recordProxyRequest,
+    });
+    sendJson(res, 200, { ok: true, files: sortBackupFiles(files, true) });
+    return true;
+  }
+
   if (parsedUrl.pathname === "/sync/webdav/list") {
     const files = await listWebDavBackupFiles({
       config,
@@ -6228,6 +6500,24 @@ export function createServer(options = {}) {
           persistCookieJar,
           recordProxyRequest,
         );
+        return;
+      }
+
+      if (parsedUrl.pathname === "/api/source/check-update") {
+        if (req.method !== "POST") {
+          sendJson(res, 405, { error: "Method not allowed" });
+          return;
+        }
+        const rawBody = await readBody(req);
+        const payload = parseJsonBody(rawBody, "Invalid source update payload");
+        const sourceKey = validateComicSourceKey(payload.sourceKey);
+        sendJson(res, 200, {
+          ok: true,
+          sourceKey,
+          updateAvailable: false,
+          supported: false,
+          message: "Source update check is not supported in web helper yet",
+        });
         return;
       }
 

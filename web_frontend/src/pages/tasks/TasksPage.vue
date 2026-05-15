@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
-import { listFavorites, listHistory, getComicSources } from '@/services/server-db'
+import { listFavorites, listHistory, getComicSources, upsertHistory } from '@/services/server-db'
 import { apiPost } from '@/services/api'
 
 // Task types
@@ -137,8 +137,13 @@ async function runFollowUpdateTask(task: Task) {
       task.progress = i + 1
 
       try {
+        const folder = (fav as any).folder
+        if (!folder) continue
         await apiPost('/api/server-db/favorites/check-time', {
-          favoriteId: fav.id, type: fav.type
+          folder,
+          id: fav.id,
+          type: fav.type,
+          lastCheckTime: Date.now(),
         })
         updatedCount++
       } catch (e) {
@@ -183,10 +188,7 @@ async function runHistoryRefreshTask(task: Task) {
       task.progress = i + 1
 
       try {
-        await apiPost('/api/server-db/history/upsert', {
-          id: item.id, type: item.type, title: item.title,
-          subtitle: item.subtitle, cover: item.cover, time: item.time
-        })
+        await upsertHistory({ ...item })
         refreshed++
       } catch (e) {
         // Skip individual failures

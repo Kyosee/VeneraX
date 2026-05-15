@@ -13,16 +13,16 @@ export function triggerDownload() {
   return apiPost('/sync/webdav/download', {})
 }
 
-export function triggerUpload() {
-  return apiPost('/sync/webdav/upload', {})
+export async function triggerUpload(): Promise<never> {
+  throw new Error('Web 端无法直接构造 Venera 备份体，请通过设置页导出备份后上传')
 }
 
 export async function getSyncStatus(): Promise<SyncStatus> {
-  const res = await apiPost<any>('/api/server-db/sync/webdav', { action: 'status' })
+  const res = await apiPost<any>('/api/server-db/status')
   return {
-    isDownloading: res?.isDownloading ?? false,
-    isUploading: res?.isUploading ?? false,
-    lastError: res?.lastError,
-    isEnabled: res?.isEnabled ?? false,
+    isDownloading: false,
+    isUploading: false,
+    lastError: res?.metadata?.lastError,
+    isEnabled: res?.initialized ?? false,
   }
 }
