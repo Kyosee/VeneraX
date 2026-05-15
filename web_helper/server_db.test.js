@@ -169,6 +169,49 @@ function buildMinimalHistoryDb(title) {
   return db;
 }
 
+async function buildCookieDb(rows) {
+  const dir = await mkdtemp(join(tmpdir(), "venera-cookie-db-"));
+  const filePath = join(dir, "cookie.db");
+  const sqlite = await import("node:sqlite");
+  const db = new sqlite.DatabaseSync(filePath);
+  try {
+    db.exec(`
+      create table cookies (
+        name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        path TEXT,
+        expires INTEGER,
+        secure INTEGER,
+        httpOnly INTEGER,
+        PRIMARY KEY (name, domain, path)
+      );
+    `);
+    const statement = db.prepare(`
+      insert into cookies (name, value, domain, path, expires, secure, httpOnly)
+      values (?, ?, ?, ?, ?, ?, ?);
+    `);
+    for (const row of rows) {
+      statement.run(
+        row.name,
+        row.value,
+        row.domain,
+        row.path,
+        row.expires,
+        row.secure,
+        row.httpOnly,
+      );
+    }
+  } finally {
+    db.close();
+  }
+  try {
+    return await readFile(filePath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 function buildZipArchive(entries) {
   const localParts = [];
   const centralParts = [];
@@ -439,6 +482,81 @@ test("server-db sync stores WebDAV backup on helper disk", async () => {
     assert.equal(secondSyncPayload.skipped, true);
     assert.equal(secondSyncPayload.reason, "server-db-up-to-date");
     assert.deepEqual(seenRequests, ["PROPFIND /"]);
+  } finally {
+    await close(helper);
+    await close(upstream);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});
+
+test("server-db sync imports cookie.db into helper cookie jar", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const expires = 1900000000000;
+  const cookieDb = await buildCookieDb([
+    {
+      name: "sid",
+      value: "restored",
+      domain: ".example.com",
+      path: "/reader",
+      expires,
+      secure: 1,
+      httpOnly: 1,
+    },
+  ]);
+  const backupBytes = buildZipArchive([{ name: "cookie.db", data: cookieDb }]);
+
+  const upstream = createHttpServer(async (req, res) => {
+    if (req.method === "PROPFIND") {
+      res.writeHead(207, { "Content-Type": "application/xml" });
+      res.end(`<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response><d:href>/1700000000400.venera</d:href></d:response>
+</d:multistatus>`);
+      return;
+    }
+    if (req.method === "GET" && req.url === "/1700000000400.venera") {
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      res.end(backupBytes);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  const upstreamUrl = await listen(upstream);
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+
+  try {
+    const syncResponse = await fetch(`${helperUrl}/api/server-db/sync/webdav`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile: "reader",
+        url: upstreamUrl,
+        user: "user",
+        pass: "pass",
+      }),
+    });
+    assert.equal(syncResponse.status, 200);
+    const syncPayload = await syncResponse.json();
+    assert.equal(syncPayload.ok, true);
+    assert.equal(syncPayload.written.writtenDatabases, 1);
+
+    const cookiesResponse = await fetch(
+      `${helperUrl}/cookies?url=${encodeURIComponent("https://sub.example.com/reader/page")}`,
+    );
+    assert.equal(cookiesResponse.status, 200);
+    assert.deepEqual((await cookiesResponse.json()).cookies, [
+      { name: "sid", value: "restored" },
+    ]);
+
+    const exportPayload = await (await fetch(`${helperUrl}/cookies/export`)).json();
+    const cookie = exportPayload.cookies.find((item) => item.name === "sid");
+    assert.equal(cookie.domain, ".example.com");
+    assert.equal(cookie.path, "/reader");
+    assert.equal(cookie.expiresMs, expires);
+    assert.equal(cookie.secure, true);
+    assert.equal(cookie.httpOnly, true);
   } finally {
     await close(helper);
     await close(upstream);
@@ -1241,6 +1359,98 @@ test("server-db upload reuses helper-side comic sources", async () => {
     assert.equal(Buffer.isBuffer(uploaded), true);
     assert.equal(uploaded.includes(Buffer.from("function stored() {}")), true);
     assert.equal(uploaded.includes(Buffer.from('{"stored":true}')), true);
+  } finally {
+    await close(helper);
+    await close(upstream);
+    await rm(serverDataDir, { recursive: true, force: true });
+  }
+});
+
+test("server-db upload writes helper cookie jar into cookie.db backup entry", async () => {
+  const serverDataDir = await mkdtemp(join(tmpdir(), "venera-server-db-"));
+  const expires = 1900000000000;
+  let uploaded = null;
+  const upstream = createHttpServer(async (req, res) => {
+    if (req.method === "PUT" && req.url === "/1700000000500.venera") {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      uploaded = Buffer.concat(chunks);
+      res.writeHead(201);
+      res.end();
+      return;
+    }
+    if (req.method === "PROPFIND") {
+      res.writeHead(207, { "Content-Type": "application/xml" });
+      res.end(`<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response><d:href>/1700000000500.venera</d:href></d:response>
+</d:multistatus>`);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  const upstreamUrl = await listen(upstream);
+  const helper = createServer({ serverDataDir });
+  const helperUrl = await listen(helper);
+
+  try {
+    const importResponse = await fetch(`${helperUrl}/cookies/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cookies: [
+          {
+            name: "token",
+            value: "fresh",
+            domain: ".example.org",
+            path: "/api",
+            expiresMs: expires,
+            secure: true,
+            httpOnly: true,
+          },
+        ],
+      }),
+    });
+    assert.equal(importResponse.status, 200);
+
+    const uploadResponse = await fetch(`${helperUrl}/api/server-db/upload/webdav`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile: "reader",
+        url: upstreamUrl,
+        user: "user",
+        pass: "pass",
+        fileName: "1700000000500.venera",
+        appdata: { settings: {} },
+      }),
+    });
+    assert.equal(uploadResponse.status, 200);
+    const uploadPayload = await uploadResponse.json();
+    assert.equal(uploadPayload.entries.includes("cookie.db"), true);
+    assert.equal(Buffer.isBuffer(uploaded), true);
+
+    const extractResponse = await fetch(`${helperUrl}/sync/webdav/extract-db`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataBase64: uploaded.toString("base64") }),
+    });
+    assert.equal(extractResponse.status, 200);
+    const extractPayload = await extractResponse.json();
+    const table = extractPayload.databases["cookie.db"].tables.find(
+      (item) => item.name === "cookies",
+    );
+    const row = table.rows[0];
+    const column = (name) => row[table.columns.indexOf(name)];
+    assert.equal(column("name"), "token");
+    assert.equal(column("value"), "fresh");
+    assert.equal(column("domain"), ".example.org");
+    assert.equal(column("path"), "/api");
+    assert.equal(column("expires"), expires);
+    assert.equal(column("secure"), 1);
+    assert.equal(column("httpOnly"), 1);
   } finally {
     await close(helper);
     await close(upstream);

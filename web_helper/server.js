@@ -2511,6 +2511,92 @@ function writeServerDbBackup(profileRoot, entries) {
   };
 }
 
+function sqliteValueToNumber(value) {
+  if (value == null) return null;
+  if (typeof value === "object" && value.$bigint != null) {
+    const number = Number(value.$bigint);
+    return Number.isFinite(number) ? number : null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function cookieRecordsFromServerDbCookieBuffer(dbBuf) {
+  const data = extractSqliteData(dbBuf);
+  const table = data.tables.find((item) => item.name === "cookies");
+  if (!table) return [];
+  const columns = new Map(
+    table.columns.map((column, index) => [String(column).toLowerCase(), index]),
+  );
+  const columnValue = (row, name) => {
+    const index = columns.get(name.toLowerCase());
+    return index == null ? null : row[index];
+  };
+  return table.rows
+    .map((row) => {
+      const domain = String(columnValue(row, "domain") || "").trim();
+      return {
+        name: String(columnValue(row, "name") || ""),
+        value: String(columnValue(row, "value") ?? ""),
+        domain,
+        path: String(columnValue(row, "path") || "/"),
+        expiresMs: sqliteValueToNumber(columnValue(row, "expires")),
+        secure: sqliteValueToNumber(columnValue(row, "secure")) === 1,
+        httpOnly: sqliteValueToNumber(columnValue(row, "httpOnly")) === 1,
+        hostOnly: !domain.startsWith("."),
+      };
+    })
+    .filter((cookie) => cookie.name && cookie.domain);
+}
+
+function importServerDbCookieDbToJar(profileRoot, cookieJar, persistCookieJar) {
+  const filePath = serverDbEntryPath(profileRoot, "cookie.db");
+  if (!existsSync(filePath)) return [];
+  const records = cookieRecordsFromServerDbCookieBuffer(readFileSync(filePath));
+  return importCookieRecords(cookieJar, records, persistCookieJar);
+}
+
+async function exportCookieJarToServerDbCookieDb(profileRoot, cookieJar) {
+  const cookies = exportCookieRecords(cookieJar);
+  const filePath = serverDbEntryPath(profileRoot, "cookie.db");
+  if (cookies.length === 0 && !existsSync(filePath)) return false;
+  const db = await openWritableSqliteDatabase(filePath);
+  try {
+    db.exec(`
+      create table if not exists cookies (
+        name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        path TEXT,
+        expires INTEGER,
+        secure INTEGER,
+        httpOnly INTEGER,
+        PRIMARY KEY (name, domain, path)
+      );
+      delete from cookies;
+    `);
+    const statement = db.prepare(`
+      insert or replace into cookies (
+        name, value, domain, path, expires, secure, httpOnly
+      ) values (?, ?, ?, ?, ?, ?, ?);
+    `);
+    for (const cookie of cookies) {
+      statement.run(
+        cookie.name,
+        cookie.value,
+        cookie.domain,
+        cookie.path || "/",
+        cookie.expiresMs,
+        cookie.secure ? 1 : 0,
+        cookie.httpOnly ? 1 : 0,
+      );
+    }
+    return true;
+  } finally {
+    db.close();
+  }
+}
+
 function writeServerDbAppdata(profileRoot, data) {
   mkdirSync(profileRoot, { recursive: true });
   const appdataBytes = Buffer.isBuffer(data)
@@ -4163,6 +4249,7 @@ async function handleServerDbRoute({
           .map((name) => normalizeWebDavBackupName(name, { required: false }))
           .filter((name) => name != null && name !== "latest.venera")
       : [];
+    await exportCookieJarToServerDbCookieDb(profileRoot, cookieJar);
     const backup = buildServerDbBackup(
       profileRoot,
       payload.appdata,
@@ -4307,6 +4394,9 @@ async function handleServerDbRoute({
     const written = writeServerDbBackup(profileRoot, entries);
     if (written.writtenDatabases === 0 && !written.writtenAppdata) {
       throw createHttpError(422, "Backup does not contain supported app data");
+    }
+    if (entries.has("cookie.db")) {
+      importServerDbCookieDbToJar(profileRoot, cookieJar, persistCookieJar);
     }
     writeServerDbMetadata(profileRoot, {
       remoteFileName: downloaded.remoteFileName,
