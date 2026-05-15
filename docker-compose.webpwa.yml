@@ -12,10 +12,13 @@ services:
       VENERA_STATIC_DIR: /app/public
       VENERA_BROWSER_DATA_DIR: /app/browser-data
       VENERA_COOKIE_JAR_PATH: /app/browser-data/helper-cookies.json
+      VENERA_SERVER_DATA_DIR: /app/server-data
       VENERA_BROWSER_HEADLESS: "true"
     volumes:
       - ./build/web:/app/public:ro
       - webpwa-browser-data:/app/browser-data
+      - webpwa-server-data:/app/server-data
 
 volumes:
   webpwa-browser-data:
+  webpwa-server-data:

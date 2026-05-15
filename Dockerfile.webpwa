@@ -4,6 +4,7 @@
 FROM rust:1.95-slim-bookworm AS sidecar-builder
 WORKDIR /build
 
+ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_HTTP_TIMEOUT=120
 ENV RUSTUP_TOOLCHAIN=1.95.0
@@ -11,7 +12,10 @@ ENV RUSTUP_NO_UPDATE_CHECK=1
 ENV RUSTUP_DIST_SERVER=https://rsproxy.cn
 ENV RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_MIRROR}-security|g" /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     git \
@@ -30,16 +34,19 @@ RUN cargo build --release
 FROM mcr.microsoft.com/playwright:v1.59.1-noble
 WORKDIR /app
 
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 ENV NODE_ENV=production
 ENV PORT=60098
 ENV VENERA_STATIC_DIR=/app/public
 ENV VENERA_BROWSER_DATA_DIR=/app/browser-data
 ENV VENERA_COOKIE_JAR_PATH=/app/browser-data/helper-cookies.json
+ENV VENERA_SERVER_DATA_DIR=/app/server-data
 ENV VENERA_BROWSER_HEADLESS=true
 ENV VENERA_FETCH_SIDECAR=http://127.0.0.1:9876
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 COPY web_helper/package.json web_helper/server.js ./
-RUN npm install --omit=dev
+RUN npm config set registry "${NPM_REGISTRY}" && npm install --omit=dev
 
 COPY --from=sidecar-builder /build/target/release/venera-fetch /usr/local/bin/venera-fetch
 RUN chmod +x /usr/local/bin/venera-fetch
@@ -47,6 +54,6 @@ RUN chmod +x /usr/local/bin/venera-fetch
 COPY web_helper/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-VOLUME ["/app/browser-data"]
+VOLUME ["/app/browser-data", "/app/server-data"]
 EXPOSE 60098
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
