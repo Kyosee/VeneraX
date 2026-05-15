@@ -27,7 +27,20 @@ if (flutterVersionName == null) {
 
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
+if (!keystorePropertiesFile.exists()) {
+    throw new GradleException("Missing android/key.properties for release signing")
+}
 keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
+    def value = keystoreProperties[key]
+    if (value == null || value.toString().trim().isEmpty()) {
+        throw new GradleException("Missing android/key.properties value: ${key}")
+    }
+}
+def releaseStoreFile = rootProject.file(keystoreProperties["storeFile"])
+if (!releaseStoreFile.exists()) {
+    throw new GradleException("Missing Android release keystore file: ${releaseStoreFile}")
+}
 
 android {
     namespace = "com.github.wgh136.venera"
@@ -59,7 +72,7 @@ android {
 
     signingConfigs {
         debug {
-            storeFile rootProject.file(keystoreProperties['storeFile'])
+            storeFile releaseStoreFile
             storePassword keystoreProperties['storePassword']
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
@@ -67,7 +80,7 @@ android {
         release {
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
-            storeFile rootProject.file(keystoreProperties['storeFile'])
+            storeFile releaseStoreFile
             storePassword keystoreProperties['storePassword']
         }
     }

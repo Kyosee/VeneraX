@@ -90,7 +90,21 @@ jobs:
           channel: "stable"
           flutter-version-file: pubspec.yaml
           architecture: x64
-      - name: Decode and install certificate
+      - name: Verify Android signing secrets
+        env:
+          STORE_FILE: ${{ secrets.ANDROID_KEYSTORE }}
+          PROPERTY_FILE: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+            set -euo pipefail
+            test -n "$STORE_FILE" || { echo "ANDROID_KEYSTORE secret is missing"; exit 1; }
+            test -n "$PROPERTY_FILE" || { echo "ANDROID_KEY_PROPERTIES secret is missing"; exit 1; }
+            for key in storeFile storePassword keyAlias keyPassword; do
+              printf '%s\n' "$PROPERTY_FILE" | grep -Eq "^${key}=" || {
+                echo "ANDROID_KEY_PROPERTIES is missing ${key}";
+                exit 1;
+              }
+            done
+      - name: Decode and install Android signing files
         env:
           STORE_FILE: ${{ secrets.ANDROID_KEYSTORE }}
           PROPERTY_FILE: ${{ secrets.ANDROID_KEY_PROPERTIES }}
