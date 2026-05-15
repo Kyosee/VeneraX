@@ -8,7 +8,35 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/network/proxy.dart';
 
-Future<void> nativeInitRhttp() => rhttp.Rhttp.init();
+Future<void>? _rhttpInitFuture;
+bool _rhttpInitialized = false;
+
+Future<void> nativeInitRhttp() {
+  if (_rhttpInitialized) return Future.value();
+  return _rhttpInitFuture ??= _initRhttp();
+}
+
+Future<void> _initRhttp() async {
+  try {
+    await rhttp.Rhttp.init();
+    _rhttpInitialized = true;
+  } catch (e, s) {
+    Error.throwWithStackTrace(RhttpInitializationException(e), s);
+  } finally {
+    if (!_rhttpInitialized) _rhttpInitFuture = null;
+  }
+}
+
+class RhttpInitializationException implements Exception {
+  const RhttpInitializationException(this.cause);
+
+  final Object cause;
+
+  @override
+  String toString() =>
+      'Failed to initialize rhttp/RustLib. HTTP requests cannot use rhttp. '
+      'Cause: $cause';
+}
 
 HttpClientAdapter createAppHttpClientAdapter({bool enableProxy = true}) =>
     createRHttpAdapter(enableProxy: enableProxy);
@@ -106,6 +134,8 @@ class RHttpAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    await nativeInitRhttp();
+
     if (options.headers['User-Agent'] == null &&
         options.headers['user-agent'] == null) {
       options.headers['User-Agent'] = 'venera/v${App.version}';
