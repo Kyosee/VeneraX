@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getComicSources, searchComics, getSourceCapabilities } from '@/services/server-db'
+import { getComicSources, searchComics, getSourceCapabilities, batchGetComicBasicInfo } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
 import type { ComicSource, SourceCapabilities, SourceSearchOption } from '@/types'
@@ -165,6 +165,21 @@ function withSourceKey(comics: SearchResult[], sourceKey: string): SearchResult[
   }))
 }
 
+async function enrichWithLocalInfo(sourceKey: string, comics: SearchResult[]) {
+  if (!comics.length) return
+  try {
+    const ids = comics.map(c => ({ sourceKey, comicId: c.id }))
+    const infoMap = await batchGetComicBasicInfo(ids)
+    for (const c of comics) {
+      const key = `${sourceKey}:${c.id}`
+      const info = infoMap[key]
+      if (info) {
+        if (!c.subtitle && info.subtitle) c.subtitle = info.subtitle
+      }
+    }
+  } catch { /* best-effort */ }
+}
+
 function formatError(message?: string | null) {
   if (!message) return null
   if (/not found/i.test(message)) return '当前漫画源暂不支持搜索或接口未就绪'
@@ -199,7 +214,9 @@ async function doSearch(keyword?: string) {
       sources.value.map(async (source) => {
         try {
           const res = await searchComics(source.key, term, 1)
-          results.value[source.key] = { comics: withSourceKey(res.comics, source.key), hasMore: res.hasMore, page: 1, loading: false, error: null }
+          const comics = withSourceKey(res.comics, source.key)
+          results.value[source.key] = { comics, hasMore: res.hasMore, page: 1, loading: false, error: null }
+          enrichWithLocalInfo(source.key, comics)
         } catch (e: any) {
           results.value[source.key] = { comics: [], hasMore: false, page: 1, loading: false, error: e.message ?? '搜索失败' }
         }
@@ -212,7 +229,9 @@ async function doSearch(keyword?: string) {
     try {
       const opts = currentSearchOptions.value.length > 0 ? searchOptions.value : undefined
       const res = await searchComics(key, term, 1, opts)
-      results.value[key] = { comics: withSourceKey(res.comics, key), hasMore: res.hasMore, page: 1, loading: false, error: null }
+      const comics = withSourceKey(res.comics, key)
+      results.value[key] = { comics, hasMore: res.hasMore, page: 1, loading: false, error: null }
+      enrichWithLocalInfo(key, comics)
     } catch (e: any) {
       results.value[key] = { comics: [], hasMore: false, page: 1, loading: false, error: e.message ?? '搜索失败' }
     }
@@ -229,10 +248,12 @@ async function loadMore() {
   try {
     const opts = currentSearchOptions.value.length > 0 ? searchOptions.value : undefined
     const res = await searchComics(key, searchText.value.trim(), nextPage, opts)
-    current.comics.push(...withSourceKey(res.comics, key))
+    const newComics = withSourceKey(res.comics, key)
+    current.comics.push(...newComics)
     current.hasMore = res.hasMore
     current.page = nextPage
     current.loading = false
+    enrichWithLocalInfo(key, newComics)
   } catch (e: any) {
     current.loading = false
     current.error = e.message ?? '加载更多失败'

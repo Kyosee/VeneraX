@@ -2,13 +2,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiPost } from '@/services/api'
-import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory } from '@/services/server-db'
+import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory, createFolder } from '@/services/server-db'
 import { resolveSourceKey, sourceTypeFromKey } from '@/utils/source'
 import { useSettingsStore } from '@/stores/settings'
 import ProxiedImage from '@/components/ProxiedImage.vue'
 import ComicCard from '@/components/ComicCard.vue'
 import { comicAuthorText, normalizeComicTags, parseComicTags } from '@/utils/comic-display'
-import { showToast } from 'vant'
+import { showToast, showDialog } from 'vant'
 import type { Comic, Chapter, ChapterGroup, Comment, ComicSource, History } from '@/types'
 
 const route = useRoute()
@@ -25,6 +25,11 @@ const error = ref('')
 const isFavorite = ref(false)
 const favoriteFolder = ref<string | null>(null)
 const favoriteLoading = ref(false)
+const showFavPopup = ref(false)
+const favFolders = ref<Array<{ id: string; name: string }>>([])
+const favFolderStatus = ref<Record<string, boolean>>({})
+let favLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let favLongPressTriggered = false
 const descExpanded = ref(false)
 const activeTab = ref(0)
 const sortAsc = ref(true)
@@ -129,7 +134,6 @@ const displayProgress = computed(() => {
   if (!lastReadInfo.value) return ''
   return `${lastReadInfo.value.group} ${lastReadInfo.value.chapter} P${lastReadInfo.value.page}`
 })
-const showLikeButton = computed(() => (comic.value as any)?.isLiked != null)
 const menuActions = computed(() => {
   const items: { text: string; icon?: string }[] = [
     { text: '复制标题', icon: 'description' },
@@ -198,13 +202,6 @@ async function refreshFavoriteState() {
     isFavorite.value = false
     favoriteFolder.value = null
   }
-}
-
-async function firstFavoriteFolder() {
-  const folders = await listFolders()
-  const folder = folders[0]?.name || folders[0]?.id
-  if (!folder) throw new Error('请先创建收藏文件夹')
-  return folder
 }
 
 function favoriteTime() {
@@ -367,21 +364,45 @@ async function loadMoreComments() {
   finally { commentsLoading.value = false }
 }
 
-async function toggleFavorite() {
+async function openFavPopup() {
+  if (!comic.value) return
+  try {
+    const folders = await listFolders()
+    favFolders.value = folders.map(f => ({ id: f.id || f.name, name: f.name }))
+    // Check which folders already contain this comic
+    const allFavs = await listFavorites()
+    const type = favoriteType()
+    const status: Record<string, boolean> = {}
+    let foundAny = false
+    let foundFolder: string | null = null
+    for (const f of folders) {
+      const fid = f.id || f.name
+      const exists = allFavs.some(fav => fav.id === comicId.value && fav.type === type && (fav as any).folder === fid)
+      status[fid] = !!exists
+      if (exists) { foundAny = true; foundFolder = fid }
+    }
+    favFolderStatus.value = status
+    isFavorite.value = foundAny
+    favoriteFolder.value = foundFolder
+    showFavPopup.value = true
+  } catch (e: any) {
+    showToast('加载收藏夹失败')
+  }
+}
+
+async function toggleFavInFolder(folderId: string) {
   if (!comic.value) return
   favoriteLoading.value = true
+  const type = favoriteType()
+  const isFaved = favFolderStatus.value[folderId]
   try {
-    const type = favoriteType()
-    if (isFavorite.value) {
-      if (!favoriteFolder.value) await refreshFavoriteState()
-      if (!favoriteFolder.value) throw new Error('未找到收藏所在文件夹')
-      await deleteFavorite(favoriteFolder.value, comicId.value, type)
-      isFavorite.value = false
-      favoriteFolder.value = null
+    if (isFaved) {
+      await deleteFavorite(folderId, comicId.value, type)
+      favFolderStatus.value[folderId] = false
     } else {
-      const folder = await firstFavoriteFolder()
+      const folderName = favFolders.value.find(f => f.id === folderId)?.name || folderId
       await addFavorite({
-        folder,
+        folder: folderId,
         id: comicId.value,
         type,
         name: comic.value.title,
@@ -392,13 +413,105 @@ async function toggleFavorite() {
         title: comic.value.title,
         cover: comic.value.cover,
       } as any)
-      isFavorite.value = true
-      favoriteFolder.value = folder
+      favFolderStatus.value[folderId] = true
     }
+    // Update global state
+    const anyFaved = Object.values(favFolderStatus.value).some(v => v)
+    isFavorite.value = anyFaved
+    if (!anyFaved) favoriteFolder.value = null
   } catch (e: any) {
-    showToast(e.message || '收藏操作失败')
+    showToast(e.message || '操作失败')
+  } finally {
+    favoriteLoading.value = false
   }
-  finally { favoriteLoading.value = false }
+}
+
+async function createFavAndAdd() {
+  showFavPopup.value = false
+  let folderName = ''
+  try {
+    await new Promise<void>((resolve, reject) => {
+      showDialog({
+        title: '新建收藏夹',
+        showCancelButton: true,
+        confirmButtonText: '创建并收藏',
+        cancelButtonText: '取消',
+        message: `<div style="padding:16px 0"><input id="new-fav-folder-input" type="text" placeholder="文件夹名称" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;box-sizing:border-box;" /></div>`,
+        allowHtml: true,
+      }).then(() => {
+        const input = document.getElementById('new-fav-folder-input') as HTMLInputElement
+        folderName = input?.value?.trim() || ''
+        if (folderName) resolve()
+        else reject()
+      }).catch(reject)
+    })
+  } catch { return }
+  if (!folderName || !comic.value) return
+  try {
+    await createFolder(folderName)
+    showToast('创建成功')
+    // Refresh folder list and add to new folder
+    await openFavPopup()
+    const newFolder = favFolders.value.find(f => f.name === folderName)
+    if (newFolder) await toggleFavInFolder(newFolder.id)
+  } catch { showToast('创建失败') }
+}
+
+async function quickFavorite() {
+  if (!comic.value) return
+  const presetFolder = settingsStore.settings.quickFav
+  if (!presetFolder) {
+    // No preset: fall back to opening the popup
+    openFavPopup()
+    return
+  }
+  favoriteLoading.value = true
+  const type = favoriteType()
+  try {
+    // Check if already in preset folder
+    const allFavs = await listFavorites()
+    const alreadyFaved = allFavs.some(fav =>
+      fav.id === comicId.value && fav.type === type && (fav as any).folder === presetFolder
+    )
+    if (alreadyFaved) {
+      showToast('已在该收藏夹中')
+      return
+    }
+    await addFavorite({
+      folder: presetFolder,
+      id: comicId.value,
+      type,
+      name: comic.value.title,
+      author: comicAuthorText(comic.value),
+      tags: normalizeComicTags(comic.value.tags),
+      coverPath: comic.value.cover,
+      time: favoriteTime(),
+      title: comic.value.title,
+      cover: comic.value.cover,
+    } as any)
+    isFavorite.value = true
+    favoriteFolder.value = presetFolder
+    showToast('已收藏')
+  } catch (e: any) {
+    showToast(e.message || '收藏失败')
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+function onFavPointerDown() {
+  favLongPressTriggered = false
+  favLongPressTimer = setTimeout(() => {
+    favLongPressTriggered = true
+    quickFavorite()
+  }, 600)
+}
+function onFavPointerUp() {
+  if (favLongPressTimer) { clearTimeout(favLongPressTimer); favLongPressTimer = null }
+}
+function onFavClick() {
+  if (favLongPressTriggered) { favLongPressTriggered = false; return }
+  openFavPopup()
 }
 
 function readComic(chapter?: Chapter) {
@@ -443,10 +556,6 @@ async function shareComic() {
   }
 }
 
-function onDownload() {
-  showToast('Web 端暂不支持下载，请在桌面或移动端使用下载功能')
-}
-
 function onTagClick(tag: string) {
   router.push({ path: '/search', query: { keyword: tag, source: sourceKey.value } })
 }
@@ -472,10 +581,6 @@ function handleMenuSelect(action: { text: string }) {
       if (c.url) window.open(c.url, '_blank')
       break
   }
-}
-
-function likeOrUnlike() {
-  showToast('Web 端暂不支持点赞功能')
 }
 
 function scrollToComments() {
@@ -599,70 +704,68 @@ onUnmounted(() => {
 
       <!-- Action Buttons - Desktop (matches APP: single horizontal scroll row) -->
       <div v-if="!isMobile" class="action-buttons desktop-actions">
-        <button v-if="hasHistory" class="action-btn" @click="continueReading">
-          <van-icon name="play-circle-o" class="action-icon" style="color:#4f6ef7" />
+        <button v-if="hasHistory" class="action-btn" style="background:#4f6ef7;color:#fff;border-color:#4f6ef7" @click="continueReading">
+          <van-icon name="play-circle-o" class="action-icon" />
           <span>继续</span>
         </button>
-        <button class="action-btn" @click="startReading">
-          <van-icon name="play" class="action-icon" style="color:#27ae60" />
+        <button class="action-btn" style="background:#27ae60;color:#fff;border-color:#27ae60" @click="startReading">
+          <van-icon name="play" class="action-icon" />
           <span>开始</span>
         </button>
-        <button class="action-btn" @click="onDownload">
-          <van-icon name="down" class="action-icon" style="color:#9b59b6" />
-          <span>下载</span>
-        </button>
-        <button v-if="showLikeButton" class="action-btn" @click="likeOrUnlike">
-          <van-icon :name="(comic as any).isLiked ? 'good-job' : 'good-job-o'" class="action-icon icon-red" />
-          <span>{{ (comic as any).likesCount ? (comic as any).likesCount + ((comic as any).isLiked ? 1 : 0) : ((comic as any).isLiked ? '已赞' : '点赞') }}</span>
-        </button>
-        <button class="action-btn" :class="{ active: isFavorite }" @click="toggleFavorite">
-          <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" style="color:#f5a623" />
+        <button
+          class="action-btn" style="background:#f5a623;color:#fff;border-color:#f5a623"
+          :class="{ active: isFavorite }"
+          @click="onFavClick"
+          @pointerdown="onFavPointerDown"
+          @pointerup="onFavPointerUp"
+          @pointercancel="onFavPointerUp"
+        >
+          <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" />
           <span>收藏</span>
         </button>
         <button v-if="comments.length" class="action-btn" @click="scrollToComments">
           <van-icon name="chat-o" class="action-icon" style="color:#27ae60" />
           <span>评论</span>
         </button>
-        <button class="action-btn" @click="shareComic">
-          <van-icon name="share-o" class="action-icon" style="color:#5b9bd5" />
+        <button class="action-btn" style="background:#5b9bd5;color:#fff;border-color:#5b9bd5" @click="shareComic">
+          <van-icon name="share-o" class="action-icon" />
           <span>分享</span>
         </button>
       </div>
 
-      <!-- Action Buttons - Mobile (matches APP: compact row + full-width row) -->
+      <!-- Action Buttons - Mobile (compact row + full-width row) -->
       <div v-else class="mobile-actions">
         <div class="mobile-action-row">
-          <button v-if="hasHistory" class="action-btn compact" @click="startReading">
-            <van-icon name="play" class="action-icon" style="color:#27ae60" />
+          <button v-if="hasHistory" class="action-btn compact" style="background:#27ae60;color:#fff;border-color:#27ae60" @click="startReading">
+            <van-icon name="play" class="action-icon" />
             <span>开始</span>
           </button>
-          <button v-if="showLikeButton" class="action-btn compact" @click="likeOrUnlike">
-            <van-icon :name="(comic as any).isLiked ? 'good-job' : 'good-job-o'" class="action-icon icon-red" />
-            <span>{{ (comic as any).isLiked ? '已赞' : '点赞' }}</span>
-          </button>
-          <button class="action-btn compact" :class="{ active: isFavorite }" @click="toggleFavorite">
-            <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" style="color:#f5a623" />
+          <button
+            class="action-btn compact" style="background:#f5a623;color:#fff;border-color:#f5a623"
+            :class="{ active: isFavorite }"
+            @click="onFavClick"
+            @pointerdown="onFavPointerDown"
+            @pointerup="onFavPointerUp"
+            @pointercancel="onFavPointerUp"
+          >
+            <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" />
             <span>收藏</span>
           </button>
           <button v-if="comments.length" class="action-btn compact" @click="scrollToComments">
             <van-icon name="chat-o" class="action-icon" style="color:#27ae60" />
             <span>评论</span>
           </button>
-          <button class="action-btn compact" @click="shareComic">
-            <van-icon name="share-o" class="action-icon" style="color:#5b9bd5" />
+          <button class="action-btn compact" style="background:#5b9bd5;color:#fff;border-color:#5b9bd5" @click="shareComic">
+            <van-icon name="share-o" class="action-icon" />
             <span>分享</span>
-          </button>
-          <button class="action-btn compact" @click="onDownload">
-            <van-icon name="down" class="action-icon" style="color:#9b59b6" />
-            <span>下载</span>
           </button>
         </div>
         <div class="mobile-full-row">
-          <button v-if="hasHistory" class="action-btn continue-btn" @click="continueReading">
+          <button v-if="hasHistory" class="continue-btn" style="background:#4f6ef7;color:#fff" @click="continueReading">
             <van-icon name="play-circle-o" />
             <span>继续</span>
           </button>
-          <button v-else class="action-btn continue-btn primary" @click="startReading">
+          <button v-else class="continue-btn" style="background:#27ae60;color:#fff" @click="startReading">
             <van-icon name="play" />
             <span>开始</span>
           </button>
@@ -807,6 +910,32 @@ onUnmounted(() => {
         <van-loading size="20" />
       </div>
     </div>
+
+    <!-- Favorite folder selection popup -->
+    <van-popup v-model:show="showFavPopup" position="bottom" round :style="{ maxHeight: '60vh' }">
+      <div class="fav-popup">
+        <div class="fav-popup-title">选择收藏夹</div>
+        <div class="fav-folder-list">
+          <div
+            v-for="folder in favFolders"
+            :key="folder.id"
+            class="fav-folder-item"
+            @click="toggleFavInFolder(folder.id)"
+          >
+            <span class="fav-folder-name">{{ folder.name }}</span>
+            <van-icon
+              :name="favFolderStatus[folder.id] ? 'success' : ''"
+              :color="favFolderStatus[folder.id] ? '#4f6ef7' : 'transparent'"
+              size="18"
+            />
+          </div>
+          <div v-if="!favFolders.length" class="fav-folder-empty">暂无收藏夹，请先创建</div>
+        </div>
+        <div class="fav-popup-actions">
+          <van-button size="small" plain block @click="createFavAndAdd">新建收藏夹并收藏</van-button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 <style scoped>
@@ -1013,26 +1142,19 @@ onUnmounted(() => {
 .continue-btn {
   width: 100%;
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 12px 24px;
   font-size: 14px;
   font-weight: 500;
-  border: 1px solid #e0e0e0;
+  border: none;
   border-radius: 8px;
-  background: #fff;
-  color: #333;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
 }
-.continue-btn:active { background: #f5f5f5; }
-.continue-btn.primary {
-  background: #4f6ef7;
-  color: #fff;
-  border-color: #4f6ef7;
-}
-.continue-btn.primary:active { background: #3d5bd9; }
+.continue-btn:active { opacity: 0.85; }
 
 /* Last Read Pill */
 .last-read-pill {
@@ -1285,5 +1407,45 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Favorite folder popup */
+.fav-popup {
+  padding: 16px;
+}
+.fav-popup-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+.fav-folder-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.fav-folder-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px;
+  border-bottom: 0.5px solid #f0f0f0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fav-folder-item:active { background: #f5f5f5; }
+.fav-folder-name {
+  font-size: 14px;
+  color: #333;
+}
+.fav-folder-empty {
+  text-align: center;
+  color: #999;
+  padding: 24px 0;
+  font-size: 14px;
+}
+.fav-popup-actions {
+  padding: 8px 0;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
 </style>

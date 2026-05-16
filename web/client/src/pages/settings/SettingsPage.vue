@@ -314,10 +314,10 @@ async function handleImportFile(event: Event) {
         <div class="setting-row"><span>漫画缩略图的显示模式</span><select v-model="thumbnailMode" class="s-select"><option value="detailed">详细</option><option value="brief">简略</option></select></div>
         <div class="setting-row"><span>漫画缩略图的大小</span><span class="s-value">{{ thumbnailSize }}</span></div>
         <div class="slider-row"><van-slider v-model="thumbnailSize" :min="0.5" :max="2" :step="0.1" active-color="#1a2a5e" /></div>
-        <div class="setting-row clickable"><span>探索页面</span><van-icon name="arrow" size="14" /></div>
-        <div class="setting-row clickable"><span>分类页面</span><van-icon name="arrow" size="14" /></div>
-        <div class="setting-row clickable"><span>网络收藏页面</span><van-icon name="arrow" size="14" /></div>
-        <div class="setting-row clickable"><span>搜索源</span><van-icon name="arrow" size="14" /></div>
+        <div v-if="false" class="setting-row clickable"><span>探索页面</span><van-icon name="arrow" size="14" /></div>
+        <div v-if="false" class="setting-row clickable"><span>分类页面</span><van-icon name="arrow" size="14" /></div>
+        <div v-if="false" class="setting-row clickable"><span>网络收藏页面</span><van-icon name="arrow" size="14" /></div>
+        <div v-if="false" class="setting-row clickable"><span>搜索源</span><van-icon name="arrow" size="14" /></div>
         <div class="setting-row"><span>在漫画缩略图上显示收藏状态</span><van-switch v-model="showFavBadge" size="20" /></div>
         <div class="setting-row"><span>在漫画缩略图上显示历史记录</span><van-switch v-model="showHistoryBadge" size="20" /></div>
         <div class="setting-row"><span>反转默认章节顺序</span><van-switch v-model="reverseChapters" size="20" /></div>
@@ -350,7 +350,7 @@ async function handleImportFile(event: Event) {
         <div class="setting-row"><span>在阅读器中显示时间和电量信息</span><van-switch v-model="showTimeAndBattery" size="20" /></div>
         <div class="setting-row"><span>显示系统状态栏</span><van-switch v-model="showStatusBar" size="20" /></div>
         <div class="setting-row"><span>快速收藏图片</span><select v-model="quickFavImage" class="s-select"><option value="No">不启用</option><option value="Yes">启用</option></select></div>
-        <div class="setting-row"><span>自定义图片处理</span><van-button size="small" plain>编辑</van-button></div>
+        <div v-if="false" class="setting-row"><span>自定义图片处理</span><van-button size="small" plain>编辑</van-button></div>
         <div class="setting-row"><span>预加载图片数量</span><span class="s-value">{{ preloadCount }}</span></div>
         <div class="slider-row"><van-slider v-model="preloadCount" :min="1" :max="10" :step="1" active-color="#1a2a5e" /></div>
         <div class="setting-row"><span>显示页码</span><van-switch v-model="showPageNum" size="20" /></div>
@@ -368,8 +368,8 @@ async function handleImportFile(event: Event) {
         <div class="setting-row"><span>自动关闭收藏面板</span><van-switch v-model="autoClosePanel" size="20" /></div>
         <div class="setting-row"><span>添加新收藏到</span><select v-model="addNewTo" class="s-select"><option value="start">开始</option><option value="end">末尾</option></select></div>
         <div class="setting-row"><span>阅读后移动收藏</span><select v-model="moveAfterRead" class="s-select"><option value="none">无</option><option value="start">开始</option><option value="end">末尾</option></select></div>
-        <div class="setting-row"><span>快速收藏</span><select v-model="quickFav" class="s-select"><option value="">—</option></select></div>
-        <div class="setting-row"><span>删除所有无效的本地收藏</span><van-button size="small" plain>删除</van-button></div>
+        <div v-if="false" class="setting-row"><span>快速收藏</span><select v-model="quickFav" class="s-select"><option value="">—</option></select></div>
+        <div v-if="false" class="setting-row"><span>删除所有无效的本地收藏</span><van-button size="small" plain>删除</van-button></div>
         <div class="setting-row"><span>点击收藏</span><select v-model="clickFav" class="s-select"><option value="viewDetail">查看详情</option><option value="read">直接阅读</option></select></div>
       </div>
       <!-- APP_PLACEHOLDER -->
@@ -393,16 +393,16 @@ async function handleImportFile(event: Event) {
       <!-- ABOUT_PLACEHOLDER -->
       <div v-else-if="selectedKey === 'about'" class="content about-content">
         <div class="about-logo"><img src="/favicon.png" alt="Venera" class="about-logo-img" /><div class="about-version">V2.0.0</div><div class="about-desc">Venera是一个免费的开源漫画阅读应用。</div></div>
-        <div class="setting-row"><span>检查更新</span><van-button size="small" type="primary">检查</van-button></div>
-        <div class="setting-row"><span>启动时检查更新</span><van-switch model-value size="20" /></div>
-        <div class="setting-row clickable"><span>Github</span><van-icon name="share-o" size="16" /></div>
+        <div v-if="false" class="setting-row"><span>检查更新</span><van-button size="small" type="primary">检查</van-button></div>
+        <div v-if="false" class="setting-row"><span>启动时检查更新</span><van-switch model-value size="20" /></div>
+        <div v-if="false" class="setting-row clickable"><span>Github</span><van-icon name="share-o" size="16" /></div>
       </div>
       <div v-else-if="selectedKey === 'debug'" class="content">
         <h3>Debug</h3>
-        <div class="setting-row"><span>重新加载配置文件</span><van-button size="small" plain>重载</van-button></div>
-        <div class="setting-row"><span>打开日志</span><van-button size="small" plain>打开</van-button></div>
+        <div v-if="false" class="setting-row"><span>重新加载配置文件</span><van-button size="small" plain>重载</van-button></div>
+        <div v-if="false" class="setting-row"><span>打开日志</span><van-button size="small" plain>打开</van-button></div>
         <div class="setting-row"><span>忽略证书错误</span><van-switch v-model="ignoreCertErrors" size="20" /></div>
-        <div class="debug-section"><div class="debug-label">JS Evaluator</div><textarea v-model="jsCode" class="debug-textarea" rows="5" placeholder="输入 JavaScript 代码..."></textarea><div class="debug-run"><a href="#" @click.prevent>Run</a></div><div class="debug-label">Result</div><textarea v-model="jsResult" class="debug-textarea" rows="4" readonly></textarea></div>
+        <div v-if="false" class="debug-section"><div class="debug-label">JS Evaluator</div><textarea v-model="jsCode" class="debug-textarea" rows="5" placeholder="输入 JavaScript 代码..."></textarea><div class="debug-run"><a href="#" @click.prevent>Run</a></div><div class="debug-label">Result</div><textarea v-model="jsResult" class="debug-textarea" rows="4" readonly></textarea></div>
       </div>
     </div>
 

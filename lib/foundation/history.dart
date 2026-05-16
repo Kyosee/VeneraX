@@ -249,6 +249,23 @@ class HistoryManager with ChangeNotifier {
         );
       """);
 
+    _db.execute("""
+        create table if not exists comic_basic_info  (
+          comic_id text primary key,
+          title text not null,
+          subtitle text not null default '',
+          description text not null default '',
+          author text,
+          status text,
+          update_time text,
+          language text,
+          cover_uri text,
+          tags_json text,
+          page_count integer,
+          base_info_updated_at integer not null default 0
+        );
+      """);
+
     var columns = _db.select("PRAGMA table_info(history);");
     if (!_hasCompositePrimaryKey(columns)) {
       _migrateToCompositePrimaryKey();
@@ -258,9 +275,9 @@ class HistoryManager with ChangeNotifier {
       _db.execute("alter table history add column chapter_group int;");
     }
 
+    isInitialized = true;
     notifyListeners();
     ImageFavoriteManager().init();
-    isInitialized = true;
   }
 
   static const _insertHistorySql = """

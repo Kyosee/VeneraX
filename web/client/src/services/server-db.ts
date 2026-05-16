@@ -170,6 +170,11 @@ export async function searchComics(sourceKey: string, keyword: string, page = 1,
   return { comics: res?.comics ?? [], hasMore: res?.hasMore ?? false }
 }
 
+export async function batchGetComicBasicInfo(ids: Array<{ sourceKey: string; comicId: string }>): Promise<Record<string, any>> {
+  const res = await apiPost<any>('/api/server-db/comic/basic-info/batch', { ids })
+  return res?.items ?? {}
+}
+
 export async function getSourceCapabilities(sourceKey: string): Promise<SourceCapabilities | null> {
   try {
     const res = await apiPost<any>('/api/server-db/source/capabilities', { sourceKey })

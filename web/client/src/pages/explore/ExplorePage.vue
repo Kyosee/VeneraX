@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiPost } from '@/services/api'
-import { getComicSources } from '@/services/server-db'
+import { getComicSources, batchGetComicBasicInfo } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
 import type { ComicSource } from '@/types'
@@ -12,6 +12,13 @@ interface ExploreComic {
   title: string
   cover: string
   subtitle?: string
+  author?: string
+  status?: string
+  updateTime?: string
+  language?: string
+  description?: string
+  tags?: string[]
+  pageCount?: number
 }
 
 interface ExploreSection {
@@ -48,6 +55,28 @@ const gridStyle = computed(() => {
       }
 })
 
+async function enrichComicsWithLocalInfo(sourceKey: string, list: ExploreComic[]) {
+  if (!list.length) return
+  try {
+    const ids = list.map(c => ({ sourceKey, comicId: c.id }))
+    const infoMap = await batchGetComicBasicInfo(ids)
+    for (const c of list) {
+      const key = `${sourceKey}:${c.id}`
+      const info = infoMap[key]
+      if (info) {
+        if (!c.subtitle && info.subtitle) c.subtitle = info.subtitle
+        if (!c.author && info.author) c.author = info.author
+        if (info.status) c.status = info.status
+        if (info.updateTime) c.updateTime = info.updateTime
+        if (info.language) c.language = info.language
+        if (info.description) c.description = info.description
+        if (info.tags) c.tags = info.tags
+        if (info.pageCount) c.pageCount = info.pageCount
+      }
+    }
+  } catch { /* best-effort: local info is a bonus */ }
+}
+
 async function loadComics(sourceKey: string, page = 1, append = false) {
   if (!sourceKey) return
   if (loading.value[sourceKey]) return
@@ -58,6 +87,9 @@ async function loadComics(sourceKey: string, page = 1, append = false) {
       exploreType.value[sourceKey] = 'multiPart'
       sections.value[sourceKey] = res.sections
       finished.value[sourceKey] = true
+      // Enrich section comics with local basic info
+      const allSectionComics = res.sections.flatMap((s: ExploreSection) => s.comics ?? [])
+      enrichComicsWithLocalInfo(sourceKey, allSectionComics)
     } else {
       exploreType.value[sourceKey] = 'list'
       const items: ExploreComic[] = res?.comics ?? res?.items ?? []
@@ -68,6 +100,7 @@ async function loadComics(sourceKey: string, page = 1, append = false) {
       }
       pages.value[sourceKey] = page
       if (items.length === 0) finished.value[sourceKey] = true
+      enrichComicsWithLocalInfo(sourceKey, items)
     }
   } catch (e) {
     console.error('Failed to load explore comics:', e)

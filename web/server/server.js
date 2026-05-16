@@ -2795,7 +2795,10 @@ async function ensureServerDbBackupDatabases(profileRoot) {
   await ensureServerDbBackupDatabase(
     profileRoot,
     "history.db",
-    ensureHistoryDbSchema,
+    (db) => {
+      ensureHistoryDbSchema(db);
+      ensureComicBasicInfoSchema(db);
+    },
   );
   await ensureServerDbBackupDatabase(
     profileRoot,
@@ -3122,6 +3125,25 @@ function ensureHistoryDbSchema(db) {
   if (!columns.some((column) => column.name === "chapter_group")) {
     db.exec("alter table history add column chapter_group int;");
   }
+}
+
+function ensureComicBasicInfoSchema(db) {
+  db.exec(`
+    create table if not exists comic_basic_info (
+      comic_id text primary key,
+      title text not null,
+      subtitle text not null default '',
+      description text not null default '',
+      author text,
+      status text,
+      update_time text,
+      language text,
+      cover_uri text,
+      tags_json text,
+      page_count integer,
+      base_info_updated_at integer not null default 0
+    );
+  `);
 }
 
 function ensureImageFavoritesDbSchema(db) {
@@ -3624,6 +3646,59 @@ async function withWritableHistoryDb(profileRoot, callback) {
   } finally {
     db.close();
   }
+}
+
+async function withWritableComicInfoDb(profileRoot, callback) {
+  const filePath = serverDbEntryPath(profileRoot, "history.db");
+  const db = await openWritableSqliteDatabase(filePath);
+  try {
+    ensureHistoryDbSchema(db);
+    ensureComicBasicInfoSchema(db);
+    return callback(db);
+  } finally {
+    db.close();
+  }
+}
+
+function saveComicBasicInfo(db, sourceKey, comic) {
+  const comicId = `${sourceKey}:${comic.id}`;
+  const tags = Array.isArray(comic.tags)
+    ? JSON.stringify(comic.tags)
+    : (typeof comic.tags === 'object' && comic.tags !== null
+      ? JSON.stringify(Object.entries(comic.tags).flatMap(([ns, vals]) =>
+          Array.isArray(vals) ? vals.map(v => `${ns}:${v}`) : [`${ns}:${vals}`]))
+      : (comic.tags ?? ''));
+  const now = Date.now();
+  db.prepare(`
+    insert into comic_basic_info
+      (comic_id, title, subtitle, description, author, status, update_time, language, cover_uri, tags_json, page_count, base_info_updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(comic_id) do update set
+      title = excluded.title,
+      subtitle = coalesce(excluded.subtitle, comic_basic_info.subtitle),
+      description = coalesce(excluded.description, comic_basic_info.description),
+      author = coalesce(excluded.author, comic_basic_info.author),
+      status = coalesce(excluded.status, comic_basic_info.status),
+      update_time = coalesce(excluded.update_time, comic_basic_info.update_time),
+      language = coalesce(excluded.language, comic_basic_info.language),
+      cover_uri = coalesce(excluded.cover_uri, comic_basic_info.cover_uri),
+      tags_json = coalesce(excluded.tags_json, comic_basic_info.tags_json),
+      page_count = coalesce(excluded.page_count, comic_basic_info.page_count),
+      base_info_updated_at = excluded.base_info_updated_at
+  `).run(
+    comicId,
+    comic.title ?? '',
+    comic.subtitle ?? comic.subTitle ?? '',
+    comic.description ?? '',
+    comic.author ?? null,
+    comic.status ?? null,
+    comic.updateTime ?? comic.update ?? comic.lastUpdateTime ?? null,
+    comic.language ?? null,
+    comic.cover ?? comic.coverPath ?? null,
+    tags,
+    comic.maxPage ?? comic.pageCount ?? null,
+    now,
+  );
 }
 
 function markServerDbDirty(profileRoot, reason) {
@@ -6281,11 +6356,24 @@ async function handleServerDbRoute({
       persistCookieJar,
       recordProxyRequest,
     });
+    const comics = result?.comics ?? [];
     sendJson(res, 200, {
       ok: true,
-      comics: result?.comics ?? [],
+      comics,
       hasMore: result?.hasMore ?? false,
     });
+    // Mirror comic basic info to local DB
+    if (Array.isArray(comics) && comics.length > 0) {
+      try {
+        await withWritableComicInfoDb(profileRoot, (db) => {
+          for (const comic of comics) {
+            if (comic && typeof comic === 'object' && comic.id) {
+              saveComicBasicInfo(db, sourceKey, comic);
+            }
+          }
+        });
+      } catch { /* best-effort */ }
+    }
     return true;
   }
 
@@ -6332,12 +6420,25 @@ async function handleServerDbRoute({
       persistCookieJar,
       recordProxyRequest,
     });
+    const catComics = result?.comics ?? [];
     sendJson(res, 200, {
       ok: true,
-      comics: result?.comics ?? [],
+      comics: catComics,
       hasMore: result?.hasMore ?? false,
       maxPage: result?.maxPage ?? null,
     });
+    // Mirror comic basic info to local DB
+    if (Array.isArray(catComics) && catComics.length > 0) {
+      try {
+        await withWritableComicInfoDb(profileRoot, (db) => {
+          for (const comic of catComics) {
+            if (comic && typeof comic === 'object' && comic.id) {
+              saveComicBasicInfo(db, sourceKey, comic);
+            }
+          }
+        });
+      } catch { /* best-effort */ }
+    }
     return true;
   }
 
@@ -6374,6 +6475,14 @@ async function handleServerDbRoute({
     }
     const source = comicSourceMetadataForKey(profileRoot, sourceKey);
     sendJson(res, 200, { comic, chapters, comments, source, sourceName: source.sourceName });
+    // Mirror full comic detail to local DB
+    if (comic && typeof comic === 'object' && comic.id) {
+      try {
+        await withWritableComicInfoDb(profileRoot, (db) => {
+          saveComicBasicInfo(db, sourceKey, comic);
+        });
+      } catch { /* best-effort */ }
+    }
     return true;
   }
 
@@ -6498,17 +6607,73 @@ async function handleServerDbRoute({
       persistCookieJar,
       recordProxyRequest,
     });
+    let allComics = [];
     if (result && typeof result === "object" && !Array.isArray(result) && !result.comics && !result.items) {
-      const sections = Object.entries(result).map(([title, items]) => ({
-        title,
-        comics: Array.isArray(items) ? items : [],
-      }));
+      const sections = Object.entries(result).map(([title, items]) => {
+        const list = Array.isArray(items) ? items : [];
+        allComics.push(...list);
+        return { title, comics: list };
+      });
       sendJson(res, 200, { ok: true, type: "multiPart", sections });
     } else {
       const comics = Array.isArray(result) ? result
         : (result?.comics ?? result?.items ?? []);
+      allComics = comics;
       sendJson(res, 200, { ok: true, type: "list", comics });
     }
+    // Mirror comic basic info to local DB
+    if (allComics.length > 0) {
+      try {
+        await withWritableComicInfoDb(profileRoot, (db) => {
+          for (const comic of allComics) {
+            if (comic && typeof comic === 'object' && comic.id) {
+              saveComicBasicInfo(db, sourceKey, comic);
+            }
+          }
+        });
+      } catch { /* best-effort */ }
+    }
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/comic/basic-info/batch") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const { ids } = payload;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      sendJson(res, 200, { ok: true, items: {} });
+      return true;
+    }
+    const items = {};
+    try {
+      await withWritableComicInfoDb(profileRoot, (db) => {
+        const stmt = db.prepare(
+          "select * from comic_basic_info where comic_id = ?"
+        );
+        for (const { sourceKey, comicId } of ids) {
+          if (!sourceKey || !comicId) continue;
+          const key = `${sourceKey}:${comicId}`;
+          const row = stmt.get(key);
+          if (row) {
+            items[key] = {
+              title: row.title,
+              subtitle: row.subtitle || undefined,
+              description: row.description || undefined,
+              author: row.author || undefined,
+              status: row.status || undefined,
+              updateTime: row.update_time || undefined,
+              language: row.language || undefined,
+              coverUri: row.cover_uri || undefined,
+              tags: row.tags_json ? JSON.parse(row.tags_json) : undefined,
+              pageCount: row.page_count || undefined,
+            };
+          }
+        }
+      });
+    } catch { /* best-effort */ }
+    sendJson(res, 200, { ok: true, items });
     return true;
   }
 

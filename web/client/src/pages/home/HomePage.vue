@@ -21,7 +21,6 @@ const syncStatus = ref<WebDavSyncStatus>({
   isDownloading: false, isUploading: false, isEnabled: false, configured: false, autoSyncEnabled: false
 })
 const syncBusy = ref(false)
-const downloadTaskCount = ref(0)
 
 const followUpdateItems = computed(() => {
   const folder = settingsStore.settings.followUpdatesFolder
@@ -113,10 +112,6 @@ function goSources(sourceKey?: string) {
     <div class="search-bar" @click="router.push('/search')">
       <van-icon name="search" class="search-icon" />
       <span class="search-placeholder">搜索</span>
-      <span v-if="downloadTaskCount > 0" class="download-badge">
-        <van-icon name="down" size="12" />
-        {{ downloadTaskCount }}
-      </span>
     </div>
 
     <!-- 同步数据 -->
@@ -261,17 +256,6 @@ function goSources(sourceKey?: string) {
   font-size: 15px;
   color: #999;
   flex: 1;
-}
-
-.download-badge {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: #4f6ef7;
-  color: #fff;
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 12px;
 }
 
 /* Sync Bar */
