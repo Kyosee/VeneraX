@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart'
     show kIsWeb, TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/utils/io.dart';
@@ -16,7 +17,9 @@ export "widget_utils.dart";
 export "context.dart";
 
 class _App {
-  final version = "2.0.0";
+  String _version = "0.0.0";
+
+  String get version => _version;
 
   bool get isWeb => kIsWeb;
 
@@ -98,6 +101,10 @@ class _App {
       Directory(dataPath).createSync(recursive: true);
       Directory(cachePath).createSync(recursive: true);
     }
+    try {
+      final info = await PackageInfo.fromPlatform();
+      _version = info.version;
+    } catch (_) {}
     isInitialized = true;
   }
 
