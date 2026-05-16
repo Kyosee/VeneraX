@@ -1778,6 +1778,7 @@ class ComicListState extends State<ComicList> {
                 _maxPage = res.subData;
               }
             });
+            _mirrorComicsToDomain(res.data);
           }
         } else {
           setState(() {
@@ -1814,6 +1815,17 @@ class ComicListState extends State<ComicList> {
     } else {
       _nextUrl = res.subData;
     }
+  }
+
+  void _mirrorComicsToDomain(List<Comic> comics) {
+    Future.microtask(() {
+      final repo = const ComicStateRepository();
+      for (final comic in comics) {
+        try {
+          repo.mirrorComic(comic);
+        } catch (_) {}
+      }
+    });
   }
 
   @override

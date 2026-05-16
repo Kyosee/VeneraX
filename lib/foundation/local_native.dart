@@ -6,6 +6,7 @@ import 'package:flutter_saf/flutter_saf.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
@@ -323,6 +324,9 @@ class LocalManager with ChangeNotifier {
         comic.createdAt.millisecondsSinceEpoch,
       ],
     );
+    try {
+      const ComicStateRepository().mirrorLocalComic(comic);
+    } catch (_) {}
     notifyListeners();
   }
 

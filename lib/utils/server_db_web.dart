@@ -101,6 +101,7 @@ class ServerDbClient {
       'cover': history.cover,
       'time': history.time.millisecondsSinceEpoch,
       'type': history.type.value,
+      'sourceKey': history.sourceKey,
       'ep': history.ep,
       'page': history.page,
       'readEpisode': history.readEpisode.toList(),

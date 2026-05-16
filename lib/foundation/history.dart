@@ -18,6 +18,7 @@ import 'package:venera/utils/server_db.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'app.dart';
+import 'comic_state_repository.dart';
 import 'consts.dart';
 
 part "image_favorites.dart";
@@ -249,23 +250,6 @@ class HistoryManager with ChangeNotifier {
         );
       """);
 
-    _db.execute("""
-        create table if not exists comic_basic_info  (
-          comic_id text primary key,
-          title text not null,
-          subtitle text not null default '',
-          description text not null default '',
-          author text,
-          status text,
-          update_time text,
-          language text,
-          cover_uri text,
-          tags_json text,
-          page_count integer,
-          base_info_updated_at integer not null default 0
-        );
-      """);
-
     var columns = _db.select("PRAGMA table_info(history);");
     if (!_hasCompositePrimaryKey(columns)) {
       _migrateToCompositePrimaryKey();
@@ -431,6 +415,14 @@ class HistoryManager with ChangeNotifier {
     _db.execute(_insertHistorySql, _historySqlArgs(newItem));
   }
 
+  void _mirrorToDomain(History newItem) {
+    try {
+      const ComicStateRepository().mirrorComic(newItem);
+    } catch (_) {
+      // Domain DB may not be ready; mirror is best-effort
+    }
+  }
+
   void _cacheAddedHistory(History newItem) {
     if (_cachedHistoryIds == null) {
       updateCache();
@@ -460,12 +452,14 @@ class HistoryManager with ChangeNotifier {
     _haveAsyncTask = true;
     if (kIsWeb) {
       _writeLocalHistory(newItem);
+      _mirrorToDomain(newItem);
       final pendingServerWrite = _upsertServerHistory(
         newItem,
       ).then<void>((_) {});
       _trackServerHistoryWrite(pendingServerWrite);
     } else {
       await _addHistoryAsync(_dbPath, newItem);
+      _mirrorToDomain(newItem);
     }
     _haveAsyncTask = false;
     _cacheAddedHistory(newItem);
@@ -478,6 +472,7 @@ class HistoryManager with ChangeNotifier {
   void addHistory(History newItem) {
     if (!isInitialized) return;
     _writeLocalHistory(newItem);
+    _mirrorToDomain(newItem);
     _cacheAddedHistory(newItem);
     notifyListeners();
     if (kIsWeb) {
@@ -702,6 +697,10 @@ class HistoryManager with ChangeNotifier {
         }
 
         var comicDetails = res.data;
+        // Mirror full details to domain DB
+        try {
+          const ComicStateRepository().mirrorComicDetails(comicDetails);
+        } catch (_) {}
         // Update history info while keeping reading progress
         var updatedHistory = History.fromMap({
           'type': history.type.value,

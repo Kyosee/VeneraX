@@ -16,6 +16,7 @@ import 'package:venera/utils/tags_translation.dart';
 
 import 'app.dart';
 import 'comic_source/comic_source.dart';
+import 'comic_state_repository.dart';
 import 'comic_type.dart';
 
 String _getTimeString(DateTime time) {
@@ -120,6 +121,7 @@ class FavoriteItem implements Comic {
       "tags": tags,
       "id": id,
       "coverPath": coverPath,
+      "sourceKey": sourceKey,
       if (lastUpdateTime != null) "lastUpdateTime": lastUpdateTime,
       if (hasNewUpdate != null) "hasNewUpdate": hasNewUpdate,
       if (lastCheckTime != null) "lastCheckTime": lastCheckTime,
@@ -577,6 +579,9 @@ class LocalFavoritesManager with ChangeNotifier {
         [...args, comic.id, comic.type.value],
       );
     }
+    try {
+      const ComicStateRepository().mirrorComic(comic);
+    } catch (_) {}
   }
 
   void _ensureFavoriteFolderSchema(String folder) {
@@ -1528,6 +1533,9 @@ class LocalFavoritesManager with ChangeNotifier {
         comic.type.value,
       ],
     );
+    try {
+      const ComicStateRepository().mirrorComic(comic);
+    } catch (_) {}
     _syncServerFavorite(
       'info',
       (client) => client.updateFavoriteInfo(folder, comic),
