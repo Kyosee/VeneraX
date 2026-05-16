@@ -213,6 +213,49 @@ void main() {
     }
   });
 
+  test(
+    'chapter parser preserves grouped tabs when flat entries also exist',
+    () {
+      final chapters = ComicChapters.fromJson({
+        '单行本': {'v1': '第一卷'},
+        '连载版': {'c1': '第1话'},
+        '2': '第2话',
+      });
+
+      expect(chapters.isGrouped, isTrue);
+      expect(chapters.groups, containsAll(['单行本', '连载版', '默认']));
+      expect(chapters.groupCount, 3);
+      expect(chapters.titleAt(1, group: 1), '第一卷');
+      expect(chapters.titleAt(1, group: 2), '第1话');
+      expect(chapters.titleAt(1, group: 3), '第2话');
+    },
+  );
+
+  test('chapter progress resolves grouped history chapter title', () {
+    const repository = ComicStateRepository();
+    final comic = ComicDetails.fromJson({
+      'title': 'Title',
+      'subtitle': 'Author',
+      'cover': 'cover.jpg',
+      'description': '',
+      'tags': <String, List<String>>{},
+      'chapters': {
+        '单行本': {'v1': '第一卷'},
+        '连载版': {'c1': '第1话', 'c2': '第2话'},
+      },
+      'sourceKey': 'picacg',
+      'comicId': 'comic-id',
+    });
+
+    final progress = repository.chapterProgressFromDetails(
+      comic,
+      History.fromModel(model: comic, ep: 2, page: 7, group: 2),
+    );
+
+    expect(progress.currentTitle, '第2话');
+    expect(progress.latestTitle, '第2话');
+  });
+
   test('chapter progress does not synthesize chapter numbers', () async {
     final tempDir = Directory.systemTemp.createTempSync(
       'venera_domain_no_chapters_',

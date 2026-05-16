@@ -359,14 +359,22 @@ class ComicChapters {
         chapters[key] = value.toString();
       }
     }
+    if (groupedChapters.isNotEmpty) {
+      // When both flat and grouped entries exist, wrap flat entries
+      // in a default group so group tabs (番外, Online版, etc.) are preserved.
+      if (chapters.isNotEmpty) {
+        String defaultName = "默认";
+        while (groupedChapters.containsKey(defaultName)) {
+          defaultName = "$defaultName ";
+        }
+        groupedChapters[defaultName] = chapters;
+      }
+      return ComicChapters.grouped(groupedChapters);
+    }
     if (chapters.isNotEmpty) {
       return ComicChapters(chapters);
-    } else if (groupedChapters.isNotEmpty) {
-      return ComicChapters.grouped(groupedChapters);
-    } else {
-      // return a empty list.
-      return ComicChapters(chapters);
     }
+    return ComicChapters(chapters);
   }
 
   static fromJsonOrNull(dynamic json) {
@@ -407,6 +415,36 @@ class ComicChapters {
   /// Get a group of chapters by index(0-based)
   Map<String, String> getGroupByIndex(int index) {
     return _groupedChapters!.values.elementAt(index);
+  }
+
+  /// Get a group title by 1-based group number.
+  String? groupTitleAt(int group) {
+    if (!isGrouped || group < 1 || group > groupCount) {
+      return null;
+    }
+    return _groupedChapters!.keys.elementAtOrNull(group - 1);
+  }
+
+  /// Get a group of chapters by 1-based group number.
+  Map<String, String>? groupAt(int group) {
+    final title = groupTitleAt(group);
+    return title == null ? null : _groupedChapters![title];
+  }
+
+  /// Get a chapter title by 1-based chapter number.
+  ///
+  /// For grouped chapters, [group] is 1-based. When [group] is null, [ep]
+  /// is treated as the flattened chapter index.
+  String? titleAt(int ep, {int? group}) {
+    if (ep < 1) {
+      return null;
+    }
+    if (isGrouped) {
+      return group == null
+          ? titles.elementAtOrNull(ep - 1)
+          : groupAt(group)?.values.elementAtOrNull(ep - 1);
+    }
+    return _chapters!.values.elementAtOrNull(ep - 1);
   }
 
   /// Get total number of chapters

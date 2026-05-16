@@ -189,6 +189,8 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
 
   late TabController tabController;
 
+  bool _hasTabController = false;
+
   late int index;
 
   @override
@@ -207,13 +209,30 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   void didChangeDependencies() {
     state = context.findAncestorStateOfType<_ComicPageState>()!;
     chapters = state.comic.chapters!;
+    _syncTabController();
+    super.didChangeDependencies();
+  }
+
+  void _syncTabController() {
+    final length = chapters.groupCount;
+    if (length == 0) {
+      return;
+    }
+    index = math.min(math.max(index, 0), length - 1);
+    if (_hasTabController && tabController.length == length) {
+      return;
+    }
+    if (_hasTabController) {
+      tabController.removeListener(onTabChange);
+      tabController.dispose();
+    }
     tabController = TabController(
       initialIndex: index,
-      length: chapters.ids.length,
+      length: length,
       vsync: this,
     );
     tabController.addListener(onTabChange);
-    super.didChangeDependencies();
+    _hasTabController = true;
   }
 
   void onTabChange() {
@@ -233,7 +252,19 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   }
 
   @override
+  void dispose() {
+    if (_hasTabController) {
+      tabController.removeListener(onTabChange);
+      tabController.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (chapters.groupCount == 0 || !_hasTabController) {
+      return const SliverPadding(padding: EdgeInsets.zero);
+    }
     return SliverLayoutBuilder(
       builder: (context, constrains) {
         var group = chapters.getGroupByIndex(index);

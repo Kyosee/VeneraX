@@ -618,14 +618,7 @@ class ComicStateRepository {
   }
 
   String? _chapterTitleAt(ComicChapters chapters, History history) {
-    if (chapters.isGrouped && history.group != null) {
-      if (history.group! < 1 || history.group! > chapters.groupCount) {
-        return null;
-      }
-      final group = chapters.getGroupByIndex(history.group! - 1);
-      return group.values.elementAtOrNull(history.ep - 1);
-    }
-    return chapters.titles.elementAtOrNull(history.ep - 1);
+    return chapters.titleAt(history.ep, group: history.group);
   }
 
   String? _latestChapterTitleFallbackFor(Comic comic) {

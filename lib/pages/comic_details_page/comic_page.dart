@@ -554,25 +554,17 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                       var group = history!.group;
                       String text;
                       if (haveChapter) {
-                        var epName = "E$ep";
-                        String? groupName;
-                        try {
-                          if (group == null) {
-                            epName = comic.chapters!.titles.elementAt(
-                              math.min(ep - 1, comic.chapters!.length - 1),
-                            );
-                          } else {
-                            groupName = comic.chapters!.groups.elementAt(
-                              group - 1,
-                            );
-                            epName = comic.chapters!
-                                .getGroupByIndex(group - 1)
-                                .values
-                                .elementAt(ep - 1);
-                          }
-                        } catch (e) {
-                          // ignore
-                        }
+                        final groupName = group == null
+                            ? null
+                            : comic.chapters!.groupTitleAt(group);
+                        final chapterTitle = comic.chapters!.titleAt(
+                          ep,
+                          group: group,
+                        );
+                        final epName =
+                            (chapterTitle != null && chapterTitle.isNotEmpty)
+                            ? chapterTitle
+                            : "E$ep";
                         text = groupName == null
                             ? "${"Last Reading".tl}: $epName P$page"
                             : "${"Last Reading".tl}: $groupName $epName P$page";
