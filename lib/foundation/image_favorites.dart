@@ -448,6 +448,7 @@ class ImageFavoriteManager with ChangeNotifier {
   }
 
   List<ImageFavoritesComic> getAll([String? keyword]) {
+    if (!HistoryManager().isInitialized) return [];
     ResultSet res;
     if (keyword == null || keyword == "") {
       res = _db.select("select * from image_favorites;");
@@ -509,6 +510,7 @@ class ImageFavoriteManager with ChangeNotifier {
   }
 
   int get length {
+    if (!HistoryManager().isInitialized) return 0;
     var res = _db.select("select count(*) from image_favorites;");
     return res.first.values.first! as int;
   }
@@ -521,22 +523,26 @@ class ImageFavoriteManager with ChangeNotifier {
   }
 
   static Future<ImageFavoritesComputed> computeImageFavorites() {
-    var count = ImageFavoriteManager().length;
-    if (count == 0) {
-      return Future.value(ImageFavoritesComputed([], [], [], 0));
-    } else if (kIsWeb || count <= 100) {
-      return Future.value(_computeImageFavorites());
-    } else {
-      final token = ServicesBinding.rootIsolateToken;
-      if (token == null) {
+    try {
+      var count = ImageFavoriteManager().length;
+      if (count == 0) {
+        return Future.value(ImageFavoritesComputed([], [], [], 0));
+      } else if (kIsWeb || count <= 100) {
         return Future.value(_computeImageFavorites());
+      } else {
+        final token = ServicesBinding.rootIsolateToken;
+        if (token == null) {
+          return Future.value(_computeImageFavorites());
+        }
+        return Isolate.run(() async {
+          BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+          await App.init();
+          await HistoryManager().init();
+          return _computeImageFavorites();
+        });
       }
-      return Isolate.run(() async {
-        BackgroundIsolateBinaryMessenger.ensureInitialized(token);
-        await App.init();
-        await HistoryManager().init();
-        return _computeImageFavorites();
-      });
+    } catch (_) {
+      return Future.value(ImageFavoritesComputed([], [], [], 0));
     }
   }
 

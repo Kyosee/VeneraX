@@ -234,6 +234,7 @@ class _HistoryState extends State<_History> {
       loadServerHistory();
       return;
     }
+    if (!HistoryManager().isInitialized) return;
     if (mounted) {
       setState(() {
         history = HistoryManager().getRecent();
@@ -934,6 +935,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
   int displayType = 0;
 
   void refreshImageFavorites() async {
+    if (!HistoryManager().isInitialized) return;
     try {
       imageFavoritesCompute =
           await ImageFavoriteManager.computeImageFavorites();
@@ -949,12 +951,14 @@ class _ImageFavoritesState extends State<ImageFavorites> {
   void initState() {
     refreshImageFavorites();
     ImageFavoriteManager().addListener(refreshImageFavorites);
+    DataSync().addListener(refreshImageFavorites);
     super.initState();
   }
 
   @override
   void dispose() {
     ImageFavoriteManager().removeListener(refreshImageFavorites);
+    DataSync().removeListener(refreshImageFavorites);
     super.dispose();
   }
 

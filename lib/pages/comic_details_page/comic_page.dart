@@ -84,6 +84,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   String? detailsLoadError;
 
+  bool _networkFetching = false;
+
   bool descriptionExpanded = false;
 
   final ComicStateRepository _comicStateRepository =
@@ -257,6 +259,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       return Res(_fallbackDetails(state));
     }
     // Return local data immediately, fetch network data in background
+    _networkFetching = true;
     scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
     return Res(_fallbackDetails(state));
   }
@@ -269,6 +272,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         if (!mounted) return;
         if (res.success) {
           detailsLoadError = null;
+          _networkFetching = false;
           setState(() {
             data = res.data;
           });
@@ -281,6 +285,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         if (!mounted) return;
         retryCount++;
         if (retryCount >= 3) {
+          _networkFetching = false;
           detailsLoadError = e.toString();
           setState(() {});
           return;
@@ -289,6 +294,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       }
     }
     if (!mounted) return;
+    _networkFetching = false;
     detailsLoadError = 'Load failed';
     setState(() {});
   }
@@ -296,10 +302,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   ComicDetails _fallbackDetails(ComicState state) {
     return ComicDetails.fromJson({
       'title': state.title ?? widget.title ?? widget.id,
-      'subtitle': state.subtitle ?? '',
+      'subtitle': null,
       'cover': state.cover ?? widget.cover ?? '',
-      'description': state.description ?? '',
-      'tags': _tagsMapFromPlain(state.tags),
+      'description': null,
+      'tags': <String, List<String>>{},
       'chapters': null,
       'sourceKey': widget.sourceKey,
       'comicId': widget.id,
@@ -318,21 +324,6 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       'maxPage': null,
       'comments': null,
     });
-  }
-
-  Map<String, List<String>> _tagsMapFromPlain(List<String>? tags) {
-    final result = <String, List<String>>{};
-    for (final tag in tags ?? const <String>[]) {
-      final index = tag.indexOf(':');
-      if (index > 0) {
-        result
-            .putIfAbsent(tag.substring(0, index), () => <String>[])
-            .add(tag.substring(index + 1));
-      } else if (tag.trim().isNotEmpty) {
-        result.putIfAbsent('Tags', () => <String>[]).add(tag);
-      }
-    }
-    return result;
   }
 
   @override
@@ -846,6 +837,23 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     "message": detailsLoadError!,
                   }),
                   style: TextStyle(color: context.colorScheme.onErrorContainer),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+            ],
+          ),
+        );
+      }
+      if (_networkFetching) {
+        return SliverLazyToBoxAdapter(
+          child: Column(
+            children: [
+              ListTile(title: Text("Chapters".tl)),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
               const SizedBox(height: 16),

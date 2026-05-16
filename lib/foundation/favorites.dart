@@ -232,6 +232,8 @@ class LocalFavoritesManager with ChangeNotifier {
   late CommonDatabase _db;
   late String _dbPath;
 
+  bool isInitialized = false;
+
   late Map<String, int> counts;
 
   var _hashedIds = <int, int>{};
@@ -303,6 +305,7 @@ class LocalFavoritesManager with ChangeNotifier {
     } else {
       appdata.settings['followUpdatesFolder'] = null;
     }
+    isInitialized = true;
     initCounts();
   }
 
@@ -438,6 +441,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   List<String> find(String id, ComicType type) {
+    if (!isInitialized) return [];
     var res = <String>[];
     for (var folder in folderNames) {
       var rows = _db.select(
@@ -669,6 +673,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   int count(String folderName) {
+    if (!isInitialized) return 0;
     return _db.select("""
       select count(*) as c
       from "$folderName"
@@ -1660,6 +1665,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   int countUpdates(String folder) {
+    if (!isInitialized) return 0;
     return _db.select("""
       select count(*) as c from "$folder"
       where has_new_update == 1;
@@ -1752,6 +1758,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   void close() {
+    isInitialized = false;
     _db.dispose();
     closeSqliteDatabase(_dbPath);
   }
