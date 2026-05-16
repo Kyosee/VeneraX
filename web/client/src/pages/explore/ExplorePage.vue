@@ -1,36 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiPost } from '@/services/api'
-import { getComicSources, batchGetComicBasicInfo } from '@/services/server-db'
+import { getComicSources } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
 import type { ComicSource } from '@/types'
 
-interface ExploreComic {
-  id: string
-  title: string
-  cover: string
-  subtitle?: string
-  author?: string
-  status?: string
-  updateTime?: string
-  language?: string
-  description?: string
-  tags?: string[]
-  pageCount?: number
-}
-
 interface ExploreSection {
   title: string
-  comics: ExploreComic[]
+  comics: Record<string, any>[]
 }
 
 const route = useRoute()
 const settingsStore = useSettingsStore()
 const sources = ref<ComicSource[]>([])
 const activeTab = ref(0)
-const comics = ref<Record<string, ExploreComic[]>>({})
+const comics = ref<Record<string, Record<string, any>[]>>({})
 const sections = ref<Record<string, ExploreSection[]>>({})
 const exploreType = ref<Record<string, string>>({})
 const loading = ref<Record<string, boolean>>({})
@@ -55,48 +41,21 @@ const gridStyle = computed(() => {
       }
 })
 
-async function enrichComicsWithLocalInfo(sourceKey: string, list: ExploreComic[]) {
-  if (!list.length) return
-  try {
-    const ids = list.map(c => ({ sourceKey, comicId: c.id }))
-    const infoMap = await batchGetComicBasicInfo(ids)
-    for (const c of list) {
-      const key = `${sourceKey}:${c.id}`
-      const info = infoMap[key]
-      if (info) {
-        if (!c.subtitle && info.subtitle) c.subtitle = info.subtitle
-        if (!c.author && info.author) c.author = info.author
-        if (info.status) c.status = info.status
-        if (info.updateTime) c.updateTime = info.updateTime
-        if (info.language) c.language = info.language
-        if (info.description) c.description = info.description
-        if (info.tags) c.tags = info.tags
-        if (info.pageCount) c.pageCount = info.pageCount
-      }
-    }
-  } catch { /* best-effort: local info is a bonus */ }
-}
-
 async function loadComics(sourceKey: string, page = 1, append = false) {
   if (!sourceKey) return
   if (loading.value[sourceKey]) return
   loading.value[sourceKey] = true
   try {
+    // Server now merges cached comic basic info (author, status, updateTime, etc.)
+    // into each comic in the explore response, so no client-side enrichment needed.
     const res = await apiPost<any>('/api/server-db/explore/list', { sourceKey, page })
     if (res?.type === 'multiPart' && Array.isArray(res.sections)) {
-      // Enrich section comics BEFORE setting reactive data so cards render with full info
-      const enrichedSections = res.sections.map((s: ExploreSection) => ({ ...s }))
-      for (const section of enrichedSections) {
-        if (section.comics?.length) await enrichComicsWithLocalInfo(sourceKey, section.comics)
-      }
       exploreType.value[sourceKey] = 'multiPart'
-      sections.value[sourceKey] = enrichedSections
+      sections.value[sourceKey] = res.sections
       finished.value[sourceKey] = true
     } else {
-      const items: ExploreComic[] = (res?.comics ?? res?.items ?? []).map((c: any) => ({ ...c }))
-      // Enrich BEFORE setting reactive data
-      await enrichComicsWithLocalInfo(sourceKey, items)
       exploreType.value[sourceKey] = 'list'
+      const items: Record<string, any>[] = res?.comics ?? res?.items ?? []
       if (append) {
         comics.value[sourceKey] = [...(comics.value[sourceKey] ?? []), ...items]
       } else {
@@ -142,24 +101,6 @@ function onScroll(e: Event) {
   showFab.value = currentScrollTop <= lastScrollTop || currentScrollTop < 50
   lastScrollTop = currentScrollTop
 }
-
-// Re-enrich with local info when navigating back from detail page (the component
-// stays mounted, so loadComics is not re-called, but the detail page may have
-// saved basic info to the DB).
-watch(() => route.path, (newPath) => {
-  if (newPath.startsWith('/explore')) {
-    const key = currentSourceKey.value
-    if (key) {
-      const items = comics.value[key]
-      if (items?.length) enrichComicsWithLocalInfo(key, items)
-      const secs = sections.value[key]
-      if (secs?.length) {
-        const all = secs.flatMap((s: any) => s.comics ?? [])
-        enrichComicsWithLocalInfo(key, all)
-      }
-    }
-  }
-})
 
 onMounted(async () => {
   await settingsStore.loadSettings()

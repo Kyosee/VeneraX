@@ -6607,31 +6607,65 @@ async function handleServerDbRoute({
       persistCookieJar,
       recordProxyRequest,
     });
+    // Collect all comics and save/query cached basic info
     let allComics = [];
     if (result && typeof result === "object" && !Array.isArray(result) && !result.comics && !result.items) {
-      const sections = Object.entries(result).map(([title, items]) => {
-        const list = Array.isArray(items) ? items : [];
-        allComics.push(...list);
-        return { title, comics: list };
-      });
-      sendJson(res, 200, { ok: true, type: "multiPart", sections });
+      allComics = Object.values(result).flatMap(items => Array.isArray(items) ? items : []);
     } else {
-      const comics = Array.isArray(result) ? result
+      allComics = Array.isArray(result) ? result
         : (result?.comics ?? result?.items ?? []);
-      allComics = comics;
-      sendJson(res, 200, { ok: true, type: "list", comics });
     }
-    // Mirror comic basic info to local DB
+    // Save and query cached basic info BEFORE sending response
+    const cachedInfo = {};
     if (allComics.length > 0) {
       try {
         await withWritableComicInfoDb(profileRoot, (db) => {
+          // Save explore data to DB (future requests benefit)
           for (const comic of allComics) {
             if (comic && typeof comic === 'object' && comic.id) {
               saveComicBasicInfo(db, sourceKey, comic);
             }
           }
+          // Query cached info for all returned comics
+          const stmt = db.prepare("select * from comic_basic_info where comic_id = ?");
+          for (const comic of allComics) {
+            if (!comic || typeof comic !== 'object' || !comic.id) continue;
+            const row = stmt.get(`${sourceKey}:${comic.id}`);
+            if (row) {
+              cachedInfo[comic.id] = {
+                subtitle: row.subtitle || undefined,
+                author: row.author || undefined,
+                status: row.status || undefined,
+                updateTime: row.update_time || undefined,
+                language: row.language || undefined,
+                description: row.description || undefined,
+                tags: row.tags_json ? JSON.parse(row.tags_json) : undefined,
+                pageCount: row.page_count || undefined,
+              };
+            }
+          }
         });
       } catch { /* best-effort */ }
+    }
+    // Merge cached info into each comic
+    function mergeCached(comic) {
+      if (!comic || typeof comic !== 'object') return comic;
+      const info = cachedInfo[comic.id];
+      if (!info) return comic;
+      const merged = { ...info, ...comic };
+      // Prefer existing fields over cached
+      if (!merged.subtitle && info.subtitle) merged.subtitle = info.subtitle;
+      return merged;
+    }
+    if (result && typeof result === "object" && !Array.isArray(result) && !result.comics && !result.items) {
+      const sections = Object.entries(result).map(([title, items]) => ({
+        title,
+        comics: (Array.isArray(items) ? items : []).map(mergeCached),
+      }));
+      sendJson(res, 200, { ok: true, type: "multiPart", sections });
+    } else {
+      const comics = allComics.map(mergeCached);
+      sendJson(res, 200, { ok: true, type: "list", comics });
     }
     return true;
   }
