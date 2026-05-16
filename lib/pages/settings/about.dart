@@ -239,16 +239,103 @@ Future<void> _startWindowsUpdate(AppUpdateInfo updateInfo) async {
     return;
   }
 
+  final tempFile = File(
+    _joinWindowsPath(Directory.systemTemp.path, 'venera_update_download.zip'),
+  );
+
+  var cancelled = false;
+  var downloadedBytes = 0;
+  var totalBytes = 0;
+  String? errorMsg;
+  final cancelToken = CancelToken();
+  void Function(VoidCallback)? rebuildDialog;
+
+  if (App.rootContext.mounted) {
+    showDialog(
+      context: App.rootContext,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            rebuildDialog = setDialogState;
+            final done = totalBytes > 0
+                ? downloadedBytes / totalBytes
+                : null;
+            return ContentDialog(
+              title: "Downloading update".tl,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (done != null)
+                    LinearProgressIndicator(value: done)
+                  else
+                    const LinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  Text(
+                    totalBytes > 0
+                        ? "${(downloadedBytes / 1024 / 1024).toStringAsFixed(1)} MB / ${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB"
+                        : "${(downloadedBytes / 1024 / 1024).toStringAsFixed(1)} MB",
+                  ),
+                  if (errorMsg != null) ...[
+                    const SizedBox(height: 8),
+                    Text(errorMsg, style: const TextStyle(color: Colors.red)),
+                  ],
+                ],
+              ).paddingHorizontal(16),
+              actions: [
+                Button.text(
+                  onPressed: () {
+                    cancelled = true;
+                    cancelToken.cancel();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text("Cancel".tl),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  try {
+    await AppDio().download(
+      updateInfo.windowsPackageUrl!,
+      tempFile.path,
+      cancelToken: cancelToken,
+      onReceiveProgress: (received, total) {
+        downloadedBytes = received;
+        totalBytes = total;
+        rebuildDialog?.call(() {});
+      },
+    );
+  } catch (e) {
+    if (cancelled) return;
+    errorMsg = e.toString();
+    App.rootPop();
+    App.rootContext.showMessage(message: "Download failed: $errorMsg");
+    return;
+  }
+
+  if (cancelled) {
+    if (tempFile.existsSync()) {
+      tempFile.deleteSync();
+    }
+    return;
+  }
+
+  App.rootPop();
   App.rootContext.showMessage(
-    message: "Preparing update. Venera will restart automatically.".tl,
+    message: "Installing update. Venera will restart automatically.".tl,
   );
   await appdata.saveData(false);
   appdata.writeImplicitData();
   await Process.start(updater.path, [
     "--app-dir",
     appDir,
-    "--package-url",
-    updateInfo.windowsPackageUrl!,
+    "--package-file",
+    tempFile.path,
     "--app-exe",
     appExe,
     "--pid",

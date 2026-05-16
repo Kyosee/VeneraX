@@ -50,7 +50,12 @@ Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
   await backupDir.create(recursive: true);
 
   final zipFile = File(_join(workDir.path, 'update.zip'));
-  await _download(config.packageUrl, zipFile, logger);
+  if (config.packageFile != null) {
+    logger.write('Using local package: ${config.packageFile}');
+    await File(config.packageFile!).copy(zipFile.path);
+  } else {
+    await _download(config.packageUrl!, zipFile, logger);
+  }
   await _expandZip(zipFile, stagingDir, logger);
 
   final payloadDir = await _findPayloadDir(stagingDir);
@@ -277,7 +282,8 @@ String _windowsArgQuote(String value) {
 class _UpdaterConfig {
   const _UpdaterConfig({
     required this.appDir,
-    required this.packageUrl,
+    this.packageUrl,
+    this.packageFile,
     this.appExe,
     this.pid,
     this.restart = false,
@@ -286,7 +292,8 @@ class _UpdaterConfig {
   });
 
   final String appDir;
-  final String packageUrl;
+  final String? packageUrl;
+  final String? packageFile;
   final String? appExe;
   final int? pid;
   final bool restart;
@@ -315,13 +322,18 @@ class _UpdaterConfig {
       }
     }
     final appDir = values['--app-dir'];
+    if (appDir == null) {
+      throw ArgumentError('--app-dir is required.');
+    }
     final packageUrl = values['--package-url'];
-    if (appDir == null || packageUrl == null) {
-      throw ArgumentError('--app-dir and --package-url are required.');
+    final packageFile = values['--package-file'];
+    if (packageUrl == null && packageFile == null) {
+      throw ArgumentError('--package-url or --package-file is required.');
     }
     return _UpdaterConfig(
       appDir: appDir,
       packageUrl: packageUrl,
+      packageFile: packageFile,
       appExe: values['--app-exe'],
       pid: int.tryParse(values['--pid'] ?? ''),
       restart: restart,
@@ -331,7 +343,12 @@ class _UpdaterConfig {
   }
 
   List<String> toArgs({bool? fromTemp, bool? elevated}) {
-    final result = <String>['--app-dir', appDir, '--package-url', packageUrl];
+    final result = <String>['--app-dir', appDir];
+    if (packageFile != null) {
+      result.addAll(['--package-file', packageFile!]);
+    } else if (packageUrl != null) {
+      result.addAll(['--package-url', packageUrl!]);
+    }
     if (appExe != null) {
       result.addAll(['--app-exe', appExe!]);
     }
