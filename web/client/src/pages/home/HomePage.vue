@@ -24,10 +24,15 @@ const syncBusy = ref(false)
 
 const followUpdateItems = computed(() => {
   const folder = settingsStore.settings.followUpdatesFolder
-  const items = folder ? favorites.value.filter(item => item.folder === folder) : favorites.value
-  return items.filter(item => item.hasNewUpdate)
+  if (!folder) return []
+  const items = favorites.value.filter(item => item.folder === folder)
+  return items.sort((a, b) => {
+    const ta = a.lastUpdateTime ? new Date(a.lastUpdateTime).getTime() : 0
+    const tb = b.lastUpdateTime ? new Date(b.lastUpdateTime).getTime() : 0
+    return tb - ta
+  })
 })
-const updateCount = computed(() => followUpdateItems.value.length)
+const updateCount = computed(() => followUpdateItems.value.filter(item => item.hasNewUpdate).length)
 
 async function refreshHomeData() {
   const [h, s, f, ss] = await Promise.allSettled([
@@ -379,6 +384,10 @@ function goSources(sourceKey?: string) {
   padding: 0 8px 16px;
   gap: 16px;
   height: 154px;
+  -webkit-overflow-scrolling: touch;
+  will-change: scroll-position;
+  transform: translateZ(0);
+  scroll-behavior: smooth;
 }
 
 .cover-scroll::-webkit-scrollbar {
@@ -389,11 +398,13 @@ function goSources(sourceKey?: string) {
   flex-shrink: 0;
   width: 98px;
   cursor: pointer;
+  transform: translateZ(0);
 }
 
 .cover-item-wrap {
   position: relative;
   display: inline-block;
+  transform: translateZ(0);
 }
 
 .cover-img {
@@ -402,6 +413,9 @@ function goSources(sourceKey?: string) {
   object-fit: cover;
   border-radius: 8px;
   background: #f0f0f0;
+  content-visibility: auto;
+  contain-intrinsic-size: 98px 136px;
+  transform: translateZ(0);
 }
 
 .update-dot {

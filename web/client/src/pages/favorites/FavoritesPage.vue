@@ -663,6 +663,7 @@ async function handleBatchMove(targetFolderId: string) {
   display: flex;
   flex-direction: column;
   will-change: scroll-position;
+  transform: translateZ(0);
 }
 
 .content-toolbar {

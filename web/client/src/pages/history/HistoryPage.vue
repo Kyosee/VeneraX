@@ -601,6 +601,7 @@ function setStatusFilter(status: 'all' | 'uncompleted' | 'completed') {
   overflow-y: auto;
   padding: 0 16px 16px;
   will-change: scroll-position;
+  transform: translateZ(0);
 }
 
 .loading-state,

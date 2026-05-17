@@ -38,12 +38,29 @@ img { display: block; }
 .scroll-container, .comic-grid, .continuous {
   -webkit-overflow-scrolling: touch;
   will-change: scroll-position;
+  transform: translateZ(0);
 }
 
 /* Prevent layout thrashing for images */
 img {
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;
+  transform: translateZ(0);
+}
+
+/* Smooth all transitions — avoid repaint jank */
+.fade-slide-enter-active,
+.fade-slide-leave-active,
+.fade-enter-active,
+.fade-leave-active,
+.slide-top-enter-active,
+.slide-top-leave-active {
+  will-change: transform, opacity;
+}
+
+/* Prevent compositor thrash for fixed/absolute elements */
+.fab-container, .fab-button {
+  transform: translateZ(0);
 }
 
 a { color: inherit; text-decoration: none; }

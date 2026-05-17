@@ -268,6 +268,7 @@ onUnmounted(() => {
   padding: 16px;
   -webkit-overflow-scrolling: touch;
   will-change: scroll-position;
+  transform: translateZ(0);
 }
 
 .comic-grid {

@@ -67,13 +67,15 @@ function onError() { hasError.value = true }
   position: relative;
   overflow: hidden;
   background: #f5f5f5;
+  transform: translateZ(0);
 }
 .proxied-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.25s ease;
+  will-change: opacity;
 }
 .proxied-image img.loaded {
   opacity: 1;
