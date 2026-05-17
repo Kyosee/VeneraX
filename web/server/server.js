@@ -6909,6 +6909,45 @@ async function handleServerDbRoute({
     return true;
   }
 
+  if (parsedUrl.pathname === "/api/server-db/search/aggregated") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const { keyword, page = 1, options } = payload;
+    if (!keyword) {
+      throw createHttpError(400, "keyword is required");
+    }
+    const entries = readServerDbComicSourceEntries(profileRoot);
+    const sourceKeys = entries
+      .map((entry) => entry.name.replace("comic_source/", "").replace(/\.(?:js|data)$/i, ""))
+      .filter((key, index, arr) => arr.indexOf(key) === index);
+
+    const results = await Promise.allSettled(
+      sourceKeys.map((sourceKey) =>
+        executeSourceMethod({
+          profileRoot,
+          sourceKey,
+          method: "search",
+          args: [keyword, page, options ?? null],
+          cookieJar,
+          persistCookieJar,
+          recordProxyRequest,
+        }),
+      ),
+    );
+
+    const comics = [];
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value?.comics) {
+        comics.push(...result.value.comics);
+      }
+    }
+
+    sendJson(res, 200, { ok: true, comics, profile: profileId });
+    return true;
+  }
+
   if (parsedUrl.pathname === "/api/server-db/comic/detail") {
     if (req.method !== "POST") {
       sendJson(res, 405, { error: "Method not allowed" });

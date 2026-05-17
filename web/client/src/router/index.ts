@@ -1,12 +1,27 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+function resolveInitialPage(): string {
+  try {
+    const raw = localStorage.getItem('venera_settings')
+    if (!raw) return '/home'
+    const settings = JSON.parse(raw)
+    const page = settings?.initialPage
+    switch (page) {
+      case '1': return '/favorites'
+      case '2': return '/explore'
+      case '3': return '/categories'
+      default: return '/home'
+    }
+  } catch { return '/home' }
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
       component: () => import('../pages/MainPage.vue'),
-      redirect: '/home',
+      redirect: resolveInitialPage,
       children: [
         { path: 'home', component: () => import('../pages/home/HomePage.vue') },
         { path: 'favorites', component: () => import('../pages/favorites/FavoritesPage.vue') },

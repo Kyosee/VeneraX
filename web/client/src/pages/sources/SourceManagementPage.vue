@@ -189,8 +189,8 @@ onMounted(() => { loadSources() })
             <div v-if="capabilities[source.key]?.account?.hasLogin" class="source-section">
               <div class="section-label">账号</div>
               <div class="account-actions">
-                <van-button size="small" icon="user-o" type="primary" plain>
-                  登录
+                <van-button size="small" icon="user-o" type="primary" plain disabled>
+                  登录（Web 端暂不支持）
                 </van-button>
               </div>
             </div>
@@ -199,7 +199,7 @@ onMounted(() => { loadSources() })
             <div v-if="capabilities[source.key]?.settings" class="source-section">
               <div class="section-label">设置</div>
               <div class="settings-info">
-                <span class="settings-hint">此漫画源有可配置的设置项</span>
+                <span class="settings-hint">此漫画源有可配置的设置项（Web 端暂不支持）</span>
               </div>
             </div>
 

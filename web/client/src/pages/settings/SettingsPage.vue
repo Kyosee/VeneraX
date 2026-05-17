@@ -342,10 +342,10 @@ async function handleImportFile(event: Event) {
         <div class="setting-row"><span>漫画缩略图的显示模式</span><select v-model="thumbnailMode" class="s-select"><option value="detailed">详细</option><option value="brief">简略</option></select></div>
         <div class="setting-row"><span>漫画缩略图的大小</span><span class="s-value">{{ thumbnailSize }}</span></div>
         <div class="slider-row"><van-slider v-model="thumbnailSize" :min="0.5" :max="2" :step="0.1" active-color="#1a2a5e" /></div>
-        <div v-if="false" class="setting-row clickable"><span>探索页面</span><van-icon name="arrow" size="14" /></div>
-        <div v-if="false" class="setting-row clickable"><span>分类页面</span><van-icon name="arrow" size="14" /></div>
-        <div v-if="false" class="setting-row clickable"><span>网络收藏页面</span><van-icon name="arrow" size="14" /></div>
-        <div v-if="false" class="setting-row clickable"><span>搜索源</span><van-icon name="arrow" size="14" /></div>
+        <div class="setting-row clickable" @click="router.push('/explore')"><span>探索页面</span><van-icon name="arrow" size="14" /></div>
+        <div class="setting-row clickable" @click="router.push('/categories')"><span>分类页面</span><van-icon name="arrow" size="14" /></div>
+        <div class="setting-row clickable" @click="router.push('/favorites')"><span>网络收藏页面</span><van-icon name="arrow" size="14" /></div>
+        <div class="setting-row clickable" @click="router.push('/sources')"><span>搜索源</span><van-icon name="arrow" size="14" /></div>
         <div class="setting-row"><span>在漫画缩略图上显示收藏状态</span><van-switch v-model="showFavBadge" size="20" /></div>
         <div class="setting-row"><span>在漫画缩略图上显示历史记录</span><van-switch v-model="showHistoryBadge" size="20" /></div>
         <div class="setting-row"><span>反转默认章节顺序</span><van-switch v-model="reverseChapters" size="20" /></div>
@@ -397,7 +397,7 @@ async function handleImportFile(event: Event) {
         <div class="setting-row"><span>添加新收藏到</span><select v-model="addNewTo" class="s-select"><option value="start">开始</option><option value="end">末尾</option></select></div>
         <div class="setting-row"><span>阅读后移动收藏</span><select v-model="moveAfterRead" class="s-select"><option value="none">无</option><option value="start">开始</option><option value="end">末尾</option></select></div>
         <div v-if="false" class="setting-row"><span>快速收藏</span><select v-model="quickFav" class="s-select"><option value="">—</option></select></div>
-        <div v-if="false" class="setting-row"><span>删除所有无效的本地收藏</span><van-button size="small" plain>删除</van-button></div>
+        <div class="setting-row"><span>删除所有无效的本地收藏</span><van-button size="small" plain disabled>Web 端不支持本地收藏</van-button></div>
         <div class="setting-row"><span>点击收藏</span><select v-model="clickFav" class="s-select"><option value="viewDetail">查看详情</option><option value="read">直接阅读</option></select></div>
       </div>
       <!-- APP_PLACEHOLDER -->
@@ -424,7 +424,7 @@ async function handleImportFile(event: Event) {
         <div class="about-logo"><img src="/favicon.png" alt="Venera" class="about-logo-img" /><div class="about-version">V2.0.0</div><div class="about-desc">Venera是一个免费的开源漫画阅读应用。</div></div>
         <div v-if="false" class="setting-row"><span>检查更新</span><van-button size="small" type="primary">检查</van-button></div>
         <div v-if="false" class="setting-row"><span>启动时检查更新</span><van-switch model-value size="20" /></div>
-        <div v-if="false" class="setting-row clickable"><span>Github</span><van-icon name="share-o" size="16" /></div>
+        <div class="setting-row clickable" @click="window.open('https://github.com/Kyosee/venera', '_blank')"><span>Github</span><van-icon name="share-o" size="16" /></div>
       </div>
       <div v-else-if="selectedKey === 'debug'" class="content">
         <h3>Debug</h3>

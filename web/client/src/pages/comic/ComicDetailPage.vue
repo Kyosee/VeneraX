@@ -45,6 +45,7 @@ const thumbnails = ref<{ url: string; ep: string; page: number }[]>([])
 const thumbnailsLoading = ref(false)
 const relatedComics = ref<(Record<string, any> & { id: string })[]>([])
 const relatedLoading = ref(false)
+const expandedReplies = ref<Set<number>>(new Set())
 const detailNotice = ref('')
 const sources = ref<ComicSource[]>([])
 const detailSourceName = ref('')
@@ -582,6 +583,11 @@ function handleMenuSelect(action: { text: string }) {
   }
 }
 
+function toggleReplies(idx: number) {
+  const set = expandedReplies.value
+  if (set.has(idx)) { set.delete(idx) } else { set.add(idx) }
+}
+
 function scrollToComments() {
   const el = document.querySelector('.comments-section')
   if (el) el.scrollIntoView({ behavior: 'smooth' })
@@ -689,6 +695,10 @@ onUnmounted(() => {
             <div v-if="displayStatus" class="capsule-row">
               <span class="capsule-label" style="background: #9c27b02e; color: #9c27b0">状态</span>
               <span class="capsule-value">{{ displayStatus }}</span>
+            </div>
+            <div v-if="comic.pagesText" class="capsule-row">
+              <span class="capsule-label" style="background: #ff98002e; color: #ff9800">页数</span>
+              <span class="capsule-value">{{ comic.pagesText }}</span>
             </div>
             <div v-if="displayProgress" class="capsule-row">
               <span class="capsule-label" style="background: #4caf502e; color: #4caf50">进度</span>
@@ -873,9 +883,13 @@ onUnmounted(() => {
                 <span class="comment-time">{{ comment.time || '' }}</span>
               </div>
               <div class="comment-content">{{ comment.content }}</div>
-              <div v-if="comment.replyCount" class="comment-replies">
+              <div v-if="comment.replyCount" class="comment-replies" @click.stop="toggleReplies(idx)">
                 <van-icon name="chat-o" size="12" />
                 <span>{{ comment.replyCount }} 回复</span>
+                <van-icon :name="expandedReplies.has(idx) ? 'arrow-up' : 'arrow-down'" size="12" />
+              </div>
+              <div v-if="comment.replyCount && expandedReplies.has(idx)" class="comment-replies-placeholder">
+                回复功能暂未实现
               </div>
             </div>
           </div>
@@ -1363,6 +1377,20 @@ onUnmounted(() => {
   font-size: 12px;
   color: #4f6ef7;
   cursor: pointer;
+  user-select: none;
+}
+.comment-replies:hover {
+  opacity: 0.8;
+}
+.comment-replies-placeholder {
+  margin-top: 8px;
+  margin-left: 0;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #999;
+  text-align: center;
 }
 .load-more {
   text-align: center;

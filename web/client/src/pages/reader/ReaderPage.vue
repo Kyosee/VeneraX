@@ -872,10 +872,10 @@ onUnmounted(() => {
           <van-cell title="显示系统状态栏" v-if="false">
             <template #right-icon><van-switch v-model="showStatusBar" size="20" @change="settingsStore.update('showStatusBar', showStatusBar)" /></template>
           </van-cell>
-          <van-cell title="显示章节评论" v-if="false">
+          <van-cell title="显示章节评论">
             <template #right-icon><van-switch v-model="showChapterComments" size="20" @change="settingsStore.update('showChapterComments', showChapterComments)" /></template>
           </van-cell>
-          <van-cell title="章节末尾显示评论" v-if="false">
+          <van-cell title="章节末尾显示评论">
             <template #right-icon><van-switch v-model="showChapterCommentsAtEnd" size="20" @change="settingsStore.update('showChapterCommentsAtEnd', showChapterCommentsAtEnd)" /></template>
           </van-cell>
           <van-cell title="使用音量键翻页" v-if="false">
