@@ -45,6 +45,7 @@ const preloadCount = ref(4)
 const scrollSpeed = ref(1)
 const readerScreenPicNumberForLandscape = ref(1)
 const readerScreenPicNumberForPortrait = ref(1)
+const isLandscape = ref(window.innerWidth > window.innerHeight)
 const showTimeAndBattery = ref(true)
 const showStatusBar = ref(false)
 const showChapterComments = ref(true)
@@ -80,6 +81,7 @@ let lastTapY = 0
 
 // Long-press
 const showImageActions = ref(false)
+const longPressImageIndex = ref(-1)
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let longPressTriggered = false
 
@@ -91,7 +93,7 @@ let applyingSettings = false
 // Fullscreen
 const isFullscreen = ref(false)
 
-const totalPages = computed(() => images.value.length)
+const totalPages = computed(() => isGallery.value ? groupedPages.value.length : images.value.length)
 const isGallery = computed(() => readingMode.value.startsWith('gallery'))
 const isContinuous = computed(() => readingMode.value.startsWith('continuous'))
 const currentChapterBoundary = computed(() => {
@@ -104,12 +106,52 @@ const currentChapterBoundary = computed(() => {
   }
   return bounds[bounds.length - 1] // fallback to last
 })
-const currentChapterPage = computed(() => currentPage.value - currentChapterBoundary.value.startIndex)
-const currentChapterPageCount = computed(() => currentChapterBoundary.value.length)
+const currentChapterPage = computed(() => isGallery.value ? currentGroupIndex.value : currentPage.value - currentChapterBoundary.value.startIndex)
+const currentChapterPageCount = computed(() => isGallery.value ? groupedPages.value.length : currentChapterBoundary.value.length)
 const isRTL = computed(() => readingMode.value.includes('RightToLeft'))
 const isVerticalMode = computed(() => readingMode.value.includes('TopToBottom'))
 const isContinuousHorizontal = computed(() => isContinuous.value && !isVerticalMode.value)
-const pageDisplay = computed(() => totalPages.value ? `E${chapterIndex.value + 1} : P${currentPage.value + 1}` : '')
+
+const nPerScreen = computed(() => {
+  const n = isLandscape.value
+    ? readerScreenPicNumberForLandscape.value
+    : readerScreenPicNumberForPortrait.value
+  return Math.max(1, n)
+})
+
+const groupedPages = computed(() => {
+  const n = nPerScreen.value
+  const groups: number[][] = []
+  let i = 0
+  while (i < images.value.length) {
+    const isFirst = groups.length === 0
+    const count = (isFirst && showSingleImageOnFirstPage.value) ? 1 : n
+    const g: number[] = []
+    for (let j = 0; j < count && i < images.value.length; j++, i++) {
+      g.push(i)
+    }
+    groups.push(g)
+  }
+  return groups
+})
+
+const currentGroupIndex = computed(() => {
+  if (!isGallery.value) return currentPage.value
+  if (!groupedPages.value.length) return 0
+  let offset = 0
+  for (let gi = 0; gi < groupedPages.value.length; gi++) {
+    if (currentPage.value < offset + groupedPages.value[gi].length) return gi
+    offset += groupedPages.value[gi].length
+  }
+  return Math.max(0, groupedPages.value.length - 1)
+})
+
+const currentGroup = computed(() => groupedPages.value[currentGroupIndex.value] ?? [])
+const pageDisplay = computed(() => {
+  if (!totalPages.value) return ''
+  const p = isGallery.value ? currentGroupIndex.value + 1 : currentPage.value + 1
+  return `E${chapterIndex.value + 1} : P${p}`
+})
 const showPageNumber = computed(() => showPageNum.value)
 const canDoubleTapZoom = computed(() => doubleTapZoom.value)
 const canLongPressZoom = computed(() => longPressZoom.value)
@@ -121,11 +163,16 @@ watch([currentPage, currentChapterBoundary], () => {
   sliderVal.value = currentChapterPage.value + 1
 })
 function onSliderChange(v: number) {
-  const globalPage = currentChapterBoundary.value.startIndex + Math.max(0, Math.min(v - 1, currentChapterPageCount.value - 1))
-  currentPage.value = globalPage
-  if (isContinuous.value && continuousEl.value) {
-    const els = continuousEl.value.querySelectorAll('.img-placeholder')
-    if (els[globalPage]) els[globalPage].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+  if (isGallery.value) {
+    const gi = Math.max(0, Math.min(v - 1, groupedPages.value.length - 1))
+    currentPage.value = groupedPages.value[gi]?.[0] ?? currentPage.value
+  } else {
+    const globalPage = currentChapterBoundary.value.startIndex + Math.max(0, Math.min(v - 1, currentChapterPageCount.value - 1))
+    currentPage.value = globalPage
+    if (continuousEl.value) {
+      const els = continuousEl.value.querySelectorAll('.img-placeholder')
+      if (els[globalPage]) els[globalPage].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+    }
   }
 }
 
@@ -250,20 +297,51 @@ function goPage(p: number) {
     goChapterByOffset(-1)
   }
 }
-function nextPage() { isRTL.value ? goPage(currentPage.value - 1) : goPage(currentPage.value + 1) }
-function prevPage() { isRTL.value ? goPage(currentPage.value + 1) : goPage(currentPage.value - 1) }
+function nextPage() {
+  if (!isGallery.value) { isRTL.value ? goPage(currentPage.value - 1) : goPage(currentPage.value + 1); return }
+  const ci = currentGroupIndex.value
+  const gp = groupedPages.value
+  if (isRTL.value) {
+    if (ci > 0) { currentPage.value = gp[ci - 1][0] }
+    else if (continuousChapter.value) { goChapterByOffset(1) }
+  } else {
+    if (ci < gp.length - 1) { currentPage.value = gp[ci + 1][0] }
+    else if (continuousChapter.value) { goChapterByOffset(1) }
+  }
+}
+function prevPage() {
+  if (!isGallery.value) { isRTL.value ? goPage(currentPage.value + 1) : goPage(currentPage.value - 1); return }
+  const ci = currentGroupIndex.value
+  const gp = groupedPages.value
+  if (isRTL.value) {
+    if (ci < gp.length - 1) { currentPage.value = gp[ci + 1][0] }
+    else if (continuousChapter.value) { goChapterByOffset(-1) }
+  } else {
+    if (ci > 0) { currentPage.value = gp[ci - 1][0] }
+    else if (continuousChapter.value) { goChapterByOffset(-1) }
+  }
+}
 function goFirst() {
-  currentPage.value = currentChapterBoundary.value.startIndex
-  if (isContinuous.value && continuousEl.value) {
-    const els = continuousEl.value.querySelectorAll('.img-placeholder')
-    if (els[currentPage.value]) els[currentPage.value].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+  if (isGallery.value) {
+    currentPage.value = groupedPages.value[0]?.[0] ?? 0
+  } else {
+    currentPage.value = currentChapterBoundary.value.startIndex
+    if (continuousEl.value) {
+      const els = continuousEl.value.querySelectorAll('.img-placeholder')
+      if (els[currentPage.value]) els[currentPage.value].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+    }
   }
 }
 function goLast() {
-  currentPage.value = Math.max(0, currentChapterBoundary.value.startIndex + currentChapterPageCount.value - 1)
-  if (isContinuous.value && continuousEl.value) {
-    const els = continuousEl.value.querySelectorAll('.img-placeholder')
-    if (els[currentPage.value]) els[currentPage.value].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+  if (isGallery.value) {
+    const last = groupedPages.value[groupedPages.value.length - 1]
+    currentPage.value = last?.[0] ?? 0
+  } else {
+    currentPage.value = Math.max(0, currentChapterBoundary.value.startIndex + currentChapterPageCount.value - 1)
+    if (continuousEl.value) {
+      const els = continuousEl.value.querySelectorAll('.img-placeholder')
+      if (els[currentPage.value]) els[currentPage.value].scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' })
+    }
   }
 }
 function goChapterByOffset(offset: number) {
@@ -335,7 +413,7 @@ function startAutoPage() {
     autoPageCountdown.value -= 0.1
     if (autoPageCountdown.value <= 0) {
       autoPageCountdown.value = autoPageInterval.value
-      if (currentPage.value < totalPages.value - 1) nextPage()
+      if (currentGroupIndex.value < totalPages.value - 1) nextPage()
       else stopAutoPage()
     }
   }, 100)
@@ -382,7 +460,8 @@ function onImageLoad(e: Event, index: number) {
 }
 
 // Long-press image actions
-function onImagePointerDown(_e: PointerEvent) {
+function onImagePointerDown(e: PointerEvent, imgIdx?: number) {
+  if (imgIdx !== undefined) longPressImageIndex.value = imgIdx
   if (!canLongPressZoom.value) return
   longPressTriggered = false
   longPressTimer = setTimeout(() => {
@@ -399,13 +478,14 @@ function onImagePointerCancel() {
 
 async function saveImage() {
   showImageActions.value = false
-  const url = imageProxyUrl(images.value[currentPage.value])
+  const imgIdx = isGallery.value && longPressImageIndex.value >= 0 ? longPressImageIndex.value : currentPage.value
+  const url = imageProxyUrl(images.value[imgIdx])
   try {
     const resp = await fetch(url)
     const blob = await resp.blob()
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `page_${currentPage.value + 1}.jpg`
+    a.download = `page_${imgIdx + 1}.jpg`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -415,7 +495,8 @@ async function saveImage() {
 
 async function copyImage() {
   showImageActions.value = false
-  const url = imageProxyUrl(images.value[currentPage.value])
+  const imgIdx = isGallery.value && longPressImageIndex.value >= 0 ? longPressImageIndex.value : currentPage.value
+  const url = imageProxyUrl(images.value[imgIdx])
   try {
     const resp = await fetch(url)
     const blob = await resp.blob()
@@ -491,10 +572,25 @@ function onKeydown(e: KeyboardEvent) {
   else if (e.key === 'F11') { e.preventDefault(); toggleFullscreen() }
 }
 
+function onResize() {
+  isLandscape.value = window.innerWidth > window.innerHeight
+}
+
 function preloadImages() {
   const count = Math.max(0, Number(settingsStore.settings.preloadCount) || 0)
-  for (let i = currentPage.value + 1; i < Math.min(currentPage.value + count + 1, totalPages.value); i++) {
-    const img = new Image(); img.src = imageProxyUrl(images.value[i])
+  if (isGallery.value) {
+    let loaded = 0
+    for (let gi = currentGroupIndex.value + 1; gi < groupedPages.value.length && loaded < count; gi++) {
+      for (const idx of groupedPages.value[gi]) {
+        if (loaded >= count) break
+        const img = new Image(); img.src = imageProxyUrl(images.value[idx])
+        loaded++
+      }
+    }
+  } else {
+    for (let i = currentPage.value + 1; i < Math.min(currentPage.value + count + 1, totalPages.value); i++) {
+      const img = new Image(); img.src = imageProxyUrl(images.value[i])
+    }
   }
 }
 
@@ -660,10 +756,12 @@ onMounted(async () => {
   } catch { /* ignore */ }
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('resize', onResize)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.removeEventListener('resize', onResize)
   if (saveTimer) clearTimeout(saveTimer)
   stopAutoPage()
   if (longPressTimer) clearTimeout(longPressTimer)
@@ -679,21 +777,24 @@ onUnmounted(() => {
       <van-button type="primary" size="small" @click.stop="fetchPages">重试</van-button>
     </div>
     <template v-else>
-      <div v-if="isGallery" class="gallery">
-        <img
-          :src="imageProxyUrl(images[currentPage])"
-          class="gallery-img"
-          :class="{ 'zoom-transition': pageAnimation }"
-          :style="{
-            transform: `translateX(${translateX}px) scale(${zoomScale})`,
-            transformOrigin: `${zoomOriginX}% ${zoomOriginY}%`
-          }"
-          draggable="false"
-          @pointerdown="onImagePointerDown"
-          @pointerup="onImagePointerUp"
-          @pointercancel="onImagePointerCancel"
-          @contextmenu.prevent
-        />
+      <div v-if="isGallery" class="gallery" :style="{ transform: `translateX(${translateX}px)` }">
+        <div
+          class="gallery-page"
+          :class="{ 'gallery-page-h': isLandscape, 'gallery-page-v': !isLandscape, 'zoom-transition': pageAnimation }"
+          :style="{ transform: `scale(${zoomScale})`, transformOrigin: `${zoomOriginX}% ${zoomOriginY}%` }"
+        >
+          <img
+            v-for="idx in currentGroup"
+            :key="idx"
+            :src="imageProxyUrl(images[idx])"
+            class="gallery-img"
+            draggable="false"
+            @pointerdown="(e: PointerEvent) => onImagePointerDown(e, idx)"
+            @pointerup="onImagePointerUp"
+            @pointercancel="onImagePointerCancel"
+            @contextmenu.prevent
+          />
+        </div>
       </div>
       <div
         v-else
@@ -921,7 +1022,10 @@ onUnmounted(() => {
 .reader { position: fixed; inset: 0; background: #000; color: #fff; user-select: none; overflow: hidden; z-index: 100; }
 .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
 .gallery { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.gallery-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.gallery-page { display: flex; width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+.gallery-page-h { flex-direction: row; }
+.gallery-page-v { flex-direction: column; }
+.gallery-img { min-width: 0; min-height: 0; object-fit: contain; flex: 1 1 0; }
 .zoom-transition { transition: transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1); }
 .continuous { width: 100%; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .continuous.horizontal { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; }

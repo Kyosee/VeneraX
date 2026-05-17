@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { apiPost } from '@/services/api'
 import ProxiedImage from '@/components/ProxiedImage.vue'
-import { getComicSources, getSourceCapabilities } from '@/services/server-db'
+import { getComicSources, getSourceCapabilities, getRanking } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
 import type { ComicSource, SourceCapabilities, SourceSearchOption } from '@/types'
@@ -43,6 +43,16 @@ const comicsError = ref<string | null>(null)
 const comicsHasMore = ref(false)
 const filterOptions = ref<string[]>([])
 
+// Ranking state
+const rankingActive = ref(false)
+const rankingOptions = ref<Array<{ key: string; label: string }>>([])
+const rankingSelected = ref('')
+const rankingComics = ref<CategoryComic[]>([])
+const rankingPage = ref(1)
+const rankingLoading = ref(false)
+const rankingError = ref<string | null>(null)
+const rankingHasMore = ref(false)
+
 const currentSourceKey = computed(() => sources.value[activeTab.value]?.key ?? '')
 const currentSourceName = computed(() => sources.value[activeTab.value]?.name ?? currentSourceKey.value)
 const showComicsList = computed(() => selectedCategory.value !== null)
@@ -51,6 +61,24 @@ const currentCategoryOptions = computed<SourceSearchOption[]>(() => {
   const caps = capabilities.value[currentSourceKey.value]
   return caps?.categoryComics?.optionList ?? []
 })
+
+function parseRankingOption(entry: string): { key: string; label: string } {
+  const idx = entry.indexOf('-')
+  if (idx > 0) return { key: entry.substring(0, idx), label: entry.substring(idx + 1) }
+  return { key: entry, label: entry }
+}
+
+function loadRankingOptions(sourceKey: string) {
+  const caps = capabilities.value[sourceKey]
+  if (!caps?.categoryComics?.rankingOptions) {
+    rankingOptions.value = []
+    return
+  }
+  rankingOptions.value = caps.categoryComics.rankingOptions.map(parseRankingOption)
+  if (rankingOptions.value.length > 0) {
+    rankingSelected.value = rankingOptions.value[0].key
+  }
+}
 
 const gridStyle = computed(() => {
   const scale = Number(settingsStore.settings.thumbnailSize || 1)
@@ -219,6 +247,68 @@ async function retryComics() {
   await loadCategoryComics(currentSourceKey.value, selectedCategory.value, true)
 }
 
+async function enterRanking(sourceKey: string) {
+  // Ensure capabilities are loaded
+  if (capabilities.value[sourceKey] === undefined) {
+    try {
+      const caps = await getSourceCapabilities(sourceKey)
+      capabilities.value[sourceKey] = caps
+    } catch { capabilities.value[sourceKey] = null }
+  }
+  rankingActive.value = true
+  rankingComics.value = []
+  rankingPage.value = 1
+  rankingError.value = null
+  rankingHasMore.value = false
+  loadRankingOptions(sourceKey)
+  if (rankingSelected.value) {
+    loadRankingComics(sourceKey, true)
+  }
+}
+
+async function loadRankingComics(sourceKey: string, reset = false) {
+  if (!sourceKey || !rankingSelected.value) return
+  if (rankingLoading.value) return
+  rankingLoading.value = true
+  rankingError.value = null
+  const page = reset ? 1 : rankingPage.value + 1
+  try {
+    const res = await getRanking(sourceKey, rankingSelected.value, page)
+    if (reset) {
+      rankingComics.value = res.comics
+    } else {
+      rankingComics.value = [...rankingComics.value, ...res.comics]
+    }
+    rankingPage.value = page
+    rankingHasMore.value = res.hasMore
+  } catch (e: any) {
+    rankingError.value = e.message ?? 'Failed to load ranking'
+  } finally {
+    rankingLoading.value = false
+  }
+}
+
+function onRankingOptionChange() {
+  rankingComics.value = []
+  rankingPage.value = 1
+  rankingHasMore.value = false
+  loadRankingComics(currentSourceKey.value, true)
+}
+
+function onBackFromRanking() {
+  rankingActive.value = false
+  rankingComics.value = []
+  rankingPage.value = 1
+}
+
+async function loadMoreRanking() {
+  await loadRankingComics(currentSourceKey.value, false)
+}
+
+async function retryRanking() {
+  await loadRankingComics(currentSourceKey.value, true)
+}
+
 onMounted(async () => {
   await settingsStore.loadSettings()
   try {
@@ -306,6 +396,61 @@ onMounted(async () => {
       </div>
     </template>
 
+    <!-- Ranking sub-view -->
+    <template v-else-if="rankingActive">
+      <van-nav-bar
+        title="排行榜"
+        left-arrow
+        @click-left="onBackFromRanking"
+      />
+
+      <div v-if="rankingOptions.length > 1" class="ranking-options">
+        <van-tag
+          v-for="opt in rankingOptions"
+          :key="opt.key"
+          :type="rankingSelected === opt.key ? 'primary' : 'default'"
+          size="medium"
+          class="ranking-option-chip"
+          @click="rankingSelected = opt.key; onRankingOptionChange()"
+        >
+          {{ opt.label }}
+        </van-tag>
+      </div>
+
+      <div class="comics-content">
+        <div v-if="rankingLoading && !rankingComics.length" class="loading-state">
+          <van-loading size="36px" color="#4f6ef7" vertical>Loading...</van-loading>
+        </div>
+
+        <div v-if="rankingError && !rankingComics.length && !rankingLoading" class="error-state">
+          <van-empty image="error" :description="rankingError" />
+          <van-button type="primary" size="small" @click="retryRanking">Retry</van-button>
+        </div>
+
+        <div v-if="rankingComics.length" class="comic-grid" :style="gridStyle">
+          <ComicCard
+            v-for="comic in rankingComics"
+            :key="comic.id"
+            :comic="comic"
+            :source-key="currentSourceKey"
+            :source-name="currentSourceName"
+            class="comic-card"
+          />
+        </div>
+
+        <div v-if="rankingComics.length && rankingHasMore" class="load-more">
+          <van-loading v-if="rankingLoading" size="24px" />
+          <van-button v-else size="small" plain @click="loadMoreRanking">Load more</van-button>
+        </div>
+
+        <van-empty
+          v-if="!rankingLoading && !rankingComics.length && !rankingError"
+          description="No ranking data"
+          image="search"
+        />
+      </div>
+    </template>
+
     <!-- Main categories view -->
     <template v-else>
       <van-empty v-if="!sources.length" description="No comic sources available" />
@@ -322,6 +467,21 @@ onMounted(async () => {
       >
         <van-tab v-for="source in sources" :key="source.key" :title="source.name">
           <div class="categories-content">
+            <!-- Ranking quick access button -->
+            <div
+              v-if="capabilities[source.key] && (capabilities[source.key]!.category?.enableRankingPage || capabilities[source.key]!.categoryComics?.hasRanking)"
+              class="ranking-quick-access"
+            >
+              <van-button
+                type="primary"
+                size="small"
+                icon="chart-trending-o"
+                @click="enterRanking(source.key)"
+              >
+                排行榜
+              </van-button>
+            </div>
+
             <div v-if="catLoading[source.key]" class="loading-state">
               <van-loading size="36px" color="#4f6ef7" vertical>Loading categories...</van-loading>
             </div>
@@ -577,5 +737,23 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   padding: 16px 0 24px;
+}
+
+/* Ranking */
+.ranking-quick-access {
+  padding: 8px 0 12px;
+}
+
+.ranking-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ranking-option-chip {
+  cursor: pointer;
+  transition: all 0.2s;
 }
 </style>

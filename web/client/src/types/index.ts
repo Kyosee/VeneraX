@@ -127,6 +127,7 @@ export interface SourceCapabilities {
     hasLoad: boolean
     optionList: SourceSearchOption[]
     hasRanking: boolean
+    rankingOptions: string[] | null
   } | null
   comic: {
     hasLoadInfo: boolean

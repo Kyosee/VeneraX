@@ -5043,6 +5043,20 @@ async function executeSourceMethod({
         return sourceInstance.comic.loadRelated.call(sourceInstance.comic, methodArgs[0]);
       }
     }
+    if (methodName === 'getRanking') {
+      const option = methodArgs[0];
+      const page = methodArgs[1];
+      const ranking = sourceInstance?.categoryComics?.ranking;
+      if (ranking && typeof ranking === 'object') {
+        if (typeof ranking.load === 'function') {
+          return ranking.load.call(ranking, option, page);
+        }
+        if (typeof ranking.loadWithNext === 'function') {
+          return ranking.loadWithNext.call(ranking, option, page === 1 ? null : String(page));
+        }
+      }
+      throw new Error('Ranking not available for this source');
+    }
     throw new Error('Method ' + methodName + ' not found on source');
   }
   if (!sourceInstance) {
@@ -5128,10 +5142,17 @@ function serializeCategoryConfig(category) {
 
 function serializeCategoryComicsConfig(categoryComics) {
   if (!categoryComics || typeof categoryComics !== "object") return null;
+  const ranking = categoryComics.ranking;
+  const hasRanking = ranking != null && typeof ranking === "object";
+  let rankingOptions = null;
+  if (hasRanking && Array.isArray(ranking.options)) {
+    rankingOptions = ranking.options.map(String);
+  }
   return {
     hasLoad: typeof categoryComics.load === "function",
     optionList: serializeOptionList(categoryComics.optionList),
-    hasRanking: categoryComics.ranking != null && typeof categoryComics.ranking === "object",
+    hasRanking,
+    rankingOptions,
   };
 }
 
@@ -6899,6 +6920,46 @@ async function handleServerDbRoute({
       try {
         await withWritableComicInfoDb(profileRoot, (db) => {
           for (const comic of catComics) {
+            if (comic && typeof comic === 'object' && comic.id) {
+              saveComicBasicInfo(db, sourceKey, comic);
+            }
+          }
+        });
+      } catch { /* best-effort */ }
+    }
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/ranking") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const { sourceKey, option, page = 1 } = payload;
+    if (!sourceKey || !option) {
+      throw createHttpError(400, "sourceKey and option are required");
+    }
+    const result = await executeSourceMethod({
+      profileRoot,
+      sourceKey,
+      method: "getRanking",
+      args: [option, page],
+      cookieJar,
+      persistCookieJar,
+      recordProxyRequest,
+    });
+    const rankingComics = result?.comics ?? [];
+    sendJson(res, 200, {
+      ok: true,
+      comics: rankingComics,
+      hasMore: result?.hasMore ?? false,
+      maxPage: result?.maxPage ?? null,
+    });
+    // Mirror comic basic info to local DB
+    if (Array.isArray(rankingComics) && rankingComics.length > 0) {
+      try {
+        await withWritableComicInfoDb(profileRoot, (db) => {
+          for (const comic of rankingComics) {
             if (comic && typeof comic === 'object' && comic.id) {
               saveComicBasicInfo(db, sourceKey, comic);
             }

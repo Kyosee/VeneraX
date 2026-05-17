@@ -173,6 +173,11 @@ export async function searchComics(sourceKey: string, keyword: string, page = 1,
   return { comics: res?.comics ?? [], hasMore: res?.hasMore ?? false }
 }
 
+export async function getRanking(sourceKey: string, option: string, page = 1): Promise<{ comics: any[], hasMore: boolean }> {
+  const res = await apiPost<any>('/api/server-db/ranking', { sourceKey, option, page })
+  return { comics: res?.comics ?? [], hasMore: res?.hasMore ?? false }
+}
+
 export async function searchAllComics(keyword: string, page = 1, options?: string[]): Promise<{ comics: any[] }> {
   const res = await apiPost<any>('/api/server-db/search/aggregated', { keyword, page, options })
   return { comics: res?.comics ?? [] }

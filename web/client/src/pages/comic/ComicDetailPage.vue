@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiPost } from '@/services/api'
-import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory, createFolder } from '@/services/server-db'
+import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory, createFolder, markAsRead } from '@/services/server-db'
 import { resolveSourceKey, sourceTypeFromKey } from '@/utils/source'
 import { useSettingsStore } from '@/stores/settings'
 import ProxiedImage from '@/components/ProxiedImage.vue'
@@ -556,6 +556,25 @@ async function shareComic() {
   }
 }
 
+async function markAsReadHandler() {
+  if (!comic.value) return
+  const folder = comic.value.folder || favoriteFolder.value
+  if (!folder) {
+    showToast('请先收藏此漫画')
+    return
+  }
+  try {
+    await markAsRead(folder, comicId.value, favoriteType())
+    showToast('已标记为已读')
+    // Refresh reading progress
+    lastReadChapterId.value = null
+    lastReadPage.value = 1
+    await fetchHistory()
+  } catch (e: any) {
+    showToast(e.message || '标记失败')
+  }
+}
+
 function onTagClick(tag: string) {
   router.push({ path: '/search', query: { keyword: tag, source: sourceKey.value } })
 }
@@ -740,6 +759,10 @@ onUnmounted(() => {
           <van-icon name="share-o" class="action-icon" />
           <span>分享</span>
         </button>
+        <button class="action-btn" style="background:#e74c3c;color:#fff;border-color:#e74c3c" @click="markAsReadHandler">
+          <van-icon name="checked" class="action-icon" />
+          <span>标记已读</span>
+        </button>
       </div>
 
       <!-- Action Buttons - Mobile (compact row + full-width row) -->
@@ -767,6 +790,10 @@ onUnmounted(() => {
           <button class="action-btn compact" style="background:#5b9bd5;color:#fff;border-color:#5b9bd5" @click="shareComic">
             <van-icon name="share-o" class="action-icon" />
             <span>分享</span>
+          </button>
+          <button class="action-btn compact" style="background:#e74c3c;color:#fff;border-color:#e74c3c" @click="markAsReadHandler">
+            <van-icon name="checked" class="action-icon" />
+            <span>标记已读</span>
           </button>
         </div>
         <div class="mobile-full-row">
