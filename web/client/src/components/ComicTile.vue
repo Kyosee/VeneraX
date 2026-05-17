@@ -159,11 +159,10 @@ const styleVars = computed(() => ({
 
 /* Status icons (top-left, matches APP ComicTile) */
 .status-icons {
-  position: absolute; top: 8px; left: 6px;
+  position: absolute; top: 0; left: 0;
   display: flex; gap: 0; height: 24px; z-index: 2;
-  border-radius: 4px; overflow: hidden;
 }
-.comic-tile.detailed .status-icons { left: 16px; }
+.comic-tile.detailed .status-icons { left: 0; }
 .icon-fav {
   display: flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; background: #4caf50; flex-shrink: 0;
@@ -181,7 +180,7 @@ const styleVars = computed(() => ({
 
 /* Episode badge (bottom-left, matches APP _buildEpisodeBadge) */
 .episode-badge {
-  position: absolute; left: 2px; bottom: 2px; max-width: 72%;
+  position: absolute; left: 0; bottom: 0; max-width: 72%;
   display: flex; flex-direction: column; gap: 1px;
   padding: 2px 6px; border-radius: 6px;
   background: rgba(33, 150, 243, 0.72); z-index: 2;
