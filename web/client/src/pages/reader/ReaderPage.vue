@@ -712,11 +712,11 @@ watch(currentPage, () => {
 })
 watch(() => route.query.ep, () => { fetchPages() })
 watch(readingMode, () => {
-  if (isContinuous.value) nextTick(() => {
+  // Only scroll to position if resuming from saved page, not on initial load
+  if (isContinuous.value && currentPage.value > 0) nextTick(() => {
     const els = continuousEl.value?.querySelectorAll('.img-placeholder')
     if (els?.[currentPage.value]) els[currentPage.value].scrollIntoView()
   })
-  // Stop auto page if switching to continuous
   if (isContinuous.value && autoPageEnabled.value) {
     autoPageEnabled.value = false; stopAutoPage()
   }
@@ -834,7 +834,7 @@ onUnmounted(() => {
     <!-- Continuous mode page indicator -->
     <transition name="fade">
       <div v-if="isContinuous && showPageNumber && showPageIndicator && totalPages > 0" class="page-indicator-pill">
-        {{ currentPage + 1 }} / {{ totalPages }}
+        {{ currentChapterPage + 1 }} / {{ currentChapterPageCount }}
       </div>
     </transition>
 
