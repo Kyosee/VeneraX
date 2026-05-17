@@ -37,7 +37,7 @@ flutter build macos      # macOS
 
 ### Web PWA
 
-Vue 3 PWA powered by a Node.js server + Rust image proxy sidecar.
+Vue 3 PWA powered by a Node.js server + Rust image proxy sidecar. Primarily for iOS users who cannot sideload native apps — host on a local server and access via Safari.
 
 **Docker (Recommended)**
 

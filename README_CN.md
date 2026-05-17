@@ -37,7 +37,7 @@ flutter build macos      # macOS
 
 ### Web PWA端
 
-Vue 3 PWA，由 Node.js 服务端 + Rust 图片代理侧车驱动。
+Vue 3 PWA，由 Node.js 服务端 + Rust 图片代理侧车驱动。主要用于 iOS 用户（无法侧载原生应用），部署在本地服务器后通过 Safari 访问。
 
 **Docker（推荐）**
 
