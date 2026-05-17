@@ -49,7 +49,7 @@ const searchKeyword = ref('')
 
 function toggleSource(key: string) {
   const s = new Set(selectedSourceKeys.value)
-  if (s.has(key)) s.delete(key) else s.add(key)
+  if (s.has(key)) { s.delete(key) } else { s.add(key) }
   selectedSourceKeys.value = s
 }
 
