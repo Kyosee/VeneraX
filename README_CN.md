@@ -1,7 +1,7 @@
 # Venera
 
 [![Flutter](https://img.shields.io/badge/flutter-3.41.4-blue)](https://flutter.dev/)
-[![AI-Driven](https://img.shields.io/badge/AI--Driven-Claude%20Opus%204.7-6e47ff)](https://claude.ai)
+[![AI-Driven](https://img.shields.io/badge/AI--Driven-Claude%20|%20Codex%20|%20DeepSeek-6e47ff)](https://claude.ai)
 [![License](https://img.shields.io/github/license/kyosee/venera)](https://github.com/kyosee/venera/blob/master/LICENSE)
 [![Stars](https://img.shields.io/github/stars/kyosee/venera?style=flat)](https://github.com/kyosee/venera/stargazers)
 [![Release](https://img.shields.io/github/v/release/kyosee/venera)](https://github.com/kyosee/venera/releases)
