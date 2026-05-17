@@ -31,6 +31,9 @@ function checkMobile() {
 function selectCategory(key: string) {
   selectedKey.value = key
 }
+function openGithub() {
+  globalThis.open('https://github.com/Kyosee/venera', '_blank')
+}
 function backFromDetail() {
   if (isMobile.value && selectedKey.value) {
     selectedKey.value = null
@@ -424,7 +427,7 @@ async function handleImportFile(event: Event) {
         <div class="about-logo"><img src="/favicon.png" alt="Venera" class="about-logo-img" /><div class="about-version">V2.0.0</div><div class="about-desc">Venera是一个免费的开源漫画阅读应用。</div></div>
         <div v-if="false" class="setting-row"><span>检查更新</span><van-button size="small" type="primary">检查</van-button></div>
         <div v-if="false" class="setting-row"><span>启动时检查更新</span><van-switch model-value size="20" /></div>
-        <div class="setting-row clickable" @click="() => window.open('https://github.com/Kyosee/venera', '_blank')"><span>Github</span><van-icon name="share-o" size="16" /></div>
+        <div class="setting-row clickable" @click="openGithub"><span>Github</span><van-icon name="share-o" size="16" /></div>
       </div>
       <div v-else-if="selectedKey === 'debug'" class="content">
         <h3>Debug</h3>

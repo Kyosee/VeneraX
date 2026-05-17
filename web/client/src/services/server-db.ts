@@ -288,7 +288,7 @@ export interface SourceMigrationParams {
 }
 
 export async function startSourceMigration(params: SourceMigrationParams): Promise<string> {
-  const res = await apiPost<any>('/api/server-db/source-migration/start', params as Record<string, unknown>)
+  const res = await apiPost<any>('/api/server-db/source-migration/start', params as unknown as Record<string, unknown>)
   return res?.taskId ?? ''
 }
 

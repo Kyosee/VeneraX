@@ -265,8 +265,7 @@ watch(() => props.show, (val) => {
                     <span class="source-title" @click="onNavigateRelated(source)">{{ source.title }}</span>
                     <van-tag
                       :color="statusColor(source.link_status)"
-                      size="medium"
-                      text-color="#fff"
+                                            text-color="#fff"
                     >{{ statusText(source.link_status) }}</van-tag>
                   </div>
                   <div class="source-meta">
@@ -282,22 +281,19 @@ watch(() => props.show, (val) => {
                   <div class="source-actions">
                     <template v-if="source.link_status === 'candidate'">
                       <van-button
-                        size="medium"
-                        type="primary"
+                                                type="primary"
                         :loading="actionLoading['accept-' + source.comic_id]"
                         @click.stop="handleAccept(source)"
                       >确认</van-button>
                       <van-button
-                        size="medium"
-                        type="default"
+                                                type="default"
                         :loading="actionLoading['reject-' + source.comic_id]"
                         @click.stop="handleReject(source)"
                       >拒绝</van-button>
                     </template>
                     <template v-if="source.link_status === 'accepted' && !isCurrentSource(source)">
                       <van-button
-                        size="medium"
-                        type="danger"
+                                                type="danger"
                         :loading="actionLoading['unlink-' + source.comic_id]"
                         @click.stop="handleUnlink(source)"
                       >取消关联</van-button>
@@ -336,8 +332,7 @@ watch(() => props.show, (val) => {
                 @keyup.enter="handleSearch"
               />
               <van-button
-                size="medium"
-                type="primary"
+                                type="primary"
                 :loading="searchLoading"
                 :disabled="!searchSourceKey"
                 @click="handleSearch"
