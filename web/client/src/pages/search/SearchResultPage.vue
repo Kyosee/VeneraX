@@ -52,10 +52,6 @@ const enableTagsSuggestions = computed(() => {
 
 const gridStyle = useGridStyle()
 
-function localInitSearchOptions(fromQuery?: string) {
-  searchOptions.value = initSearchOptions(currentSearchOptions.value, fromQuery)
-}
-
 function localToggleMultiSelectOption(groupIndex: number, optionKey: string) {
   const current: string[] = (() => { try { return JSON.parse(searchOptions.value[groupIndex] || '[]') } catch { return [] } })()
   toggleMultiOpt(current, optionKey)
@@ -181,7 +177,7 @@ onMounted(async () => {
   const caps = await getSourceCapabilities(sourceKey.value)
   capabilities.value = caps
   sourceName.value = caps?.name || sourceKey.value
-  initSearchOptions(route.query.options as string | undefined)
+  searchOptions.value = initSearchOptions(currentSearchOptions.value, route.query.options as string | undefined)
 
   if (initialKeyword.value) {
     searchText.value = initialKeyword.value

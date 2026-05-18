@@ -5,7 +5,6 @@ import { apiPost } from '@/services/api'
 import { getComicSources, getSourceCapabilities } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
-import type { SourceCapabilities } from '@/types'
 
 interface ExploreTab {
   sourceKey: string

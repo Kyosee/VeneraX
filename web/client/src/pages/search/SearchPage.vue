@@ -127,16 +127,6 @@ function onUrlSuggestionClick() {
   if (url) window.open(url, '_blank')
 }
 
-const LANG_FILTER_SOURCES = ['nhentai', 'ehentai', 'eh', 'exhentai']
-
-function applyAutoLangFilter(key: string, keyword: string): string {
-  const mode = settingsStore.settings.autoLangFilter
-  if (!mode || mode === 'none') return keyword
-  if (!LANG_FILTER_SOURCES.some(k => key.toLowerCase().includes(k))) return keyword
-  if (/language:/i.test(keyword)) return keyword
-  return `language:${mode} ${keyword}`
-}
-
 function doSearch(keyword?: string) {
   let term = (keyword ?? searchText.value).trim()
   if (!term) return
@@ -146,7 +136,7 @@ function doSearch(keyword?: string) {
 
   if (aggregatedMode.value) return
 
-  term = applyAutoLangFilter(selectedSourceKey.value, term)
+  term = applyLangFilter(selectedSourceKey.value, term, settingsStore.settings.autoLangFilter)
   const query: Record<string, string> = { keyword: term }
   if (searchOptions.value.length > 0 && currentSearchOptions.value.length > 0) {
     query.options = JSON.stringify(searchOptions.value)
