@@ -66,8 +66,17 @@ function parseOptionEntry(entry: string): { key: string; label: string } {
   return { key: entry, label: entry }
 }
 
-function initSearchOptions() {
+function initSearchOptions(fromQuery?: string) {
   const opts = currentSearchOptions.value
+  if (fromQuery && opts.length > 0) {
+    try {
+      const parsed = JSON.parse(fromQuery)
+      if (Array.isArray(parsed) && parsed.length === opts.length) {
+        searchOptions.value = parsed
+        return
+      }
+    } catch { /* fall through to defaults */ }
+  }
   searchOptions.value = opts.map(opt => {
     if (opt.default != null) {
       return Array.isArray(opt.default) ? JSON.stringify(opt.default) : String(opt.default)
@@ -221,7 +230,7 @@ onMounted(async () => {
   const caps = await getSourceCapabilities(sourceKey.value)
   capabilities.value = caps
   sourceName.value = caps?.name || sourceKey.value
-  initSearchOptions()
+  initSearchOptions(route.query.options as string | undefined)
 
   if (initialKeyword.value) {
     searchText.value = initialKeyword.value
