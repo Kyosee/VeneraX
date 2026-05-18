@@ -167,6 +167,12 @@ export interface SyncStatus {
   isEnabled: boolean
 }
 
+export interface TagSuggestion {
+  namespace: string
+  key: string
+  label: string
+}
+
 export interface ApiResponse {
   ok: boolean
   [key: string]: any

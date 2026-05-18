@@ -7775,6 +7775,14 @@ async function handleServerDbRoute({
         comics: (Array.isArray(items) ? items : []).map(mergeCached),
       }));
       sendJson(res, 200, { ok: true, type: "multiPart", sections });
+    } else if (Array.isArray(result) && result.length > 0 && result[0] && typeof result[0] === 'object' && result[0].title && result[0].comics) {
+      // Array format: [{title, comics, viewMore?, ...}, ...] from multiPartPage sources
+      const sections = result.map((section) => ({
+        title: section.title,
+        comics: (Array.isArray(section.comics) ? section.comics : []).map(mergeCached),
+        viewMore: section.viewMore || undefined,
+      }));
+      sendJson(res, 200, { ok: true, type: "multiPart", sections });
     } else {
       const comics = allComics.map(mergeCached);
       sendJson(res, 200, { ok: true, type: "list", comics });

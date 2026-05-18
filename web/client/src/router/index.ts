@@ -38,6 +38,8 @@ const router = createRouter({
     { path: '/comic/:sourceKey/:id', component: () => import('../pages/comic/ComicDetailPage.vue') },
     { path: '/reader/:sourceKey/:id', component: () => import('../pages/reader/ReaderPage.vue') },
     { path: '/search', component: () => import('../pages/search/SearchPage.vue') },
+    { path: '/search/:sourceKey', component: () => import('../pages/search/SearchResultPage.vue') },
+    { path: '/ranking', component: () => import('../pages/ranking/RankingPage.vue') },
   ]
 })
 

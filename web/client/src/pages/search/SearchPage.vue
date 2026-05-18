@@ -4,7 +4,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { getComicSources, searchComics, getSourceCapabilities, batchGetComicBasicInfo } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
-import type { ComicSource, SourceCapabilities, SourceSearchOption } from '@/types'
+import AggregatedSearchResults from './AggregatedSearchResults.vue'
+import type { ComicSource, SourceCapabilities, SourceSearchOption, TagSuggestion } from '@/types'
+import { loadTagData, matchSuggestions, isURL, getTagSuggestionLabel } from '@/utils/tags-translation'
 
 interface SearchResult {
   id: string
@@ -36,7 +38,13 @@ const capabilities = ref<Record<string, SourceCapabilities | null>>({})
 const searchOptions = ref<string[]>([])
 
 const HISTORY_KEY = 'venera_search_history'
-const MAX_HISTORY = 20
+const MAX_HISTORY = 50
+
+const suggestions = ref<TagSuggestion[]>([])
+const showUrlSuggestion = ref(false)
+const contextMenuVisible = ref(false)
+const contextMenuItem = ref('')
+const contextMenuStyle = ref({ top: '0px', left: '0px' })
 
 const currentSearchOptions = computed<SourceSearchOption[]>(() => {
   const caps = capabilities.value[selectedSourceKey.value]
@@ -198,9 +206,20 @@ function clearSearchHistory() {
   localStorage.removeItem(HISTORY_KEY)
 }
 
+const LANG_FILTER_SOURCES = ['nhentai', 'ehentai', 'eh', 'exhentai']
+
+function applyAutoLangFilter(key: string, keyword: string): string {
+  const mode = settingsStore.settings.autoLangFilter
+  if (!mode || mode === 'none') return keyword
+  if (!LANG_FILTER_SOURCES.some(k => key.toLowerCase().includes(k))) return keyword
+  if (/language:/i.test(keyword)) return keyword
+  return `language:${mode} ${keyword}`
+}
+
 async function doSearch(keyword?: string) {
-  const term = (keyword ?? searchText.value).trim()
+  let term = (keyword ?? searchText.value).trim()
   if (!term) return
+  if (!aggregatedMode.value) term = applyAutoLangFilter(selectedSourceKey.value, term)
   searchText.value = term
   saveHistory(term)
   hasSearched.value = true
@@ -280,11 +299,80 @@ function sourceNameFor(key: string | undefined) {
   return source?.name || source?.sourceName || source?.displayName || key
 }
 
+const enableTagsSuggestions = computed(() => {
+  if (aggregatedMode.value) return false
+  const caps = capabilities.value[selectedSourceKey.value]
+  return caps?.search?.enableTagsSuggestions ?? false
+})
+
+function findSuggestions() {
+  const text = searchText.value
+  showUrlSuggestion.value = isURL(text)
+  if (showUrlSuggestion.value) {
+    suggestions.value = []
+    return
+  }
+  if (!enableTagsSuggestions.value) {
+    suggestions.value = []
+    return
+  }
+  suggestions.value = matchSuggestions(text, 100)
+}
+
+function onSuggestionClick(suggestion: TagSuggestion) {
+  const words = searchText.value.split(' ')
+  words[words.length - 1] = suggestion.label
+  searchText.value = words.join(' ') + ' '
+  suggestions.value = []
+  showUrlSuggestion.value = false
+}
+
+function onUrlSuggestionClick() {
+  const url = searchText.value.trim()
+  if (url) window.open(url, '_blank')
+}
+
+function showContextMenu(event: MouseEvent, keyword: string) {
+  event.preventDefault()
+  contextMenuItem.value = keyword
+  contextMenuVisible.value = true
+  contextMenuStyle.value = {
+    top: event.clientY + 'px',
+    left: event.clientX + 'px',
+  }
+  document.addEventListener('click', hideContextMenu, { once: true })
+}
+
+function hideContextMenu() {
+  contextMenuVisible.value = false
+  contextMenuItem.value = ''
+  document.removeEventListener('click', hideContextMenu)
+}
+
+async function copyHistoryItem(keyword: string) {
+  try {
+    await navigator.clipboard.writeText(keyword)
+  } catch {
+    const input = document.createElement('input')
+    input.value = keyword
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+  }
+  hideContextMenu()
+}
+
 function onBack() { router.back() }
+
+watch(searchText, () => {
+  findSuggestions()
+})
 
 onMounted(async () => {
   await settingsStore.loadSettings()
   loadHistory()
+  loadTagData()
   const initialKeyword = queryString(route.query.keyword).trim()
   const initialSource = queryString(route.query.source).trim()
   const initialAggregated = initialSource === 'all' || initialSource === '*'
@@ -325,6 +413,27 @@ onMounted(async () => {
       @search="doSearch()"
       @click-action="doSearch()"
     />
+
+    <!-- Tag suggestions panel -->
+    <div v-if="showUrlSuggestion || suggestions.length" class="suggestions-panel">
+      <div
+        v-if="showUrlSuggestion"
+        class="suggestion-item url-suggestion"
+        @click="onUrlSuggestionClick"
+      >
+        <van-icon name="link-o" size="16" />
+        <span>打开链接</span>
+      </div>
+      <div
+        v-for="s in suggestions"
+        :key="`${s.namespace}:${s.key}`"
+        class="suggestion-item"
+        @click="onSuggestionClick(s)"
+      >
+        <span class="suggestion-namespace">{{ s.namespace }}</span>
+        <span class="suggestion-key">{{ getTagSuggestionLabel(s) }}</span>
+      </div>
+    </div>
 
     <!-- Source selector -->
     <div v-if="sources.length" class="source-section">
@@ -401,11 +510,29 @@ onMounted(async () => {
             :key="item"
             class="history-item"
             @click="onHistoryClick(item)"
+            @contextmenu="showContextMenu($event, item)"
           >
             <span class="history-text">{{ item }}</span>
             <van-icon name="cross" size="14" class="history-remove" @click.stop="removeHistoryItem(item)" />
           </div>
         </div>
+        <Teleport to="body">
+          <div
+            v-if="contextMenuVisible"
+            class="context-menu"
+            :style="contextMenuStyle"
+            @click.stop
+          >
+            <div class="context-menu-item" @click="copyHistoryItem(contextMenuItem)">
+              <van-icon name="records-o" size="14" />
+              <span>复制</span>
+            </div>
+            <div class="context-menu-item" @click="removeHistoryItem(contextMenuItem); hideContextMenu()">
+              <van-icon name="delete-o" size="14" />
+              <span>删除</span>
+            </div>
+          </div>
+        </Teleport>
       </div>
 
       <!-- Empty state before search -->
@@ -426,8 +553,13 @@ onMounted(async () => {
         <van-button type="primary" size="small" @click="doSearch()">重试</van-button>
       </div>
 
-      <!-- Results grid -->
-      <div v-if="currentResults.length" class="results-section">
+      <!-- Aggregated search results -->
+      <div v-if="aggregatedMode && hasSearched" class="results-section">
+        <AggregatedSearchResults :keyword="searchText" />
+      </div>
+
+      <!-- Single source results grid -->
+      <div v-if="!aggregatedMode && currentResults.length" class="results-section">
         <div class="comic-grid" :style="gridStyle">
           <ComicCard
             v-for="comic in currentResults"
@@ -439,16 +571,15 @@ onMounted(async () => {
           />
         </div>
 
-        <!-- Load more -->
         <div v-if="hasMore" class="load-more">
           <van-loading v-if="isLoading" size="24px" />
           <van-button v-else size="small" plain @click="loadMore">加载更多</van-button>
         </div>
       </div>
 
-      <!-- No results -->
+      <!-- No results (single source only, aggregated handles its own) -->
       <van-empty
-        v-if="hasSearched && !isLoading && !currentResults.length && !currentError"
+        v-if="!aggregatedMode && hasSearched && !isLoading && !currentResults.length && !currentError"
         description="没有找到结果"
         image="search"
       />
@@ -627,6 +758,84 @@ onMounted(async () => {
   border-radius: 4px;
   background: #f0f0f0;
   display: block;
+}
+
+.suggestions-panel {
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0 16px;
+  background: #fff;
+  border: 1px solid #ebedf0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:active {
+  background: #f0f4ff;
+}
+
+.suggestion-item.url-suggestion {
+  color: #4f6ef7;
+  font-weight: 500;
+}
+
+.suggestion-namespace {
+  display: inline-block;
+  padding: 1px 6px;
+  background: #eef1ff;
+  color: #4f6ef7;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.suggestion-key {
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.context-menu-item:active {
+  background: #f0f4ff;
 }
 
 .comic-title {

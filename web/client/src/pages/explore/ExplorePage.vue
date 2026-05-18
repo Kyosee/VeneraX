@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { apiPost } from '@/services/api'
 import { getComicSources } from '@/services/server-db'
 import { useSettingsStore } from '@/stores/settings'
@@ -10,9 +10,11 @@ import type { ComicSource } from '@/types'
 interface ExploreSection {
   title: string
   comics: Record<string, any>[]
+  viewMore?: string | { page: string; attributes?: Record<string, any> }
 }
 
 const route = useRoute()
+const router = useRouter()
 const settingsStore = useSettingsStore()
 const sources = ref<ComicSource[]>([])
 const activeTab = ref(0)
@@ -95,6 +97,41 @@ async function onLoadMore() {
   await loadComics(key, nextPage, true)
 }
 
+function handleViewMore(section: ExploreSection, sourceKey: string) {
+  if (!section.viewMore) return
+  const vm = section.viewMore
+
+  // Object format: { page: "search"|"category", attributes: {...} }
+  if (typeof vm === 'object' && vm.page) {
+    if (vm.page === 'search') {
+      const text = vm.attributes?.text || vm.attributes?.keyword || ''
+      router.push({ path: `/search/${encodeURIComponent(sourceKey)}`, query: { keyword: text } })
+    } else if (vm.page === 'category') {
+      const cat = vm.attributes?.category || ''
+      const param = vm.attributes?.param || ''
+      router.push({ path: '/categories', query: { cat, source: sourceKey, title: cat, ...(param ? { param } : {}) } })
+    }
+    return
+  }
+
+  // String format: "search:keyword" or "category:name" or "category:name@param"
+  if (typeof vm === 'string') {
+    const segments = vm.split(':')
+    const page = segments[0]
+    if (page === 'search' && segments[1]) {
+      router.push({ path: `/search/${encodeURIComponent(sourceKey)}`, query: { keyword: segments[1] } })
+    } else if (page === 'category') {
+      const c = segments[1] || ''
+      if (c.includes('@')) {
+        const [cat, param] = c.split('@')
+        router.push({ path: '/categories', query: { cat, source: sourceKey, title: cat, param } })
+      } else {
+        router.push({ path: '/categories', query: { cat: c, source: sourceKey, title: c } })
+      }
+    }
+  }
+}
+
 function onScroll(e: Event) {
   const target = e.target as HTMLElement
   const currentScrollTop = target.scrollTop
@@ -160,7 +197,14 @@ onUnmounted(() => {
             <!-- Multi-part sections -->
             <template v-if="exploreType[source.key] === 'multiPart' && sections[source.key]?.length">
               <div v-for="section in sections[source.key]" :key="section.title" class="explore-section">
-                <h3 class="section-title">{{ section.title }}</h3>
+                <div class="section-header">
+                  <h3 class="section-title">{{ section.title }}</h3>
+                  <span
+                    v-if="section.viewMore"
+                    class="section-view-more"
+                    @click="handleViewMore(section, source.key)"
+                  >查看更多 &gt;</span>
+                </div>
                 <div class="comic-grid" :style="gridStyle">
                   <ComicCard
                     v-for="comic in section.comics"
@@ -239,12 +283,30 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 8px;
+  padding: 0 4px;
+}
+
 .section-title {
   font-size: 16px;
   font-weight: 600;
   color: #333;
-  margin: 12px 0 8px;
-  padding: 0 4px;
+  margin: 0;
+}
+
+.section-view-more {
+  font-size: 12px;
+  color: #4f6ef7;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.section-view-more:active {
+  opacity: 0.7;
 }
 
 .explore-tabs {

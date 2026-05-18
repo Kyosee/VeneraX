@@ -368,3 +368,5 @@ export async function mirrorComic(sourceKey: string, comicId: string): Promise<{
 export async function batchAutoLink(): Promise<{ ok: boolean; linked: number }> {
   return apiPost('/api/server-db/related-source/auto-link', {})
 }
+
+export { loadTagData, matchSuggestions, getTagData } from '../utils/tags-translation'
