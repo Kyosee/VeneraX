@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/stores/settings'
 import AggregatedSearchResults from './AggregatedSearchResults.vue'
 import type { ComicSource, SourceCapabilities, SourceSearchOption, TagSuggestion } from '@/types'
 import { loadTagData, matchSuggestions, isURL, getTagSuggestionLabel } from '@/utils/tags-translation'
+import { parseOptionEntry, initSearchOptions, toggleMultiSelectOption as toggleMultiOpt, isMultiSelected as isMultiOpt } from '@/utils/options'
+import { applyAutoLangFilter } from '@/utils/search'
 
 const router = useRouter()
 const route = useRoute()
@@ -73,20 +75,14 @@ function parseOptionEntry(entry: string): { key: string, label: string } {
   return { key: entry, label: entry }
 }
 
-function toggleMultiSelectOption(groupIndex: number, optionKey: string) {
-  let current: string[] = []
-  try { current = JSON.parse(searchOptions.value[groupIndex] || '[]') } catch { current = [] }
-  const idx = current.indexOf(optionKey)
-  if (idx >= 0) current.splice(idx, 1)
-  else current.push(optionKey)
+function localToggleMultiSelectOption(groupIndex: number, optionKey: string) {
+  const current: string[] = (() => { try { return JSON.parse(searchOptions.value[groupIndex] || '[]') } catch { return [] } })()
+  toggleMultiOpt(current, optionKey)
   searchOptions.value[groupIndex] = JSON.stringify(current)
 }
 
-function isMultiSelected(groupIndex: number, optionKey: string): boolean {
-  try {
-    const current: string[] = JSON.parse(searchOptions.value[groupIndex] || '[]')
-    return current.includes(optionKey)
-  } catch { return false }
+function localIsMultiSelected(groupIndex: number, optionKey: string): boolean {
+  return isMultiOpt(searchOptions.value[groupIndex], optionKey)
 }
 
 function loadHistory() {
@@ -327,10 +323,10 @@ onMounted(async () => {
           <van-tag
             v-for="entry in opt.options"
             :key="entry"
-            :type="isMultiSelected(groupIdx, parseOptionEntry(entry).key) ? 'primary' : 'default'"
+            :type="localIsMultiSelected(groupIdx, parseOptionEntry(entry).key) ? 'primary' : 'default'"
             size="medium"
             class="option-chip"
-            @click="toggleMultiSelectOption(groupIdx, parseOptionEntry(entry).key)"
+            @click="localToggleMultiSelectOption(groupIdx, parseOptionEntry(entry).key)"
           >
             {{ parseOptionEntry(entry).label }}
           </van-tag>

@@ -6,6 +6,9 @@ import { useSettingsStore } from '@/stores/settings'
 import ComicCard from '@/components/ComicCard.vue'
 import type { SourceCapabilities, SourceSearchOption, TagSuggestion } from '@/types'
 import { loadTagData, matchSuggestions, isURL, getTagSuggestionLabel } from '@/utils/tags-translation'
+import { parseOptionEntry, initSearchOptions, toggleMultiSelectOption as toggleMultiOpt, isMultiSelected as isMultiOpt } from '@/utils/options'
+import { applyAutoLangFilter } from '@/utils/search'
+import { useGridStyle } from '@/composables/useGridStyle'
 
 interface SearchResult {
   id: string
@@ -47,62 +50,20 @@ const enableTagsSuggestions = computed(() => {
   return capabilities.value?.search?.enableTagsSuggestions ?? false
 })
 
-const gridStyle = computed(() => {
-  const scale = Number(settingsStore.settings.thumbnailSize || 1)
-  return settingsStore.settings.thumbnailMode === 'brief'
-    ? {
-        '--tile-scale': String(scale),
-        gridTemplateColumns: `repeat(auto-fill, minmax(96px, ${Math.round(192 * scale)}px))`,
-      }
-    : {
-        '--tile-scale': String(scale),
-        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
-      }
-})
+const gridStyle = useGridStyle()
 
-function parseOptionEntry(entry: string): { key: string; label: string } {
-  const idx = entry.indexOf('-')
-  if (idx > 0) return { key: entry.substring(0, idx), label: entry.substring(idx + 1) }
-  return { key: entry, label: entry }
+function localInitSearchOptions(fromQuery?: string) {
+  searchOptions.value = initSearchOptions(currentSearchOptions.value, fromQuery)
 }
 
-function initSearchOptions(fromQuery?: string) {
-  const opts = currentSearchOptions.value
-  if (fromQuery && opts.length > 0) {
-    try {
-      const parsed = JSON.parse(fromQuery)
-      if (Array.isArray(parsed) && parsed.length === opts.length) {
-        searchOptions.value = parsed
-        return
-      }
-    } catch { /* fall through to defaults */ }
-  }
-  searchOptions.value = opts.map(opt => {
-    if (opt.default != null) {
-      return Array.isArray(opt.default) ? JSON.stringify(opt.default) : String(opt.default)
-    }
-    if (opt.options.length > 0) {
-      const first = opt.options[0]
-      return first.includes('-') ? first.split('-')[0] : first
-    }
-    return ''
-  })
-}
-
-function toggleMultiSelectOption(groupIndex: number, optionKey: string) {
-  let current: string[] = []
-  try { current = JSON.parse(searchOptions.value[groupIndex] || '[]') } catch { current = [] }
-  const idx = current.indexOf(optionKey)
-  if (idx >= 0) current.splice(idx, 1)
-  else current.push(optionKey)
+function localToggleMultiSelectOption(groupIndex: number, optionKey: string) {
+  const current: string[] = (() => { try { return JSON.parse(searchOptions.value[groupIndex] || '[]') } catch { return [] } })()
+  toggleMultiOpt(current, optionKey)
   searchOptions.value[groupIndex] = JSON.stringify(current)
 }
 
-function isMultiSelected(groupIndex: number, optionKey: string): boolean {
-  try {
-    const current: string[] = JSON.parse(searchOptions.value[groupIndex] || '[]')
-    return current.includes(optionKey)
-  } catch { return false }
+function localIsMultiSelected(groupIndex: number, optionKey: string): boolean {
+  return isMultiOpt(searchOptions.value[groupIndex], optionKey)
 }
 
 function findSuggestions() {
@@ -135,20 +96,10 @@ function onUrlSuggestionClick() {
   if (url) window.open(url, '_blank')
 }
 
-const LANG_FILTER_SOURCES = ['nhentai', 'ehentai', 'eh', 'exhentai']
-
-function applyAutoLangFilter(keyword: string): string {
-  const mode = settingsStore.settings.autoLangFilter
-  if (!mode || mode === 'none') return keyword
-  if (!LANG_FILTER_SOURCES.some(k => sourceKey.value.toLowerCase().includes(k))) return keyword
-  if (/language:/i.test(keyword)) return keyword
-  return `language:${mode} ${keyword}`
-}
-
 async function doSearch() {
   let term = searchText.value.trim()
   if (!term) return
-  term = applyAutoLangFilter(term)
+  term = applyAutoLangFilter(sourceKey.value, term, settingsStore.settings.autoLangFilter)
   hasSearched.value = true
   page.value = 1
   comics.value = []
@@ -347,10 +298,10 @@ onMounted(async () => {
               <van-tag
                 v-for="entry in opt.options"
                 :key="entry"
-                :type="isMultiSelected(groupIdx, parseOptionEntry(entry).key) ? 'primary' : 'default'"
+                :type="localIsMultiSelected(groupIdx, parseOptionEntry(entry).key) ? 'primary' : 'default'"
                 size="medium"
                 class="option-chip"
-                @click="toggleMultiSelectOption(groupIdx, parseOptionEntry(entry).key)"
+                @click="localToggleMultiSelectOption(groupIdx, parseOptionEntry(entry).key)"
               >
                 {{ parseOptionEntry(entry).label }}
               </van-tag>

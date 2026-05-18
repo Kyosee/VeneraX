@@ -126,11 +126,18 @@ function handleViewMore(section: ExploreSection, sourceKey: string) {
   if (typeof vm === 'object' && vm.page) {
     if (vm.page === 'search') {
       const text = vm.attributes?.text || vm.attributes?.keyword || ''
-      router.push({ path: `/search/${encodeURIComponent(sourceKey)}`, query: { keyword: text } })
+      const opts = vm.attributes?.options
+      const query: Record<string, string> = { keyword: text }
+      if (opts) query.options = JSON.stringify(opts)
+      router.push({ path: `/search/${encodeURIComponent(sourceKey)}`, query })
     } else if (vm.page === 'category') {
       const cat = vm.attributes?.category || ''
       const param = vm.attributes?.param || ''
-      router.push({ path: '/categories', query: { cat, source: sourceKey, title: cat, ...(param ? { param } : {}) } })
+      const opts = vm.attributes?.options
+      const query: Record<string, string> = { cat, source: sourceKey, title: cat }
+      if (param) query.param = param
+      if (opts) query.options = JSON.stringify(opts)
+      router.push({ path: '/categories', query })
     }
     return
   }

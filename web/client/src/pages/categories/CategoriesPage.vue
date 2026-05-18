@@ -31,6 +31,7 @@ const categories = ref<Record<string, CategoryItem[]>>({})
 const catLoading = ref<Record<string, boolean>>({})
 const catError = ref<Record<string, string | null>>({})
 const capabilities = ref<Record<string, SourceCapabilities | null>>({})
+const randomParts = ref<Record<string, Array<{ name: string; fullList: CategoryItem[] }>>>({})
 
 const selectedCategory = ref<string | null>(null)
 const selectedCategoryTitle = ref('')
@@ -115,15 +116,26 @@ async function loadCategories(sourceKey: string) {
     const caps = capabilities.value[sourceKey]
     if (caps?.category?.parts?.length) {
       const items: CategoryItem[] = []
+      const randParts: Array<{ name: string; fullList: CategoryItem[] }> = []
       for (const part of caps.category.parts) {
+        const fullList: CategoryItem[] = []
         for (let i = 0; i < part.categories.length; i++) {
-          items.push({
+          fullList.push({
             title: part.categories[i],
             param: part.categoryParams?.[i] ?? undefined,
           })
         }
+        if (part.type === 'random') {
+          const count = Math.min(12, fullList.length)
+          const shuffled = [...fullList].sort(() => Math.random() - 0.5)
+          items.push(...shuffled.slice(0, count))
+          randParts.push({ name: part.name, fullList })
+        } else {
+          items.push(...fullList)
+        }
       }
       categories.value[sourceKey] = items
+      if (randParts.length) randomParts.value[sourceKey] = randParts
     } else {
       const res = await apiPost<any>('/api/server-db/categories', { sourceKey })
       if (res?.ok === false) throw new Error(res?.error ?? 'Failed to load categories')
@@ -200,6 +212,21 @@ function onCategoryClick(cat: CategoryItem) {
   const query: Record<string, string> = { cat: id, title: cat.title }
   if (cat.param) query.param = cat.param
   router.push({ path: route.path, query })
+}
+
+function shuffleRandomCategories(sourceKey: string) {
+  const parts = randomParts.value[sourceKey]
+  if (!parts?.length || !categories.value[sourceKey]) return
+  const items = [...categories.value[sourceKey]]
+  for (const rp of parts) {
+    const idx = items.findIndex(item => rp.fullList.some(fl => fl.title === item.title && fl.param === item.param))
+    if (idx < 0) continue
+    const count = Math.min(12, rp.fullList.length)
+    const shuffled = [...rp.fullList].sort(() => Math.random() - 0.5).slice(0, count)
+    const endIdx = idx + count
+    items.splice(idx, endIdx - idx, ...shuffled)
+  }
+  categories.value[sourceKey] = items
 }
 
 function onBackFromComics() {
@@ -331,6 +358,12 @@ onMounted(async () => {
                 @click="goToRanking(source.key)"
               >
                 排行榜
+              </van-button>
+            </div>
+
+            <div v-if="randomParts[source.key]?.length" class="random-refresh-bar">
+              <van-button size="small" plain icon="replay" @click="shuffleRandomCategories(source.key)">
+                换一批
               </van-button>
             </div>
 
@@ -589,6 +622,10 @@ onMounted(async () => {
 }
 
 .ranking-quick-access {
-  padding: 8px 0 12px;
+  padding: 8px 0 4px;
+}
+
+.random-refresh-bar {
+  padding: 0 0 12px;
 }
 </style>
