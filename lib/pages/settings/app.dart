@@ -38,7 +38,7 @@ class _AppSettingsState extends State<AppSettings> {
                         size: 20,
                       ),
                       title: Text(
-                        action == 'upload' ? '上传' : action == 'download' ? '下载' : action,
+                        action == 'upload' ? 'Upload'.tl : action == 'download' ? 'Download'.tl : action,
                         style: const TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
