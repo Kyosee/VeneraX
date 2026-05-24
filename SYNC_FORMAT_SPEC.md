@@ -55,7 +55,8 @@ backup.venera (ZIP, compression=stored)
 **不同步的设备特定字段 (_disableSync):**
 ```
 proxy, authorizationRequired, customImageProcessing,
-webdav, disableSyncFields, deviceId, followUpdatesFolder
+webdav, disableSyncFields, deviceId, followUpdatesFolder,
+updateRepoOwner, updateRepoName, updateUsePrivateRepo, updateRepoToken
 ```
 
 - 上述字段在导入时跳过，保留本机值
@@ -76,6 +77,27 @@ follow_update_task_history
 ### 3.3 searchHistory 同步规则
 
 - 完整替换，以最新上传方为准
+
+### 3.4 追更（Follow Updates）同步规则
+
+**设计原则:** 各端可独立选择不同的追更文件夹，但追更检查产生的数据全端共享。
+
+**同步项:**
+- `local_favorite.db` 中所有文件夹表的追更相关列（`has_new_update`, `last_update_time`, `last_check_time`）→ 随数据库整体同步
+- `follow_update_task_history`（implicitData）→ 同步
+
+**不同步项:**
+- `followUpdatesFolder` 设置 → 在 `_disableSync` 中，各端独立
+
+**行为规范:**
+1. 设备 A 选文件夹 "X" 做追更，检查出更新后写入 `local_favorite.db` 的 "X" 表
+2. 同步后，设备 B 的 `local_favorite.db` 包含完整的 "X" 表数据（含追更状态）
+3. 设备 B 选择文件夹 "X" 时，追更页面自动从 DB 加载已有数据（更新、未读、完结）
+4. 各端追更检查结果互相累积，不会因为切换设备而丢失
+
+**上传安全保护:**
+- 上传前检查当前设备配置的追更文件夹表是否为空（`_isFollowFolderEmpty`）
+- 如果配了追更文件夹但表内 0 条漫画，拦截上传，防止空数据覆盖远端
 
 ---
 

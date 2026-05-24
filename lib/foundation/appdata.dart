@@ -100,6 +100,7 @@ class Appdata with Init {
     "webdav",
     "disableSyncFields",
     "deviceId",
+    "followUpdatesFolder",
     "updateRepoOwner",
     "updateRepoName",
     "updateUsePrivateRepo",
