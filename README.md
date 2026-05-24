@@ -10,6 +10,8 @@
 
 A cross-platform manga/comic reader with self-hosted Web frontend support.
 
+> **Original Project:** This project is forked from [venera-app/venera](https://github.com/venera-app/venera). Thanks to the original author for the excellent work.
+
 > **Disclaimer:** This repository is for personal learning and use only. Feature development and maintenance are AI-driven.
 
 ## Warning
@@ -22,7 +24,9 @@ A cross-platform manga/comic reader with self-hosted Web frontend support.
 - JavaScript-based comic source plugins (QuickJS on native, Node.js on server)
 - Self-hosted Web frontend with Docker support
 - WebDAV backup & sync
-- Windows auto-updater
+- Windows auto-updater with fallback scripts
+- Android APK auto-update
+- Configurable GitHub update source (supports private repos)
 
 ## Quick Start
 

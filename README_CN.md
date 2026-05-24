@@ -10,6 +10,8 @@
 
 跨平台漫画阅读器，支持自托管 Web 前端。
 
+> **原始项目：** 本项目 fork 自 [venera-app/venera](https://github.com/venera-app/venera)，感谢原作者的优秀工作。
+
 > **声明：** 此仓库仅用于个人学习。功能开发和维护由 AI 驱动。
 
 ## 警告
@@ -22,7 +24,9 @@
 - 基于 JavaScript 的漫画源插件（原生端 QuickJS，服务端 Node.js）
 - 自托管 Web 前端，支持 Docker 部署
 - WebDAV 备份与同步
-- Windows 自动更新
+- Windows 自动更新（含回退脚本）
+- Android APK 自动更新
+- 可配置 GitHub 更新源（支持私有仓库）
 
 ## 快速开始
 

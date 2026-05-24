@@ -102,20 +102,25 @@ void _checkOldConfigs() {
 }
 
 Future<void> _checkAppUpdates() async {
-  var lastCheck = appdata.implicitData['lastCheckUpdate'] ?? 0;
-  var now = DateTime.now().millisecondsSinceEpoch;
-  if (now - lastCheck < 24 * 60 * 60 * 1000) {
-    return;
+  final now = DateTime.now().millisecondsSinceEpoch;
+
+  // Comic source update check remains daily.
+  final lastSourceCheck =
+      (appdata.implicitData['lastCheckUpdate'] as num?)?.toInt() ?? 0;
+  if (now - lastSourceCheck >= 24 * 60 * 60 * 1000) {
+    appdata.implicitData['lastCheckUpdate'] = now;
+    appdata.writeImplicitData();
+    unawaited(ComicSourcePage.checkComicSourceUpdate());
   }
-  appdata.implicitData['lastCheckUpdate'] = now;
-  appdata.writeImplicitData();
-  ComicSourcePage.checkComicSourceUpdate();
-  if (appdata.settings['checkUpdateOnStart']) {
-    await checkUpdateUi(false, true);
+
+  // App update check runs on each startup when enabled.
+  if (appdata.settings['checkUpdateOnStart'] == true) {
+    await checkUpdateUi(false, false);
   }
 }
 
 void checkUpdates() {
-  _checkAppUpdates();
+  // Delay to make sure navigator context is ready for update dialogs.
+  Future.delayed(const Duration(seconds: 2), _checkAppUpdates).wait();
   FollowUpdatesService.initChecker();
 }

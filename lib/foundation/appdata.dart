@@ -100,6 +100,10 @@ class Appdata with Init {
     "webdav",
     "disableSyncFields",
     "deviceId",
+    "updateRepoOwner",
+    "updateRepoName",
+    "updateUsePrivateRepo",
+    "updateRepoToken",
   ];
 
   /// Sync data from another device

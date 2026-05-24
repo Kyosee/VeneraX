@@ -136,6 +136,29 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        res.error("INVALID_ARGUMENT", "path is required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val file = java.io.File(path)
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            this, "${applicationContext.packageName}.fileprovider", file
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(intent)
+                        res.success(true)
+                    } catch (e: Exception) {
+                        res.error("INSTALL_FAILED", e.message, null)
+                    }
+                }
+
                 else -> res.notImplemented()
             }
         }
