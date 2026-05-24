@@ -540,7 +540,33 @@ function readComic(chapter?: Chapter) {
 
 function continueReading() {
   if (lastReadChapterId.value) {
-    const ch = flatChapters.value.find(c => c.id === lastReadChapterId.value)
+    const id = lastReadChapterId.value
+    // Try matching by chapter ID first
+    let ch = flatChapters.value.find(c => c.id === id)
+    if (!ch) {
+      // Check if it's a "groupIdx-chapterIdx" positional format (for grouped chapters)
+      const dashIdx = id.indexOf('-')
+      if (dashIdx > 0) {
+        const gIdx = parseInt(id.substring(0, dashIdx), 10)
+        const cIdx = parseInt(id.substring(dashIdx + 1), 10)
+        if (!isNaN(gIdx) && !isNaN(cIdx) && isGrouped.value) {
+          const groups = chapters.value as ChapterGroup[]
+          if (gIdx >= 1 && gIdx <= groups.length) {
+            const group = groups[gIdx - 1]
+            if (group?.chapters && cIdx >= 1 && cIdx <= group.chapters.length) {
+              ch = group.chapters[cIdx - 1]
+            }
+          }
+        }
+      }
+      // Fallback: try as a simple 1-based flat index
+      if (!ch) {
+        const idx = parseInt(id, 10)
+        if (!isNaN(idx) && idx >= 1 && idx <= flatChapters.value.length) {
+          ch = flatChapters.value[idx - 1]
+        }
+      }
+    }
     if (ch) { readComic(ch); return }
   }
   readComic()

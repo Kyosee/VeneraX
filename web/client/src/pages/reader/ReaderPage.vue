@@ -267,6 +267,14 @@ function scheduleSave() {
       // Accumulate read episode in Flutter-compatible positional format
       const epId = buildReadEpisodeId()
       if (epId) readEpisodes.value.add(epId)
+      // Save ep in Flutter-compatible format: within-group index for grouped chapters
+      const ch = currentChapter.value
+      let epValue: number
+      if (ch && isGrouped.value) {
+        epValue = ch.chapterIndex + 1
+      } else {
+        epValue = chapterIndex.value + 1
+      }
       upsertHistory({
         id: comicId.value,
         type: sourceTypeFromKey(sourceKey.value),
@@ -274,13 +282,13 @@ function scheduleSave() {
         title: comicTitle.value,
         cover: comicCover.value,
         time: Date.now(),
-        ep: chapterIndex.value + 1,
+        ep: epValue,
         page: currentPage.value + 1,
         readEpisode: [...readEpisodes.value],
         maxPage: totalPages.value,
         max_page: totalPages.value,
-        group: currentChapter.value ? currentChapter.value.groupIndex + 1 : null,
-        chapter_group: currentChapter.value ? currentChapter.value.groupIndex + 1 : null,
+        group: ch ? ch.groupIndex + 1 : null,
+        chapter_group: ch ? ch.groupIndex + 1 : null,
       }).catch(() => {})
     }
   }, 1000)
@@ -597,6 +605,8 @@ function preloadImages() {
 // Loading next/prev chapter in continuous mode
 const loadingNextChapter = ref(false)
 const loadingPrevChapter = ref(false)
+let lastScrollPos = -1
+let userHasScrolledUp = false
 
 let scrollTicking = false
 function onScroll() {
@@ -611,6 +621,7 @@ function onScroll() {
 function doScrollUpdate() {
   const el = continuousEl.value!
   const imgs = el.querySelectorAll('.img-placeholder')
+  const scrollPos = isContinuousHorizontal.value ? el.scrollLeft : el.scrollTop
   const mid = isContinuousHorizontal.value
     ? el.scrollLeft + el.clientWidth / 2
     : el.scrollTop + el.clientHeight / 2
@@ -629,6 +640,11 @@ function doScrollUpdate() {
   if (pageIndicatorTimer) clearTimeout(pageIndicatorTimer)
   pageIndicatorTimer = setTimeout(() => { showPageIndicator.value = false }, 2000)
 
+  // Track scroll direction
+  const scrollingUp = lastScrollPos >= 0 && scrollPos < lastScrollPos
+  if (scrollingUp) userHasScrolledUp = true
+  lastScrollPos = scrollPos
+
   if (!continuousChapter.value) return
   const pCount = Math.max(1, Number(preloadCount.value) || 4)
 
@@ -637,8 +653,8 @@ function doScrollUpdate() {
     loadNextChapterContinuous()
   }
 
-  // Load previous chapter when near the top
-  if (!loadingPrevChapter.value) {
+  // Load previous chapter only when user is actively scrolling UP
+  if (!loadingPrevChapter.value && userHasScrolledUp) {
     const nearStart = isContinuousHorizontal.value
       ? el.scrollLeft < 200
       : el.scrollTop < 200
