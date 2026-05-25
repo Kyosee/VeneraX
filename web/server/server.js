@@ -9296,7 +9296,7 @@ export function createServer(options = {}) {
       const appdataPath = join(defaultProfileRoot, "appdata.json");
       if (!existsSync(appdataPath)) return;
       const appdata = JSON.parse(readFileSync(appdataPath, "utf8"));
-      const folder = appdata?.followUpdatesFolder;
+      const folder = appdata?.settings?.followUpdatesFolder || appdata?.followUpdatesFolder;
       if (!folder) return;
       checkFollowUpdatesFolder(
         defaultProfileRoot,
