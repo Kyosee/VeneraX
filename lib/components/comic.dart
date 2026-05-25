@@ -904,7 +904,7 @@ class ComicDescription extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             height: 18,
@@ -926,33 +926,32 @@ class ComicDescription extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < actions.length; i++) ...[
-                    InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTap: actions[i].onTap,
-                      child: Text(
-                        actions[i].text,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.colorScheme.primary,
-                        ),
-                      ).paddingHorizontal(2),
-                    ),
-                    if (i != actions.length - 1)
-                      Text(
-                        " / ",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
+            child: Wrap(
+              spacing: 0,
+              runSpacing: 2,
+              children: [
+                for (var i = 0; i < actions.length; i++) ...[
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: actions[i].onTap,
+                    child: Text(
+                      actions[i].text,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.colorScheme.primary,
                       ),
-                  ],
+                    ).paddingHorizontal(2),
+                  ),
+                  if (i != actions.length - 1)
+                    Text(
+                      " / ",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                 ],
-              ),
+              ],
             ),
           ),
         ],
