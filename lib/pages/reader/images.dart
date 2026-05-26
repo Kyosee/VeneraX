@@ -360,6 +360,8 @@ class _GalleryModeState extends State<_GalleryMode>
             photoViewControllers[index] ??= PhotoViewController();
 
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
+              final fillScreen =
+                  appdata.settings['galleryFillScreen'] == true;
               return PhotoViewGalleryPageOptions(
                 filterQuality: kIsWeb ? FilterQuality.low : FilterQuality.medium,
                 controller: photoViewControllers[index],
@@ -368,7 +370,13 @@ class _GalleryModeState extends State<_GalleryMode>
                   context,
                   startIndex + 1,
                 ),
-                fit: BoxFit.contain,
+                initialScale: fillScreen
+                    ? PhotoViewComputedScale.covered
+                    : PhotoViewComputedScale.contained,
+                minScale: fillScreen
+                    ? PhotoViewComputedScale.contained * 1.0
+                    : null,
+                maxScale: PhotoViewComputedScale.covered * 10.0,
                 errorBuilder: (_, error, s, retry) {
                   return NetworkError(message: error.toString(), retry: retry);
                 },

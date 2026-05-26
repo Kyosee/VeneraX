@@ -260,6 +260,8 @@ class Settings with ChangeNotifier {
     'showChapterComments': true, // show chapter comments in reader
     'showChapterCommentsAtEnd':
         false, // show chapter comments at end of chapter
+    'galleryFillScreen':
+        false, // when true, gallery mode uses BoxFit.cover instead of contain
   };
 
   operator [](String key) {

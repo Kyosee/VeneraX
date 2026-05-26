@@ -296,6 +296,20 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           ),
         ),
         SliverAnimatedVisibility(
+          visible: appdata.settings['readerMode']!.startsWith('gallery'),
+          child: _SwitchSetting(
+            title: "Fill screen".tl,
+            subtitle: "Crop image to fill screen instead of letterboxing".tl,
+            settingKey: "galleryFillScreen",
+            onChanged: () {
+              widget.onChanged?.call("galleryFillScreen");
+            },
+            comicId: isEnabledSpecificSettings ? widget.comicId : null,
+            comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
+            useDeviceSettings: useDeviceSpecificSettings,
+          ),
+        ),
+        SliverAnimatedVisibility(
           visible: appdata.settings['readerMode']!.startsWith('continuous'),
           child: _SliderSetting(
             title: "Mouse scroll speed".tl,
