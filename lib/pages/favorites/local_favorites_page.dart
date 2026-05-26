@@ -50,6 +50,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
   late Set<String> sourceFilterSelect;
   late Set<String> tagFilterSelect;
   late Set<String> authorFilterSelect;
+  late bool tagMatchAll;
+  late bool authorMatchAll;
   late LocalSortType favSortType;
 
   var searchResults = <FavoriteItem>[];
@@ -123,24 +125,26 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
           !sourceFilterSelect.contains(comic.sourceKey)) {
         return false;
       }
-      if (tagFilterSelect.isNotEmpty || authorFilterSelect.isNotEmpty) {
-        final comicTags = <String>{};
-        final comicAuthors = <String>{};
-        for (var t in comic.tags) {
-          if (t.isEmpty) continue;
-          final (cat, val) = _classifyTag(t);
-          if (val.isEmpty) continue;
-          if (cat == 'tag') {
-            comicTags.add(val);
-          } else if (cat == 'author') {
-            comicAuthors.add(val);
+      if (tagFilterSelect.isNotEmpty) {
+        final comicTags = _resolveTags(comic).toSet();
+        if (tagMatchAll) {
+          for (var t in tagFilterSelect) {
+            if (!comicTags.contains(t)) return false;
           }
+        } else {
+          if (!tagFilterSelect.any((t) => comicTags.contains(t))) return false;
         }
-        for (var t in tagFilterSelect) {
-          if (!comicTags.contains(t)) return false;
-        }
-        for (var a in authorFilterSelect) {
-          if (!comicAuthors.contains(a)) return false;
+      }
+      if (authorFilterSelect.isNotEmpty) {
+        final comicAuthors = _resolveAuthors(comic).toSet();
+        if (authorMatchAll) {
+          for (var a in authorFilterSelect) {
+            if (!comicAuthors.contains(a)) return false;
+          }
+        } else {
+          if (!authorFilterSelect.any((a) => comicAuthors.contains(a))) {
+            return false;
+          }
         }
       }
       var history = HistoryManager().find(
@@ -154,6 +158,24 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
       }
       return true;
     }).toList();
+  }
+
+  /// Returns the comic's pure content tags. Prefers the new dedicated
+  /// `tags` column (already prefix-stripped during favoriting); falls back
+  /// to classifying the legacy mixed string list for rows that haven't been
+  /// re-favorited since the schema upgrade.
+  List<String> _resolveTags(FavoriteItem comic) {
+    if (comic.tags.any((t) => t.contains(':'))) {
+      // Legacy row — classify on the fly.
+      return splitFavoriteTags(comic.tags).tags;
+    }
+    return comic.tags;
+  }
+
+  List<String> _resolveAuthors(FavoriteItem comic) {
+    if (comic.authors.isNotEmpty) return comic.authors;
+    // Legacy row — classify on the fly.
+    return splitFavoriteTags(comic.tags).authors;
   }
 
   void updateFilteredComics() {
@@ -287,106 +309,14 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
     return {};
   }
 
-  /// Tag prefixes that represent author-like metadata. Surfaced as a
-  /// dedicated author filter section.
-  static const _authorTagPrefixes = <String>{
-    'author',
-    'authors',
-    'artist',
-    'artists',
-    '作者',
-    '作家',
-    '画师',
-    '畫師',
-    '漫画家',
-    '漫畫家',
-  };
-
-  /// Tag prefixes that represent comic metadata (update time, status, etc.)
-  /// rather than actual content tags. These are excluded from both the tag
-  /// filter and author filter UI.
-  static const _metaTagPrefixes = <String>{
-    'uploader',
-    'uploaders',
-    'translator',
-    'translators',
-    'group',
-    'groups',
-    'circle',
-    'circles',
-    'publisher',
-    'magazine',
-    'parody',
-    'parodies',
-    'language',
-    'languages',
-    'lang',
-    'status',
-    'state',
-    'progress',
-    'update',
-    'updates',
-    'updated',
-    'updatetime',
-    'update time',
-    'time',
-    'date',
-    'year',
-    'released',
-    'release',
-    'pages',
-    'rating',
-    'score',
-    'category',
-    'categories',
-    'series',
-    'source',
-    '更新',
-    '更新时间',
-    '更新時間',
-    '状态',
-    '狀態',
-    '语言',
-    '語言',
-    '类型',
-    '類型',
-    '出版社',
-    '出版',
-    '年份',
-    '日期',
-    '时间',
-    '時間',
-    '页数',
-    '頁數',
-    '评分',
-    '評分',
-  };
-
-  /// Returns category for a tag based on its prefix:
-  /// - `'author'`: author-like prefix → goes into author filter
-  /// - `'meta'`: metadata prefix → excluded from filters
-  /// - `'tag'`: actual content tag → goes into tag filter
-  /// Also returns the value with prefix stripped.
-  static (String category, String value) _classifyTag(String tag) {
-    final idx = tag.indexOf(':');
-    if (idx <= 0 || idx == tag.length - 1) return ('tag', tag);
-    final prefix = tag.substring(0, idx).trim().toLowerCase();
-    final value = tag.substring(idx + 1).trim();
-    if (_authorTagPrefixes.contains(prefix)) return ('author', value);
-    if (_metaTagPrefixes.contains(prefix)) return ('meta', value);
-    return ('tag', value);
-  }
-
   /// Returns all tags appearing in current folder's comics with their counts,
   /// sorted by count desc, then name asc.
   List<MapEntry<String, int>> get tagFilterValues {
     final counts = <String, int>{};
     for (var c in comics) {
-      for (var t in c.tags) {
+      for (var t in _resolveTags(c)) {
         if (t.isEmpty) continue;
-        final (cat, val) = _classifyTag(t);
-        if (cat != 'tag' || val.isEmpty) continue;
-        counts[val] = (counts[val] ?? 0) + 1;
+        counts[t] = (counts[t] ?? 0) + 1;
       }
     }
     final list = counts.entries.toList();
@@ -402,11 +332,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
   List<MapEntry<String, int>> get authorFilterValues {
     final counts = <String, int>{};
     for (var c in comics) {
-      for (var t in c.tags) {
-        if (t.isEmpty) continue;
-        final (cat, val) = _classifyTag(t);
-        if (cat != 'author' || val.isEmpty) continue;
-        counts[val] = (counts[val] ?? 0) + 1;
+      for (var a in _resolveAuthors(c)) {
+        if (a.isEmpty) continue;
+        counts[a] = (counts[a] ?? 0) + 1;
       }
     }
     final list = counts.entries.toList();
@@ -498,6 +426,10 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
     authorFilterSelect = parseTagFilter(
       appdata.implicitData["local_favorites_author_filter"],
     );
+    tagMatchAll =
+        appdata.implicitData["local_favorites_tag_match_all"] ?? false;
+    authorMatchAll =
+        appdata.implicitData["local_favorites_author_match_all"] ?? false;
     favSortType = LocalSortType.fromString(
       appdata.implicitData["local_favorites_sort"] ?? "default",
     );
@@ -699,6 +631,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                           initSourceFilterSelect: sourceFilterSelect,
                           initTagFilterSelect: tagFilterSelect,
                           initAuthorFilterSelect: authorFilterSelect,
+                          initTagMatchAll: tagMatchAll,
+                          initAuthorMatchAll: authorMatchAll,
                           sourceFilterValues: sourceFilterValues,
                           sourceFilterLabel: sourceFilterLabel,
                           tagFilterValues: tagFilterValues,
@@ -709,12 +643,16 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                                 sourceFilter,
                                 tagFilter,
                                 authorFilter,
+                                newTagMatchAll,
+                                newAuthorMatchAll,
                               ) {
                                 setState(() {
                                   readFilterSelect = readFilter;
                                   sourceFilterSelect = sourceFilter;
                                   tagFilterSelect = tagFilter;
                                   authorFilterSelect = authorFilter;
+                                  tagMatchAll = newTagMatchAll;
+                                  authorMatchAll = newAuthorMatchAll;
                                 });
                                 updateComics();
                               },
@@ -1693,6 +1631,8 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
     required this.initSourceFilterSelect,
     required this.initTagFilterSelect,
     required this.initAuthorFilterSelect,
+    required this.initTagMatchAll,
+    required this.initAuthorMatchAll,
     required this.sourceFilterValues,
     required this.sourceFilterLabel,
     required this.tagFilterValues,
@@ -1704,6 +1644,8 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
   final Set<String> initSourceFilterSelect;
   final Set<String> initTagFilterSelect;
   final Set<String> initAuthorFilterSelect;
+  final bool initTagMatchAll;
+  final bool initAuthorMatchAll;
   final List<String> sourceFilterValues;
   final String Function(String sourceKey) sourceFilterLabel;
   final List<MapEntry<String, int>> tagFilterValues;
@@ -1713,6 +1655,8 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
     Set<String> sourceFilter,
     Set<String> tagFilter,
     Set<String> authorFilter,
+    bool tagMatchAll,
+    bool authorMatchAll,
   )
   updateConfig;
 
@@ -1729,6 +1673,8 @@ class _LocalFavoritesFilterDialogState
   late var sourceFilter = {...widget.initSourceFilterSelect};
   late var tagFilter = {...widget.initTagFilterSelect};
   late var authorFilter = {...widget.initAuthorFilterSelect};
+  late bool tagMatchAll = widget.initTagMatchAll;
+  late bool authorMatchAll = widget.initAuthorMatchAll;
   String tagSearch = "";
   String authorSearch = "";
   bool sourceExpanded = false;
@@ -1787,6 +1733,7 @@ class _LocalFavoritesFilterDialogState
     );
   }
 
+
   Widget _buildChipSection({
     required List<MapEntry<String, int>> values,
     required Set<String> selected,
@@ -1796,6 +1743,8 @@ class _LocalFavoritesFilterDialogState
     required String emptyText,
     required String emptyMatchText,
     required String searchHint,
+    required bool matchAll,
+    required ValueChanged<bool> onMatchModeChanged,
   }) {
     final filtered = search.trim().isEmpty
         ? values
@@ -1812,23 +1761,61 @@ class _LocalFavoritesFilterDialogState
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (values.length > 8)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: TextField(
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: searchHint,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: values.length > 8
+                      ? TextField(
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: searchHint,
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                          ),
+                          onChanged: onSearchChanged,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                if (values.length > 8) const SizedBox(width: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => onMatchModeChanged(!matchAll),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: matchAll
+                          ? context.colorScheme.primaryContainer
+                          : null,
+                      border: Border.all(
+                        color: matchAll
+                            ? context.colorScheme.primary
+                            : context.colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      matchAll ? "Match all".tl : "Match any".tl,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: matchAll
+                            ? context.colorScheme.primary
+                            : context.colorScheme.outline,
+                      ),
+                    ),
                   ),
                 ),
-                onChanged: onSearchChanged,
-              ),
+              ],
             ),
+          ),
           if (values.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1929,7 +1916,8 @@ class _LocalFavoritesFilterDialogState
                   values: widget.authorFilterValues,
                   selected: authorFilter,
                   search: authorSearch,
-                  onSearchChanged: (v) => setState(() => authorSearch = v),
+                  onSearchChanged: (v) =>
+                      setState(() => authorSearch = v),
                   onSelectChanged: (a, sel) => setState(() {
                     if (sel) {
                       authorFilter.add(a);
@@ -1940,6 +1928,9 @@ class _LocalFavoritesFilterDialogState
                   emptyText: "No authors".tl,
                   emptyMatchText: "No matched authors".tl,
                   searchHint: "Search authors".tl,
+                  matchAll: authorMatchAll,
+                  onMatchModeChanged: (v) =>
+                      setState(() => authorMatchAll = v),
                 ),
               ),
               const Divider(height: 1),
@@ -1952,7 +1943,8 @@ class _LocalFavoritesFilterDialogState
                   values: widget.tagFilterValues,
                   selected: tagFilter,
                   search: tagSearch,
-                  onSearchChanged: (v) => setState(() => tagSearch = v),
+                  onSearchChanged: (v) =>
+                      setState(() => tagSearch = v),
                   onSelectChanged: (t, sel) => setState(() {
                     if (sel) {
                       tagFilter.add(t);
@@ -1963,6 +1955,9 @@ class _LocalFavoritesFilterDialogState
                   emptyText: "No tags".tl,
                   emptyMatchText: "No matched tags".tl,
                   searchHint: "Search tags".tl,
+                  matchAll: tagMatchAll,
+                  onMatchModeChanged: (v) =>
+                      setState(() => tagMatchAll = v),
                 ),
               ),
             ],
@@ -1992,6 +1987,9 @@ class _LocalFavoritesFilterDialogState
                 .toList();
             appdata.implicitData["local_favorites_author_filter"] =
                 authorFilter.toList();
+            appdata.implicitData["local_favorites_tag_match_all"] = tagMatchAll;
+            appdata.implicitData["local_favorites_author_match_all"] =
+                authorMatchAll;
             appdata.writeImplicitData();
             if (mounted) {
               Navigator.pop(context);
@@ -2001,6 +1999,8 @@ class _LocalFavoritesFilterDialogState
                   Set<String>.from(sourceFilter),
                   Set<String>.from(tagFilter),
                   Set<String>.from(authorFilter),
+                  tagMatchAll,
+                  authorMatchAll,
                 );
               });
             }

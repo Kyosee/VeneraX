@@ -36,17 +36,25 @@ abstract mixin class _ComicPageActions {
   bool isFavorite = false;
 
   FavoriteItem _toFavoriteItem() {
-    var tags = <String>[];
+    var rawTags = <String>[];
     for (var e in comic.tags.entries) {
-      tags.addAll(e.value.map((tag) => '${e.key}:$tag'));
+      rawTags.addAll(e.value.map((tag) => '${e.key}:$tag'));
     }
+    final buckets = splitFavoriteTags(rawTags);
+    final author = buckets.authors.isNotEmpty
+        ? buckets.authors.join(', ')
+        : (comic.subTitle ?? comic.uploader ?? '');
     return FavoriteItem(
       id: comic.id,
       name: comic.title,
       coverPath: comic.cover,
-      author: comic.subTitle ?? comic.uploader ?? '',
+      author: author,
       type: comic.comicType,
-      tags: tags,
+      tags: buckets.tags,
+      authors: buckets.authors,
+      status: buckets.status,
+      updateTimeMeta: buckets.updateTime,
+      extraMeta: buckets.extraMeta,
     );
   }
 

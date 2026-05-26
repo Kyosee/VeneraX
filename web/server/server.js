@@ -3892,7 +3892,192 @@ const favoriteFolderColumnDefinitions = [
   ["last_update_time", "text"],
   ["has_new_update", "int"],
   ["last_check_time", "int"],
+  ["authors", "text"],
+  ["comic_status", "text"],
+  ["update_time_meta", "text"],
+  ["extra_meta", "text"],
 ];
+
+const FAVORITE_AUTHOR_PREFIXES = new Set([
+  "author",
+  "authors",
+  "artist",
+  "artists",
+  "作者",
+  "作家",
+  "画师",
+  "畫師",
+  "漫画家",
+  "漫畫家",
+]);
+
+const FAVORITE_STATUS_PREFIXES = new Set([
+  "status",
+  "state",
+  "progress",
+  "状态",
+  "狀態",
+]);
+
+const FAVORITE_UPDATE_TIME_PREFIXES = new Set([
+  "update",
+  "updates",
+  "updated",
+  "updatetime",
+  "update time",
+  "time",
+  "date",
+  "released",
+  "release",
+  "更新",
+  "更新时间",
+  "更新時間",
+  "日期",
+  "时间",
+  "時間",
+]);
+
+const FAVORITE_EXTRA_META_PREFIXES = new Set([
+  "uploader",
+  "uploaders",
+  "translator",
+  "translators",
+  "group",
+  "groups",
+  "circle",
+  "circles",
+  "publisher",
+  "magazine",
+  "parody",
+  "parodies",
+  "language",
+  "languages",
+  "lang",
+  "year",
+  "pages",
+  "rating",
+  "score",
+  "category",
+  "categories",
+  "series",
+  "source",
+  "语言",
+  "語言",
+  "类型",
+  "類型",
+  "出版社",
+  "出版",
+  "年份",
+  "页数",
+  "頁數",
+  "评分",
+  "評分",
+]);
+
+function classifyFavoriteRawTag(raw) {
+  const idx = raw.indexOf(":");
+  if (idx <= 0 || idx === raw.length - 1) {
+    return { bucket: "tag", prefix: null, value: raw.trim() };
+  }
+  const prefix = raw.substring(0, idx).trim().toLowerCase();
+  const value = raw.substring(idx + 1).trim();
+  if (FAVORITE_AUTHOR_PREFIXES.has(prefix))
+    return { bucket: "author", prefix, value };
+  if (FAVORITE_STATUS_PREFIXES.has(prefix))
+    return { bucket: "status", prefix, value };
+  if (FAVORITE_UPDATE_TIME_PREFIXES.has(prefix))
+    return { bucket: "updateTime", prefix, value };
+  if (FAVORITE_EXTRA_META_PREFIXES.has(prefix))
+    return { bucket: "extra", prefix, value };
+  return { bucket: "tag", prefix, value };
+}
+
+/**
+ * Classify a flat list of legacy `key:value` tag strings into buckets.
+ * Mirrors `splitFavoriteTags` in lib/foundation/favorites_meta.dart — keep
+ * the prefix lists in sync between the two.
+ */
+function splitFavoriteRawTags(rawList) {
+  const tags = [];
+  const authors = [];
+  let status = null;
+  let updateTime = null;
+  const extra = {};
+  for (const raw of rawList) {
+    if (!raw) continue;
+    const c = classifyFavoriteRawTag(String(raw));
+    if (!c.value) continue;
+    switch (c.bucket) {
+      case "tag":
+        tags.push(c.value);
+        break;
+      case "author":
+        authors.push(c.value);
+        break;
+      case "status":
+        if (status == null) status = c.value;
+        break;
+      case "updateTime":
+        if (updateTime == null) updateTime = c.value;
+        break;
+      case "extra":
+        if (c.prefix) {
+          extra[c.prefix] = extra[c.prefix]
+            ? `${extra[c.prefix]}, ${c.value}`
+            : c.value;
+        }
+        break;
+    }
+  }
+  return { tags, authors, status, updateTime, extraMeta: extra };
+}
+
+function favoriteEncodeJsonList(list) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return JSON.stringify(list);
+}
+
+function favoriteDecodeJsonList(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.map(String);
+  const text = String(value).trim();
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const decoded = JSON.parse(text);
+      if (Array.isArray(decoded)) return decoded.map(String);
+    } catch {
+      /* fall through */
+    }
+  }
+  return text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function favoriteEncodeJsonMap(map) {
+  if (!map || typeof map !== "object") return null;
+  const keys = Object.keys(map);
+  if (keys.length === 0) return null;
+  return JSON.stringify(map);
+}
+
+function favoriteDecodeJsonMap(value) {
+  if (value == null) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  const text = String(value).trim();
+  if (!text) return {};
+  try {
+    const decoded = JSON.parse(text);
+    if (decoded && typeof decoded === "object" && !Array.isArray(decoded)) {
+      return decoded;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
 
 function normalizeFavoriteFolderName(value, fieldName = "folder") {
   const name = String(value || "").trim();
@@ -3955,6 +4140,10 @@ function ensureFavoriteFolderTable(db, folderName) {
         last_update_time text,
         has_new_update int,
         last_check_time int,
+        authors text,
+        comic_status text,
+        update_time_meta text,
+        extra_meta text,
         primary key (id, type)
       );
     `);
@@ -3964,12 +4153,50 @@ function ensureFavoriteFolderTable(db, folderName) {
   if (!columns.has("id") || !columns.has("type")) {
     throw createHttpError(422, "Favorites folder schema is invalid");
   }
+  const newMetaColumns = [
+    "authors",
+    "comic_status",
+    "update_time_meta",
+    "extra_meta",
+  ];
+  const needsBackfill = newMetaColumns.some((c) => !columns.has(c));
   for (const [name, type] of favoriteFolderColumnDefinitions) {
     if (!columns.has(name)) {
       db.exec(
         `alter table ${quotedTable} add column ${sqliteIdentifier(name)} ${type};`,
       );
     }
+  }
+  if (needsBackfill) {
+    backfillFavoriteFolderMetaColumns(db, folderName);
+  }
+}
+
+function backfillFavoriteFolderMetaColumns(db, folderName) {
+  const quotedTable = sqliteIdentifier(folderName);
+  const rows = db
+    .prepare(`select id, type, tags from ${quotedTable};`)
+    .all();
+  const update = db.prepare(
+    `update ${quotedTable}
+     set authors = ?, comic_status = ?, update_time_meta = ?, extra_meta = ?
+     where id = ? and type = ?;`,
+  );
+  for (const row of rows) {
+    const raw = row.tags == null ? "" : String(row.tags);
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const buckets = splitFavoriteRawTags(parts);
+    update.run(
+      favoriteEncodeJsonList(buckets.authors),
+      buckets.status,
+      buckets.updateTime,
+      favoriteEncodeJsonMap(buckets.extraMeta),
+      row.id,
+      row.type,
+    );
   }
 }
 
@@ -4034,6 +4261,24 @@ function normalizeFavoriteWriteItem(payload) {
     hasNewUpdate: item.hasNewUpdate ?? item.has_new_update,
     lastCheckTime:
       nullableNumber(item.lastCheckTime) ?? nullableNumber(item.last_check_time),
+    authors: favoriteEncodeJsonList(
+      Array.isArray(item.authors) ? item.authors.map(String) : [],
+    ),
+    comicStatus:
+      item.status == null && item.comic_status == null
+        ? null
+        : String(item.status ?? item.comic_status),
+    updateTimeMeta:
+      item.updateTimeMeta == null && item.update_time_meta == null
+        ? null
+        : String(item.updateTimeMeta ?? item.update_time_meta),
+    extraMeta: favoriteEncodeJsonMap(
+      item.extraMeta && typeof item.extraMeta === "object"
+        ? item.extraMeta
+        : item.extra_meta && typeof item.extra_meta === "object"
+          ? item.extra_meta
+          : {},
+    ),
   };
 }
 
@@ -4065,6 +4310,22 @@ function favoriteWriteValue(item, column) {
       return item.hasNewUpdate ? 1 : 0;
     case "last_check_time":
       return item.lastCheckTime;
+    case "authors": {
+      const a = item.authors;
+      if (a == null) return null;
+      if (Array.isArray(a)) return favoriteEncodeJsonList(a);
+      return String(a);
+    }
+    case "comic_status":
+      return item.comicStatus ?? item.status ?? null;
+    case "update_time_meta":
+      return item.updateTimeMeta ?? null;
+    case "extra_meta": {
+      const e = item.extraMeta;
+      if (e == null) return null;
+      if (typeof e === "object") return favoriteEncodeJsonMap(e);
+      return String(e);
+    }
     default:
       return null;
   }
@@ -4099,6 +4360,11 @@ function favoriteItemFromRow(row) {
     hasNewUpdate: Number(row.has_new_update || 0) === 1,
     lastCheckTime:
       row.last_check_time == null ? null : Number(row.last_check_time),
+    authors: favoriteDecodeJsonList(row.authors),
+    status: row.comic_status == null ? null : String(row.comic_status),
+    updateTimeMeta:
+      row.update_time_meta == null ? null : String(row.update_time_meta),
+    extraMeta: favoriteDecodeJsonMap(row.extra_meta),
   };
 }
 

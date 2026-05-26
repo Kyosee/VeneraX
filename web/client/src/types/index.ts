@@ -26,9 +26,12 @@ export interface FavoriteItem {
   time: string
   lastUpdateTime?: string
   hasNewUpdate?: boolean
-  status?: string
+  status?: string | null
   displayOrder?: number
   sourceKey?: string
+  authors?: string[]
+  updateTimeMeta?: string | null
+  extraMeta?: Record<string, string>
 }
 
 export interface FavoriteFolder {

@@ -278,7 +278,7 @@ class ComicDetails with HistoryMixin {
     for (var entry in tags.entries) {
       if (authorNamespaces.contains(entry.key.toLowerCase()) &&
           entry.value.isNotEmpty) {
-        return entry.value.first;
+        return entry.value.join(', ');
       }
     }
     return null;

@@ -213,9 +213,24 @@ class HistoryManager with ChangeNotifier {
 
   late String _dbPath;
 
-  int get length => isInitialized
-      ? _db.select("select count(*) from history;").first[0] as int
-      : 0;
+  bool _isCorrupted = false;
+
+  void _handleCorruption(SqliteException e) {
+    if (!_isCorrupted) {
+      _isCorrupted = true;
+      Log.addLog(LogLevel.error, 'History DB Corrupted', '$e');
+    }
+  }
+
+  int get length {
+    if (!isInitialized || _isCorrupted) return 0;
+    try {
+      return _db.select("select count(*) from history;").first[0] as int;
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+      return 0;
+    }
+  }
 
   /// Cache of history ids. Improve the performance of find operation.
   Map<String, bool>? _cachedHistoryIds;
@@ -558,27 +573,32 @@ class HistoryManager with ChangeNotifier {
   }
 
   void updateCache() {
-    if (!isInitialized) return;
-    _cachedHistoryIds = {};
-    var res = _db.select("""
+    if (!isInitialized || _isCorrupted) return;
+    try {
+      _cachedHistoryIds = {};
+      var res = _db.select("""
         select id, type from history;
       """);
-    for (var element in res) {
-      _cachedHistoryIds![_cacheKey(
-            element["id"] as String,
-            ComicType(element["type"] as int),
-          )] =
-          true;
-    }
-    for (var key in cachedHistories.keys.toList()) {
-      if (!_cachedHistoryIds!.containsKey(key)) {
-        cachedHistories.remove(key);
+      for (var element in res) {
+        _cachedHistoryIds![_cacheKey(
+              element["id"] as String,
+              ComicType(element["type"] as int),
+            )] =
+            true;
       }
+      for (var key in cachedHistories.keys.toList()) {
+        if (!_cachedHistoryIds!.containsKey(key)) {
+          cachedHistories.remove(key);
+        }
+      }
+    } on SqliteException catch (e) {
+      _cachedHistoryIds = {};
+      _handleCorruption(e);
     }
   }
 
   History? find(String id, ComicType type) {
-    if (!isInitialized) return null;
+    if (!isInitialized || _isCorrupted) return null;
     if (_cachedHistoryIds == null) {
       updateCache();
     }
@@ -590,26 +610,36 @@ class HistoryManager with ChangeNotifier {
       return cachedHistories[key];
     }
 
-    var res = _db.select(
-      """
+    try {
+      var res = _db.select(
+        """
       select * from history
       where id == ? and type == ?;
     """,
-      [id, type.value],
-    );
-    if (res.isEmpty) {
+        [id, type.value],
+      );
+      if (res.isEmpty) {
+        return null;
+      }
+      return History.fromRow(res.first);
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
       return null;
     }
-    return History.fromRow(res.first);
   }
 
   List<History> getAll() {
-    if (!isInitialized) return [];
-    var res = _db.select("""
+    if (!isInitialized || _isCorrupted) return [];
+    try {
+      var res = _db.select("""
       select * from history
       order by time DESC;
     """);
-    return res.map((element) => History.fromRow(element)).toList();
+      return res.map((element) => History.fromRow(element)).toList();
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+      return [];
+    }
   }
 
   /// 获取最近阅读的漫画

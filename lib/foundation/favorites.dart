@@ -18,6 +18,7 @@ import 'app.dart';
 import 'comic_source/comic_source.dart';
 import 'comic_state_repository.dart';
 import 'comic_type.dart';
+import 'favorites_meta.dart';
 
 String _getTimeString(DateTime time) {
   return time.toIso8601String().replaceFirst("T", " ").substring(0, 19);
@@ -37,6 +38,18 @@ class FavoriteItem implements Comic {
   bool? hasNewUpdate;
   int? lastCheckTime;
 
+  /// Author list parsed from raw tags. Empty if unknown.
+  List<String> authors;
+
+  /// Comic serialization status (e.g. "连载中"/"完结"). Null if unknown.
+  String? status;
+
+  /// Source-provided update time string (raw, format varies by source).
+  String? updateTimeMeta;
+
+  /// Other metadata key→value (language, year, ...). Empty if none.
+  Map<String, String> extraMeta;
+
   FavoriteItem({
     required this.id,
     required this.name,
@@ -45,7 +58,12 @@ class FavoriteItem implements Comic {
     required this.type,
     required this.tags,
     DateTime? favoriteTime,
-  }) {
+    List<String>? authors,
+    this.status,
+    this.updateTimeMeta,
+    Map<String, String>? extraMeta,
+  }) : authors = authors ?? const [],
+       extraMeta = extraMeta ?? const {} {
     var t = favoriteTime ?? DateTime.now();
     time = _getTimeString(t);
   }
@@ -54,11 +72,55 @@ class FavoriteItem implements Comic {
     : name = row["name"],
       author = row["author"],
       type = ComicType(row["type"]),
-      tags = (row["tags"] as String).split(","),
+      tags = _parseTagsColumn(row["tags"]),
       id = row["id"],
       coverPath = row["cover_path"],
-      time = row["time"] {
+      time = row["time"],
+      authors = _safeDecodeJsonList(row, "authors"),
+      status = _safeReadString(row, "comic_status"),
+      updateTimeMeta = _safeReadString(row, "update_time_meta"),
+      extraMeta = _safeDecodeJsonMap(row, "extra_meta") {
     tags.remove("");
+  }
+
+  static List<String> _parseTagsColumn(Object? value) {
+    if (value == null) return [];
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return [];
+      if (trimmed.startsWith('[')) {
+        return decodeJsonList(trimmed);
+      }
+      return trimmed.split(",").where((s) => s.isNotEmpty).toList();
+    }
+    return [];
+  }
+
+  static String? _safeReadString(Row row, String column) {
+    try {
+      final v = row[column];
+      if (v == null) return null;
+      final s = v.toString();
+      return s.isEmpty ? null : s;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<String> _safeDecodeJsonList(Row row, String column) {
+    try {
+      return decodeJsonList(row[column]);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Map<String, String> _safeDecodeJsonMap(Row row, String column) {
+    try {
+      return decodeJsonMap(row[column]);
+    } catch (_) {
+      return const {};
+    }
   }
 
   @override
@@ -107,7 +169,7 @@ class FavoriteItem implements Comic {
   double? get stars => null;
 
   @override
-  String? get subtitle => author;
+  String? get subtitle => authors.isNotEmpty ? authors.join(', ') : author;
 
   @override
   String get title => name;
@@ -122,6 +184,10 @@ class FavoriteItem implements Comic {
       "id": id,
       "coverPath": coverPath,
       "sourceKey": sourceKey,
+      if (authors.isNotEmpty) "authors": authors,
+      if (status != null) "status": status,
+      if (updateTimeMeta != null) "updateTimeMeta": updateTimeMeta,
+      if (extraMeta.isNotEmpty) "extraMeta": extraMeta,
       if (lastUpdateTime != null) "lastUpdateTime": lastUpdateTime,
       if (hasNewUpdate != null) "hasNewUpdate": hasNewUpdate,
       if (lastCheckTime != null) "lastCheckTime": lastCheckTime,
@@ -140,6 +206,16 @@ class FavoriteItem implements Comic {
       coverPath: json["coverPath"],
       type: ComicType(type),
       tags: List<String>.from(json["tags"] ?? []),
+      authors: json["authors"] is List
+          ? List<String>.from(json["authors"])
+          : null,
+      status: json["status"]?.toString(),
+      updateTimeMeta: json["updateTimeMeta"]?.toString(),
+      extraMeta: json["extraMeta"] is Map
+          ? (json["extraMeta"] as Map).map(
+              (k, v) => MapEntry(k.toString(), v.toString()),
+            )
+          : null,
     );
     favorite.lastUpdateTime =
         json["lastUpdateTime"]?.toString() ?? json["last_update_time"]?.toString();
@@ -168,6 +244,10 @@ class FavoriteItemWithFolderInfo extends FavoriteItem {
         author: item.author,
         type: item.type,
         tags: item.tags,
+        authors: item.authors,
+        status: item.status,
+        updateTimeMeta: item.updateTimeMeta,
+        extraMeta: item.extraMeta,
       );
 }
 
@@ -190,6 +270,10 @@ class FavoriteItemWithUpdateInfo extends FavoriteItem {
         author: item.author,
         type: item.type,
         tags: item.tags,
+        authors: item.authors,
+        status: item.status,
+        updateTimeMeta: item.updateTimeMeta,
+        extraMeta: item.extraMeta,
       ) {
     lastUpdateTime = updateTime;
     this.hasNewUpdate = hasNewUpdate;
@@ -522,6 +606,10 @@ class LocalFavoritesManager with ChangeNotifier {
         time TEXT,
         display_order int,
         translated_tags TEXT,
+        authors TEXT,
+        comic_status TEXT,
+        update_time_meta TEXT,
+        extra_meta TEXT,
         primary key (id, type)
       );
     """);
@@ -536,8 +624,8 @@ class LocalFavoritesManager with ChangeNotifier {
     final translatedTags = _translateTags(comic.tags);
     _db.execute(
       """
-      insert or replace into "$folder" (id, name, author, type, tags, cover_path, time, translated_tags, display_order)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?);
+      insert or replace into "$folder" (id, name, author, type, tags, cover_path, time, translated_tags, display_order, authors, comic_status, update_time_meta, extra_meta)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """,
       [
         comic.id,
@@ -549,6 +637,10 @@ class LocalFavoritesManager with ChangeNotifier {
         comic.time,
         translatedTags,
         displayOrder,
+        encodeJsonList(comic.authors),
+        comic.status,
+        comic.updateTimeMeta,
+        encodeJsonMap(comic.extraMeta),
       ],
     );
     final lastUpdateTime = comic.lastUpdateTime ?? updateTime;
@@ -630,6 +722,61 @@ class LocalFavoritesManager with ChangeNotifier {
           [translatedTags, comic.id, comic.type.value],
         );
       }
+    }
+    final hasAuthors = columns.contains('authors');
+    final hasStatus = columns.contains('comic_status');
+    final hasUpdateTime = columns.contains('update_time_meta');
+    final hasExtra = columns.contains('extra_meta');
+    if (!hasAuthors) {
+      _db.execute("""
+        alter table "$folder" add column authors TEXT;
+      """);
+    }
+    if (!hasStatus) {
+      _db.execute("""
+        alter table "$folder" add column comic_status TEXT;
+      """);
+    }
+    if (!hasUpdateTime) {
+      _db.execute("""
+        alter table "$folder" add column update_time_meta TEXT;
+      """);
+    }
+    if (!hasExtra) {
+      _db.execute("""
+        alter table "$folder" add column extra_meta TEXT;
+      """);
+    }
+    if (!hasAuthors || !hasStatus || !hasUpdateTime || !hasExtra) {
+      _backfillFavoriteMetaColumns(folder);
+    }
+  }
+
+  /// One-shot migration: read each row's legacy `tags` column, classify by
+  /// prefix and write the buckets into the new dedicated columns. Idempotent
+  /// — only run when at least one new column is missing.
+  void _backfillFavoriteMetaColumns(String folder) {
+    final rows = _db.select(
+      """select id, type, tags from "$folder";""",
+    );
+    for (final row in rows) {
+      final raw = (row['tags'] as String?)?.split(',') ?? const <String>[];
+      final buckets = splitFavoriteTags(raw);
+      _db.execute(
+        """
+        update "$folder"
+        set authors = ?, comic_status = ?, update_time_meta = ?, extra_meta = ?
+        where id == ? and type == ?;
+        """,
+        [
+          encodeJsonList(buckets.authors),
+          buckets.status,
+          buckets.updateTime,
+          encodeJsonMap(buckets.extraMeta),
+          row['id'],
+          row['type'],
+        ],
+      );
     }
   }
 
