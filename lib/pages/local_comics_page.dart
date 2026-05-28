@@ -15,6 +15,7 @@ import 'package:venera/utils/io.dart';
 import 'package:venera/utils/pdf.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/venera_comics.dart';
+import 'package:venera/pages/home_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class LocalComicsPage extends StatefulWidget {
@@ -277,8 +278,14 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         MenuButton(entries: [
           MenuEntry(
             icon: Icons.file_download_outlined,
-            text: "Import .venera_comics".tl,
-            onClick: _importVeneraComics,
+            text: "Import".tl,
+            onClick: () {
+              showDialog(
+                barrierDismissible: false,
+                context: context,
+                builder: (context) => const ImportComicsWidget(),
+              );
+            },
           ),
           MenuEntry(
             icon: Icons.file_upload_outlined,
@@ -452,36 +459,6 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       },
       child: body,
     );
-  }
-
-
-  void _importVeneraComics() async {
-    var file = await selectFile(ext: ['venera_comics']);
-    if (file == null) return;
-
-    var controller = showLoadingDialog(
-      context,
-      allowCancel: false,
-      message: "Importing".tl,
-    );
-
-    try {
-      var count = await importVeneraComics(
-        File(file.path),
-        onProgress: (current, total) {
-          controller.setMessage("${"Importing".tl} $current/$total");
-        },
-      );
-      controller.close();
-      if (mounted) {
-        context.showMessage(message: "$count ${"comics imported".tl}");
-      }
-    } catch (e) {
-      controller.close();
-      if (mounted) {
-        context.showMessage(message: e.toString());
-      }
-    }
   }
 
   void _exportAsVeneraComics(List<LocalComic> comics) async {
