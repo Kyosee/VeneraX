@@ -10,8 +10,10 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio_io.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/ext.dart';
+import 'package:venera/utils/venera_comics.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3_pkg;
 import 'package:webdav_client/webdav_client.dart' hide File;
 import 'package:venera/utils/translations.dart';
@@ -115,6 +117,9 @@ class DataSync with ChangeNotifier {
   bool get isUploading => _isUploading;
 
   bool _haveWaitingTask = false;
+
+  bool _isSyncingImages = false;
+  bool get isSyncingImages => _isSyncingImages;
 
   Timer? _pendingAutoUpload;
 
@@ -298,6 +303,9 @@ class DataSync with ChangeNotifier {
         data.deleteIgnoreError();
         Log.info("Upload Data", "Data uploaded successfully");
         _addSyncLog('upload', filename, true, null);
+        if (_shouldSyncImages()) {
+          syncComicImages();
+        }
         return const Res(true);
       } catch (e, s) {
         appdata.settings['dataVersion'] = previousVersion;
@@ -379,6 +387,9 @@ class DataSync with ChangeNotifier {
         _addSyncLog('download', null, true, null);
         if (!_hasCompletedInitialSync()) {
           _markInitialSyncCompleted();
+        }
+        if (_shouldSyncImages()) {
+          syncComicImages();
         }
         return const Res(true);
       } catch (e, s) {
@@ -493,6 +504,122 @@ class DataSync with ChangeNotifier {
     } finally {
       _isDownloading = false;
       notifyListeners();
+    }
+  }
+
+  bool _shouldSyncImages() {
+    return appdata.settings['syncLocalComicImages'] == true && isEnabled;
+  }
+
+  Future<void> syncComicImages() async {
+    if (_isSyncingImages || !_shouldSyncImages()) return;
+    _isSyncingImages = true;
+    notifyListeners();
+    try {
+      var config = _validateConfig();
+      if (config == null || config.isEmpty) return;
+      String url = config[0];
+      String user = config[1];
+      String pass = config[2];
+      var client = newClient(
+        url,
+        user: user,
+        password: pass,
+        adapter: RHttpAdapter(),
+      );
+
+      await _ensureComicsDir(client);
+      await _uploadComicImages(client);
+      await _downloadComicImages(client);
+    } catch (e, s) {
+      Log.error("Image Sync", e, s);
+    } finally {
+      _isSyncingImages = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _ensureComicsDir(Client client) async {
+    try {
+      await client.readDir('/venera-comics/');
+    } catch (_) {
+      try {
+        await client.mkdir('/venera-comics/');
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _uploadComicImages(Client client) async {
+    var comics = LocalManager().getComics(LocalSortType.defaultSort)
+        .where((c) => c.status == LocalComicStatus.downloaded)
+        .toList();
+    if (comics.isEmpty) return;
+
+    List<String> remoteFiles;
+    try {
+      var files = await client.readDir('/venera-comics/');
+      remoteFiles = files
+          .map((f) => f.name ?? '')
+          .where((n) => n.isNotEmpty)
+          .toList();
+    } catch (_) {
+      remoteFiles = [];
+    }
+
+    for (var comic in comics) {
+      var fileName =
+          '${comic.id}_${comic.comicType.value}.venera_comics';
+      if (remoteFiles.contains(fileName)) continue;
+
+      try {
+        var file =
+            await exportVeneraComics([comic], includeImages: true);
+        await client.write(
+          '/venera-comics/$fileName',
+          await file.readAsBytes(),
+        );
+        file.deleteIgnoreError();
+        Log.info("Image Sync", "Uploaded: ${comic.title}");
+      } catch (e, s) {
+        Log.error(
+          "Image Sync", "Failed to upload ${comic.title}: $e", s);
+      }
+    }
+  }
+
+  Future<void> _downloadComicImages(Client client) async {
+    var comics = LocalManager().getComics(LocalSortType.defaultSort)
+        .where((c) => c.status == LocalComicStatus.notDownloaded)
+        .toList();
+    if (comics.isEmpty) return;
+
+    List<String> remoteFiles;
+    try {
+      var files = await client.readDir('/venera-comics/');
+      remoteFiles = files
+          .map((f) => f.name ?? '')
+          .where((n) => n.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return;
+    }
+
+    for (var comic in comics) {
+      var fileName =
+          '${comic.id}_${comic.comicType.value}.venera_comics';
+      if (!remoteFiles.contains(fileName)) continue;
+
+      try {
+        var localFile = File(FilePath.join(App.cachePath, fileName));
+        await client.read2File(
+          '/venera-comics/$fileName', localFile.path);
+        await importVeneraComics(localFile);
+        localFile.deleteIgnoreError();
+        Log.info("Image Sync", "Downloaded: ${comic.title}");
+      } catch (e, s) {
+        Log.error(
+          "Image Sync", "Failed to download ${comic.title}: $e", s);
+      }
     }
   }
 }
