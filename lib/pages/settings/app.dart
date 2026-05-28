@@ -436,6 +436,8 @@ class _WebdavSettingState extends State<_WebdavSetting> {
 
   bool autoSync = true;
 
+  bool syncLocalComicImages = false;
+
   bool isTesting = false;
 
   @override
@@ -454,6 +456,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       pass = configs[2];
     }
     autoSync = appdata.implicitData['webdavAutoSync'] ?? true;
+    syncLocalComicImages = appdata.settings['syncLocalComicImages'] ?? false;
     if (App.isWeb) {
       unawaited(_loadServerWebDavConfig());
     }
@@ -639,6 +642,56 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               contentPadding: EdgeInsets.zero,
               trailing: Switch(value: autoSync, onChanged: onAutoSyncChanged),
             ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: Text("Sync Local Comic Images".tl),
+              subtitle: Text(
+                "开启后将通过WebDAV同步漫画图片文件。注意：这会导致同步数据量显著增大且同步速度变慢。关闭时仅同步漫画记录，图包需在各设备手动下载或导入。".tl,
+                style: const TextStyle(fontSize: 12),
+              ),
+              value: syncLocalComicImages,
+              onChanged: (v) {
+                setState(() => syncLocalComicImages = v);
+                appdata.settings['syncLocalComicImages'] = v;
+                appdata.saveData();
+              },
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Button.outlined(
+                  onPressed: () async {
+                    var result = await DataSync().uploadData();
+                    if (result.error) {
+                      context.showMessage(message: result.errorMessage!);
+                    } else {
+                      context.showMessage(message: "Upload successful".tl);
+                    }
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_upload_outlined, size: 18),
+                      const SizedBox(width: 6),
+                      Text("Upload".tl),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Button.outlined(
+                  onPressed: () => _showRemoteBackupList(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_download_outlined, size: 18),
+                      const SizedBox(width: 6),
+                      Text("Download".tl),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             Center(
               child: Button.filled(
@@ -716,42 +769,6 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                 },
                 child: Text("Save".tl),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Button.outlined(
-                  onPressed: () async {
-                    var result = await DataSync().uploadData();
-                    if (result.error) {
-                      context.showMessage(message: result.errorMessage!);
-                    } else {
-                      context.showMessage(message: "Upload successful".tl);
-                    }
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_upload_outlined, size: 18),
-                      const SizedBox(width: 6),
-                      Text("Upload".tl),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Button.outlined(
-                  onPressed: () => _showRemoteBackupList(context),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_download_outlined, size: 18),
-                      const SizedBox(width: 6),
-                      Text("Download".tl),
-                    ],
-                  ),
-                ),
-              ],
             ),
           ],
         ).paddingHorizontal(16),
