@@ -19,6 +19,7 @@ interface SourceRow {
   hasMore: boolean
   loading: boolean
   error: string | null
+  errorDetail: string | null
 }
 
 const props = defineProps<{
@@ -29,6 +30,21 @@ const router = useRouter()
 const rows = ref<SourceRow[]>([])
 const hasResults = ref(false)
 
+function simplifyError(msg: string): { short: string; detail: string | null } {
+  if (!msg) return { short: '搜索失败', detail: null }
+  if (msg.includes('not found')) return { short: '漫画源未安装', detail: msg }
+  if (msg.includes('403')) return { short: '请求被拒绝 (403)', detail: msg }
+  if (msg.includes('Unexpected end of JSON')) return { short: '数据解析失败', detail: msg }
+  if (msg.includes('Cannot read properties of null') || msg.includes('Cannot read properties of undefined'))
+    return { short: '源脚本执行错误', detail: msg }
+  if (msg.includes('error sending request') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT'))
+    return { short: '网络请求失败', detail: msg }
+  if (msg.includes('timeout') || msg.includes('Timeout'))
+    return { short: '请求超时', detail: msg }
+  if (msg.length > 60) return { short: msg.slice(0, 50) + '...', detail: msg }
+  return { short: msg, detail: null }
+}
+
 async function loadAll() {
   if (!props.keyword.trim()) return
   const sources = await getComicSources()
@@ -38,6 +54,7 @@ async function loadAll() {
     hasMore: false,
     loading: true,
     error: null,
+    errorDetail: null,
   }))
 
   await Promise.allSettled(
@@ -49,9 +66,11 @@ async function loadAll() {
           sourceKey: c.sourceKey || row.source.key,
         }))
         row.hasMore = res.hasMore
-        row.loading = false
       } catch (e: any) {
-        row.error = e.message ?? '搜索失败'
+        const { short, detail } = simplifyError(e.message ?? '搜索失败')
+        row.error = short
+        row.errorDetail = detail
+      } finally {
         row.loading = false
       }
     })
@@ -97,7 +116,7 @@ onMounted(() => {
           <div v-for="n in 4" :key="n" class="shimmer-card" />
         </div>
       </div>
-      <div v-else-if="row.error" class="row-error">
+      <div v-else-if="row.error" class="row-error" :title="row.errorDetail || row.error">
         <span>{{ row.error }}</span>
       </div>
       <div v-else-if="row.comics.length" class="row-scroll">
@@ -120,6 +139,7 @@ onMounted(() => {
 <style scoped>
 .aggregated-results {
   padding-bottom: 24px;
+  overflow-x: hidden;
 }
 
 .source-row {
@@ -200,5 +220,15 @@ onMounted(() => {
   text-align: center;
   background: #fafafa;
   border-radius: 6px;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.row-error span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

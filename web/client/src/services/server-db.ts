@@ -176,6 +176,10 @@ export async function getComicSources(force = false): Promise<ComicSource[]> {
   return data
 }
 
+export function clearComicSourcesCache() {
+  comicSourcesCache = null
+}
+
 export async function searchComics(sourceKey: string, keyword: string, page = 1, options?: string[]): Promise<{ comics: any[], hasMore: boolean }> {
   const res = await apiPost<any>('/api/server-db/search', { sourceKey, keyword, page, options })
   return { comics: res?.comics ?? [], hasMore: res?.hasMore ?? false }

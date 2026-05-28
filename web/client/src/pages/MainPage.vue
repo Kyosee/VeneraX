@@ -82,7 +82,11 @@ onUnmounted(() => { window.removeEventListener('resize', onResize) })
 
     <!-- Main Content -->
     <main class="main-content">
-      <router-view />
+      <router-view v-slot="{ Component, route: childRoute }">
+        <keep-alive :max="6">
+          <component :is="Component" :key="childRoute.path" />
+        </keep-alive>
+      </router-view>
     </main>
 
     <!-- Mobile Bottom Tab -->

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import ProxiedImage from '@/components/ProxiedImage.vue'
-import { listHistory, getComicSources, listFavorites } from '@/services/server-db'
+import { listHistory, getComicSources, listFavorites, clearComicSourcesCache } from '@/services/server-db'
 import { getSyncStatus, type WebDavSyncStatus } from '@/services/sync'
 import { useSyncStore } from '@/stores/sync'
 import { useSettingsStore } from '@/stores/settings'
@@ -87,6 +87,7 @@ async function doSync() {
   syncBusy.value = true
   try {
     await syncStore.download()
+    clearComicSourcesCache()
     await refreshHomeData()
     await refreshSyncStatus()
   } catch (e: any) {

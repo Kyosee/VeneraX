@@ -65,6 +65,11 @@ img {
 
 a { color: inherit; text-decoration: none; }
 
+/* Prevent iOS Safari auto-zoom on input focus */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
 /* Ensure Vant toast is always visible (override component-level defaults) */
 .van-toast {
   background: rgba(0, 0, 0, 0.75) !important;

@@ -5844,7 +5844,23 @@ async function executeSourceMethod({
     if (methodName === 'search') {
       const keyword = methodArgs[0];
       const page = methodArgs[1];
-      const options = methodArgs[2];
+      let options = methodArgs[2];
+      if (options == null && sourceInstance?.search?.optionList) {
+        const optList = sourceInstance.search.optionList;
+        if (Array.isArray(optList)) {
+          options = optList.map(opt => {
+            if (!opt || typeof opt !== 'object') return '';
+            if ('default' in opt && opt.default != null) return String(opt.default);
+            if (Array.isArray(opt.options) && opt.options.length > 0) {
+              const first = opt.options[0];
+              if (typeof first === 'string') return first.split('-')[0];
+              if (first && typeof first === 'object') return String(first.value ?? '');
+            }
+            return '';
+          });
+        }
+      }
+      if (options == null) options = [];
       if (typeof sourceInstance?.search?.load === 'function') {
         return sourceInstance.search.load.call(sourceInstance.search, keyword, options, page);
       }

@@ -15,7 +15,7 @@ const settingsStore = useSettingsStore()
 const searchText = ref('')
 const sources = ref<ComicSource[]>([])
 const selectedSourceKey = ref('')
-const aggregatedMode = ref(false)
+const aggregatedMode = ref(true)
 const searchHistory = ref<string[]>([])
 const sourcesLoading = ref(true)
 const capabilities = ref<Record<string, SourceCapabilities | null>>({})
@@ -486,6 +486,7 @@ onMounted(async () => {
 .search-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   padding-bottom: calc(16px + 50px + env(safe-area-inset-bottom, 0px));
   -webkit-overflow-scrolling: touch;
