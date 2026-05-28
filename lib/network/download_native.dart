@@ -386,7 +386,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           .where((i) => chapters == null || chapters!.contains(i))
           .toList();
       _totalChapters = chapterKeys.length;
-      const prefetchCount = 3;
+      var prefetchCount = 3;
+      var chapterDelay = Duration.zero;
+      var consecutiveFast = 0;
+      const throttleThreshold = Duration(seconds: 20);
       var prefetchFutures = <String, Future<Res<List<String>>>>{};
 
       void startPrefetch(int fromIndex) {
@@ -421,6 +424,12 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           });
           notifyListeners();
 
+          if (chapterDelay > Duration.zero && ci > _chapter) {
+            await Future.delayed(chapterDelay);
+            if (!_isRunning) return;
+          }
+
+          var sw = Stopwatch()..start();
           var future = prefetchFutures.remove(key) ?? _runWithRetry(() async {
             var r = await source.loadComicPages!(comicId, key);
             if (r.error) {
@@ -430,12 +439,27 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
             }
           });
           var res = await future;
+          sw.stop();
           if (!_isRunning) return;
           if (res.error) {
             Log.error("Download", res.errorMessage!);
             _setError("Error: ${res.errorMessage}");
             return;
           }
+
+          if (sw.elapsed > throttleThreshold) {
+            prefetchCount = 0;
+            chapterDelay = const Duration(seconds: 5);
+            consecutiveFast = 0;
+            prefetchFutures.clear();
+          } else {
+            consecutiveFast++;
+            if (consecutiveFast >= 3 && prefetchCount < 3) {
+              prefetchCount = 3;
+              chapterDelay = Duration.zero;
+            }
+          }
+
           _images![key] = res.data;
           _totalCount += res.data.length;
           await LocalManager().saveCurrentDownloadingTasks();
