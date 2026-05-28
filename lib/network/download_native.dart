@@ -330,6 +330,26 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
 
     if (_images == null) {
+      if (comic!.chapters == null && chapters != null) {
+        // Multi-chapter comic but chapters data lost during restore
+        _message = "Fetching comic info...".tl;
+        notifyListeners();
+        var res = await _runWithRetry(() async {
+          var r = await source.loadComicInfo!(comicId);
+          if (r.error) {
+            throw r.errorMessage!;
+          } else {
+            return r.data;
+          }
+        });
+        if (!_isRunning) return;
+        if (res.error) {
+          _setError("Error: ${res.errorMessage}");
+          return;
+        }
+        comic = res.data;
+        await LocalManager().saveCurrentDownloadingTasks();
+      }
       if (comic!.chapters == null) {
         _message = "Fetching image list...".tl;
         notifyListeners();
