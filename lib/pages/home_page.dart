@@ -417,6 +417,15 @@ class _LocalState extends State<_Local> {
                     const Spacer(),
                     if (!App.isWeb) ...[
                       _LocalImportButton(onPressed: import),
+                      if (LocalManager().hasComicsWithImages())
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _LocalExportButton(
+                            onPressed: () {
+                              context.to(() => const LocalComicsPage());
+                            },
+                          ),
+                        ),
                       const SizedBox(width: 8),
                     ],
                     const Icon(Icons.arrow_right),
@@ -525,6 +534,46 @@ class _LocalImportButton extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               "Import".tl,
+              style: TextStyle(
+                fontSize: 13,
+                color: context.colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalExportButton extends StatelessWidget {
+  const _LocalExportButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: "Export".tl,
+      child: Material(
+        color: context.colorScheme.primary.toOpacity(0.08),
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: onPressed,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: context.colorScheme.primary.toOpacity(0.28),
+                width: 0.6,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              "Export".tl,
               style: TextStyle(
                 fontSize: 13,
                 color: context.colorScheme.primary,
