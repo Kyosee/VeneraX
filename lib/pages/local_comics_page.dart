@@ -14,6 +14,7 @@ import 'package:venera/utils/epub.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/pdf.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/utils/venera_comics.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class LocalComicsPage extends StatefulWidget {
@@ -36,16 +37,20 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
 
   Map<LocalComic, bool> selectedComics = {};
 
+  LocalComicStatus? currentTab; // null means "全部" (all)
+
   void update() {
+    List<LocalComic> all;
     if (keyword.isEmpty) {
-      setState(() {
-        comics = LocalManager().getComics(sortType);
-      });
+      all = LocalManager().getComics(sortType);
     } else {
-      setState(() {
-        comics = LocalManager().search(keyword);
-      });
+      all = LocalManager().search(keyword);
     }
+    setState(() {
+      comics = currentTab == null
+          ? all
+          : all.where((c) => c.status == currentTab).toList();
+    });
   }
 
   @override
@@ -171,6 +176,12 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
         ),
       if (selectedComics.isNotEmpty)
         ...exportActions(selectedComics.keys.toList()),
+      if (!App.isWeb && selectedComics.isNotEmpty)
+        MenuEntry(
+          icon: Icons.archive_outlined,
+          text: "Export .venera_comics".tl,
+          onClick: () => _exportAsVeneraComics(selectedComics.keys.toList()),
+        ),
     ]);
   }
 
@@ -242,6 +253,23 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
             },
           ),
         ),
+      if (!App.isWeb)
+        MenuButton(entries: [
+          MenuEntry(
+            icon: Icons.file_download_outlined,
+            text: "Import .venera_comics".tl,
+            onClick: _importVeneraComics,
+          ),
+          MenuEntry(
+            icon: Icons.file_upload_outlined,
+            text: "Export .venera_comics".tl,
+            onClick: () {
+              setState(() {
+                multiSelectMode = true;
+              });
+            },
+          ),
+        ]),
     ];
 
     var body = Scaffold(
@@ -310,6 +338,26 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
                       },
                     ),
               actions: multiSelectMode ? selectActions : null,
+            ),
+          if (!searchMode && !multiSelectMode)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip(null, "All".tl),
+                      const SizedBox(width: 8),
+                      _buildFilterChip(LocalComicStatus.downloaded, "Downloaded".tl),
+                      const SizedBox(width: 8),
+                      _buildFilterChip(LocalComicStatus.downloading, "Downloading".tl),
+                      const SizedBox(width: 8),
+                      _buildFilterChip(LocalComicStatus.notDownloaded, "Not Downloaded".tl),
+                    ],
+                  ),
+                ),
+              ),
             ),
           SliverGridComics(
             comics: comics,
@@ -390,6 +438,74 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
       },
       child: body,
     );
+  }
+
+  Widget _buildFilterChip(LocalComicStatus? status, String label) {
+    final isSelected = currentTab == status;
+    return FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (selected) {
+        setState(() {
+          currentTab = selected ? status : null;
+        });
+        update();
+      },
+    );
+  }
+
+  void _importVeneraComics() async {
+    var file = await selectFile(ext: ['venera_comics']);
+    if (file == null) return;
+
+    var controller = showLoadingDialog(
+      context,
+      allowCancel: false,
+      message: "Importing".tl,
+    );
+
+    try {
+      var count = await importVeneraComics(
+        File(file.path),
+        onProgress: (current, total) {
+          controller.setMessage("${"Importing".tl} $current/$total");
+        },
+      );
+      controller.close();
+      if (mounted) {
+        context.showMessage(message: "$count ${"comics imported".tl}");
+      }
+    } catch (e) {
+      controller.close();
+      if (mounted) {
+        context.showMessage(message: e.toString());
+      }
+    }
+  }
+
+  void _exportAsVeneraComics(List<LocalComic> comics) async {
+    var controller = showLoadingDialog(
+      context,
+      allowCancel: false,
+      message: "Exporting".tl,
+    );
+
+    try {
+      var file = await exportVeneraComics(
+        comics,
+        onProgress: (current, total) {
+          controller.setMessage("${"Exporting".tl} $current/$total");
+        },
+      );
+      controller.close();
+      await saveFile(file: file, filename: file.name);
+      file.deleteIgnoreError();
+    } catch (e) {
+      controller.close();
+      if (mounted) {
+        context.showMessage(message: e.toString());
+      }
+    }
   }
 
   Future<bool> deleteComics(List<LocalComic> comics) async {
