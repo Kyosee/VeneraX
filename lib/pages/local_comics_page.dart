@@ -48,6 +48,14 @@ class _LocalComicsPageState extends State<LocalComicsPage>
     } else {
       all = LocalManager().search(keyword);
     }
+    // Merge active downloading tasks that aren't yet in the database
+    var downloadingComics = LocalManager()
+        .downloadingTasks
+        .where((task) =>
+            !all.any((c) => c.id == task.id && c.comicType == task.comicType))
+        .map((task) => task.toLocalComic())
+        .toList();
+    all = [...downloadingComics, ...all];
     setState(() {
       comics = currentTab == null
           ? all
@@ -382,6 +390,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
             ),
           SliverGridComics(
             comics: comics,
+            enableHero: false,
             selections: selectedComics,
             onLongPressed: (c, heroID) {
               setState(() {

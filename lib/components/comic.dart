@@ -1330,6 +1330,7 @@ class SliverGridComics extends StatefulWidget {
     this.onLongPressed,
     this.onLongPressedWithIndex,
     this.selections,
+    this.enableHero = true,
   });
 
   final List<Comic> comics;
@@ -1349,6 +1350,8 @@ class SliverGridComics extends StatefulWidget {
   final void Function(Comic, int heroID)? onLongPressed;
 
   final void Function(Comic, int heroID, int index)? onLongPressedWithIndex;
+
+  final bool enableHero;
 
   @override
   State<SliverGridComics> createState() => _SliverGridComicsState();
@@ -1415,6 +1418,7 @@ class _SliverGridComicsState extends State<SliverGridComics> {
     return _SliverGridComics(
       comics: comics,
       heroIDs: heroIDs,
+      enableHero: widget.enableHero,
       selection: widget.selections,
       onLastItemBuild: widget.onLastItemBuild,
       badgeBuilder: widget.badgeBuilder,
@@ -1431,6 +1435,7 @@ class _SliverGridComics extends StatelessWidget {
   const _SliverGridComics({
     required this.comics,
     required this.heroIDs,
+    this.enableHero = true,
     this.onLastItemBuild,
     this.badgeBuilder,
     this.menuBuilder,
@@ -1444,6 +1449,8 @@ class _SliverGridComics extends StatelessWidget {
   final List<Comic> comics;
 
   final List<int> heroIDs;
+
+  final bool enableHero;
 
   final Map<Comic, bool>? selection;
 
@@ -1490,7 +1497,7 @@ class _SliverGridComics extends StatelessWidget {
               : onLongPressed != null
               ? () => onLongPressed!(comics[index], heroIDs[index])
               : null,
-          heroID: heroIDs[index],
+          heroID: enableHero ? heroIDs[index] : null,
         );
         if (selection == null) {
           return comic;
