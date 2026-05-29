@@ -70,7 +70,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     App.registerForceRebuild(forceRebuild);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addObserver(this);
-    checkUpdates();
+    initDeferred().then((_) {
+      checkUpdates();
+      if (mounted) setState(() {});
+    });
     super.initState();
   }
 
@@ -178,7 +181,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     Widget home;
-    if (appdata.settings['authorizationRequired']) {
+    if (!deferredInitCompleter.isCompleted) {
+      home = const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    } else if (appdata.settings['authorizationRequired']) {
       home = AuthPage(
         onSuccessfulAuth: () {
           App.rootContext.toReplacement(() => const MainPage());

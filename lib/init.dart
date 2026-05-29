@@ -33,14 +33,29 @@ extension _FutureInit<T> on Future<T> {
   }
 }
 
+/// Critical initialization that must complete before UI renders.
+/// Only includes what's needed for theme, locale, and basic app state.
 Future<void> init() async {
   await App.init().wait();
-  if (!kIsWeb) {
-    await SingleInstanceCookieJar.createInstance();
-  }
-  await initPlatformServices().wait();
+  await appdata.init().wait();
   await AppTranslation.init().wait();
+  if (App.isWindows) {
+    Timer.periodic(const Duration(seconds: 1), (_) {
+      const methodChannel = MethodChannel('venera/method_channel');
+      methodChannel.invokeMethod("heartBeat");
+    });
+  }
+}
+
+/// Heavy initialization that runs after UI is visible.
+final Completer<void> deferredInitCompleter = Completer<void>();
+
+Future<void> initDeferred() async {
   try {
+    if (!kIsWeb) {
+      await SingleInstanceCookieJar.createInstance();
+    }
+    await initPlatformServices().wait();
     var futures = [
       App.initComponents(),
       TagsTranslation.readData().wait(),
@@ -49,25 +64,21 @@ Future<void> init() async {
       OpenCC.init(),
     ];
     await Future.wait(futures);
+    CacheManager().setLimitSize(appdata.settings['cacheSize']);
+    RelatedSourceTaskManager.instance;
+    _checkOldConfigs();
+    if (App.isAndroid) {
+      initAndroidExtras();
+      await trySetHighRefreshRate();
+    }
+    FlutterError.onError = (details) {
+      Log.error(
+          "Unhandled Exception", "${details.exception}\n${details.stack}");
+    };
   } catch (e, s) {
     Log.error("init", "$e\n$s");
-  }
-  CacheManager().setLimitSize(appdata.settings['cacheSize']);
-  RelatedSourceTaskManager.instance;
-  _checkOldConfigs();
-  if (App.isAndroid) {
-    initAndroidExtras();
-    await trySetHighRefreshRate();
-  }
-  FlutterError.onError = (details) {
-    Log.error("Unhandled Exception", "${details.exception}\n${details.stack}");
-  };
-  if (App.isWindows) {
-    // Report to the monitor thread that the app is running
-    Timer.periodic(const Duration(seconds: 1), (_) {
-      const methodChannel = MethodChannel('venera/method_channel');
-      methodChannel.invokeMethod("heartBeat");
-    });
+  } finally {
+    deferredInitCompleter.complete();
   }
 }
 

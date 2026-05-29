@@ -644,16 +644,43 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: Text("Sync Local Comic Images".tl),
+              title: Text("${"Sync Local Comic Images".tl}（${"Experimental".tl}）"),
               subtitle: Text(
                 "开启后将通过WebDAV同步漫画图片文件。注意：这会导致同步数据量显著增大且同步速度变慢。关闭时仅同步漫画记录，图包需在各设备手动下载或导入。".tl,
                 style: const TextStyle(fontSize: 12),
               ),
               value: syncLocalComicImages,
               onChanged: (v) {
-                setState(() => syncLocalComicImages = v);
-                appdata.settings['syncLocalComicImages'] = v;
-                appdata.saveData();
+                if (v) {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => ContentDialog(
+                      title: "Experimental Feature".tl,
+                      content: Text(
+                        "This feature is experimental. Syncing comic images may consume significant network bandwidth and storage space on your WebDAV server. Please ensure you have sufficient quota and a stable connection.".tl,
+                      ).paddingHorizontal(16).paddingVertical(8),
+                      actions: [
+                        Button.text(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text("Cancel".tl),
+                        ),
+                        Button.filled(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            setState(() => syncLocalComicImages = true);
+                            appdata.settings['syncLocalComicImages'] = true;
+                            appdata.saveData();
+                          },
+                          child: Text("Enable".tl),
+                        ),
+                      ],
+                    ),
+                  );
+                } else {
+                  setState(() => syncLocalComicImages = false);
+                  appdata.settings['syncLocalComicImages'] = false;
+                  appdata.saveData();
+                }
               },
             ),
             const SizedBox(height: 16),

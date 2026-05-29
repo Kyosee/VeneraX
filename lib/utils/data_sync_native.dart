@@ -303,9 +303,7 @@ class DataSync with ChangeNotifier {
         data.deleteIgnoreError();
         Log.info("Upload Data", "Data uploaded successfully");
         _addSyncLog('upload', filename, true, null);
-        if (_shouldSyncImages()) {
-          syncComicImages();
-        }
+        _scheduleImageSync();
         return const Res(true);
       } catch (e, s) {
         appdata.settings['dataVersion'] = previousVersion;
@@ -389,7 +387,7 @@ class DataSync with ChangeNotifier {
           _markInitialSyncCompleted();
         }
         if (_shouldSyncImages()) {
-          syncComicImages();
+          _scheduleImageSync();
         }
         return const Res(true);
       } catch (e, s) {
@@ -509,6 +507,17 @@ class DataSync with ChangeNotifier {
 
   bool _shouldSyncImages() {
     return appdata.settings['syncLocalComicImages'] == true && isEnabled;
+  }
+
+  Timer? _imageSyncTimer;
+
+  void _scheduleImageSync() {
+    if (!_shouldSyncImages()) return;
+    _imageSyncTimer?.cancel();
+    _imageSyncTimer = Timer(const Duration(seconds: 30), () {
+      _imageSyncTimer = null;
+      syncComicImages();
+    });
   }
 
   Future<void> syncComicImages() async {

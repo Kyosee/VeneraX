@@ -412,10 +412,13 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                   }
                 });
               } else {
-                // prevent dirty data
                 var comic =
                     LocalManager().find(c.id, ComicType.fromKey(c.sourceKey))!;
-                comic.read();
+                if (comic.status == LocalComicStatus.notDownloaded) {
+                  _showNotDownloadedDialog(comic);
+                } else {
+                  comic.read();
+                }
               }
             },
             menuBuilder: (c) {
@@ -468,6 +471,46 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         }
       },
       child: body,
+    );
+  }
+
+  void _showNotDownloadedDialog(LocalComic comic) {
+    final hasSource = comic.comicType != ComicType.local &&
+        comic.comicType.comicSource != null;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return ContentDialog(
+          title: "Comic Not Available".tl,
+          content: Text(
+            "This comic has not been downloaded yet. You can import local files or download it from the source.".tl,
+          ).paddingHorizontal(16).paddingVertical(8),
+          actions: [
+            Button.text(
+              onPressed: () {
+                Navigator.pop(context);
+                showDialog(
+                  barrierDismissible: false,
+                  context: this.context,
+                  builder: (context) => const ImportComicsWidget(),
+                );
+              },
+              child: Text("Import".tl),
+            ),
+            if (hasSource)
+              Button.filled(
+                onPressed: () {
+                  Navigator.pop(context);
+                  this.context.to(() => ComicPage(
+                        id: comic.id,
+                        sourceKey: comic.sourceKey,
+                      ));
+                },
+                child: Text("Download".tl),
+              ),
+          ],
+        );
+      },
     );
   }
 

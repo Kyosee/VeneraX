@@ -4,19 +4,23 @@ import 'dart:io';
 Future<void> main(List<String> args) async {
   final config = _UpdaterConfig.parse(args);
   final logger = _Logger();
+  final progress = _ProgressWindow();
   try {
     if (!Platform.isWindows) {
       throw StateError('Windows updater can only run on Windows.');
     }
-    await _runUpdate(config, logger);
+    await progress.show();
+    await _runUpdate(config, logger, progress);
+    progress.close();
     exit(0);
   } catch (e, s) {
     logger.write('Update failed: $e\n$s');
+    progress.close();
     exit(1);
   }
 }
 
-Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
+Future<void> _runUpdate(_UpdaterConfig config, _Logger logger, _ProgressWindow progress) async {
   final appDir = Directory(config.appDir);
   if (!appDir.existsSync()) {
     throw StateError('App directory does not exist: ${config.appDir}');
@@ -36,6 +40,7 @@ Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
     return;
   }
 
+  progress.update('Waiting for Venera to exit...');
   await _waitForMainProcess(config.pid, logger);
 
   final stamp = DateTime.now().millisecondsSinceEpoch;
@@ -51,11 +56,14 @@ Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
 
   final zipFile = File(_join(workDir.path, 'update.zip'));
   if (config.packageFile != null) {
+    progress.update('Preparing update package...');
     logger.write('Using local package: ${config.packageFile}');
     await File(config.packageFile!).copy(zipFile.path);
   } else {
+    progress.update('Downloading update package...');
     await _download(config.packageUrl!, zipFile, logger);
   }
+  progress.update('Extracting update package...');
   await _expandZip(zipFile, stagingDir, logger);
 
   final payloadDir = await _findPayloadDir(stagingDir);
@@ -63,14 +71,17 @@ Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
     throw StateError('Update package does not contain venera.exe.');
   }
 
+  progress.update('Backing up current app...');
   logger.write('Backing up current app.');
   await _copyDirectoryContents(appDir, backupDir);
 
   try {
+    progress.update('Installing update...');
     logger.write('Replacing app files.');
     await _clearDirectory(appDir, preserveUninstaller: true);
     await _copyDirectoryContents(payloadDir, appDir);
   } catch (e) {
+    progress.update('Update failed, rolling back...');
     logger.write('Replace failed, rolling back: $e');
     await _clearDirectory(appDir, preserveUninstaller: false);
     await _copyDirectoryContents(backupDir, appDir);
@@ -80,6 +91,7 @@ Future<void> _runUpdate(_UpdaterConfig config, _Logger logger) async {
   if (config.restart) {
     final appExe = config.appExe ?? _join(appDir.path, 'venera.exe');
     if (File(appExe).existsSync()) {
+      progress.update('Restarting Venera...');
       logger.write('Restarting app.');
       await Process.start(
         appExe,
@@ -389,4 +401,84 @@ class _Logger {
       // Logging must never fail the update.
     }
   }
+}
+
+class _ProgressWindow {
+  Process? _process;
+
+  Future<void> show() async {
+    try {
+      _process = await Process.start('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-Command',
+        _wpfScript,
+      ]);
+    } catch (_) {
+      // Progress window is best-effort; don't fail the update.
+    }
+  }
+
+  void update(String message) {
+    try {
+      _process?.stdin.writeln(message);
+    } catch (_) {}
+  }
+
+  void close() {
+    try {
+      _process?.stdin.writeln('__EXIT__');
+      _process?.kill();
+    } catch (_) {}
+    _process = null;
+  }
+
+  static const _wpfScript = r'''
+Add-Type -AssemblyName PresentationFramework
+$window = New-Object System.Windows.Window
+$window.Title = "Venera Updater"
+$window.Width = 380
+$window.Height = 160
+$window.WindowStartupLocation = "CenterScreen"
+$window.ResizeMode = "NoResize"
+$window.Topmost = $true
+
+$stack = New-Object System.Windows.Controls.StackPanel
+$stack.Margin = "24"
+$stack.VerticalAlignment = "Center"
+
+$title = New-Object System.Windows.Controls.TextBlock
+$title.Text = "Updating Venera..."
+$title.FontSize = 16
+$title.FontWeight = "SemiBold"
+$title.Margin = "0,0,0,12"
+$stack.Children.Add($title) | Out-Null
+
+$status = New-Object System.Windows.Controls.TextBlock
+$status.Text = "Please wait"
+$status.FontSize = 13
+$status.Foreground = "Gray"
+$stack.Children.Add($status) | Out-Null
+
+$progress = New-Object System.Windows.Controls.ProgressBar
+$progress.IsIndeterminate = $true
+$progress.Height = 4
+$progress.Margin = "0,12,0,0"
+$stack.Children.Add($progress) | Out-Null
+
+$window.Content = $stack
+
+$timer = New-Object System.Windows.Threading.DispatcherTimer
+$timer.Interval = [TimeSpan]::FromMilliseconds(100)
+$reader = [System.IO.StreamReader]::new([Console]::OpenStandardInput())
+$timer.Add_Tick({
+  while ($reader.Peek() -ge 0) {
+    $line = $reader.ReadLine()
+    if ($line -eq "__EXIT__") { $window.Close(); return }
+    $status.Text = $line
+  }
+})
+$timer.Start()
+$window.ShowDialog() | Out-Null
+''';
 }

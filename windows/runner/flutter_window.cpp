@@ -51,13 +51,17 @@ FlutterWindow::FlutterWindow(const flutter::DartProject& project)
 FlutterWindow::~FlutterWindow() {}
 
 void monitorUIThread() {
-    const auto timeout = std::chrono::seconds(5);
+    const auto startupGrace = std::chrono::seconds(15);
+    const auto normalTimeout = std::chrono::seconds(10);
+
+    // Wait for startup grace period before monitoring
+    std::this_thread::sleep_for(startupGrace);
 
     while (mainThreadAlive.load()) {
         auto now = std::chrono::steady_clock::now();
         auto duration = now - lastHeartbeat.load();
 
-        if (duration > timeout) {
+        if (duration > normalTimeout) {
             std::cerr << "The UI thread is dead. Terminate the application.";
             std::exit(0);
         }
