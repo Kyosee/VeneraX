@@ -330,8 +330,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
 
     if (_images == null) {
-      if (comic!.chapters == null && chapters != null) {
-        // Multi-chapter comic but chapters data lost during restore
+      if (comic!.chapters == null && source.loadComicInfo != null) {
+        // Chapter info may be missing because the task was created from a
+        // local-first placeholder (network details not yet resolved) or lost
+        // during restore. Fetch authoritative details before deciding whether
+        // this is a single- or multi-chapter comic, otherwise a multi-chapter
+        // comic would download `chapter/null`. A genuinely single-chapter
+        // comic keeps `chapters == null` and falls through to the path below.
         _message = "Fetching comic info...".tl;
         notifyListeners();
         var res = await _runWithRetry(() async {
@@ -598,16 +603,17 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   @override
   LocalComic toLocalComic() {
     return LocalComic(
-      id: comic!.id,
+      id: id,
       title: title,
-      subtitle: comic!.subTitle ?? '',
-      tags: comic!.tags.entries.expand((e) {
-        return e.value.map((v) => "${e.key}:$v");
-      }).toList(),
-      directory: Directory(path!).name,
-      chapters: comic!.chapters,
-      cover: File(_cover!.split("file://").last).name,
-      comicType: ComicType(source.key.hashCode),
+      subtitle: comic?.subTitle ?? '',
+      tags: comic?.tags.entries.expand((e) {
+            return e.value.map((v) => "${e.key}:$v");
+          }).toList() ??
+          [],
+      directory: path == null ? '' : Directory(path!).name,
+      chapters: comic?.chapters,
+      cover: _cover == null ? '' : File(_cover!.split("file://").last).name,
+      comicType: comicType,
       downloadedChapters: chapters ?? comic?.chapters?.ids.toList() ?? [],
       createdAt: DateTime.now(),
     );

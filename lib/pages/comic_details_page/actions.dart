@@ -275,18 +275,30 @@ abstract mixin class _ComicPageActions {
       }
     }
 
-    if (comic.chapters == null) {
+    // The comic details may be a local-first placeholder whose chapter info
+    // hasn't been resolved yet (background network fetch still pending or
+    // failed). In that case a multi-chapter comic looks single-chapter and
+    // would download `chapter/null`. Resolve authoritative details first.
+    var details = comic;
+    if (details.chapters == null && source.loadComicInfo != null) {
+      var res = await source.loadComicInfo!(comic.id);
+      if (res.success && res.data.chapters != null) {
+        details = res.data;
+      }
+    }
+
+    if (details.chapters == null) {
       LocalManager().addTask(
-        ImagesDownloadTask(source: source, comicId: comic.id, comic: comic),
+        ImagesDownloadTask(source: source, comicId: comic.id, comic: details),
       );
     } else {
       List<int>? selected;
       var downloaded = <int>[];
       var localComic = LocalManager().find(comic.id, comic.comicType);
       if (localComic != null) {
-        for (int i = 0; i < comic.chapters!.length; i++) {
+        for (int i = 0; i < details.chapters!.length; i++) {
           if (localComic.downloadedChapters.contains(
-            comic.chapters!.ids.elementAt(i),
+            details.chapters!.ids.elementAt(i),
           )) {
             downloaded.add(i);
           }
@@ -295,7 +307,7 @@ abstract mixin class _ComicPageActions {
       await showSideBar(
         App.rootContext,
         _SelectDownloadChapter(
-          comic.chapters!.titles.toList(),
+          details.chapters!.titles.toList(),
           (v) => selected = v,
           downloaded,
         ),
@@ -305,9 +317,9 @@ abstract mixin class _ComicPageActions {
         ImagesDownloadTask(
           source: source,
           comicId: comic.id,
-          comic: comic,
+          comic: details,
           chapters: selected!.map((i) {
-            return comic.chapters!.ids.elementAt(i);
+            return details.chapters!.ids.elementAt(i);
           }).toList(),
         ),
       );
