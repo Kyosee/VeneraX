@@ -741,20 +741,35 @@ class LocalManager with ChangeNotifier {
     }
   }
 
-  /// Deletes the directories in a separate isolate to avoid blocking the UI thread.
+  /// Deletes the directories without blocking the UI thread.
+  ///
+  /// On Android the file paths may be SAF (android://) URIs that can only be
+  /// resolved through [SAFTaskWorker], so deletion runs in a dedicated isolate
+  /// that initializes the worker. On other platforms the paths are plain file
+  /// system paths, so we delete them directly with async I/O — spawning a SAF
+  /// isolate there is unnecessary and, because the worker's receive port is
+  /// never closed, leaks an isolate on every delete (and could hang on
+  /// platforms without the SAF channel).
   static void _deleteDirectories(List<Directory> directories) {
-    Isolate.run(() async {
-      await SAFTaskWorker().init();
-      for (var dir in directories) {
-        try {
-          if (dir.existsSync()) {
-            await dir.delete(recursive: true);
+    if (directories.isEmpty) return;
+    if (App.isAndroid) {
+      Isolate.run(() async {
+        await SAFTaskWorker().init();
+        for (var dir in directories) {
+          try {
+            if (dir.existsSync()) {
+              await dir.delete(recursive: true);
+            }
+          } catch (e) {
+            continue;
           }
-        } catch (e) {
-          continue;
         }
+      });
+    } else {
+      for (var dir in directories) {
+        dir.deleteIgnoreError(recursive: true);
       }
-    });
+    }
   }
 
   static String getChapterDirectoryName(String name) {

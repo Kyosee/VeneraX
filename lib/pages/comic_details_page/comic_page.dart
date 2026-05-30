@@ -179,8 +179,6 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
   }
 
-  var isFirst = true;
-
   @override
   Widget buildContent(BuildContext context, ComicDetails data) {
     return Scaffold(
@@ -218,39 +216,32 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   Future<Res<ComicDetails>> loadData() async {
-    if (widget.sourceKey == 'local') {
-      var state = _comicStateRepository.load(widget.sourceKey, widget.id);
-      var localComic = state.localComic;
-      if (localComic == null) {
-        return const Res.error('Local comic not found');
-      }
-      _comicStateRepository.mirrorLocalComic(localComic);
-      if (isFirst) {
-        Future.microtask(() {
-          App.rootContext.to(() {
-            return Reader(
-              type: ComicType.local,
-              cid: widget.id,
-              name: localComic.title,
-              chapters: localComic.chapters,
-              initialPage: state.history?.page,
-              initialChapter: state.history?.ep,
-              initialChapterGroup: state.history?.group,
-              history:
-                  state.history ??
-                  History.fromModel(model: localComic, ep: 0, page: 0),
-              author: localComic.subTitle ?? '',
-              tags: localComic.tags,
-            );
-          });
-          App.mainNavigatorKey!.currentContext!.pop();
-        });
-        isFirst = false;
-      }
-      await Future.delayed(const Duration(milliseconds: 200));
-      return const Res.error('Local comic');
-    }
     var state = _comicStateRepository.load(widget.sourceKey, widget.id);
+    var localComic = state.localComic;
+
+    // Local-first: if the comic is already in the local library (whether a
+    // purely local import or downloaded from a source), show its details
+    // immediately so it opens instantly and can be read offline. The network
+    // fetch (if a source is available) still runs in the background to enrich
+    // comments/recommendations.
+    if (localComic != null) {
+      _comicStateRepository.mirrorLocalComic(localComic);
+      isAddToLocalFav = state.isLocalFavorite;
+      history = state.history;
+      isDownloaded = true;
+      detailsLoadError = null;
+      var comicSource = ComicSource.find(widget.sourceKey);
+      if (comicSource != null && comicSource.loadComicInfo != null) {
+        _networkFetching = true;
+        scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
+      }
+      return Res(_localDetails(localComic, state));
+    }
+
+    if (widget.sourceKey == 'local') {
+      return const Res.error('Local comic not found');
+    }
+
     isAddToLocalFav = state.isLocalFavorite;
     history = state.history;
     detailsLoadError = null;
@@ -263,6 +254,40 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     _networkFetching = true;
     scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
     return Res(_fallbackDetails(state));
+  }
+
+  ComicDetails _localDetails(LocalComic localComic, ComicState state) {
+    var tagsMap = <String, List<String>>{};
+    for (var tag in localComic.tags) {
+      var parts = tag.split(':');
+      var key = parts.length > 1 ? parts.first : 'Tags';
+      var value = parts.length > 1 ? parts.sublist(1).join(':') : tag;
+      tagsMap.putIfAbsent(key, () => []).add(value);
+    }
+    return ComicDetails.fromJson({
+      'title': localComic.title,
+      'subtitle': localComic.subtitle,
+      'cover': localComic.cover,
+      'description': localComic.description,
+      'tags': tagsMap,
+      'chapters': localComic.chapters?.toJson(),
+      'sourceKey': widget.sourceKey,
+      'comicId': widget.id,
+      'thumbnails': null,
+      'recommend': null,
+      'isFavorite': state.isLocalFavorite,
+      'subId': null,
+      'likesCount': null,
+      'isLiked': null,
+      'commentCount': null,
+      'uploader': null,
+      'uploadTime': null,
+      'updateTime': null,
+      'url': null,
+      'stars': null,
+      'maxPage': null,
+      'comments': null,
+    });
   }
 
   Future<void> _fetchNetworkDetails(ComicSource source) async {

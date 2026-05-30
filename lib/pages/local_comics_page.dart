@@ -417,7 +417,13 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                 if (comic.status == LocalComicStatus.notDownloaded) {
                   _showNotDownloadedDialog(comic);
                 } else {
-                  comic.read();
+                  // Unified entry: open the comic detail page (same as online
+                  // comics). The detail page loads local data first so it opens
+                  // instantly and can be read offline.
+                  context.to(() => ComicPage(
+                        id: comic.id,
+                        sourceKey: comic.sourceKey,
+                      ));
                 }
               }
             },
