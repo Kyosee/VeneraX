@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import ProxiedImage from '@/components/ProxiedImage.vue'
 import { listHistory, getComicSources, listFavorites, clearComicSourcesCache } from '@/services/server-db'
@@ -64,16 +64,27 @@ async function refreshSyncStatus() {
 }
 
 let visibilityHandler: (() => void) | null = null
+let activatedOnce = false
 
 onMounted(async () => {
   await syncStore.bootstrapAutoDownload()
   await settingsStore.loadSettings()
   await refreshHomeData()
+  activatedOnce = true
 
   visibilityHandler = () => {
     if (document.visibilityState === 'visible') refreshHomeData()
   }
   document.addEventListener('visibilitychange', visibilityHandler)
+})
+
+onActivated(() => {
+  // Kept-alive: onActivated also fires right after the first onMounted, so skip
+  // that one (onMounted already loaded). On later activations (e.g. returning
+  // from a comic detail page after reading), refresh so the history list shows
+  // the most recently read comic at the front.
+  if (!activatedOnce) return
+  void refreshHomeData()
 })
 
 onUnmounted(() => {

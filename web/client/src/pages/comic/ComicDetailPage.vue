@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiPost } from '@/services/api'
 import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory, createFolder, markAsRead } from '@/services/server-db'
@@ -83,37 +83,44 @@ const flatChapters = computed<Chapter[]>(() => {
   if (isGrouped.value) return (chapters.value as ChapterGroup[]).flatMap(g => g.chapters)
   return chapters.value as Chapter[]
 })
-const lastReadInfo = computed(() => {
-  if (!lastReadChapterId.value) return null
-  const id = lastReadChapterId.value
-  // Try matching by chapter ID first
+// Resolve the stored last-read chapter id (which may be an actual chapter id,
+// a "groupIdx-chapterIdx" positional pair, or a 1-based flat index) to the
+// real Chapter object. Returns the chapter plus the resolved group index.
+function resolveHistoryChapter(id: string): { chapter: Chapter | undefined; groupIdx: number | null } {
   let ch = flatChapters.value.find(c => c.id === id)
-  let resolvedGroupIdx: number | null = null
-  if (!ch) {
-    // Check if it's a "groupIdx-chapterIdx" positional format (for grouped chapters)
-    const dashIdx = id.indexOf('-')
-    if (dashIdx > 0) {
-      const gIdx = parseInt(id.substring(0, dashIdx), 10)
-      const cIdx = parseInt(id.substring(dashIdx + 1), 10)
-      if (!isNaN(gIdx) && !isNaN(cIdx) && isGrouped.value) {
-        const groups = chapters.value as ChapterGroup[]
-        if (gIdx >= 1 && gIdx <= groups.length) {
-          const group = groups[gIdx - 1]
-          if (group?.chapters && cIdx >= 1 && cIdx <= group.chapters.length) {
-            ch = group.chapters[cIdx - 1]
-            resolvedGroupIdx = gIdx
-          }
+  if (ch) return { chapter: ch, groupIdx: null }
+  // "groupIdx-chapterIdx" positional format (for grouped chapters), both 1-based
+  const dashIdx = id.indexOf('-')
+  if (dashIdx > 0) {
+    const gIdx = parseInt(id.substring(0, dashIdx), 10)
+    const cIdx = parseInt(id.substring(dashIdx + 1), 10)
+    if (!isNaN(gIdx) && !isNaN(cIdx) && isGrouped.value) {
+      const groups = chapters.value as ChapterGroup[]
+      if (gIdx >= 1 && gIdx <= groups.length) {
+        const group = groups[gIdx - 1]
+        if (group?.chapters && cIdx >= 1 && cIdx <= group.chapters.length) {
+          return { chapter: group.chapters[cIdx - 1], groupIdx: gIdx }
         }
       }
     }
-    // Fallback: try as a simple 1-based flat index
-    if (!ch) {
-      const idx = parseInt(id, 10)
-      if (!isNaN(idx) && idx >= 1 && idx <= flatChapters.value.length) {
-        ch = flatChapters.value[idx - 1]
-      }
-    }
   }
+  // Fallback: simple 1-based flat index
+  const idx = parseInt(id, 10)
+  if (!isNaN(idx) && idx >= 1 && idx <= flatChapters.value.length) {
+    return { chapter: flatChapters.value[idx - 1], groupIdx: null }
+  }
+  return { chapter: undefined, groupIdx: null }
+}
+
+const lastReadChapter = computed<Chapter | undefined>(() => {
+  if (!lastReadChapterId.value) return undefined
+  return resolveHistoryChapter(lastReadChapterId.value).chapter
+})
+
+const lastReadInfo = computed(() => {
+  if (!lastReadChapterId.value) return null
+  const id = lastReadChapterId.value
+  const { chapter: ch, groupIdx: resolvedGroupIdx } = resolveHistoryChapter(id)
   const groupIdxForDisplay = resolvedGroupIdx ?? lastReadGroup.value ?? 0
   const groupName = groupTitles.value[groupIdxForDisplay > 0 ? groupIdxForDisplay - 1 : 0] || groupTitles.value[lastReadGroup.value ?? 0] || '默認'
   return { group: groupName, chapter: ch?.title || id, page: lastReadPage.value }
@@ -126,7 +133,7 @@ const sourceDisplayName = computed(() => {
   return detailSourceName.value || source?.sourceName || source?.displayName || source?.name || sourceKey.value
 })
 
-const hasHistory = computed(() => lastReadChapterId.value != null && lastReadPage.value > 1)
+const hasHistory = computed(() => lastReadChapterId.value != null)
 const parsedTags = computed(() => comic.value ? parseComicTags(comic.value as any) : { authors: [] as string[], statuses: [] as string[], updates: [] as string[], contentTags: [] as string[] })
 const displayAuthors = computed(() => {
   const fromSubtitle = comic.value?.subtitle || (comic.value as any)?.author || ''
@@ -531,7 +538,13 @@ function readComic(chapter?: Chapter) {
     showToast('暂无可阅读章节')
     return
   }
-  const page = (ch.id === lastReadChapterId.value) ? lastReadPage.value : 1
+  // Resume the saved page only when opening the chapter that was last read.
+  // lastReadChapterId may be stored as a positional id, so compare against the
+  // resolved chapter object rather than the raw id.
+  const isLastRead = lastReadChapter.value
+    ? ch.id === lastReadChapter.value.id
+    : ch.id === lastReadChapterId.value
+  const page = isLastRead ? lastReadPage.value : 1
   router.push({
     path: `/reader/${sourceKey.value}/${comicId.value}`,
     query: { ep: ch.id, page: String(page) },
@@ -539,36 +552,8 @@ function readComic(chapter?: Chapter) {
 }
 
 function continueReading() {
-  if (lastReadChapterId.value) {
-    const id = lastReadChapterId.value
-    // Try matching by chapter ID first
-    let ch = flatChapters.value.find(c => c.id === id)
-    if (!ch) {
-      // Check if it's a "groupIdx-chapterIdx" positional format (for grouped chapters)
-      const dashIdx = id.indexOf('-')
-      if (dashIdx > 0) {
-        const gIdx = parseInt(id.substring(0, dashIdx), 10)
-        const cIdx = parseInt(id.substring(dashIdx + 1), 10)
-        if (!isNaN(gIdx) && !isNaN(cIdx) && isGrouped.value) {
-          const groups = chapters.value as ChapterGroup[]
-          if (gIdx >= 1 && gIdx <= groups.length) {
-            const group = groups[gIdx - 1]
-            if (group?.chapters && cIdx >= 1 && cIdx <= group.chapters.length) {
-              ch = group.chapters[cIdx - 1]
-            }
-          }
-        }
-      }
-      // Fallback: try as a simple 1-based flat index
-      if (!ch) {
-        const idx = parseInt(id, 10)
-        if (!isNaN(idx) && idx >= 1 && idx <= flatChapters.value.length) {
-          ch = flatChapters.value[idx - 1]
-        }
-      }
-    }
-    if (ch) { readComic(ch); return }
-  }
+  const ch = lastReadChapter.value
+  if (ch) { readComic(ch); return }
   readComic()
 }
 
@@ -663,6 +648,13 @@ onMounted(async () => {
   } else {
     setTimeout(loadOptional, 300)
   }
+})
+
+onActivated(() => {
+  // Page is kept-alive; when navigating back from the reader, onMounted does
+  // not run again. Re-fetch reading progress so the chapter list "read" styles
+  // and the 上次阅读 / 继续 button reflect the latest history.
+  void fetchHistory()
 })
 
 onUnmounted(() => {
@@ -906,8 +898,8 @@ onUnmounted(() => {
             :key="ch.id"
             class="chapter-btn"
             :class="{
-              'is-current': ch.id === lastReadChapterId,
-              'is-read': isChapterRead(ch.id) && ch.id !== lastReadChapterId
+              'is-current': ch.id === (lastReadChapter?.id ?? lastReadChapterId),
+              'is-read': isChapterRead(ch.id) && ch.id !== (lastReadChapter?.id ?? lastReadChapterId)
             }"
             @click="readComic(ch)"
           >
