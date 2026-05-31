@@ -185,6 +185,36 @@ Future<File> exportAppData([bool sync = true]) async {
   return cacheFile;
 }
 
+/// Deletes a file, retrying briefly to ride out the window where the OS has
+/// not yet released the handle. On Windows, after an sqlite3 connection is
+/// disposed, closing a WAL database may trigger a final checkpoint and the
+/// `history.db` (and its `-wal`/`-shm` sidecars) can stay locked for a few
+/// milliseconds, causing `deleteSync` to fail with errno 32 ("another process
+/// is using this file"). A short retry loop resolves this race deterministically.
+Future<void> _deleteFileWithRetry(String path) async {
+  final file = File(path);
+  if (!file.existsSync()) return;
+  for (var attempt = 0; ; attempt++) {
+    try {
+      file.deleteSync();
+      return;
+    } on FileSystemException {
+      if (attempt >= 10) rethrow;
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+  }
+}
+
+/// Replaces a live sqlite database file with [newFile], handling the WAL
+/// sidecars and the Windows handle-release race. The owning manager must be
+/// closed before calling this and re-initialized afterwards.
+Future<void> _replaceDatabaseFile(File newFile, String targetPath) async {
+  await _deleteFileWithRetry(targetPath);
+  await _deleteFileWithRetry('$targetPath-wal');
+  await _deleteFileWithRetry('$targetPath-shm');
+  newFile.renameSync(targetPath);
+}
+
 Future<void> importAppData(File file, [bool checkVersion = false]) async {
   var cacheDirPath = FilePath.join(App.cachePath, 'temp_data');
   var cacheDir = Directory(cacheDirPath);
@@ -216,16 +246,16 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
     }
     if (await historyFile.exists()) {
       HistoryManager().close();
-      File(FilePath.join(App.dataPath, "history.db")).deleteIfExistsSync();
-      historyFile.renameSync(FilePath.join(App.dataPath, "history.db"));
+      await _replaceDatabaseFile(
+        historyFile,
+        FilePath.join(App.dataPath, "history.db"),
+      );
       HistoryManager().init();
     }
     if (await localFavoriteFile.exists()) {
       LocalFavoritesManager().close();
-      File(
-        FilePath.join(App.dataPath, "local_favorite.db"),
-      ).deleteIfExistsSync();
-      localFavoriteFile.renameSync(
+      await _replaceDatabaseFile(
+        localFavoriteFile,
         FilePath.join(App.dataPath, "local_favorite.db"),
       );
       LocalFavoritesManager().init();
@@ -237,10 +267,7 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
       );
       domainDir.createSync(recursive: true);
       final target = DomainDatabase.databasePathFor(App.dataPath);
-      File(target).deleteIfExistsSync();
-      File('$target-wal').deleteIfExistsSync();
-      File('$target-shm').deleteIfExistsSync();
-      domainFile.renameSync(target);
+      await _replaceDatabaseFile(domainFile, target);
       await App.domain.init(App.dataPath);
     }
     if (await appdataFile.exists()) {
@@ -265,22 +292,28 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
     }
     if (await cookieFile.exists()) {
       SingleInstanceCookieJar.instance?.dispose();
-      File(FilePath.join(App.dataPath, "cookie.db")).deleteIfExistsSync();
-      cookieFile.renameSync(FilePath.join(App.dataPath, "cookie.db"));
+      await _replaceDatabaseFile(
+        cookieFile,
+        FilePath.join(App.dataPath, "cookie.db"),
+      );
       SingleInstanceCookieJar.instance = SingleInstanceCookieJar(
         FilePath.join(App.dataPath, "cookie.db"),
       )..init();
     }
     var readLaterFile = cacheDir.joinFile("read_later.db");
     if (await readLaterFile.exists()) {
-      File(FilePath.join(App.dataPath, "read_later.db")).deleteIfExistsSync();
-      readLaterFile.renameSync(FilePath.join(App.dataPath, "read_later.db"));
+      await _replaceDatabaseFile(
+        readLaterFile,
+        FilePath.join(App.dataPath, "read_later.db"),
+      );
     }
     var localDbFile = cacheDir.joinFile("local.db");
     if (await localDbFile.exists()) {
       LocalManager().close();
-      File(FilePath.join(App.dataPath, "local.db")).deleteIfExistsSync();
-      localDbFile.renameSync(FilePath.join(App.dataPath, "local.db"));
+      await _replaceDatabaseFile(
+        localDbFile,
+        FilePath.join(App.dataPath, "local.db"),
+      );
       await LocalManager().init();
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");

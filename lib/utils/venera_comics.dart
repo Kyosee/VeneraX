@@ -212,6 +212,23 @@ Future<VeneraComicsManifest> readVeneraComicsManifest(File file) async {
   return manifest;
 }
 
+/// Moves [src] to [destPath], falling back to copy when the move fails.
+///
+/// Importing extracts files into a temporary directory and then transfers them
+/// into the local library. Using rename (move) instead of copy+delete keeps the
+/// operation atomic on the same volume and avoids the high-volume
+/// create/modify/delete file pattern that antivirus heuristics (e.g. 360) flag
+/// as ransomware. When the move fails — most commonly because the cache and
+/// data directories live on different volumes — we fall back to the original
+/// copy behavior so the import still succeeds.
+void _moveOrCopyFile(File src, String destPath) {
+  try {
+    src.renameSync(destPath);
+  } catch (_) {
+    src.copySync(destPath);
+  }
+}
+
 /// Imports comics from a .venera_comics file.
 /// Returns the number of successfully imported comics.
 Future<int> importVeneraComics(
@@ -280,14 +297,14 @@ Future<int> importVeneraComics(
       destDir.createSync(recursive: true);
     }
 
-    // Copy cover file
+    // Move cover file (falls back to copy across volumes)
     final coverName = (meta['cover'] as String?) ?? 'cover.jpg';
     final srcCover = File(FilePath.join(comicDir.path, coverName));
     if (srcCover.existsSync()) {
-      srcCover.copySync(FilePath.join(destDir.path, coverName));
+      _moveOrCopyFile(srcCover, FilePath.join(destDir.path, coverName));
     }
 
-    // Copy chapter directories if hasImages
+    // Move chapter directories if hasImages
     if (entry.hasImages) {
       for (final entity in comicDir.listSync()) {
         if (entity is Directory) {
@@ -301,7 +318,7 @@ Future<int> importVeneraComics(
           }
           for (final file in entity.listSync()) {
             if (file is File) {
-              file.copySync(FilePath.join(destChapter.path, file.name));
+              _moveOrCopyFile(file, FilePath.join(destChapter.path, file.name));
             }
           }
         }

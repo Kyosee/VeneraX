@@ -81,6 +81,15 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
           if (e.toString().contains("Invalid Status Code: 403")) {
             rethrow;
           }
+          // Local file errors (e.g. the comic's image pack has not been
+          // downloaded yet) are not transient; retrying is pointless and would
+          // keep the image in a perpetual loading state while spamming logs.
+          // Rethrow immediately so the cache entry is evicted and the load can
+          // self-heal once the files appear.
+          if (e.toString().contains("Comic not found") ||
+              e.toString().contains("Cover not found")) {
+            rethrow;
+          }
           if (e.toString().contains("handshake")) {
             if (retryTime < 5) {
               retryTime = 5;

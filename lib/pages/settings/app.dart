@@ -487,31 +487,6 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     }
   }
 
-  Future<void> _restoreServerWebDavConfig(
-    Map<String, dynamic>? oldConfig,
-  ) async {
-    if (!App.isWeb) {
-      return;
-    }
-    try {
-      if (oldConfig == null || oldConfig['configured'] != true) {
-        await DataSync().clearWebDavConfig();
-        return;
-      }
-      await DataSync().saveWebDavConfig(
-        [
-          oldConfig['url']?.toString() ?? '',
-          oldConfig['user']?.toString() ?? '',
-          oldConfig['pass']?.toString() ?? '',
-        ],
-        autoSync: oldConfig['autoSync'] == true,
-        disableSyncFields: oldConfig['disableSyncFields']?.toString() ?? '',
-      );
-    } catch (e, s) {
-      Log.error('WebDAV Config', e, s);
-    }
-  }
-
   void onAutoSyncChanged(bool value) {
     setState(() {
       autoSync = value;
@@ -521,12 +496,18 @@ class _WebdavSettingState extends State<_WebdavSetting> {
   }
 
   void _showRemoteBackupList(BuildContext context) async {
+    // The settings page lives inside the nested navigator created by
+    // showPopUpWidget, but showDialog pushes onto the ROOT navigator by
+    // default. Pop the same (root) navigator we pushed the spinner onto,
+    // otherwise the spinner is never dismissed and resurfaces as a stuck
+    // loading dialog after later dialogs are closed.
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
     showDialog(
       context: context,
       builder: (ctx) => const Center(child: CircularProgressIndicator()),
     );
     var result = await DataSync().listRemoteBackups();
-    if (context.mounted) Navigator.of(context).pop();
+    if (context.mounted) rootNavigator.pop();
     if (result.error) {
       if (context.mounted) {
         context.showMessage(message: result.errorMessage!);
@@ -541,9 +522,44 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       return;
     }
     if (!context.mounted) return;
-    showDialog(
+    var selected = await showDialog<RemoteBackupInfo>(
       context: context,
       builder: (ctx) => _RemoteBackupListDialog(backups: backups),
+    );
+    if (selected == null || !context.mounted) return;
+    _confirmAndDownload(context, selected);
+  }
+
+  void _confirmAndDownload(BuildContext context, RemoteBackupInfo backup) {
+    showDialog(
+      context: context,
+      builder: (ctx) => ContentDialog(
+        title: "Confirm Download".tl,
+        content: Text(
+          "This will overwrite all local data. Continue?".tl,
+        ),
+        actions: [
+          Button.filled(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              var result =
+                  await DataSync().downloadSpecificBackup(backup.fileName);
+              if (context.mounted) {
+                if (result.error) {
+                  context.showMessage(message: result.errorMessage!);
+                } else {
+                  context.showMessage(message: "Download successful".tl);
+                }
+              }
+            },
+            child: Text("Confirm".tl),
+          ),
+          Button.outlined(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text("Cancel".tl),
+          ),
+        ],
+      ),
     );
   }
 
@@ -724,12 +740,6 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               child: Button.filled(
                 isLoading: isTesting,
                 onPressed: () async {
-                  var oldConfig = appdata.settings['webdav'];
-                  var oldAutoSync = appdata.implicitData['webdavAutoSync'];
-                  final oldServerConfig = App.isWeb
-                      ? await DataSync().loadWebDavConfig(force: true)
-                      : null;
-
                   if (url.trim().isEmpty &&
                       user.trim().isEmpty &&
                       pass.trim().isEmpty) {
@@ -766,8 +776,12 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                   appdata.implicitData['webdavAutoSync'] = autoSync;
                   appdata.writeImplicitData();
 
+                  // Persisting the configuration always succeeds at this
+                  // point. The initial sync below is best-effort: its result
+                  // is only surfaced as a hint and never rolls the config back.
+                  appdata.saveData();
+
                   if (!autoSync) {
-                    appdata.saveData();
                     context.showMessage(message: "Saved".tl);
                     App.rootPop();
                     return;
@@ -776,23 +790,23 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                   setState(() {
                     isTesting = true;
                   });
-                  var testResult = await DataSync().uploadData();
-                  if (testResult.error) {
-                    setState(() {
-                      isTesting = false;
-                    });
-                    await _restoreServerWebDavConfig(oldServerConfig);
-                    appdata.settings['webdav'] = oldConfig;
-                    appdata.implicitData['webdavAutoSync'] = oldAutoSync;
-                    appdata.writeImplicitData();
-                    appdata.saveData();
-                    context.showMessage(message: testResult.errorMessage!);
-                    context.showMessage(message: "Saved Failed".tl);
+                  // Use syncData() instead of uploadData() so a fresh install
+                  // with no local data downloads the remote backup instead of
+                  // being blocked by the empty-data upload guards.
+                  var syncResult = await DataSync().syncData();
+                  if (!mounted) return;
+                  setState(() {
+                    isTesting = false;
+                  });
+                  if (syncResult.error) {
+                    context.showMessage(
+                      message: "Saved, but sync failed: @error"
+                          .tlParams({"error": syncResult.errorMessage ?? ""}),
+                    );
                   } else {
-                    appdata.saveData();
                     context.showMessage(message: "Saved".tl);
-                    App.rootPop();
                   }
+                  App.rootPop();
                 },
                 child: Text("Save".tl),
               ),
@@ -840,45 +854,14 @@ class _RemoteBackupListDialog extends StatelessWidget {
               subtitle: Text(dateStr),
               trailing: const Icon(Icons.download),
               onTap: () {
-                Navigator.of(context).pop();
-                _confirmAndDownload(context, b);
+                // Return the chosen backup to the caller, which drives the
+                // confirm/download flow on a stable context. Pop the same
+                // (root) navigator this dialog was shown on.
+                Navigator.of(context, rootNavigator: true).pop(b);
               },
             );
           },
         ),
-      ),
-    );
-  }
-
-  void _confirmAndDownload(BuildContext context, RemoteBackupInfo backup) {
-    showDialog(
-      context: context,
-      builder: (ctx) => ContentDialog(
-        title: "Confirm Download".tl,
-        content: Text(
-          "This will overwrite all local data. Continue?".tl,
-        ),
-        actions: [
-          Button.filled(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              var result =
-                  await DataSync().downloadSpecificBackup(backup.fileName);
-              if (context.mounted) {
-                if (result.error) {
-                  context.showMessage(message: result.errorMessage!);
-                } else {
-                  context.showMessage(message: "Download successful".tl);
-                }
-              }
-            },
-            child: Text("Confirm".tl),
-          ),
-          Button.outlined(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text("Cancel".tl),
-          ),
-        ],
       ),
     );
   }

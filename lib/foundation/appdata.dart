@@ -101,6 +101,7 @@ class Appdata with Init {
     "disableSyncFields",
     "deviceId",
     "followUpdatesFolder",
+    "syncLocalComicImages",
   ];
 
   /// Sync data from another device

@@ -380,31 +380,56 @@ class NaviPaneState extends State<NaviPane>
               ),
             ),
             const SizedBox(height: 8),
-            ...List<Widget>.generate(
-              widget.paneItems.length,
-              (index) => _SideNaviWidget(
-                enabled: currentPage == index,
-                entry: widget.paneItems[index],
-                showTitle: value == 3,
-                onTap: () {
-                  updatePage(index);
-                },
-                key: ValueKey(index),
-              ),
-            ),
-            const Spacer(),
-            ...List<Widget>.generate(
-              widget.paneActions.length,
-              (index) => _PaneActionWidget(
-                entry: widget.paneActions[index],
-                showTitle: value == 3,
-                key: ValueKey(index + widget.paneItems.length),
-              ),
-            ),
-            const SizedBox(height: 16),
+            Expanded(child: buildLeftScrollable(value)),
           ],
         ),
       ),
+    );
+  }
+
+  /// Builds the scrollable body of the side bar (nav items + actions).
+  ///
+  /// Uses the "scroll only when overflowing" pattern: the content fills the
+  /// available height (keeping the actions pinned to the bottom via [Spacer])
+  /// when there is room, but becomes scrollable in constrained heights such as
+  /// landscape on phones, where it would otherwise overflow and be unreachable.
+  Widget buildLeftScrollable(double value) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                children: [
+                  ...List<Widget>.generate(
+                    widget.paneItems.length,
+                    (index) => _SideNaviWidget(
+                      enabled: currentPage == index,
+                      entry: widget.paneItems[index],
+                      showTitle: value == 3,
+                      onTap: () {
+                        updatePage(index);
+                      },
+                      key: ValueKey(index),
+                    ),
+                  ),
+                  const Spacer(),
+                  ...List<Widget>.generate(
+                    widget.paneActions.length,
+                    (index) => _PaneActionWidget(
+                      entry: widget.paneActions[index],
+                      showTitle: value == 3,
+                      key: ValueKey(index + widget.paneItems.length),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

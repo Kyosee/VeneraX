@@ -492,6 +492,12 @@ class DataSync with ChangeNotifier {
 
         if (!_hasCompletedInitialSync()) _markInitialSyncCompleted();
         _addSyncLog('download', fileName, true, null);
+        // Mirror downloadData: the backup only restores base app data. If the
+        // user has image-pack sync enabled locally, download the comic image
+        // packs in the background instead of blocking this call.
+        if (_shouldSyncImages()) {
+          _scheduleImageSync();
+        }
         return const Res(true);
       } catch (e, s) {
         Log.error("Data Sync", e, s);

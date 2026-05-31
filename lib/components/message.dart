@@ -315,7 +315,7 @@ class ContentDialog extends StatelessWidget {
             backgroundColor: Colors.transparent,
           )
               : const SizedBox.shrink(),
-          this.content,
+          this.content.paddingHorizontal(16),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,

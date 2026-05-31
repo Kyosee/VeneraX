@@ -103,10 +103,12 @@ class _GitHubAsset {
 
 class _GitHubRelease {
   final String version;
+  final String tag;
   final String htmlUrl;
   final List<_GitHubAsset> assets;
   const _GitHubRelease({
     required this.version,
+    required this.tag,
     required this.htmlUrl,
     required this.assets,
   });
@@ -182,7 +184,12 @@ Future<_GitHubRelease> _fetchLatestRelease(_GithubUpdateConfig config) async {
       ));
     }
   }
-  return _GitHubRelease(version: version, htmlUrl: htmlUrl, assets: assets);
+  return _GitHubRelease(
+    version: version,
+    tag: tag,
+    htmlUrl: htmlUrl,
+    assets: assets,
+  );
 }
 
 Future<_UpdateCheckResult> _checkUpdateDetails() async {
@@ -190,6 +197,65 @@ Future<_UpdateCheckResult> _checkUpdateDetails() async {
   var release = await _fetchLatestRelease(config);
   var hasUpdate = _compareVersion(release.version, App.version);
   return _UpdateCheckResult(hasUpdate: hasUpdate, release: release, config: config);
+}
+
+/// Returns the release-notes language slug for the current app locale.
+/// Chinese maps to `zh-CN`; everything else falls back to `en`.
+String _changelogLangSlug() {
+  return App.locale.languageCode == 'zh' ? 'zh-CN' : 'en';
+}
+
+/// Fetches the per-language changelog for [release] and splits it into display
+/// lines. The notes live in the repo at
+/// `release-notes/<tag>.<lang>.md` and are read via raw.githubusercontent.com,
+/// pinned to the release tag so the content always matches that version.
+///
+/// Falls back to the English file when the localized one is missing, and
+/// returns an empty list when neither can be fetched (the dialog then simply
+/// omits the details section instead of failing).
+Future<List<String>> _fetchChangelogLines(
+  _GithubUpdateConfig config,
+  _GitHubRelease release,
+) async {
+  String rawUrl(String lang) =>
+      "https://raw.githubusercontent.com/${config.owner}/${config.repo}"
+      "/${release.tag}/release-notes/${release.tag}.$lang.md";
+
+  Future<String?> fetch(String lang) async {
+    try {
+      final response = await AppDio().get(
+        rawUrl(lang),
+        options: Options(responseType: ResponseType.plain),
+      );
+      if (response.statusCode != 200) return null;
+      final body = response.data?.toString() ?? "";
+      return body.trim().isEmpty ? null : body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final lang = _changelogLangSlug();
+  var content = await fetch(lang);
+  content ??= lang == 'en' ? null : await fetch('en');
+  if (content == null) return const [];
+  return _parseChangelogLines(content);
+}
+
+/// Parses a markdown changelog into one entry per line, stripping list markers
+/// and headings so the dialog can render a clean bullet list.
+List<String> _parseChangelogLines(String markdown) {
+  final lines = <String>[];
+  for (var raw in markdown.split('\n')) {
+    var line = raw.trim();
+    if (line.isEmpty) continue;
+    if (line.startsWith('#')) continue; // section headings
+    if (line.startsWith('**') && line.endsWith('**')) continue; // footers
+    line = line.replaceFirst(RegExp(r'^[-*+]\s+'), '');
+    if (line.isEmpty) continue;
+    lines.add(line);
+  }
+  return lines;
 }
 
 Future<bool> checkUpdate() async {
@@ -210,6 +276,8 @@ Future<void> checkUpdateUi([
     var value = await _checkUpdateDetails();
     if (value.hasUpdate && value.release != null) {
       if (delay) await Future.delayed(const Duration(seconds: 2));
+      var changelog =
+          await _fetchChangelogLines(value.config, value.release!);
       showDialog(
         context: App.rootContext,
         builder: (context) {
@@ -223,6 +291,15 @@ Future<void> checkUpdateUi([
                 const SizedBox(height: 8),
                 Text("Current version: ${App.version}"),
                 Text("Latest version: ${value.release!.version}"),
+                if (changelog.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    "What's Changed".tl,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  _ChangelogView(lines: changelog),
+                ],
               ],
             ).paddingHorizontal(16).paddingVertical(8),
             actions: [
@@ -729,4 +806,46 @@ bool _compareVersion(String version1, String version2) {
     if (value1 < value2) return false;
   }
   return false;
+}
+
+/// Renders changelog entries as a scrollable bullet list, one entry per line.
+/// Capped in height so a long changelog scrolls instead of overflowing the
+/// update dialog.
+class _ChangelogView extends StatelessWidget {
+  const _ChangelogView({required this.lines});
+
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 220),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var line in lines)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("•  "),
+                      Expanded(child: Text(line)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
