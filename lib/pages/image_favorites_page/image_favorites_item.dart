@@ -2,6 +2,7 @@ part of 'image_favorites_page.dart';
 
 class _ImageFavoritesItem extends StatefulWidget {
   const _ImageFavoritesItem({
+    super.key,
     required this.imageFavoritesComic,
     required this.selectedImageFavorites,
     required this.addSelected,
@@ -20,7 +21,8 @@ class _ImageFavoritesItem extends StatefulWidget {
 }
 
 class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
-  late final imageFavorites = widget.imageFavoritesComic.images.toList();
+  List<ImageFavorite> get imageFavorites =>
+      widget.imageFavoritesComic.images.toList();
 
   void goComicInfo(ImageFavoritesComic comic) {
     App.mainNavigatorKey?.currentContext?.to(() => ComicPage(
@@ -190,7 +192,8 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
               ),
               clipBehavior: Clip.antiAlias,
               child: Hero(
-                tag: "${image.sourceKey}${image.ep}${image.page}",
+                tag:
+                    "${image.sourceKey}${image.id}${image.ep}${image.page}",
                 child: AnimatedImage(
                   image: ImageFavoritesProvider(image),
                   width: 96,
@@ -283,5 +286,119 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
           )
       ],
     ).paddingHorizontal(8).paddingBottom(8);
+  }
+}
+
+/// 网格布局下的单张图片项（图片平铺模式）
+class _ImageFavoritesGridItem extends StatelessWidget {
+  const _ImageFavoritesGridItem({
+    super.key,
+    required this.comic,
+    required this.image,
+    required this.selectedImageFavorites,
+    required this.addSelected,
+    required this.multiSelectMode,
+  });
+
+  final ImageFavoritesComic comic;
+  final ImageFavorite image;
+  final Map<ImageFavorite, bool> selectedImageFavorites;
+  final Function(ImageFavorite) addSelected;
+  final bool multiSelectMode;
+
+  void goReaderPage() {
+    App.rootContext.to(
+      () => ReaderWithLoading(
+        id: comic.id,
+        sourceKey: comic.sourceKey,
+        initialEp: image.ep,
+        initialPage: image.page,
+      ),
+    );
+  }
+
+  void goPhotoView() {
+    Navigator.of(App.rootContext).push(MaterialPageRoute(
+      builder: (context) => ImageFavoritesPhotoView(
+        comic: comic,
+        imageFavorite: image,
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isSelected = selectedImageFavorites[image] ?? false;
+    String pageText = image.page == firstPage
+        ? '@a Cover'.tlParams({"a": image.epName})
+        : image.page.toString();
+    return InkWell(
+      onTap: () {
+        if (multiSelectMode) {
+          addSelected(image);
+        } else {
+          goReaderPage();
+        }
+      },
+      onLongPress: () {
+        if (multiSelectMode) {
+          addSelected(image);
+        } else {
+          goPhotoView();
+        }
+      },
+      onSecondaryTapDown: (_) => addSelected(image),
+      borderRadius: BorderRadius.circular(8),
+      child: buildContent(context, isSelected, pageText),
+    );
+  }
+
+  Widget buildContent(BuildContext context, bool isSelected, String pageText) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: isSelected
+            ? Theme.of(context).colorScheme.primaryContainer
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Hero(
+                tag: "${image.sourceKey}${image.id}${image.ep}${image.page}",
+                child: AnimatedImage(
+                  image: ImageFavoritesProvider(image),
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
+          ),
+          Text(
+            comic.title,
+            style: ts.s10,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          Text(
+            pageText,
+            style: ts.s10.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 }
