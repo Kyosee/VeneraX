@@ -52,6 +52,9 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
 
   bool multiSelectMode = false;
 
+  // 网格布局模式（true=图片平铺网格, false=按漫画分组列表）
+  bool gridMode = false;
+
   // 多选的时候选中的图片
   Map<ImageFavorite, bool> selectedImageFavorites = {};
 
@@ -119,6 +122,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
     numFilterSelect =
         appdata.implicitData["image_favorites_number_filter"] ??
         numFilterList[0];
+    gridMode = appdata.implicitData["image_favorites_grid_mode"] ?? false;
     updateImageFavorites();
     ImageFavoriteManager().addListener(updateImageFavorites);
     super.initState();
@@ -153,6 +157,17 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
   }
 
   var scrollController = ScrollController();
+
+  // 网格模式: 所有收藏图片平铺成 (comic, image) 对
+  List<(ImageFavoritesComic, ImageFavorite)> get flatImages {
+    var result = <(ImageFavoritesComic, ImageFavorite)>[];
+    for (var c in comics) {
+      for (var i in c.images) {
+        result.add((c, i));
+      }
+    }
+    return result;
+  }
 
   void selectAll() {
     for (var c in comics) {
@@ -206,6 +221,22 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
           SliverAppbar(
             title: Text("Image Favorites".tl),
             actions: [
+              Tooltip(
+                message: gridMode ? "List View".tl : "Grid View".tl,
+                child: IconButton(
+                  icon: Icon(
+                    gridMode ? Icons.view_list : Icons.grid_view,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      gridMode = !gridMode;
+                    });
+                    appdata.implicitData["image_favorites_grid_mode"] =
+                        gridMode;
+                    appdata.writeImplicitData();
+                  },
+                ),
+              ),
               Tooltip(
                 message: "Search".tl,
                 child: IconButton(
@@ -287,17 +318,23 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
               },
             ),
           ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            return _ImageFavoritesItem(
-              imageFavoritesComic: comics[index],
-              selectedImageFavorites: selectedImageFavorites,
-              addSelected: addSelected,
-              multiSelectMode: multiSelectMode,
-              finalImageFavoritesComicList: comics,
-            );
-          }, childCount: comics.length),
-        ),
+        if (gridMode)
+          _buildGridSliver()
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              return _ImageFavoritesItem(
+                key: ValueKey(
+                  "${comics[index].sourceKey}@${comics[index].id}",
+                ),
+                imageFavoritesComic: comics[index],
+                selectedImageFavorites: selectedImageFavorites,
+                addSelected: addSelected,
+                multiSelectMode: multiSelectMode,
+                finalImageFavoritesComicList: comics,
+              );
+            }, childCount: comics.length),
+          ),
         SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
@@ -350,6 +387,32 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
         );
       },
     );
+  }
+
+  Widget _buildGridSliver() {
+    var items = flatImages;
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedHeight(
+        maxCrossAxisExtent: 180,
+        itemHeight: 240,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _ImageFavoritesGridItem(
+          key: ValueKey(_gridItemKey(items[index])),
+          comic: items[index].$1,
+          image: items[index].$2,
+          selectedImageFavorites: selectedImageFavorites,
+          addSelected: addSelected,
+          multiSelectMode: multiSelectMode,
+        ),
+        childCount: items.length,
+      ),
+    ).sliverPadding(const EdgeInsets.symmetric(horizontal: 8));
+  }
+
+  String _gridItemKey((ImageFavoritesComic, ImageFavorite) e) {
+    var i = e.$2;
+    return "${i.sourceKey}@${i.id}@${i.eid}@${i.page}";
   }
 }
 
