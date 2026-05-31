@@ -1910,6 +1910,14 @@ class LocalFavoritesManager with ChangeNotifier {
       'mark-read',
       (client) => client.markFavoriteAsRead(folder, id, type),
     );
+    // Refresh the follow-updates count badge on the home screen and the
+    // follow-updates page list. Without this, reading a comic (which calls
+    // onRead -> markAsRead when moveFavoriteAfterRead is "none") clears
+    // has_new_update in the database but leaves the UI showing the stale
+    // entry/count until the page is rebuilt. notifyListeners keeps any other
+    // LocalFavoritesManager listeners in sync as well.
+    updateFollowUpdatesUI();
+    notifyListeners();
   }
 
   void close() {
