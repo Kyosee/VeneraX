@@ -794,18 +794,16 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
             actions: [
               MenuButton(
                 entries: [
-                  if (!isAllFolder)
-                    MenuEntry(
-                      icon: Icons.drive_file_move,
-                      text: "Move to folder".tl,
-                      onClick: () => favoriteOption('move'),
-                    ),
-                  if (!isAllFolder)
-                    MenuEntry(
-                      icon: Icons.copy,
-                      text: "Copy to folder".tl,
-                      onClick: () => favoriteOption('add'),
-                    ),
+                  MenuEntry(
+                    icon: Icons.drive_file_move,
+                    text: "Move to folder".tl,
+                    onClick: () => favoriteOption('move'),
+                  ),
+                  MenuEntry(
+                    icon: Icons.copy,
+                    text: "Copy to folder".tl,
+                    onClick: () => favoriteOption('add'),
+                  ),
                   MenuEntry(
                     icon: Icons.select_all,
                     text: "Select All".tl,
@@ -974,6 +972,26 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                         multiSelectMode = false;
                       }
                     });
+                  },
+                ),
+                MenuEntry(
+                  icon: Icons.drive_file_move,
+                  text: "Move to folder".tl,
+                  onClick: () {
+                    selectedComics
+                      ..clear()
+                      ..[c as FavoriteItem] = true;
+                    favoriteOption('move');
+                  },
+                ),
+                MenuEntry(
+                  icon: Icons.copy,
+                  text: "Copy to folder".tl,
+                  onClick: () {
+                    selectedComics
+                      ..clear()
+                      ..[c as FavoriteItem] = true;
+                    favoriteOption('add');
                   },
                 ),
                 if (!App.isWeb)
@@ -1261,6 +1279,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
   }
 
   void favoriteOption(String option) {
+    // Reset target selection so previous choices don't carry over.
+    selectedLocalFolders.clear();
     var targetFolders = LocalFavoritesManager().folderNames
         .where((folder) => folder != favPage.folder)
         .toList();
@@ -1270,7 +1290,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
       StatefulBuilder(
         builder: (context, setState) {
           return PopUpWidgetScaffold(
-            title: favPage.folder ?? "Unselected".tl,
+            title: isAllFolder
+                ? "All".tl
+                : (favPage.folder ?? "Unselected".tl),
             body: Padding(
               padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
               child: Container(
@@ -1338,6 +1360,12 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                                 : (v) {
                                     setState(() {
                                       if (v!) {
+                                        // Moving from the aggregated view can
+                                        // only target a single folder, so keep
+                                        // the selection single-choice.
+                                        if (option == 'move' && isAllFolder) {
+                                          selectedLocalFolders.clear();
+                                        }
                                         selectedLocalFolders.add(folder);
                                       } else {
                                         selectedLocalFolders.remove(folder);
@@ -1354,32 +1382,67 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                           if (selectedLocalFolders.isEmpty) {
                             return;
                           }
-                          if (option == 'move') {
-                            var comics = selectedComics.keys
-                                .map((e) => e as FavoriteItem)
-                                .toList();
-                            for (var f in selectedLocalFolders) {
-                              LocalFavoritesManager().batchMoveFavorites(
-                                favPage.folder as String,
-                                f,
-                                comics,
-                              );
+                          var comics = selectedComics.keys
+                              .map((e) => e as FavoriteItem)
+                              .toList();
+                          void execute() {
+                            if (option == 'move') {
+                              if (isAllFolder) {
+                                // Aggregated view: each comic may live in a
+                                // different folder, so move it out of all its
+                                // source folders into the single target.
+                                LocalFavoritesManager()
+                                    .batchMoveFavoritesToFolder(
+                                  selectedLocalFolders.first,
+                                  comics,
+                                );
+                              } else {
+                                for (var f in selectedLocalFolders) {
+                                  LocalFavoritesManager().batchMoveFavorites(
+                                    favPage.folder as String,
+                                    f,
+                                    comics,
+                                  );
+                                }
+                              }
+                            } else {
+                              if (isAllFolder) {
+                                for (var f in selectedLocalFolders) {
+                                  LocalFavoritesManager()
+                                      .batchCopyFavoritesToFolder(f, comics);
+                                }
+                              } else {
+                                for (var f in selectedLocalFolders) {
+                                  LocalFavoritesManager().batchCopyFavorites(
+                                    favPage.folder as String,
+                                    f,
+                                    comics,
+                                  );
+                                }
+                              }
                             }
-                          } else {
-                            var comics = selectedComics.keys
-                                .map((e) => e as FavoriteItem)
-                                .toList();
-                            for (var f in selectedLocalFolders) {
-                              LocalFavoritesManager().batchCopyFavorites(
-                                favPage.folder as String,
-                                f,
-                                comics,
-                              );
-                            }
+                            App.rootContext.pop();
+                            updateComics();
+                            _cancel();
                           }
-                          App.rootContext.pop();
-                          updateComics();
-                          _cancel();
+
+                          // Moving from the aggregated view removes the comics
+                          // from every folder they currently belong to, so ask
+                          // the user to confirm before doing it.
+                          if (option == 'move' && isAllFolder) {
+                            showConfirmDialog(
+                              context: App.rootContext,
+                              title: "Move to folder".tl,
+                              content: "Move @c comics to \"@f\"? They will be removed from all other folders."
+                                  .tlParams({
+                                "c": comics.length,
+                                "f": selectedLocalFolders.first,
+                              }),
+                              onConfirm: execute,
+                            );
+                          } else {
+                            execute();
+                          }
                         },
                         child: Text(option == 'move' ? "Move".tl : "Add".tl),
                       ),

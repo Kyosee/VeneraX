@@ -1295,6 +1295,132 @@ class LocalFavoritesManager with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Copy the given items into [targetFolder] without relying on a single
+  /// source folder. Used by the "All folders" aggregated view where each item
+  /// may originate from a different folder. Returns the number of items that
+  /// were actually added (items already present in the target are skipped).
+  int batchCopyFavoritesToFolder(
+    String targetFolder,
+    List<FavoriteItem> items,
+  ) {
+    if (!existsFolder(targetFolder)) {
+      throw Exception("Target folder does not exist");
+    }
+    var added = 0;
+    var addedItems = <FavoriteItem>[];
+    _db.execute("BEGIN TRANSACTION");
+    try {
+      var displayOrder = maxValue(targetFolder) + 1;
+      for (var item in items) {
+        var exists = _db.select(
+          """
+          select 1 from "$targetFolder"
+          where id == ? and type == ?;
+        """,
+          [item.id, item.type.value],
+        );
+        if (exists.isNotEmpty) {
+          continue;
+        }
+        _insertLocalFavoriteItem(targetFolder, item, displayOrder);
+        displayOrder++;
+        added++;
+        addedItems.add(item);
+      }
+    } catch (e) {
+      Log.error("Batch Copy Favorites To Folder", e.toString());
+      _db.execute("ROLLBACK");
+      return 0;
+    }
+    _db.execute("COMMIT");
+    counts[targetFolder] = count(targetFolder);
+    refreshHashedIds();
+    if (addedItems.isNotEmpty) {
+      _syncServerFavorite(
+        'batch-copy-all',
+        (client) async {
+          var ok = true;
+          for (var item in addedItems) {
+            ok = await client.addFavoriteItem(targetFolder, item) && ok;
+          }
+          return ok;
+        },
+      );
+    }
+    notifyListeners();
+    return added;
+  }
+
+  /// Move the given items into [targetFolder] from wherever they currently
+  /// live. Used by the "All folders" aggregated view: each item is inserted
+  /// into [targetFolder] and then removed from every other folder. This
+  /// removes the item from all of its source folders, consolidating it into
+  /// the target.
+  void batchMoveFavoritesToFolder(
+    String targetFolder,
+    List<FavoriteItem> items,
+  ) {
+    if (!existsFolder(targetFolder)) {
+      throw Exception("Target folder does not exist");
+    }
+    _db.execute("BEGIN TRANSACTION");
+    try {
+      var allFolders = _getFolderNamesWithDB();
+      var displayOrder = maxValue(targetFolder) + 1;
+      for (var item in items) {
+        var exists = _db.select(
+          """
+          select 1 from "$targetFolder"
+          where id == ? and type == ?;
+        """,
+          [item.id, item.type.value],
+        );
+        if (exists.isEmpty) {
+          _insertLocalFavoriteItem(targetFolder, item, displayOrder);
+          displayOrder++;
+        }
+        for (var folder in allFolders) {
+          if (folder == targetFolder) continue;
+          _db.execute(
+            """
+            delete from "$folder"
+            where id == ? and type == ?;
+          """,
+            [item.id, item.type.value],
+          );
+        }
+      }
+    } catch (e) {
+      Log.error("Batch Move Favorites To Folder", e.toString());
+      _db.execute("ROLLBACK");
+      return;
+    }
+    _db.execute("COMMIT");
+    for (var folder in _getFolderNamesWithDB()) {
+      counts[folder] = count(folder);
+    }
+    refreshHashedIds();
+    if (items.isNotEmpty) {
+      // Mirror the move on the server: remove the items from every folder,
+      // then add them back into the target. Deletion must happen first so the
+      // freshly added target entry is not wiped out.
+      var comicIds = items
+          .map((e) => ComicID(e.type, e.id))
+          .toList();
+      _syncServerFavorite(
+        'batch-move-all',
+        (client) async {
+          var ok = await client.batchDeleteFavoriteItemsInAllFolders(comicIds);
+          for (var item in items) {
+            ok = await client.addFavoriteItem(targetFolder, item) && ok;
+          }
+          return ok;
+        },
+      );
+    }
+    notifyListeners();
+  }
+
   /// delete a folder
   void deleteFolder(String name) {
     _db.execute("""
