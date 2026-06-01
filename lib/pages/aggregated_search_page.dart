@@ -4,6 +4,7 @@ import "package:venera/components/components.dart";
 import "package:venera/foundation/app.dart";
 import "package:venera/foundation/appdata.dart";
 import "package:venera/foundation/comic_source/comic_source.dart";
+import "package:venera/foundation/favorites.dart";
 import "package:venera/pages/search_result_page.dart";
 import "package:venera/utils/translations.dart";
 
@@ -139,6 +140,17 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
   void initState() {
     super.initState();
     load();
+    LocalFavoritesManager().addListener(_onFavoriteChanged);
+  }
+
+  @override
+  void dispose() {
+    LocalFavoritesManager().removeListener(_onFavoriteChanged);
+    super.dispose();
+  }
+
+  void _onFavoriteChanged() {
+    if (mounted) setState(() {});
   }
 
   Widget buildPlaceHolder() {
@@ -157,6 +169,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
     return SimpleComicTile(
       comic: c,
       withTitle: true,
+      showFavorite: true,
     ).paddingLeft(_kLeftPadding).paddingBottom(2);
   }
 

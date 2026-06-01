@@ -2246,6 +2246,7 @@ class SimpleComicTile extends StatelessWidget {
     this.onTap,
     this.withTitle = false,
     this.heroID,
+    this.showFavorite = false,
   });
 
   final Comic comic;
@@ -2256,11 +2257,13 @@ class SimpleComicTile extends StatelessWidget {
 
   final int? heroID;
 
+  final bool showFavorite;
+
   @override
   Widget build(BuildContext context) {
     var image = _findImageProvider(comic);
 
-    Widget child = image == null
+    Widget cover = image == null
         ? const SizedBox()
         : AnimatedImage(
             image: image,
@@ -2270,7 +2273,35 @@ class SimpleComicTile extends StatelessWidget {
             filterQuality: FilterQuality.medium,
           );
 
-    child = Container(
+    if (showFavorite &&
+        appdata.settings['showFavoriteStatusOnTile'] &&
+        LocalFavoritesManager().isExist(
+          comic.id,
+          ComicType.fromKey(comic.sourceKey),
+        )) {
+      cover = Stack(
+        fit: StackFit.expand,
+        children: [
+          cover,
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
+              height: 24,
+              width: 24,
+              color: Colors.green,
+              child: const Icon(
+                Icons.bookmark_rounded,
+                size: 16,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget child = Container(
       width: 98,
       height: 136,
       decoration: BoxDecoration(
@@ -2278,7 +2309,7 @@ class SimpleComicTile extends StatelessWidget {
         color: Theme.of(context).colorScheme.secondaryContainer,
       ),
       clipBehavior: Clip.antiAlias,
-      child: child,
+      child: cover,
     );
 
     if (heroID != null) {
