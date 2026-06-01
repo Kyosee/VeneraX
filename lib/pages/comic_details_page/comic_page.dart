@@ -149,6 +149,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   void update() {
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -384,6 +385,17 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         child: Text(comic.title),
       ),
       actions: [
+        if (!App.isWeb && !isDownloaded)
+          IconButton(
+            onPressed: download,
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Download'.tl,
+          ),
+        IconButton(
+          onPressed: share,
+          icon: const Icon(Icons.share),
+          tooltip: 'Share'.tl,
+        ),
         IconButton(
           onPressed: showMoreActions,
           icon: const Icon(Icons.more_horiz),
@@ -506,13 +518,6 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                   onPressed: read,
                   iconColor: context.useTextColor(Colors.orange),
                 ),
-              if (!App.isWeb && !isMobile && !isDownloaded)
-                _ActionButton(
-                  icon: const Icon(Icons.download),
-                  text: 'Download'.tl,
-                  onPressed: download,
-                  iconColor: context.useTextColor(Colors.cyan),
-                ),
               if (data!.isLiked != null)
                 _ActionButton(
                   icon: const Icon(Icons.favorite_border),
@@ -551,26 +556,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                   onPressed: showComments,
                   iconColor: context.useTextColor(Colors.green),
                 ),
-              _ActionButton(
-                icon: const Icon(Icons.share),
-                text: 'Share'.tl,
-                onPressed: share,
-                iconColor: context.useTextColor(Colors.blue),
-              ),
             ],
           ).fixHeight(48),
           if (isMobile)
             Row(
               children: [
-                if (!App.isWeb) ...[
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: download,
-                      child: Text("Download".tl),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                ],
                 Expanded(
                   child: hasHistory
                       ? FilledButton(
@@ -639,17 +629,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     return SliverLazyToBoxAdapter(
       child: Column(
         children: [
-          ListTile(title: Text("Description".tl)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SelectableText(
-              comic.description!,
-              maxLines: descriptionExpanded ? null : 1,
-            ).fixWidth(double.infinity),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
+          ListTile(
+            title: Text("Description".tl),
+            trailing: TextButton.icon(
               icon: Icon(
                 descriptionExpanded
                     ? Icons.keyboard_arrow_up
@@ -662,7 +644,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               },
               label: Text(descriptionExpanded ? 'Collapse'.tl : 'Expand'.tl),
             ),
-          ).paddingHorizontal(8),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SelectableText(
+              comic.description!,
+              maxLines: descriptionExpanded ? null : 1,
+            ).fixWidth(double.infinity),
+          ),
           const SizedBox(height: 16),
           const Divider(),
         ],

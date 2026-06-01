@@ -84,8 +84,8 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
                   message: "Order".tl,
                   child: IconButton(
                     icon: Icon(reverse
-                        ? Icons.vertical_align_top
-                        : Icons.vertical_align_bottom_outlined),
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward),
                     onPressed: () {
                       setState(() {
                         reverse = !reverse;
@@ -292,8 +292,8 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
                   message: "Order".tl,
                   child: IconButton(
                     icon: Icon(reverse
-                        ? Icons.vertical_align_top
-                        : Icons.vertical_align_bottom_outlined),
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward),
                     onPressed: () {
                       setState(() {
                         reverse = !reverse;
