@@ -117,6 +117,7 @@ class _EnhancedComicImageState extends State<EnhancedComicImage> {
   ) async {
     final shader = shaderManager.shaderFor(source);
     if (shader == null) return null;
+    ui.Picture? picture;
     try {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -127,13 +128,14 @@ class _EnhancedComicImageState extends State<EnhancedComicImage> {
         Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble()),
         paint,
       );
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(source.width, source.height);
-      picture.dispose();
-      return image;
+      picture = recorder.endRecording();
+      return await picture.toImage(source.width, source.height);
     } catch (_) {
       return null;
     } finally {
+      // Both must be released even if toImage() throws, to avoid leaking
+      // native resources.
+      picture?.dispose();
       shader.dispose();
     }
   }
