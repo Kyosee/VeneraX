@@ -403,6 +403,16 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
           useDeviceSettings: useDeviceSpecificSettings,
         ).toSliver(),
+        _SwitchSetting(
+          title: "Also collect chapter cover when collecting image".tl,
+          settingKey: "autoFavoriteCover",
+          onChanged: () {
+            widget.onChanged?.call("autoFavoriteCover");
+          },
+          comicId: isEnabledSpecificSettings ? widget.comicId : null,
+          comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
+          useDeviceSettings: useDeviceSpecificSettings,
+        ).toSliver(),
         SelectSetting(
           title: "Quick collect image".tl,
           settingKey: "quickCollectImage",

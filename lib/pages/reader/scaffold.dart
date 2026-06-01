@@ -346,13 +346,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               return e.ep == ep;
             });
         if (imageFavoritesEp == null) {
-          if (page != firstPage) {
+          if (page != firstPage &&
+              appdata.settings['autoFavoriteCover'] == true) {
             var copy = imageFavorite.copyWith(
               page: firstPage,
               isAutoFavorite: true,
               imageKey: context.reader.images![0],
             );
-            // 不是第一页的话, 自动塞一个封面进去
+            // 不是第一页且开启了自动收藏封面, 自动塞一个封面进去
             imageFavoritesEp = ImageFavoritesEp(
               eid,
               ep,
