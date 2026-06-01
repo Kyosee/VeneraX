@@ -852,9 +852,11 @@ class _RemoteBackupListDialog extends StatelessWidget {
           itemCount: backups.length,
           itemBuilder: (context, index) {
             var b = backups[index];
+            var d = b.effectiveDate;
+            String two(int n) => n.toString().padLeft(2, '0');
             var dateStr =
-                "${b.date.year}-${b.date.month.toString().padLeft(2, '0')}"
-                "-${b.date.day.toString().padLeft(2, '0')}";
+                "${d.year}-${two(d.month)}-${two(d.day)}"
+                " ${two(d.hour)}:${two(d.minute)}:${two(d.second)}";
             return ListTile(
               title: Text("v${b.version}  ${_platformLabel(b.platform)}"),
               subtitle: Text(dateStr),

@@ -470,7 +470,7 @@ class DataSync with ChangeNotifier {
       var backups = <RemoteBackupInfo>[];
       for (var f in files) {
         if (f.name == null || !f.name!.endsWith('.venera')) continue;
-        backups.add(RemoteBackupInfo.fromFileName(f.name!));
+        backups.add(RemoteBackupInfo.fromFileName(f.name!, mTime: f.mTime));
       }
       backups.sort((a, b) => b.version.compareTo(a.version));
       return Res(backups);
@@ -669,15 +669,22 @@ class RemoteBackupInfo {
   final int version;
   final String platform;
   final DateTime date;
+  final DateTime? mTime;
 
   RemoteBackupInfo({
     required this.fileName,
     required this.version,
     required this.platform,
     required this.date,
+    this.mTime,
   });
 
-  factory RemoteBackupInfo.fromFileName(String name) {
+  /// The most precise timestamp available for display: prefer the WebDAV
+  /// last-modified time (has hour/minute/second) and fall back to the
+  /// day-precision date parsed from the file name.
+  DateTime get effectiveDate => mTime ?? date;
+
+  factory RemoteBackupInfo.fromFileName(String name, {DateTime? mTime}) {
     var parts = name.replaceAll('.venera', '').split('-');
     var daysSinceEpoch = int.tryParse(parts.firstOrNull ?? '') ?? 0;
     var versionStr = parts.elementAtOrNull(1)?.split('.').first ?? '0';
@@ -693,6 +700,7 @@ class RemoteBackupInfo {
       version: version,
       platform: platform,
       date: date,
+      mTime: mTime,
     );
   }
 }
