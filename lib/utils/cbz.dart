@@ -14,6 +14,13 @@ class ComicMetaData {
 
   final String author;
 
+  final String artist;
+
+  final String description;
+
+  /// mihon status: "" / "0".."6" 或 ComicInfo 原文
+  final String status;
+
   final List<String> tags;
 
   final List<ComicChapter>? chapters;
@@ -21,14 +28,20 @@ class ComicMetaData {
   Map<String, dynamic> toJson() => {
         'title': title,
         'author': author,
+        'artist': artist,
+        'description': description,
+        'status': status,
         'tags': tags,
         'chapters': chapters?.map((e) => e.toJson()).toList()
       };
 
   ComicMetaData.fromJson(Map<String, dynamic> json)
-      : title = json['title'],
-        author = json['author'],
-        tags = List<String>.from(json['tags']),
+      : title = json['title'] ?? '',
+        author = json['author'] ?? '',
+        artist = json['artist'] ?? '',
+        description = json['description'] ?? '',
+        status = json['status'] ?? '',
+        tags = List<String>.from(json['tags'] ?? const []),
         chapters = json['chapters'] == null
             ? null
             : List<ComicChapter>.from(
@@ -38,6 +51,9 @@ class ComicMetaData {
     required this.title,
     required this.author,
     required this.tags,
+    this.artist = '',
+    this.description = '',
+    this.status = '',
     this.chapters,
   });
 }
