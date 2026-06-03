@@ -245,11 +245,17 @@ abstract class CBZ {
     var cover = comic.coverFile;
     await cover.copyMem(
         FilePath.join(cache.path, 'cover.${cover.path.split('.').last}'));
+    final statusTag = comic.tags.firstWhere(
+      (t) => t.startsWith('Status:'),
+      orElse: () => '',
+    );
     final metaData = ComicMetaData(
       title: comic.title,
       author: comic.subtitle,
       tags: comic.tags,
       chapters: chapters,
+      description: comic.description,
+      status: statusTag.isEmpty ? '' : statusTag.substring('Status:'.length),
     );
     await File(FilePath.join(cache.path, 'metadata.json')).writeAsString(
       jsonEncode(metaData),
@@ -274,6 +280,18 @@ abstract class CBZ {
 
     if (data.author.isNotEmpty) {
       buffer.writeln('  <Writer>${_escapeXml(data.author)}</Writer>');
+    }
+
+    if (data.artist.isNotEmpty) {
+      buffer.writeln('  <Penciller>${_escapeXml(data.artist)}</Penciller>');
+    }
+
+    if (data.description.isNotEmpty) {
+      buffer.writeln('  <Summary>${_escapeXml(data.description)}</Summary>');
+    }
+
+    if (data.status.isNotEmpty) {
+      buffer.writeln('  <Status>${_escapeXml(data.status)}</Status>');
     }
 
     if (data.tags.isNotEmpty) {
