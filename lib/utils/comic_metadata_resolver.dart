@@ -65,7 +65,8 @@ ComicMetaData? _tryDetailsJson(Directory dir) {
 }
 
 String? _xmlTag(String xml, String tag) {
-  final m = RegExp('<$tag>(.*?)</$tag>', dotAll: true).firstMatch(xml);
+  final m = RegExp('<$tag(?:\\s[^>]*)?>(.*?)</$tag>', dotAll: true)
+      .firstMatch(xml);
   if (m == null) return null;
   return _unescapeXml(m.group(1)!.trim());
 }

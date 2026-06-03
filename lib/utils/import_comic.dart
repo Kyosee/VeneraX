@@ -261,7 +261,9 @@ class ImportComic {
     if (!hasSubDir && hasImageInRoot) {
       return (kind: 'single', guessMulti: false, dir: path);
     }
-    final guessMulti = !hasMetaInRoot;
+    // 含子文件夹:根目录有元数据文件或封面图 → 倾向单本(子文件夹为章节);
+    // 否则倾向多本(每个子文件夹一本)。用户可在确认弹窗中改正。
+    final guessMulti = !(hasMetaInRoot || hasImageInRoot);
     return (kind: guessMulti ? 'multi' : 'single', guessMulti: guessMulti, dir: path);
   }
 

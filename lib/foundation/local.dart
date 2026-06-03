@@ -567,6 +567,7 @@ class LocalManager with ChangeNotifier {
             comicType: comic.comicType,
             downloadedChapters: comic.downloadedChapters,
             createdAt: comic.createdAt,
+            description: comic.description,
           ),
         );
       }
