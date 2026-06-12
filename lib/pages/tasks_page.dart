@@ -54,24 +54,33 @@ class _TasksPageState extends State<TasksPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: Appbar(title: Text("Tasks".tl)),
-      body: DefaultTabController(
-        length: 2,
-        child: Column(
-          children: [
-            Material(
-              child: AppTabBar(
-                tabs: [
-                  Tab(text: "Current".tl),
-                  Tab(text: "History".tl),
-                ],
+      // ExpansionTile draws a top/bottom divider line when expanded by default.
+      // Override the shapes with a borderless Border so expanding a task card
+      // doesn't show stray lines at its top and bottom.
+      body: ExpansionTileTheme(
+        data: const ExpansionTileThemeData(
+          shape: Border(),
+          collapsedShape: Border(),
+        ),
+        child: DefaultTabController(
+          length: 2,
+          child: Column(
+            children: [
+              Material(
+                child: AppTabBar(
+                  tabs: [
+                    Tab(text: "Current".tl),
+                    Tab(text: "History".tl),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [buildCurrentTasks(), buildHistoryTasks()],
+              Expanded(
+                child: TabBarView(
+                  children: [buildCurrentTasks(), buildHistoryTasks()],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
