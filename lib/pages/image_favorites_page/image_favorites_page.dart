@@ -24,6 +24,22 @@ part "image_favorites_item.dart";
 
 part "image_favorites_photo_view.dart";
 
+part "single_comic_image_favorites_page.dart";
+
+/// 图片收藏页的三种视图模式：
+/// - [list]：按漫画分组的列表（每行一部漫画，横向滑动展示其收藏图）
+/// - [imageGrid]：所有漫画的收藏图平铺成一个网格
+/// - [comicGrid]：每部漫画一个封面格子，点进去看该漫画专属的图片网格
+enum ImageFavoritesViewMode {
+  list,
+  imageGrid,
+  comicGrid;
+
+  ImageFavoritesViewMode get next {
+    return ImageFavoritesViewMode.values[(index + 1) % values.length];
+  }
+}
+
 class ImageFavoritesPage extends StatefulWidget {
   const ImageFavoritesPage({super.key, this.initialKeyword});
 
@@ -52,8 +68,8 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
 
   bool multiSelectMode = false;
 
-  // 网格布局模式（true=图片平铺网格, false=按漫画分组列表）
-  bool gridMode = false;
+  // 视图模式（列表 / 图片网格 / 漫画网格）
+  ImageFavoritesViewMode viewMode = ImageFavoritesViewMode.list;
 
   // 多选的时候选中的图片
   Map<ImageFavorite, bool> selectedImageFavorites = {};
@@ -122,10 +138,47 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
     numFilterSelect =
         appdata.implicitData["image_favorites_number_filter"] ??
         numFilterList[0];
-    gridMode = appdata.implicitData["image_favorites_grid_mode"] ?? false;
+    viewMode = _readViewMode();
     updateImageFavorites();
     ImageFavoriteManager().addListener(updateImageFavorites);
     super.initState();
+  }
+
+  /// 读取持久化的视图模式。优先读新 key；老用户只有旧布尔 key 时做迁移：
+  /// 旧 `true`（网格）→ [imageGrid]，`false`/缺省 → [list]。
+  ImageFavoritesViewMode _readViewMode() {
+    var name = appdata.implicitData["image_favorites_view_mode"];
+    if (name is String) {
+      var mode = ImageFavoritesViewMode.values
+          .firstWhereOrNull((e) => e.name == name);
+      if (mode != null) return mode;
+    }
+    var legacyGrid = appdata.implicitData["image_favorites_grid_mode"];
+    return legacyGrid == true
+        ? ImageFavoritesViewMode.imageGrid
+        : ImageFavoritesViewMode.list;
+  }
+
+  void _saveViewMode() {
+    appdata.implicitData["image_favorites_view_mode"] = viewMode.name;
+    appdata.writeImplicitData();
+  }
+
+  IconData _viewModeIcon(ImageFavoritesViewMode mode) {
+    return switch (mode) {
+      ImageFavoritesViewMode.list => Icons.view_list,
+      ImageFavoritesViewMode.imageGrid => Icons.grid_view,
+      ImageFavoritesViewMode.comicGrid => Icons.collections_outlined,
+    };
+  }
+
+  /// 切换按钮提示「下一个」模式，与原先「点了会变成什么」的语义一致。
+  String _viewModeTooltip(ImageFavoritesViewMode mode) {
+    return switch (mode) {
+      ImageFavoritesViewMode.list => "List View".tl,
+      ImageFavoritesViewMode.imageGrid => "Grid View".tl,
+      ImageFavoritesViewMode.comicGrid => "Comic Grid View".tl,
+    };
   }
 
   @override
@@ -222,18 +275,14 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
             title: Text("Image Favorites".tl),
             actions: [
               Tooltip(
-                message: gridMode ? "List View".tl : "Grid View".tl,
+                message: _viewModeTooltip(viewMode.next),
                 child: IconButton(
-                  icon: Icon(
-                    gridMode ? Icons.view_list : Icons.grid_view,
-                  ),
+                  icon: Icon(_viewModeIcon(viewMode)),
                   onPressed: () {
                     setState(() {
-                      gridMode = !gridMode;
+                      viewMode = viewMode.next;
                     });
-                    appdata.implicitData["image_favorites_grid_mode"] =
-                        gridMode;
-                    appdata.writeImplicitData();
+                    _saveViewMode();
                   },
                 ),
               ),
@@ -318,10 +367,10 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
               },
             ),
           ),
-        if (gridMode)
-          _buildGridSliver()
-        else
-          SliverList(
+        switch (viewMode) {
+          ImageFavoritesViewMode.imageGrid => _buildGridSliver(),
+          ImageFavoritesViewMode.comicGrid => _buildComicGridSliver(),
+          ImageFavoritesViewMode.list => SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               return _ImageFavoritesItem(
                 key: ValueKey(
@@ -335,6 +384,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
               );
             }, childCount: comics.length),
           ),
+        },
         SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
@@ -413,6 +463,25 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
   String _gridItemKey((ImageFavoritesComic, ImageFavorite) e) {
     var i = e.$2;
     return "${i.sourceKey}@${i.id}@${i.eid}@${i.page}";
+  }
+
+  /// 漫画网格：每部漫画一个封面格子，点击进入该漫画专属的图片网格子页。
+  Widget _buildComicGridSliver() {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedHeight(
+        maxCrossAxisExtent: 180,
+        itemHeight: 240,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _ImageFavoritesComicGridItem(
+          key: ValueKey(
+            "${comics[index].sourceKey}@${comics[index].id}",
+          ),
+          comic: comics[index],
+        ),
+        childCount: comics.length,
+      ),
+    ).sliverPadding(const EdgeInsets.symmetric(horizontal: 8));
   }
 }
 

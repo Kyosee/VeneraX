@@ -402,3 +402,82 @@ class _ImageFavoritesGridItem extends StatelessWidget {
     );
   }
 }
+
+/// 漫画网格视图下的单部漫画格子：封面 + 标题 + 收藏数角标。
+/// 点击进入该漫画专属的图片收藏网格子页 [SingleComicImageFavoritesPage]。
+class _ImageFavoritesComicGridItem extends StatelessWidget {
+  const _ImageFavoritesComicGridItem({
+    super.key,
+    required this.comic,
+  });
+
+  final ImageFavoritesComic comic;
+
+  @override
+  Widget build(BuildContext context) {
+    var cover = comic.images.first;
+    return InkWell(
+      onTap: () {
+        App.rootContext.to(
+          () => SingleComicImageFavoritesPage(comic: comic),
+        );
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(context).colorScheme.secondaryContainer,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: AnimatedImage(
+                        image: ImageFavoritesProvider(cover),
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .secondaryContainer
+                            .toOpacity(0.9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        "${comic.images.length}/${comic.maxPageFromEp}",
+                        style: ts.s10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              comic.title,
+              style: ts.s10,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
