@@ -1450,8 +1450,16 @@ class _ContinuousModeState extends State<_ContinuousMode>
   Widget _buildScrollView() {
     final before = _anchorIndex; // entries strictly before the pivot
     final afterCount = _entries.length - _anchorIndex; // pivot + following
-    final cacheExtent =
-        (_axis == Axis.vertical ? reader.size.height : reader.size.width) * 1.5;
+    // 连续滚动模式的卡顿主因：cacheExtent 决定 SliverList 在视口外提前多远
+    // 构建并解码 item。原值仅 1.5 个视口，而漫画竖图常达 1~3 屏高，往往连下一
+    // 张完整图都覆盖不到 —— 该图滚入视口时才在主 isolate 即时解码大图，导致掉帧
+    // (issue #32 上下滚动卡顿)。按用户的预加载页数放大提前量(默认4→4屏)，
+    // 并设 2 屏下限，使后续若干长图在进入视口前已解码就绪。continuous 模式
+    // enableResize=true 已降采样，单张解码成本可控，放大提前量代价主要是内存，
+    // 由 imageCache 的 LRU(按可用RAM 100~500MB)约束。
+    final viewExtent =
+        _axis == Axis.vertical ? reader.size.height : reader.size.width;
+    final cacheExtent = viewExtent * preCacheCount.clamp(2, 6).toDouble();
     return CustomScrollView(
       controller: _scrollController,
       center: _centerKey,
