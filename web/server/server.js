@@ -3215,6 +3215,91 @@ async function openWritableSqliteDatabase(filePath) {
   return new sqlite.DatabaseSync(filePath);
 }
 
+// === Read Later (稍后阅读) ===
+// Schema mirrors the Flutter native side (lib/foundation/read_later.dart) so the
+// read_later.db file can be synced via WebDAV and read by both ends.
+function ensureReadLaterDbSchema(db) {
+  db.exec(`
+    create table if not exists read_later (
+      id text,
+      title text,
+      subtitle text,
+      cover text,
+      type int,
+      tags text,
+      time int,
+      primary key (id, type)
+    );
+  `);
+  // Backfill any missing columns on databases created by older versions
+  // (mirrors native _migrateSchema / addColumnIfMissing).
+  const expected = {
+    id: "text", title: "text", subtitle: "text", cover: "text",
+    type: "int", tags: "text", time: "int",
+  };
+  const existing = new Set(
+    db.prepare("PRAGMA table_info(read_later);").all().map((c) => c.name),
+  );
+  for (const [name, sqlType] of Object.entries(expected)) {
+    if (!existing.has(name)) {
+      db.exec(`alter table read_later add column ${name} ${sqlType};`);
+    }
+  }
+}
+
+async function withWritableReadLaterDb(profileRoot, callback) {
+  const filePath = serverDbEntryPath(profileRoot, "read_later.db");
+  const db = await openWritableSqliteDatabase(filePath);
+  try {
+    ensureReadLaterDbSchema(db);
+    return callback(db);
+  } finally {
+    db.close();
+  }
+}
+
+function readLaterRowsFromServerDb(profileRoot, { limit, offset } = {}) {
+  const filePath = serverDbEntryPath(profileRoot, "read_later.db");
+  if (!existsSync(filePath)) {
+    return { total: 0, items: [] };
+  }
+  const data = extractSqliteData(readFileSync(filePath));
+  const table = data.tables.find((item) => item.name === "read_later");
+  if (!table) {
+    return { total: 0, items: [] };
+  }
+  const items = table.rows.map((row) => {
+    const item = {};
+    for (let index = 0; index < table.columns.length; index++) {
+      item[table.columns[index]] = row[index];
+    }
+    let tags = [];
+    if (item.tags) {
+      try {
+        const parsed = JSON.parse(String(item.tags));
+        if (Array.isArray(parsed)) tags = parsed.map(String);
+      } catch { /* tags stored malformed; treat as empty */ }
+    }
+    const type = Number(item.type || 0);
+    return {
+      id: String(item.id || ""),
+      title: String(item.title || ""),
+      subtitle: item.subtitle == null ? "" : String(item.subtitle),
+      cover: String(item.cover || ""),
+      type,
+      tags,
+      time: Number(item.time || 0),
+    };
+  });
+  items.sort((a, b) => b.time - a.time);
+  const total = items.length;
+  const safeOffset = Math.max(0, Number(offset) || 0);
+  const hasLimit = limit != null && Number.isFinite(Number(limit));
+  const safeLimit = hasLimit ? Math.max(0, Number(limit)) : total;
+  const sliced = items.slice(safeOffset, safeOffset + safeLimit);
+  return { total, items: sliced };
+}
+
 function ensureHistoryDbSchema(db) {
   db.exec(`
     create table if not exists history (
@@ -3723,6 +3808,40 @@ function normalizeHistoryPayload(payload) {
     readEpisode,
     maxPage: nullableNumber(history.max_page),
     chapterGroup: nullableNumber(history.chapter_group),
+  };
+}
+
+// Normalize a read-later add/toggle payload into DB row values. Accepts either
+// flat fields or a nested { comic } object. tags is JSON-stringified to match
+// the native side (encodeJsonList → '["a","b"]').
+function normalizeReadLaterPayload(payload) {
+  const src = (payload && typeof payload.comic === "object" && payload.comic)
+    ? payload.comic
+    : (payload || {});
+  const id = String(src.id || "").trim();
+  const typeRaw = src.type ?? payload?.type;
+  const type = Number(typeRaw);
+  const rawTags = src.tags;
+  let tagsArray = [];
+  if (Array.isArray(rawTags)) {
+    tagsArray = rawTags.map((t) => String(t)).filter(Boolean);
+  } else if (typeof rawTags === "string" && rawTags) {
+    try {
+      const parsed = JSON.parse(rawTags);
+      if (Array.isArray(parsed)) tagsArray = parsed.map(String);
+    } catch {
+      tagsArray = rawTags.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  const timeNum = Number(src.time ?? payload?.time);
+  return {
+    id,
+    title: String(src.title || ""),
+    subtitle: src.subtitle == null ? "" : String(src.subtitle),
+    cover: String(src.cover || src.coverPath || ""),
+    type: Number.isInteger(type) ? type : NaN,
+    tags: JSON.stringify(tagsArray),
+    time: Number.isFinite(timeNum) ? timeNum : Date.now(),
   };
 }
 
@@ -6512,6 +6631,129 @@ async function handleServerDbRoute({
     });
     markServerDbDirty(profileRoot, "history-clear");
     sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/list") {
+    const data = readLaterRowsFromServerDb(profileRoot, {
+      limit: payload.limit,
+      offset: payload.offset,
+    });
+    sendJson(res, 200, { ok: true, profile: profileId, ...data });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/add") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const item = normalizeReadLaterPayload(payload);
+    if (!item.id || !Number.isInteger(item.type)) {
+      throw createHttpError(400, "Invalid read-later payload");
+    }
+    await withWritableReadLaterDb(profileRoot, (db) => {
+      db.prepare(`
+        insert or replace into read_later
+          (id, title, subtitle, cover, type, tags, time)
+        values (?, ?, ?, ?, ?, ?, ?);
+      `).run(
+        item.id, item.title, item.subtitle, item.cover,
+        item.type, item.tags, item.time,
+      );
+    });
+    markServerDbDirty(profileRoot, "read-later-add");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/delete") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const id = String(payload.id || "").trim();
+    const type = Number(payload.type);
+    if (!id || !Number.isInteger(type)) {
+      throw createHttpError(400, "Invalid read-later delete payload");
+    }
+    await withWritableReadLaterDb(profileRoot, (db) => {
+      db.prepare("delete from read_later where id = ? and type = ?;").run(id, type);
+    });
+    markServerDbDirty(profileRoot, "read-later-delete");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/batch-delete") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    await withWritableReadLaterDb(profileRoot, (db) => {
+      const stmt = db.prepare("delete from read_later where id = ? and type = ?;");
+      db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const raw of items) {
+          const id = String(raw?.id || "").trim();
+          const type = Number(raw?.type);
+          if (id && Number.isInteger(type)) stmt.run(id, type);
+        }
+        db.exec("COMMIT;");
+      } catch (e) {
+        db.exec("ROLLBACK;");
+        throw e;
+      }
+    });
+    markServerDbDirty(profileRoot, "read-later-batch-delete");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/clear") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    await withWritableReadLaterDb(profileRoot, (db) => {
+      db.exec("delete from read_later;");
+    });
+    markServerDbDirty(profileRoot, "read-later-clear");
+    sendJson(res, 200, { ok: true, profile: profileId });
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/api/server-db/read-later/toggle") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return true;
+    }
+    const item = normalizeReadLaterPayload(payload);
+    if (!item.id || !Number.isInteger(item.type)) {
+      throw createHttpError(400, "Invalid read-later toggle payload");
+    }
+    const inList = await withWritableReadLaterDb(profileRoot, (db) => {
+      const existing = db
+        .prepare("select 1 from read_later where id = ? and type = ?;")
+        .get(item.id, item.type);
+      if (existing) {
+        db.prepare("delete from read_later where id = ? and type = ?;")
+          .run(item.id, item.type);
+        return false;
+      }
+      db.prepare(`
+        insert or replace into read_later
+          (id, title, subtitle, cover, type, tags, time)
+        values (?, ?, ?, ?, ?, ?, ?);
+      `).run(
+        item.id, item.title, item.subtitle, item.cover,
+        item.type, item.tags, item.time,
+      );
+      return true;
+    });
+    markServerDbDirty(profileRoot, "read-later-toggle");
+    sendJson(res, 200, { ok: true, profile: profileId, inList });
     return true;
   }
 

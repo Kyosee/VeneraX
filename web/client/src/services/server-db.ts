@@ -1,6 +1,6 @@
 import { apiPost } from './api'
 import { useSyncStore } from '../stores/sync'
-import type { History, FavoriteItem, FavoriteFolder, ComicSource, SourceCapabilities } from '../types'
+import type { History, ReadLaterItem, FavoriteItem, FavoriteFolder, ComicSource, SourceCapabilities } from '../types'
 import { normalizeComicSources, sourceKeyFromType } from '../utils/source'
 
 type FavoritePayloadItem = Pick<FavoriteItem, 'id' | 'type'> & { folder?: string }
@@ -371,6 +371,60 @@ export async function mirrorComic(sourceKey: string, comicId: string): Promise<{
 
 export async function batchAutoLink(): Promise<{ ok: boolean; linked: number }> {
   return apiPost('/api/server-db/related-source/auto-link', {})
+}
+
+// === Read Later (稍后阅读) ===
+
+function normalizeReadLater(item: any): ReadLaterItem {
+  const type = Number(item?.type ?? 0)
+  const tags = Array.isArray(item?.tags)
+    ? item.tags.map(String)
+    : (typeof item?.tags === 'string' && item.tags
+        ? (() => { try { const p = JSON.parse(item.tags); return Array.isArray(p) ? p.map(String) : [] } catch { return [] } })()
+        : [])
+  return {
+    id: String(item?.id ?? ''),
+    type,
+    sourceKey: item?.sourceKey ?? sourceKeyFromType(type),
+    title: String(item?.title ?? ''),
+    subtitle: item?.subtitle ?? '',
+    cover: String(item?.cover ?? ''),
+    tags,
+    time: Number(item?.time ?? 0),
+  }
+}
+
+export async function listReadLater(limit?: number, offset = 0): Promise<{ items: ReadLaterItem[], total: number }> {
+  const res = await apiPost<any>('/api/server-db/read-later/list', { limit, offset })
+  const items = (res?.items ?? res ?? []).map(normalizeReadLater)
+  const total = res?.total ?? items.length
+  return { items, total }
+}
+
+export async function addReadLater(item: Partial<ReadLaterItem> & { id: string; type: number }): Promise<void> {
+  await apiPost('/api/server-db/read-later/add', item)
+  queueAutoUpload()
+}
+
+export async function deleteReadLater(id: string, type: number): Promise<void> {
+  await apiPost('/api/server-db/read-later/delete', { id, type })
+  queueAutoUpload()
+}
+
+export async function batchDeleteReadLater(items: Array<{ id: string; type: number }>): Promise<void> {
+  await apiPost('/api/server-db/read-later/batch-delete', { items })
+  queueAutoUpload()
+}
+
+export async function clearReadLater(): Promise<void> {
+  await apiPost('/api/server-db/read-later/clear', {})
+  queueAutoUpload()
+}
+
+export async function toggleReadLater(item: Partial<ReadLaterItem> & { id: string; type: number }): Promise<boolean> {
+  const res = await apiPost<{ ok: boolean; inList: boolean }>('/api/server-db/read-later/toggle', item)
+  queueAutoUpload()
+  return !!res?.inList
 }
 
 export { loadTagData, matchSuggestions, getTagData } from '../utils/tags-translation'

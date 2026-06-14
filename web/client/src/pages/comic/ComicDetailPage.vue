@@ -5,6 +5,7 @@ import { apiPost } from '@/services/api'
 import { addFavorite, deleteFavorite, getComicSources, listFavorites, listFolders, listHistory, createFolder, markAsRead } from '@/services/server-db'
 import { resolveSourceKey, sourceTypeFromKey } from '@/utils/source'
 import { useSettingsStore } from '@/stores/settings'
+import { useReadLaterStore } from '@/stores/readLater'
 import ProxiedImage from '@/components/ProxiedImage.vue'
 import ComicCard from '@/components/ComicCard.vue'
 import RelatedSourcesDialog from '@/components/RelatedSourcesDialog.vue'
@@ -16,6 +17,7 @@ import type { Comic, Chapter, ChapterGroup, Comment, ComicSource, History } from
 const route = useRoute()
 const router = useRouter()
 const settingsStore = useSettingsStore()
+const readLaterStore = useReadLaterStore()
 const sourceKey = computed(() => decodeURIComponent(route.params.sourceKey as string))
 const comicId = computed(() => decodeURIComponent(route.params.id as string))
 
@@ -562,6 +564,27 @@ function startReading() {
   if (first) readComic(first)
 }
 
+const isInReadLater = computed(() =>
+  readLaterStore.isInReadLater(comicId.value, sourceTypeFromKey(sourceKey.value))
+)
+
+async function toggleReadLater() {
+  if (!comic.value) return
+  try {
+    const nowIn = await readLaterStore.toggle({
+      id: comicId.value,
+      sourceKey: sourceKey.value,
+      title: comic.value.title,
+      subtitle: comicAuthorText(comic.value),
+      cover: comic.value.cover,
+      tags: normalizeComicTags(comic.value.tags),
+    })
+    showToast(nowIn ? '已加入稍后阅读' : '已移出稍后阅读')
+  } catch (e: any) {
+    showToast(e?.message || '操作失败')
+  }
+}
+
 async function shareComic() {
   if (!comic.value) return
   if (navigator.share) {
@@ -638,6 +661,7 @@ onMounted(async () => {
   void loadSources()
   await fetchDetail()
   void fetchHistory()
+  void readLaterStore.fetch()
   const loadOptional = () => {
     void fetchThumbnails()
     void fetchRelated()
@@ -773,6 +797,14 @@ onUnmounted(() => {
           <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" />
           <span>收藏</span>
         </button>
+        <button
+          class="action-btn" style="background:#16a085;color:#fff;border-color:#16a085"
+          :class="{ active: isInReadLater }"
+          @click="toggleReadLater"
+        >
+          <van-icon :name="isInReadLater ? 'clock' : 'clock-o'" class="action-icon" />
+          <span>{{ isInReadLater ? '移出稍后' : '稍后阅读' }}</span>
+        </button>
         <button v-if="comments.length" class="action-btn" @click="scrollToComments">
           <van-icon name="chat-o" class="action-icon" style="color:#27ae60" />
           <span>评论</span>
@@ -812,6 +844,14 @@ onUnmounted(() => {
           >
             <van-icon :name="isFavorite ? 'star' : 'star-o'" class="action-icon" />
             <span>收藏</span>
+          </button>
+          <button
+            class="action-btn compact" style="background:#16a085;color:#fff;border-color:#16a085"
+            :class="{ active: isInReadLater }"
+            @click="toggleReadLater"
+          >
+            <van-icon :name="isInReadLater ? 'clock' : 'clock-o'" class="action-icon" />
+            <span>{{ isInReadLater ? '移出稍后' : '稍后阅读' }}</span>
           </button>
           <button v-if="comments.length" class="action-btn compact" @click="scrollToComments">
             <van-icon name="chat-o" class="action-icon" style="color:#27ae60" />

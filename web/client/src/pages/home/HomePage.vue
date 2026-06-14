@@ -2,11 +2,11 @@
 import { ref, computed, onMounted, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import ProxiedImage from '@/components/ProxiedImage.vue'
-import { listHistory, getComicSources, listFavorites, clearComicSourcesCache } from '@/services/server-db'
+import { listHistory, getComicSources, listFavorites, listReadLater, clearComicSourcesCache } from '@/services/server-db'
 import { getSyncStatus, type WebDavSyncStatus } from '@/services/sync'
 import { useSyncStore } from '@/stores/sync'
 import { useSettingsStore } from '@/stores/settings'
-import type { History, ComicSource, FavoriteItem } from '@/types'
+import type { History, ReadLaterItem, ComicSource, FavoriteItem } from '@/types'
 import { resolveSourceKey } from '@/utils/source'
 
 const router = useRouter()
@@ -14,6 +14,8 @@ const syncStore = useSyncStore()
 const settingsStore = useSettingsStore()
 const histories = ref<History[]>([])
 const historyTotal = ref(0)
+const readLaterItems = ref<ReadLaterItem[]>([])
+const readLaterTotal = ref(0)
 const favorites = ref<FavoriteItem[]>([])
 const localComics = ref<FavoriteItem[]>([])
 const sources = ref<ComicSource[]>([])
@@ -35,11 +37,12 @@ const followUpdateItems = computed(() => {
 const updateCount = computed(() => followUpdateItems.value.filter(item => item.hasNewUpdate).length)
 
 async function refreshHomeData() {
-  const [h, s, f, ss] = await Promise.allSettled([
+  const [h, s, f, ss, rl] = await Promise.allSettled([
     listHistory(20),
     getComicSources(),
     listFavorites(),
     getSyncStatus(),
+    listReadLater(20),
   ])
   if (h.status === 'fulfilled') {
     histories.value = h.value.items
@@ -51,6 +54,10 @@ async function refreshHomeData() {
     localComics.value = f.value.filter(item => resolveSourceKey(item, sources.value) === 'local')
   }
   if (ss.status === 'fulfilled') syncStatus.value = ss.value
+  if (rl.status === 'fulfilled') {
+    readLaterItems.value = rl.value.items
+    readLaterTotal.value = rl.value.total
+  }
   syncStatus.value.isDownloading = syncStore.isDownloading
   syncStatus.value.isUploading = syncStore.isUploading
   syncStatus.value.lastError = syncStore.lastError || syncStatus.value.lastError
@@ -125,6 +132,11 @@ function goFavoriteComic(item: FavoriteItem) {
   router.push(`/comic/${encodeURIComponent(sourceKey)}/${encodeURIComponent(item.id)}`)
 }
 
+function goReadLaterComic(item: ReadLaterItem) {
+  const sourceKey = item.sourceKey || resolveSourceKey(item, sources.value)
+  router.push(`/comic/${encodeURIComponent(sourceKey)}/${encodeURIComponent(item.id)}`)
+}
+
 function goSources(sourceKey?: string) {
   if (sourceKey) {
     router.push(`/sources?highlight=${encodeURIComponent(sourceKey)}`)
@@ -177,6 +189,28 @@ function goSources(sourceKey?: string) {
         </div>
       </div>
       <div v-else class="empty-hint">暂无历史记录</div>
+    </div>
+
+    <!-- Read Later Section -->
+    <div class="section-card">
+      <div class="section-header" @click="router.push('/read-later')">
+        <div class="section-header-left">
+          <span class="section-title">稍后阅读</span>
+          <span class="count-badge">{{ readLaterTotal }}</span>
+        </div>
+        <van-icon name="arrow" class="section-arrow" />
+      </div>
+      <div class="cover-scroll" v-if="readLaterItems.length">
+        <div
+          v-for="item in readLaterItems"
+          :key="`${item.id}-${item.type}`"
+          class="cover-item"
+          @click="goReadLaterComic(item)"
+        >
+          <ProxiedImage class="cover-img" :src="item.cover" :alt="item.title" />
+        </div>
+      </div>
+      <div v-else class="empty-hint">暂无稍后阅读</div>
     </div>
 
     <!-- Local Comics Section -->

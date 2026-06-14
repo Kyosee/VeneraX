@@ -15,6 +15,17 @@ export interface History {
   chapter_group?: number | null
 }
 
+export interface ReadLaterItem {
+  id: string
+  type: number
+  sourceKey?: string
+  title: string
+  subtitle?: string
+  cover: string
+  tags: string[]
+  time: number
+}
+
 export interface FavoriteItem {
   folder?: string
   id: string
