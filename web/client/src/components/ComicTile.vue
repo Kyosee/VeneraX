@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import ProxiedImage from './ProxiedImage.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { comicDisplayInfo } from '@/utils/comic-display'
+import { canonicalSourceKey } from '@/utils/source'
 
 const props = withDefaults(defineProps<{
   comic: Record<string, any>
@@ -28,7 +29,14 @@ const display = computed(() => comicDisplayInfo(props.comic))
 const title = computed(() => display.value.title)
 const cover = computed(() => display.value.cover)
 const author = computed(() => display.value.author)
-const sourceText = computed(() => props.sourceName || props.comic.sourceName || props.comic.sourceKey || '')
+// Source label. When falling back to a raw sourceKey (no resolved source name),
+// strip any "(N)" disambiguation suffix so stale keys like "copy_manga(0)" never
+// surface in the UI — mirrors native, which never renders a raw source key.
+const sourceText = computed(() => {
+  const name = props.sourceName || props.comic.sourceName
+  if (name) return name
+  return canonicalSourceKey(props.comic.sourceKey || '')
+})
 const statusText = computed(() => display.value.status)
 const updateText = computed(() => display.value.update)
 const stars = computed(() => display.value.rating)
