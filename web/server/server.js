@@ -2846,10 +2846,65 @@ function writeServerDbComicSources(profileRoot, entries, { replace = false } = {
     return { writtenComicSources: 0 };
   }
   mkdirSync(targetDir, { recursive: true });
+  let written = 0;
   for (const entry of sourceEntries) {
+    // Skip empty-shell .js sources so a backup carrying a stale "copy_manga(0).js"
+    // never re-lands an empty file that would surface as a bogus source.
+    if (
+      entry.name.toLowerCase().endsWith(".js") &&
+      (!Buffer.isBuffer(entry.data) || entry.data.length === 0 || !entry.data.toString("utf8").trim())
+    ) {
+      continue;
+    }
     writeFileSync(join(targetDir, entry.name), entry.data);
+    written += 1;
   }
-  return { writtenComicSources: sourceEntries.length };
+  return { writtenComicSources: written };
+}
+
+// Remove empty-shell .js source files (size 0 / whitespace-only) left behind by
+// older syncs/imports. Deletes a shell only when another usable source shares its
+// canonical key OR the shell carries a "(N)" suffix (a disambiguation artifact),
+// so a single legitimate source is never destroyed. Returns removed count.
+function cleanupEmptySourceFiles(profileRoot) {
+  const targetDir = serverDbComicSourceDir(profileRoot);
+  if (!existsSync(targetDir)) return 0;
+  let names;
+  try {
+    names = readdirSync(targetDir).filter((n) => /\.js$/i.test(n));
+  } catch {
+    return 0;
+  }
+  // Map canonical -> has a non-empty .js
+  const usableCanonicals = new Set();
+  const shells = [];
+  for (const name of names) {
+    const full = join(targetDir, name);
+    let size = -1;
+    try { size = statSync(full).size; } catch { continue; }
+    const rawKey = name.replace(/\.js$/i, "");
+    const canonical = canonicalComicSourceKey(rawKey) || rawKey;
+    let isEmpty = size === 0;
+    if (!isEmpty && size <= 8) {
+      try { isEmpty = !readFileSync(full, "utf8").trim(); } catch { /* keep */ }
+    }
+    if (isEmpty) {
+      shells.push({ name, full, rawKey, canonical });
+    } else {
+      usableCanonicals.add(canonical);
+    }
+  }
+  let removed = 0;
+  for (const shell of shells) {
+    const hasSuffix = /\(\d+\)$/u.test(shell.rawKey);
+    if (usableCanonicals.has(shell.canonical) || hasSuffix) {
+      try { rmSync(shell.full, { force: true }); removed += 1; } catch { /* best-effort */ }
+    }
+  }
+  if (removed > 0) {
+    try { console.log(`[cleanup] removed ${removed} empty-shell source file(s)`); } catch { /* ignore */ }
+  }
+  return removed;
 }
 
 function readServerDbComicSourceEntries(profileRoot) {
@@ -2865,18 +2920,56 @@ function readServerDbComicSourceEntries(profileRoot) {
 }
 
 function readServerDbComicSourcePayload(profileRoot) {
-  return readServerDbComicSourceEntries(profileRoot).map((entry) => {
+  const entries = readServerDbComicSourceEntries(profileRoot);
+  // Drop empty-shell .js sources and, for duplicate canonical keys, keep only
+  // the usable one — mirroring resolveComicSourceFiles (skips size=0) and the
+  // native ComicSourceManager (skips sources that fail to parse). Without this
+  // a stale empty "copy_manga(0).js" (e.g. carried in via a WebDAV backup) would
+  // surface as a bogus "copy_manga(0)" source in the list.
+  const jsByCanonical = new Map();
+  const dataEntries = [];
+  for (const entry of entries) {
     const fileName = entry.name.replace("comic_source/", "");
+    if (fileName.toLowerCase().endsWith(".data")) {
+      dataEntries.push(entry);
+      continue;
+    }
+    if (!fileName.toLowerCase().endsWith(".js")) continue;
+    // Skip empty-shell .js files (no usable source code).
+    if (!entry.data || entry.data.length === 0) continue;
+    const text = entry.data.toString("utf8");
+    if (!text.trim()) continue;
+    const rawKey = fileName.replace(/\.js$/i, "");
+    const canonical = canonicalComicSourceKey(rawKey) || rawKey;
+    const rank = (() => {
+      const m = rawKey.match(/\((\d+)\)$/u);
+      return m ? Number(m[1]) + 1 : 0; // prefer no-suffix (rank 0), then (N) asc
+    })();
+    const existing = jsByCanonical.get(canonical);
+    if (!existing || rank < existing.rank) {
+      jsByCanonical.set(canonical, { entry, fileName, rawKey, canonical, text, rank });
+    }
+  }
+  const result = [];
+  for (const { entry, fileName, text } of jsByCanonical.values()) {
     const sourceKey = fileName.replace(/\.(?:js|data)$/i, "");
-    const metadata = fileName.toLowerCase().endsWith(".js")
-      ? extractComicSourceMetadata(entry.data.toString("utf8"), sourceKey)
-      : {};
-    return {
+    const metadata = extractComicSourceMetadata(text, sourceKey);
+    result.push({
       name: fileName,
       ...metadata,
       dataBase64: entry.data.toString("base64"),
-    };
-  });
+    });
+  }
+  // Keep .data entries (settings/account) as-is; the frontend ignores them for
+  // display but they participate in backup round-trips.
+  for (const entry of dataEntries) {
+    const fileName = entry.name.replace("comic_source/", "");
+    result.push({
+      name: fileName,
+      dataBase64: entry.data.toString("base64"),
+    });
+  }
+  return result;
 }
 
 function ensureEmptySqliteDbSchema(db) {
@@ -6592,6 +6685,7 @@ async function handleServerDbRoute({
     // so force-rerun the one-time source-type migration.
     writeImplicitDataFlag(profileRoot, SOURCE_TYPE_MIGRATION_FLAG, false);
     try { await runSourceTypeMigration(profileRoot, { force: true }); } catch (e) { try { console.error("[migration] import", e); } catch {} }
+    try { cleanupEmptySourceFiles(profileRoot); } catch (e) { try { console.error("[cleanup] import", e); } catch {} }
     sendJson(res, 200, {
       ok: true,
       profile: profileId,
@@ -8197,6 +8291,7 @@ async function handleServerDbRoute({
     // rows; force-rerun the one-time source-type migration.
     writeImplicitDataFlag(profileRoot, SOURCE_TYPE_MIGRATION_FLAG, false);
     try { await runSourceTypeMigration(profileRoot, { force: true }); } catch (e) { try { console.error("[migration] webdav", e); } catch {} }
+    try { cleanupEmptySourceFiles(profileRoot); } catch (e) { try { console.error("[cleanup] webdav", e); } catch {} }
     writeServerDbMetadata(profileRoot, {
       remoteFileName: downloaded.remoteFileName,
       remoteTimestamp: downloaded.remoteTimestamp,

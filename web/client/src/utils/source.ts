@@ -115,13 +115,15 @@ function stableSourceTypeHash(sourceKey: string): number {
 }
 
 // Canonicalize a source key the same way the backend does (canonicalComicSourceKey):
-// strip a trailing ".js" and a " (N)" disambiguation suffix so "copy_manga(0)" and
-// "copy_manga" hash to the same type.
+// strip a trailing ".js" and a "(N)" / "（N）" disambiguation suffix (both ASCII
+// and full-width parentheses, with optional surrounding spaces) so variants like
+// "copy_manga(0)" / "copy_manga（0）" all reduce to "copy_manga".
 export function canonicalSourceKey(sourceKey: string): string {
   return String(sourceKey || '')
     .trim()
     .replace(/\.js$/i, '')
-    .replace(/\s*\(\d+\)$/u, '')
+    .replace(/[\s　]*[(（]\d+[)）]$/u, '')
+    .trim()
 }
 
 export function normalizeComicSource(item: unknown): NormalizedComicSource | null {
