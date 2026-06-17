@@ -674,7 +674,7 @@ class RemoteBackupInfo {
 
   factory RemoteBackupInfo.fromFileName(String name, {DateTime? mTime}) {
     var parts = name.replaceAll('.venera', '').split('-');
-    var daysSinceEpoch = int.tryParse(parts.firstOrNull ?? '') ?? 0;
+    var leadingSegment = int.tryParse(parts.firstOrNull ?? '') ?? 0;
     var versionStr = parts.elementAtOrNull(1)?.split('.').first ?? '0';
     var version = int.tryParse(versionStr) ?? 0;
     var platform = 'unknown';
@@ -682,13 +682,33 @@ class RemoteBackupInfo {
     if (dotParts.length >= 2) {
       platform = dotParts[1];
     }
-    var date = DateTime.fromMillisecondsSinceEpoch(daysSinceEpoch * 86400000);
     return RemoteBackupInfo(
       fileName: name,
       version: version,
       platform: platform,
-      date: date,
+      date: _dateFromLeadingSegment(leadingSegment),
       mTime: mTime,
     );
+  }
+
+  static const int _msPerDay = 86400000;
+
+  /// Upper bound of [DateTime.fromMillisecondsSinceEpoch]'s valid range.
+  static const int _maxValidMs = 8640000000000000;
+
+  /// Resolves the date encoded in a backup file name's leading segment.
+  ///
+  /// The segment is normally days-since-epoch (~5 digits). Older and foreign
+  /// backups instead store a full `millisecondsSinceEpoch` (~13 digits); blindly
+  /// multiplying that by [_msPerDay] overflows 64-bit int on Android and throws
+  /// a RangeError that aborts the entire directory scan (issue #51). So multiply
+  /// only when the value is small enough to be a real day count, otherwise treat
+  /// it as milliseconds, and clamp so the constructor can never throw.
+  static DateTime _dateFromLeadingSegment(int value) {
+    var ms =
+        value.abs() <= _maxValidMs ~/ _msPerDay ? value * _msPerDay : value;
+    if (ms > _maxValidMs) ms = _maxValidMs;
+    if (ms < -_maxValidMs) ms = -_maxValidMs;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
   }
 }
