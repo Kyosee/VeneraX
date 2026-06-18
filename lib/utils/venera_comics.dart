@@ -130,10 +130,12 @@ Future<File> exportVeneraComics(
     File(FilePath.join(comicDir.path, 'meta.json'))
         .writeAsStringSync(jsonEncode(meta));
 
-    // Copy cover
+    // Copy cover. Use async copyMem (not copySync) so the per-image byte work
+    // yields to the event loop instead of freezing the UI on a large export
+    // (issue #54), and so it works for SAF-backed files.
     final coverFile = comic.coverFile;
     if (coverFile.existsSync()) {
-      coverFile.copySync(FilePath.join(comicDir.path, comic.cover));
+      await coverFile.copyMem(FilePath.join(comicDir.path, comic.cover));
     }
 
     // Copy chapter images if needed
@@ -149,7 +151,7 @@ Future<File> exportVeneraComics(
             destChapter.createSync();
             for (final file in entity.listSync()) {
               if (file is File) {
-                file.copySync(FilePath.join(destChapter.path, file.name));
+                await file.copyMem(FilePath.join(destChapter.path, file.name));
               }
             }
           }

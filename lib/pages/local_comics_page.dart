@@ -3,18 +3,14 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
-import 'package:venera/utils/archive.dart';
-import 'package:venera/utils/cbz.dart';
-import 'package:venera/utils/epub.dart';
 import 'package:venera/utils/io.dart';
-import 'package:venera/utils/pdf.dart';
 import 'package:venera/utils/translations.dart';
-import 'package:venera/utils/venera_comics.dart';
 import 'package:venera/pages/home_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -210,7 +206,10 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         MenuEntry(
           icon: Icons.archive_outlined,
           text: "Export .venera_comics".tl,
-          onClick: () => _exportAsVeneraComics(selectedComics.keys.toList()),
+          onClick: () => _startExportTask(
+            selectedComics.keys.toList(),
+            ExportFormat.veneraComics,
+          ),
         ),
     ]);
   }
@@ -519,29 +518,74 @@ class _LocalComicsPageState extends State<LocalComicsPage>
     );
   }
 
-  void _exportAsVeneraComics(List<LocalComic> comics) async {
+  Future<String?> _pickExportFolder() async {
+    if (App.isAndroid) {
+      return (await DirectoryPicker().pickDirectory())?.path;
+    } else if (App.isIOS) {
+      return await selectDirectoryIOS();
+    } else {
+      return await selectDirectory();
+    }
+  }
+
+  String _exportTaskMessage(ExportTask task) {
+    return "Exporting @done/@total".tlParams({
+      'done': task.done,
+      'total': task.total,
+    });
+  }
+
+  /// Picks a destination folder, then starts a background export task that
+  /// writes each comic as one file into it (issue #54). A bound loading dialog
+  /// shows progress and offers a "Background" button; the task keeps running
+  /// in the background and is visible in the Tasks page.
+  void _startExportTask(List<LocalComic> comics, ExportFormat format) async {
+    if (comics.isEmpty) return;
+    var manager = ExportTaskManager.instance;
+    if (manager.hasActiveTask) {
+      context.showMessage(message: "An export task is already running".tl);
+      return;
+    }
+    var folder = await _pickExportFolder();
+    if (folder == null || !mounted) return;
+    var task = manager.startExport(
+      folderPath: folder,
+      format: format,
+      comics: comics,
+    );
+    if (task == null) return;
     var controller = showLoadingDialog(
       context,
-      allowCancel: false,
-      message: "Exporting".tl,
+      withProgress: true,
+      barrierDismissible: false,
+      message: _exportTaskMessage(task),
+      secondaryButtonText: "Background",
+      onSecondary: () {},
+      cancelButtonText: "Cancel",
+      onCancel: () => manager.cancel(task.id),
     );
-
-    try {
-      var file = await exportVeneraComics(
-        comics,
-        onProgress: (current, total) {
-          controller.setMessage("${"Exporting".tl} $current/$total");
-        },
-      );
-      controller.close();
-      await saveFile(file: file, filename: file.name);
-      file.deleteIgnoreError();
-    } catch (e) {
-      controller.close();
-      if (mounted) {
-        context.showMessage(message: e.toString());
+    void listener() {
+      if (controller.closed) {
+        manager.removeListener(listener);
+        return;
+      }
+      controller.setProgress(task.total == 0 ? null : task.progress);
+      controller.setMessage(_exportTaskMessage(task));
+      if (!task.isActive) {
+        manager.removeListener(listener);
+        controller.close();
+        if (task.status == ExportTaskStatus.completed) {
+          App.rootContext.showMessage(message: "Export completed".tl);
+        } else if (task.status == ExportTaskStatus.failed) {
+          App.rootContext.showMessage(
+            message: (task.error ?? "Export failed").tl,
+          );
+        }
       }
     }
+
+    manager.addListener(listener);
+    listener();
   }
 
   Future<bool> deleteComics(List<LocalComic> comics) async {
@@ -610,103 +654,21 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       MenuEntry(
         icon: Icons.outbox_outlined,
         text: "Export as cbz".tl,
-        onClick: () {
-          exportComics(comics, CBZ.export, ".cbz");
-        },
+        onClick: () => _startExportTask(comics, ExportFormat.cbz),
       ),
       MenuEntry(
         icon: Icons.picture_as_pdf_outlined,
         text: "Export as pdf".tl,
-        onClick: () async {
-          exportComics(comics, createPdfFromComicIsolate, ".pdf");
-        },
+        onClick: () => _startExportTask(comics, ExportFormat.pdf),
       ),
       MenuEntry(
         icon: Icons.import_contacts_outlined,
         text: "Export as epub".tl,
-        onClick: () async {
-          exportComics(comics, createEpubWithLocalComic, ".epub");
-        },
+        onClick: () => _startExportTask(comics, ExportFormat.epub),
       )
     ];
   }
-
-  /// Export given comics to a file
-  void exportComics(
-      List<LocalComic> comics, ExportComicFunc export, String ext) async {
-    var current = 0;
-    var cacheDir = FilePath.join(App.cachePath, 'comics_export');
-    var outFile = FilePath.join(App.cachePath, 'comics_export.zip');
-    bool canceled = false;
-    if (Directory(cacheDir).existsSync()) {
-      Directory(cacheDir).deleteSync(recursive: true);
-    }
-    Directory(cacheDir).createSync();
-    var loadingController = showLoadingDialog(
-      context,
-      allowCancel: true,
-      message: "${"Exporting".tl} $current/${comics.length}",
-      withProgress: comics.length > 1,
-      onCancel: () {
-        canceled = true;
-      },
-    );
-    try {
-      var fileName = "";
-      // For each comic, export it to a file
-      for (var comic in comics) {
-        fileName = FilePath.join(
-          cacheDir,
-          sanitizeFileName(comic.title, maxLength: 100) + ext,
-        );
-        await export(comic, fileName);
-        current++;
-        if (comics.length > 1) {
-          loadingController
-              .setMessage("${"Exporting".tl} $current/${comics.length}");
-          loadingController.setProgress(current / comics.length);
-        }
-        if (canceled) {
-          return;
-        }
-      }
-      // For single comic, just save the file
-      if (comics.length == 1) {
-        await saveFile(
-          file: File(fileName),
-          filename: File(fileName).name,
-        );
-        Directory(cacheDir).deleteSync(recursive: true);
-        loadingController.close();
-        return;
-      }
-      // For multiple comics, compress the folder
-      loadingController.setProgress(null);
-      loadingController.setMessage("Compressing".tl);
-      await compressFolderAsync(cacheDir, outFile);
-      if (canceled) {
-        File(outFile).deleteIgnoreError();
-        return;
-      }
-    } catch (e, s) {
-      Log.error("Export Comics", e, s);
-      context.showMessage(message: e.toString());
-      loadingController.close();
-      return;
-    } finally {
-      Directory(cacheDir).deleteIgnoreError(recursive: true);
-    }
-    await saveFile(
-      file: File(outFile),
-      filename: "comics_export.zip",
-    );
-    loadingController.close();
-    File(outFile).deleteIgnoreError();
-  }
 }
-
-typedef ExportComicFunc = Future<File> Function(
-    LocalComic comic, String outFilePath);
 
 /// Opens the folder containing the comic in the system file explorer
 Future<void> openComicFolder(LocalComic comic) async {

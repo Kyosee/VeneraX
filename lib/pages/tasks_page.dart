@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/comic_source_update_tasks.dart';
 import 'package:venera/foundation/context.dart';
+import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/history_tasks.dart';
@@ -26,6 +27,7 @@ class _TasksPageState extends State<TasksPage> {
   final sourceMigrationManager = SourceMigrationTaskManager.instance;
   final comicSourceUpdateManager = ComicSourceUpdateTaskManager.instance;
   final importManager = ImportTaskManager.instance;
+  final exportManager = ExportTaskManager.instance;
 
   @override
   void initState() {
@@ -36,6 +38,7 @@ class _TasksPageState extends State<TasksPage> {
     sourceMigrationManager.addListener(update);
     comicSourceUpdateManager.addListener(update);
     importManager.addListener(update);
+    exportManager.addListener(update);
   }
 
   @override
@@ -46,6 +49,7 @@ class _TasksPageState extends State<TasksPage> {
     sourceMigrationManager.removeListener(update);
     comicSourceUpdateManager.removeListener(update);
     importManager.removeListener(update);
+    exportManager.removeListener(update);
     super.dispose();
   }
 
@@ -102,6 +106,9 @@ class _TasksPageState extends State<TasksPage> {
       ...importManager.currentTasks.map(
         (task) => buildImportTaskCard(task, expanded: false),
       ),
+      ...exportManager.currentTasks.map(
+        (task) => buildExportTaskCard(task, expanded: false),
+      ),
     ];
     return buildTaskWidgets(widgets, "No current tasks".tl);
   }
@@ -142,6 +149,12 @@ class _TasksPageState extends State<TasksPage> {
         (task) => MapEntry(
           task.finishedAt ?? task.createdAt,
           buildImportTaskCard(task, expanded: false),
+        ),
+      ),
+      ...exportManager.historyTasks.map(
+        (task) => MapEntry(
+          task.finishedAt ?? task.createdAt,
+          buildExportTaskCard(task, expanded: false),
         ),
       ),
     ];
@@ -832,6 +845,121 @@ class _TasksPageState extends State<TasksPage> {
           style: ts.s14,
         ),
         if (task.status == ImportTaskStatus.failed && task.error != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            (task.error ?? '').tl,
+            style: ts.s14.withColor(context.colorScheme.error),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget buildExportTaskCard(ExportTask task, {required bool expanded}) {
+    var progressText = task.total == 0
+        ? "0%"
+        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    return Card(
+      elevation: 0,
+      color: context.colorScheme.surface,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        initiallyExpanded: expanded,
+        leading: Icon(task.isActive ? Icons.save_alt : Icons.history),
+        title: Text(
+          "Exporting comics".tl,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: buildTaskSubtitle(
+          [
+            task.format.label,
+            exportStatusText(task),
+            "${task.done}/${task.total}",
+            progressText,
+          ],
+          task.createdAt,
+          task.finishedAt,
+        ),
+        trailing: task.isActive
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (task.isPaused)
+                    TextButton(
+                      onPressed: () => exportManager.resume(task.id),
+                      child: Text("Resume".tl),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () => exportManager.pause(task.id),
+                      child: Text("Pause".tl),
+                    ),
+                  TextButton(
+                    onPressed: () => exportManager.cancel(task.id),
+                    child: Text("Cancel".tl),
+                  ),
+                ],
+              )
+            : null,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: task.isRunning && task.total == 0 ? null : task.progress,
+            ),
+          ),
+          const SizedBox(height: 8),
+          buildExportDetails(task),
+        ],
+      ),
+    );
+  }
+
+  String exportStatusText(ExportTask task) {
+    return switch (task.status) {
+      ExportTaskStatus.running => "Running".tl,
+      ExportTaskStatus.paused => "Paused".tl,
+      ExportTaskStatus.completed => "Completed".tl,
+      ExportTaskStatus.canceled => "Canceled".tl,
+      ExportTaskStatus.failed => "Failed".tl,
+    };
+  }
+
+  Widget buildExportDetails(ExportTask task) {
+    return buildSourceBox(
+      title: "Details".tl,
+      children: [
+        Text(
+          "Format: @format".tlParams({'format': task.format.label}),
+          style: ts.s14,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          "Folder: @folder".tlParams({'folder': task.folderPath}),
+          style: ts.s14,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          "Total: @total  Exported: @done  Failed: @failed".tlParams({
+            'total': task.total,
+            'done': task.done,
+            'failed': task.failedCount,
+          }),
+          style: ts.s14,
+        ),
+        if (task.isRunning && task.currentTitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            task.currentTitle!,
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        if (task.status == ExportTaskStatus.failed && task.error != null) ...[
           const SizedBox(height: 2),
           Text(
             (task.error ?? '').tl,
