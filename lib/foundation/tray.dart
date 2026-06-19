@@ -27,33 +27,43 @@ class TrayController with TrayListener, WindowListener {
   /// 启动时调用（需在窗口就绪后）。按当前设置决定是否启用托盘。
   Future<void> init() async {
     if (!_supported) return;
-    if (!_wired) {
-      _wired = true;
-      trayManager.addListener(this);
-      windowManager.addListener(this);
-    }
+    _wire();
     await setEnabled(appdata.settings['minimizeToTray'] == true);
+  }
+
+  void _wire() {
+    if (_wired) return;
+    _wired = true;
+    trayManager.addListener(this);
+    windowManager.addListener(this);
   }
 
   /// 切换开关时调用。启用即建立托盘并接管关闭；关闭即移除托盘并放行关闭。
   Future<void> setEnabled(bool enabled) async {
     if (!_supported || enabled == _enabled) return;
-    _enabled = enabled;
+    _wire();
     if (enabled) {
+      // 先把托盘图标/菜单与关闭拦截都准备好，最后才置 _enabled=true。
+      // 否则窗口可能在托盘尚未建好时就被隐藏，出现“窗口消失却没有托盘图标”
+      // 的情况，只能重启恢复。
       await trayManager.setIcon('assets/app_icon.ico');
       await trayManager.setToolTip('Venera');
       await trayManager.setContextMenu(_buildMenu());
       await windowManager.setPreventClose(true);
+      _enabled = true;
     } else {
+      _enabled = false;
       await windowManager.setPreventClose(false);
       await trayManager.destroy();
       await windowManager.show();
     }
   }
 
-  /// 把窗口收进托盘。仅在已启用时生效。供窗口关闭按钮路径调用。
+  /// 把窗口收进托盘。供窗口关闭按钮路径调用。
   Future<void> hideToTray() async {
-    if (!_supported || !_enabled) return;
+    if (!_supported) return;
+    // 开关可能刚开启、setEnabled 尚未跑完；先确保托盘已就绪再隐藏。
+    if (!_enabled) await setEnabled(true);
     await windowManager.hide();
   }
 
