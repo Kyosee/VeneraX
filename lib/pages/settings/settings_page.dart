@@ -18,6 +18,7 @@ import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/tray.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/utils/data.dart';

@@ -147,4 +147,6 @@ flutter {
 dependencies {
     implementation "androidx.activity:activity-ktx:1.10.1"
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    // 提供 NotificationCompat 与 ContextCompat.startForegroundService，供后台下载前台服务使用。
+    implementation 'androidx.core:core-ktx:1.13.1'
 }

@@ -285,6 +285,18 @@ class _AppSettingsState extends State<AppSettings> {
               }
             },
           ).toSliver(),
+        if (App.isWindows) ...[
+          _SettingPartTitle(title: "Window".tl, icon: Icons.web_asset),
+          _SwitchSetting(
+            title: "Minimize to tray".tl,
+            settingKey: "minimizeToTray",
+            onChanged: () {
+              TrayController.instance.setEnabled(
+                appdata.settings["minimizeToTray"] == true,
+              );
+            },
+          ).toSliver(),
+        ],
       ],
     );
   }

@@ -15,6 +15,8 @@ import 'components/components.dart';
 import 'components/window_frame.dart';
 import 'foundation/app.dart';
 import 'foundation/appdata.dart';
+import 'foundation/download_keepalive.dart';
+import 'foundation/tray.dart';
 import 'headless.dart';
 import 'init.dart';
 
@@ -50,6 +52,7 @@ void main(List<String> args) {
           }
 
           WindowPlacement.loop();
+          await TrayController.instance.init();
         });
       }
     }, (error, stack) {
@@ -84,6 +87,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && App.isMobile) {
+      DownloadKeepAlive.instance.onResume();
+    }
     if (!App.isMobile || !appdata.settings['authorizationRequired']) {
       return;
     }

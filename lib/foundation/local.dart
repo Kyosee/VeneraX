@@ -8,6 +8,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/download_keepalive.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
@@ -654,12 +655,14 @@ class LocalManager with ChangeNotifier {
     notifyListeners();
     saveCurrentDownloadingTasks();
     downloadingTasks.firstOrNull?.resume();
+    DownloadKeepAlive.instance.refresh();
   }
 
   void removeTask(DownloadTask task) {
     downloadingTasks.remove(task);
     notifyListeners();
     saveCurrentDownloadingTasks();
+    DownloadKeepAlive.instance.refresh();
   }
 
   void moveToFirst(DownloadTask task) {
@@ -673,6 +676,7 @@ class LocalManager with ChangeNotifier {
       if (shouldResume) {
         downloadingTasks.first.resume();
       }
+      DownloadKeepAlive.instance.refresh();
     }
   }
 
@@ -706,6 +710,7 @@ class LocalManager with ChangeNotifier {
     notifyListeners();
     saveCurrentDownloadingTasks();
     downloadingTasks.first.resume();
+    DownloadKeepAlive.instance.refresh();
   }
 
   void deleteComic(LocalComic c, [bool removeFileOnDisk = true]) {

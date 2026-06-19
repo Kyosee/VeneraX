@@ -39,6 +39,9 @@ class MainActivity : FlutterFragmentActivity() {
     private val storageRequestCode = 0x10
     private var storagePermissionRequest: ((Boolean) -> Unit)? = null
 
+    private val notificationRequestCode = 0x11
+    private var notificationPermissionRequest: ((Boolean) -> Unit)? = null
+
     private val nextLocalRequestCode = AtomicInteger()
 
     private val sharedTexts = ArrayList<String>()
@@ -193,6 +196,44 @@ class MainActivity : FlutterFragmentActivity() {
             val mimeType = req.arguments<String>()
             openFile(res, mimeType!!)
         }
+
+        // 下载保活：Flutter 端经此通道按需拉起/停止前台服务，并协商通知权限。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/download_keepalive")
+            .setMethodCallHandler { call, res ->
+                when (call.method) {
+                    "start" -> {
+                        val status = call.argument<String>("status").orEmpty()
+                        try {
+                            DownloadKeepAliveService.launch(this, status)
+                            res.success(true)
+                        } catch (e: Exception) {
+                            // 通知权限缺失或系统限制后台启动时落到这里，交由 Dart 端降级。
+                            Log.w("Venera", "keepalive launch rejected: ${e.message}")
+                            res.success(false)
+                        }
+                    }
+                    "stop" -> {
+                        runCatching { DownloadKeepAliveService.halt(this) }
+                            .onFailure { Log.w("Venera", "keepalive halt failed: ${it.message}") }
+                        res.success(null)
+                    }
+                    "notificationGranted" -> res.success(isNotificationGranted())
+                    "requestNotification" -> when {
+                        isNotificationGranted() -> res.success(true)
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                            notificationPermissionRequest?.invoke(false)
+                            notificationPermissionRequest = { granted -> res.success(granted) }
+                            ActivityCompat.requestPermissions(
+                                this,
+                                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                                notificationRequestCode,
+                            )
+                        }
+                        else -> res.success(true)
+                    }
+                    else -> res.notImplemented()
+                }
+            }
 
         val shareTextChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/text_share")
         shareTextChannel.setStreamHandler(
@@ -365,8 +406,25 @@ class MainActivity : FlutterFragmentActivity() {
                 it == PackageManager.PERMISSION_GRANTED
             })
             storagePermissionRequest = null
+        } else if (requestCode == notificationRequestCode) {
+            notificationPermissionRequest?.invoke(
+                grantResults.isNotEmpty() &&
+                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            )
+            notificationPermissionRequest = null
         }
     }
+
+    // 通知权限：Android 13 起需运行时申请，更早版本默认拥有。
+    private fun isNotificationGranted(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
 
     private fun openFile(result: MethodChannel.Result, mimeType: String) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)

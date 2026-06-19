@@ -5,7 +5,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/tray.dart';
 import 'package:window_manager/window_manager.dart';
 
 const _kTitleBarHeight = 36.0;
@@ -82,7 +84,11 @@ class _WindowFrameState extends State<WindowFrame> {
         return;
       }
     }
-    exit(0);
+    if (App.isWindows && appdata.settings['minimizeToTray'] == true) {
+      TrayController.instance.hideToTray();
+    } else {
+      exit(0);
+    }
   }
 
   @override

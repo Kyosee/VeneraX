@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/download_keepalive.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
@@ -115,6 +116,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
               ),
               onPressed: () {
                 first!.resume();
+                DownloadKeepAlive.instance.refresh();
               },
             )
           else if (first != null)
@@ -128,6 +130,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
               ),
               onPressed: () {
                 first.pause();
+                DownloadKeepAlive.instance.refresh();
               },
             ),
         ],
