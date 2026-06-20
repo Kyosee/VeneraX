@@ -74,7 +74,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     App.registerForceRebuild(forceRebuild);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addObserver(this);
-    syncReaderNightModeWithSystem();
+    syncReaderNightModeWithSystem(rebuild: false);
     initDeferred().then((_) {
       checkUpdates();
       if (mounted) setState(() {});
@@ -136,7 +136,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   /// When "follow system" is enabled, keep the reader night mode in sync with
   /// the system dark/light setting: on in dark mode, off in light mode.
-  void syncReaderNightModeWithSystem() {
+  ///
+  /// [rebuild] must be false when called during `initState` (the first build
+  /// hasn't happened yet, and forcing one then is illegal).
+  void syncReaderNightModeWithSystem({bool rebuild = true}) {
     if (appdata.settings['readerNightModeFollowSystem'] != true) {
       return;
     }
@@ -148,7 +151,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
     appdata.settings['readerNightMode'] = isDark;
     appdata.saveData();
-    App.forceRebuild();
+    if (rebuild) {
+      App.forceRebuild();
+    }
   }
 
   void forceRebuild() {
