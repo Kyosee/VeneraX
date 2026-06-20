@@ -125,7 +125,10 @@ class ComicSourcePage extends StatelessWidget {
       return 0;
     }
     var dio = AppDio();
-    var res = await dio.get<String>(listUrl);
+    var res = await dio.get<String>(
+      listUrl,
+      options: Options(headers: {'cache-time': 'no'}),
+    );
     if (res.statusCode != 200) {
       return -1;
     }
@@ -601,7 +604,11 @@ class _ComicSourceListState extends State<_ComicSourceList> {
                     listUrl: listUrl,
                   );
                   if (resolved == null) {
-                    context.showMessage(message: "Invalid url config".tl);
+                    context.showMessage(
+                      message: "Cannot resolve the source download url. "
+                              "Please check the repo URL."
+                          .tl,
+                    );
                     return;
                   }
                   await widget.onAdd(resolved);
