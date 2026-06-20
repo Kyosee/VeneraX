@@ -10,4 +10,5 @@
     <string name="background_title_follow_update">正在检查更新</string>
     <string name="background_title_import">正在导入数据</string>
     <string name="background_title_export">正在导出漫画</string>
+    <string name="background_title_comic_import">正在导入漫画</string>
 </resources>

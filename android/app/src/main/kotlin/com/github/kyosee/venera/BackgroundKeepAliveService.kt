@@ -151,6 +151,7 @@ class BackgroundKeepAliveService : Service() {
             TAG_FOLLOW_UPDATE -> R.string.background_title_follow_update
             TAG_IMPORT -> R.string.background_title_import
             TAG_EXPORT -> R.string.background_title_export
+            TAG_COMIC_IMPORT -> R.string.background_title_comic_import
             else -> R.string.app_name
         }
         return getString(resId)
@@ -194,11 +195,13 @@ class BackgroundKeepAliveService : Service() {
         const val TAG_FOLLOW_UPDATE = "follow_update"
         const val TAG_IMPORT = "import"
         const val TAG_EXPORT = "export"
+        const val TAG_COMIC_IMPORT = "comic_import"
 
         private fun notificationId(tag: String): Int = when (tag) {
             TAG_FOLLOW_UPDATE -> BASE_NOTE_ID + 1
             TAG_IMPORT -> BASE_NOTE_ID + 2
             TAG_EXPORT -> BASE_NOTE_ID + 3
+            TAG_COMIC_IMPORT -> BASE_NOTE_ID + 4
             else -> BASE_NOTE_ID + (tag.hashCode() and 0x3F) + 8
         }
 

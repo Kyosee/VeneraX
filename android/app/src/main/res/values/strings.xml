@@ -11,4 +11,5 @@
     <string name="background_title_follow_update">Checking updates</string>
     <string name="background_title_import">Importing data</string>
     <string name="background_title_export">Exporting comics</string>
+    <string name="background_title_comic_import">Importing comics</string>
 </resources>

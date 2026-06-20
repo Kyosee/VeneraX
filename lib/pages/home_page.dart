@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -1017,17 +1018,28 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
     setState(() {
       loading = true;
     });
+    // Keep the process alive across backgrounding while a comic import runs
+    // (Android only; no-op elsewhere). Started here, on the foreground tap, so
+    // the foreground service isn't subject to background-start restrictions.
+    // Empty status => the native service shows its localized default body under
+    // the localized "Importing comics" title; this flow has no per-item progress.
+    BackgroundKeepAlive.instance.update(BackgroundKeepAlive.tagComicImport, '');
     var importer = ImportComic(
       selectedFolder: selectedFolder,
       copyToLocal: copyToLocalFolder,
     );
-    var result = switch (type) {
-      0 => await importer.files(),
-      1 => await _importFolderWithConfirm(importer),
-      2 => await importer.ehViewer(),
-      3 => await importer.localDownloads(),
-      int() => true,
-    };
+    bool result;
+    try {
+      result = switch (type) {
+        0 => await importer.files(),
+        1 => await _importFolderWithConfirm(importer),
+        2 => await importer.ehViewer(),
+        3 => await importer.localDownloads(),
+        int() => true,
+      };
+    } finally {
+      BackgroundKeepAlive.instance.remove(BackgroundKeepAlive.tagComicImport);
+    }
     if (result) {
       context.pop();
     } else {

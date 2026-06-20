@@ -27,6 +27,7 @@ class BackgroundKeepAlive {
   static const tagFollowUpdate = 'follow_update';
   static const tagImport = 'import';
   static const tagExport = 'export';
+  static const tagComicImport = 'comic_import';
 
   bool get _supported => App.isAndroid;
 
