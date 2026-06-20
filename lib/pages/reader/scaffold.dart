@@ -448,6 +448,11 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 : Icons.nightlight_outlined,
           ),
           onPressed: () {
+            // Manual toggle takes over: stop following the system theme so the
+            // user's explicit choice isn't immediately overridden.
+            if (appdata.settings['readerNightModeFollowSystem'] == true) {
+              appdata.settings['readerNightModeFollowSystem'] = false;
+            }
             appdata.settings['readerNightMode'] =
                 !(appdata.settings['readerNightMode'] == true);
             appdata.saveData();

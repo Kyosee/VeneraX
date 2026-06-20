@@ -362,9 +362,29 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               subtitle: "Dim the page with a warm overlay to reduce eye strain"
                   .tl,
               settingKey: "readerNightMode",
+              enabled: appdata.settings['readerNightModeFollowSystem'] != true,
               onChanged: () {
                 setState(() {});
                 widget.onChanged?.call("readerNightMode");
+              },
+            ),
+            _SwitchSetting(
+              title: "Follow system dark mode".tl,
+              subtitle:
+                  "Turn night mode on/off automatically with the system theme"
+                      .tl,
+              settingKey: "readerNightModeFollowSystem",
+              onChanged: () {
+                if (appdata.settings['readerNightModeFollowSystem'] == true) {
+                  final isDark =
+                      View.of(context).platformDispatcher.platformBrightness ==
+                          Brightness.dark;
+                  appdata.settings['readerNightMode'] = isDark;
+                  appdata.saveData();
+                  widget.onChanged?.call("readerNightMode");
+                }
+                setState(() {});
+                widget.onChanged?.call("readerNightModeFollowSystem");
               },
             ),
             if (appdata.settings['readerNightMode'] == true)

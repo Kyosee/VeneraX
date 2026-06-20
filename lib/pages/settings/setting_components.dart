@@ -9,6 +9,7 @@ class _SwitchSetting extends StatefulWidget {
     this.comicId,
     this.comicSource,
     this.useDeviceSettings = false,
+    this.enabled = true,
   });
 
   final String title;
@@ -24,6 +25,8 @@ class _SwitchSetting extends StatefulWidget {
   final String? comicSource;
 
   final bool useDeviceSettings;
+
+  final bool enabled;
 
   @override
   State<_SwitchSetting> createState() => _SwitchSettingState();
@@ -49,7 +52,8 @@ class _SwitchSettingState extends State<_SwitchSetting> {
       subtitle: widget.subtitle == null ? null : Text(widget.subtitle!),
       trailing: Switch(
         value: value,
-        onChanged: (value) {
+        onChanged: widget.enabled
+            ? (value) {
           setState(() {
             if (widget.comicId != null) {
               appdata.settings.setReaderSetting(
@@ -67,7 +71,8 @@ class _SwitchSettingState extends State<_SwitchSetting> {
           appdata.saveData().then((_) {
             widget.onChanged?.call();
           });
-        },
+        }
+            : null,
       ),
     );
   }
