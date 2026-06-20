@@ -30,14 +30,18 @@ A cross-platform manga/comic reader with self-hosted Web frontend support.
 
 - [x] Self-hosted Web frontend with Docker support (experimental)
 - [x] Improved WebDAV backup & sync
-- [x] Windows auto-updater with fallback scripts
-- [x] Android APK auto-update
+- [x] Windows auto-updater (with fallback scripts) & Android APK auto-update
 - [x] Seamless continuous-chapter reading
 - [x] Improved local library, follow-updates & favorites
 - [x] Task system with background execution and related views
 - [x] Chapter read-status changes
 - [x] Reading background color (per-comic)
 - [x] Night-view mode (warm/black/dim-red overlay, adjustable intensity)
+- [x] Android background downloads, follow-update checks, comic import/export
+- [x] Windows tray minimize
+- [x] Simple image-quality enhancement
+- [x] Various UI refinements
+- [x] Read-later
 
 ## Quick Start
 
