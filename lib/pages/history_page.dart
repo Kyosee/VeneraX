@@ -272,6 +272,23 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
+  void _removeHistorySwipe(History comic) {
+    var removed = comic;
+    _removeHistory(removed);
+    if (mounted) {
+      showToast(
+        context: context,
+        message: "Deleted @c histories".tlParams({"c": 1}),
+        trailing: TextButton(
+          onPressed: () {
+            HistoryManager().addHistory(removed);
+          },
+          child: Text("Undo".tl),
+        ),
+      );
+    }
+  }
+
   void _refreshHistory(History comic) async {
     var result = await HistoryManager().refreshHistoryInfo(comic);
     if (result) {
@@ -507,6 +524,24 @@ class _HistoryPageState extends State<HistoryPage> {
                   comics: entry.value,
                   selections: selectedComics,
                   onLongPressed: null,
+                  swipeActionBuilder: multiSelectMode
+                      ? null
+                      : (c) => (
+                            start: null,
+                            end: SwipePane(
+                              dismissOnFullSwipe: true,
+                              onFullSwipe: () =>
+                                  _removeHistorySwipe(c as History),
+                              actions: [
+                                SwipeAction(
+                                  icon: Icons.delete_outline,
+                                  label: 'Delete'.tl,
+                                  onPressed: () =>
+                                      _removeHistorySwipe(c as History),
+                                ),
+                              ],
+                            ),
+                          ),
                   onTap: multiSelectMode
                       ? (c, heroID) {
                           setState(() {

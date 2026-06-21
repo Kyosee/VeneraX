@@ -127,6 +127,25 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
     ReadLaterManager().remove(comic.id, comic.type);
   }
 
+  /// Swipe-delete: removes the item (which also clears its read-later status,
+  /// since the status is derived from the table) and offers an undo.
+  void _removeSwipe(ReadLaterItem comic) {
+    var removed = comic;
+    ReadLaterManager().remove(removed.id, removed.type);
+    if (mounted) {
+      showToast(
+        context: context,
+        message: "Deleted @c items".tlParams({"c": 1}),
+        trailing: TextButton(
+          onPressed: () {
+            ReadLaterManager().addItem(removed);
+          },
+          child: Text("Undo".tl),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     List<Widget> selectActions = [
@@ -300,6 +319,24 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
                 comics: filteredComics,
                 selections: selectedComics,
                 onLongPressed: null,
+                swipeActionBuilder: multiSelectMode
+                    ? null
+                    : (c) => (
+                          start: null,
+                          end: SwipePane(
+                            dismissOnFullSwipe: true,
+                            onFullSwipe: () =>
+                                _removeSwipe(c as ReadLaterItem),
+                            actions: [
+                              SwipeAction(
+                                icon: Icons.delete_outline,
+                                label: 'Delete'.tl,
+                                onPressed: () =>
+                                    _removeSwipe(c as ReadLaterItem),
+                              ),
+                            ],
+                          ),
+                        ),
                 onTap: multiSelectMode
                     ? (c, heroID) {
                         setState(() {

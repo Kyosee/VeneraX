@@ -1359,6 +1359,7 @@ class SliverGridComics extends StatefulWidget {
     this.onLongPressedWithIndex,
     this.selections,
     this.enableHero = true,
+    this.swipeActionBuilder,
   });
 
   final List<Comic> comics;
@@ -1380,6 +1381,11 @@ class SliverGridComics extends StatefulWidget {
   final void Function(Comic, int heroID, int index)? onLongPressedWithIndex;
 
   final bool enableHero;
+
+  /// When set, each tile becomes swipeable on mobile. The builder returns the
+  /// panes (start = right swipe, end = left swipe) for a given comic, or null
+  /// to leave that comic non-swipeable. See [SwipeActionTile].
+  final SwipePanes Function(Comic)? swipeActionBuilder;
 
   @override
   State<SliverGridComics> createState() => _SliverGridComicsState();
@@ -1459,6 +1465,7 @@ class _SliverGridComicsState extends State<SliverGridComics> {
       onTapWithIndex: widget.onTapWithIndex,
       onLongPressed: widget.onLongPressed,
       onLongPressedWithIndex: widget.onLongPressedWithIndex,
+      swipeActionBuilder: widget.swipeActionBuilder,
     );
   }
 }
@@ -1476,6 +1483,7 @@ class _SliverGridComics extends StatelessWidget {
     this.onLongPressed,
     this.onLongPressedWithIndex,
     this.selection,
+    this.swipeActionBuilder,
   });
 
   final List<Comic> comics;
@@ -1499,6 +1507,8 @@ class _SliverGridComics extends StatelessWidget {
   final void Function(Comic, int heroID)? onLongPressed;
 
   final void Function(Comic, int heroID, int index)? onLongPressedWithIndex;
+
+  final SwipePanes Function(Comic)? swipeActionBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -1531,23 +1541,36 @@ class _SliverGridComics extends StatelessWidget {
               : null,
           heroID: enableHero ? heroIDs[index] : null,
         );
-        if (selection == null) {
-          return comic;
+        Widget tile = comic;
+        if (selection != null) {
+          tile = AnimatedContainer(
+            key: ValueKey(comics[index].id),
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.secondaryContainer.toOpacity(0.72)
+                  : null,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(4),
+            child: comic,
+          );
         }
-        return AnimatedContainer(
-          key: ValueKey(comics[index].id),
-          duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? Theme.of(
-                    context,
-                  ).colorScheme.secondaryContainer.toOpacity(0.72)
-                : null,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          margin: const EdgeInsets.all(4),
-          child: comic,
-        );
+        if (swipeActionBuilder != null && App.isMobile) {
+          final current = comics[index];
+          final panes = swipeActionBuilder!(current);
+          if (panes.start != null || panes.end != null) {
+            tile = SwipeActionTile(
+              key: ValueKey('swipe-${current.sourceKey}-${current.id}'),
+              startPane: panes.start,
+              endPane: panes.end,
+              child: tile,
+            );
+          }
+        }
+        return tile;
       }, childCount: comics.length),
       gridDelegate: SliverGridDelegateWithComics(),
     );
