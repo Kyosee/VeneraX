@@ -1676,7 +1676,17 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
         children: [
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 4),
-          Text(text, style: ts.s12.copyWith(color: color)),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width - 80,
+            ),
+            child: Text(
+              text,
+              style: ts.s12.copyWith(color: color),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

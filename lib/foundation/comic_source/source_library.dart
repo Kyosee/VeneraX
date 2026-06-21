@@ -107,6 +107,23 @@ String stableLibraryId(String url) {
   return md5.convert(utf8.encode(normalized)).toString().substring(0, 12);
 }
 
+/// Derives a short, readable default library name from a catalog URL so the
+/// list never shows an overlong raw URL. Prefers the host; appends a
+/// distinguishing path segment when several catalogs share one host.
+String defaultLibraryName(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.host.isEmpty) {
+    return url.trim();
+  }
+  final segments = uri.pathSegments
+      .where((s) => s.isNotEmpty && !s.toLowerCase().endsWith('.json'))
+      .toList();
+  if (segments.isEmpty) {
+    return uri.host;
+  }
+  return "${uri.host}/${segments.last}";
+}
+
 /// Reads and mutates the ordered library registry stored in
 /// `appdata.settings['comicSourceLibraries']`, plus the per-source provenance
 /// map in `appdata.settings['comicSourceProvenance']`. Pure data logic; the UI
@@ -194,7 +211,7 @@ class ComicSourceLibraryManager {
     }
     final lib = ComicSourceLibrary(
       id: id,
-      name: name.isNotEmpty ? name : url,
+      name: name.isNotEmpty ? name : defaultLibraryName(url),
       url: url,
       priority: libraries.length,
     );
@@ -342,7 +359,7 @@ class ComicSourceLibraryManager {
         libraries.add(
           ComicSourceLibrary(
             id: id,
-            name: Uri.tryParse(legacy)?.host ?? legacy,
+            name: defaultLibraryName(legacy),
             url: legacy,
             priority: libraries.length,
           ),

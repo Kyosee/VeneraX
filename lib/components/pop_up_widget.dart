@@ -153,14 +153,17 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 if (widget.tailing != null) ...widget.tailing!,
                 const SizedBox(width: 8),
               ],

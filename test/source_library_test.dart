@@ -30,6 +30,32 @@ void main() {
     });
   });
 
+  group('defaultLibraryName', () {
+    test('uses host when path is just an index file', () {
+      expect(
+        defaultLibraryName('https://example.com/index.json'),
+        'example.com',
+      );
+      expect(defaultLibraryName('https://example.com'), 'example.com');
+      expect(defaultLibraryName('https://example.com/'), 'example.com');
+    });
+
+    test('appends a distinguishing path segment so co-hosted repos differ', () {
+      expect(
+        defaultLibraryName('https://example.com/repoA/index.json'),
+        'example.com/repoA',
+      );
+      expect(
+        defaultLibraryName('https://example.com/repoB/index.json'),
+        'example.com/repoB',
+      );
+    });
+
+    test('falls back to the raw string when not a URL', () {
+      expect(defaultLibraryName('not a url'), 'not a url');
+    });
+  });
+
   group('ComicSourceLibrary serialization', () {
     test('round-trips through JSON', () {
       final lib = ComicSourceLibrary(
