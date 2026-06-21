@@ -1529,18 +1529,24 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            source.name,
-                            style: ts.s18,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  source.name,
+                                  style: ts.s18,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _versionChip(source.version),
+                              if (hasUpdate)
+                                _updateChip(newVersion).paddingLeft(6),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        _versionChip(source.version),
-                        if (hasUpdate) _updateChip(newVersion).paddingLeft(6),
-                        const Spacer(),
                         _actionButton(
                           icon: Icons.edit_note,
                           tooltip: "Edit".tl,
