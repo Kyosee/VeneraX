@@ -24,6 +24,10 @@ class ComicSourcePage extends StatelessWidget {
     ComicSource source, [
     bool showLoading = true,
   ]) async {
+    // Wire the deferred-purge hook so a library switch only wipes local data
+    // after the new script has actually downloaded (see pendingDataPurge).
+    ComicSourceUpdateTaskManager.onPurgeLocalData ??= (s) =>
+        purgeSourceLocalData(s, deleteScript: false);
     // If the user updates a single source without first running a full update
     // check, the source-list-derived download URL hasn't been cached yet, so
     // the update would fall back to the (possibly migrated/dead) URL in the
@@ -44,10 +48,17 @@ class ComicSourcePage extends StatelessWidget {
         source,
       ], targetVersions: ComicSourceManager().availableUpdates);
       await showUpdateTaskDialog(App.rootContext, task);
+      // Drop any unconsumed purge intent (e.g. switch cancelled/failed) so a
+      // later ordinary update of this source does not wrongly wipe its data.
+      ComicSourceUpdateTaskManager.pendingDataPurge.remove(source.key);
       App.forceRebuild();
       return;
     }
-    await ComicSourceUpdateTaskManager.updateSourceFile(source);
+    try {
+      await ComicSourceUpdateTaskManager.updateSourceFile(source);
+    } finally {
+      ComicSourceUpdateTaskManager.pendingDataPurge.remove(source.key);
+    }
   }
 
   static Future<void> showUpdateTaskDialog(
@@ -213,8 +224,12 @@ class ComicSourcePage extends StatelessWidget {
       final offered = offeredBy[source.key];
       final prov = manager.provenanceFor(source.key) ?? SourceProvenance();
       final originId = prov.originId;
-      final originExists =
-          originId != null && ComicSourceLibraryManager.find(originId) != null;
+      final originLib =
+          originId != null ? ComicSourceLibraryManager.find(originId) : null;
+      // Only an ENABLED origin governs/freezes auto-update. A disabled origin
+      // is treated like a removed one — discovery no longer fetches it, so the
+      // source falls through to an enabled offerer instead of being frozen.
+      final originEnabled = originLib?.enabled ?? false;
 
       // Resolve which library governs this source's auto-update.
       String? updateLibraryId;
@@ -222,29 +237,30 @@ class ComicSourcePage extends StatelessWidget {
           (catalogByLibrary[originId]?.containsKey(source.key) ?? false)) {
         // Origin fetched OK and still offers the key — the normal path.
         updateLibraryId = originId;
-      } else if (originExists && !succeeded.contains(originId)) {
-        // Origin still installed but unreachable THIS round: do not silently
-        // hand the source to a foreign maintainer's catalog. Skip auto-update
-        // and keep the existing provenance untouched.
+      } else if (originEnabled && !succeeded.contains(originId)) {
+        // Origin enabled but unreachable THIS round: do not silently hand the
+        // source to a foreign maintainer's catalog. Skip auto-update and keep
+        // the existing provenance untouched.
         updateLibraryId = null;
       } else if (offered != null && offered.isNotEmpty) {
-        // No usable origin (sideloaded/legacy, or origin removed/disabled, or
+        // No usable origin (sideloaded/legacy, origin removed or disabled, or
         // origin succeeded but dropped the key): fall back to first offerer.
         updateLibraryId = offered.first;
       }
 
       // Merge libraryIds: refresh ids from libraries that fetched this round,
-      // but preserve ids of libraries that failed to fetch (their absence from
-      // `offered` is transient, not authoritative).
+      // and preserve ids of ENABLED libraries that merely failed to fetch (a
+      // transient absence). Drop ids of removed or disabled libraries so the
+      // offering count / "and N more" subtitle reflects the live enabled set.
       if (offered != null || succeeded.isNotEmpty) {
         final merged = <String>[];
-        // Keep previously-known ids whose library did NOT succeed this round.
         for (final id in prov.libraryIds) {
-          if (!succeeded.contains(id) && !merged.contains(id)) {
-            merged.add(id);
+          if (succeeded.contains(id) || merged.contains(id)) continue;
+          final lib = ComicSourceLibraryManager.find(id);
+          if (lib != null && lib.enabled) {
+            merged.add(id); // enabled but unreachable this round — keep
           }
         }
-        // Add ids that offer the key this round.
         if (offered != null) {
           for (final id in offered) {
             if (!merged.contains(id)) merged.add(id);
@@ -409,6 +425,7 @@ class _BodyState extends State<_Body> {
         //
       }
     }
+    if (!mounted) return;
     context.to(
       () => _EditFilePage(source.filePath, () async {
         await ComicSourceManager().reload();
@@ -604,6 +621,7 @@ class _ComicSourceList extends StatefulWidget {
 
 class _ComicSourceListState extends State<_ComicSourceList> {
   List? json;
+  bool loadFailed = false;
 
   ComicSourceLibrary get library => widget.library;
 
@@ -611,11 +629,13 @@ class _ComicSourceListState extends State<_ComicSourceList> {
     if (json != null) {
       setState(() {
         json = null;
+        loadFailed = false;
       });
     }
     if (library.url.isEmpty) {
       setState(() {
         json = [];
+        loadFailed = false;
       });
       return;
     }
@@ -631,6 +651,7 @@ class _ComicSourceListState extends State<_ComicSourceList> {
       if (mounted) {
         setState(() {
           json = jsonDecode(res.data!);
+          loadFailed = false;
         });
       }
     } catch (e) {
@@ -638,6 +659,7 @@ class _ComicSourceListState extends State<_ComicSourceList> {
       context.showMessage(message: "Network error".tl);
       setState(() {
         json = [];
+        loadFailed = true;
       });
     }
   }
@@ -673,13 +695,15 @@ class _ComicSourceListState extends State<_ComicSourceList> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.cloud_off_outlined,
+              loadFailed
+                  ? Icons.cloud_off_outlined
+                  : Icons.inbox_outlined,
               size: 48,
               color: context.colorScheme.outline,
             ),
             const SizedBox(height: 12),
             Text(
-              "Network error".tl,
+              loadFailed ? "Network error".tl : "Empty catalog".tl,
               style: ts.s14.copyWith(color: context.colorScheme.outline),
             ),
             const SizedBox(height: 16),
@@ -791,6 +815,7 @@ class _ComicSourceListState extends State<_ComicSourceList> {
                             return;
                           }
                           await widget.onAdd(resolved, library.id);
+                          if (!mounted) return;
                           setState(() {});
                         },
                       ).fixHeight(32),
@@ -1678,21 +1703,11 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                     Row(
                       children: [
                         Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  source.name,
-                                  style: ts.s18,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _versionChip(source.version),
-                              if (hasUpdate)
-                                _updateChip(newVersion).paddingLeft(6),
-                            ],
+                          child: Text(
+                            source.name,
+                            style: ts.s18,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         _actionButton(
@@ -1725,28 +1740,30 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                         ),
                       ],
                     ),
-                    if (provenanceText != null || newerHint != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            if (provenanceText != null)
-                              _infoChip(
-                                icon: Icons.inventory_2_outlined,
-                                text: provenanceText,
-                                color: context.colorScheme.outline,
-                              ),
-                            if (newerHint != null)
-                              _infoChip(
-                                icon: Icons.upgrade,
-                                text: newerHint,
-                                color: context.colorScheme.tertiary,
-                              ),
-                          ],
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _versionChip(source.version),
+                          if (hasUpdate) _updateChip(newVersion),
+                          if (provenanceText != null)
+                            _infoChip(
+                              icon: Icons.inventory_2_outlined,
+                              text: provenanceText,
+                              color: context.colorScheme.outline,
+                            ),
+                          if (newerHint != null)
+                            _infoChip(
+                              icon: Icons.upgrade,
+                              text: newerHint,
+                              color: context.colorScheme.tertiary,
+                            ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -1950,11 +1967,10 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                   "clears its login and local data."
               .tlParams({"n": source.name, "lib": library.name}),
       onConfirm: () {
-        // Honor the dialog's promise: clear the source's persisted login/local
-        // data and cookies before the reinstall, since a switch to a different
-        // maintainer's script must not inherit the old session. The script file
-        // is left for updateSourceFile to overwrite.
-        purgeSourceLocalData(source, deleteScript: false);
+        // Defer the destructive purge: register it to run inside the update
+        // task ONLY after the new script downloads successfully, so a failed
+        // switch leaves the existing session/local data intact.
+        ComicSourceUpdateTaskManager.pendingDataPurge.add(source.key);
         // Write through winner state so the standard update flow targets the
         // chosen library's variant, and re-stamp the origin.
         final manager = ComicSourceManager();

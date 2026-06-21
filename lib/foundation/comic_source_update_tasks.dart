@@ -212,6 +212,15 @@ class ComicSourceUpdateTaskManager with ChangeNotifier {
     }
   }
 
+  /// Keys whose local data (login/cookies/localStorage) must be purged on the
+  /// next successful file replacement. Set by the library-switch flow so the
+  /// destructive purge is deferred until the new script has actually been
+  /// downloaded — a failed switch then leaves the existing session intact.
+  /// The injected purge runs after a non-empty download, before the in-place
+  /// rewrite. Kept as a hook to avoid a foundation→UI layering inversion.
+  static final pendingDataPurge = <String>{};
+  static void Function(ComicSource source)? onPurgeLocalData;
+
   static Future<String> updateSourceFile(ComicSource source) async {
     // Prefer the download URL resolved from the source list during the last
     // update check; fall back to the URL baked into the installed script.
@@ -234,6 +243,10 @@ class ComicSourceUpdateTaskManager with ChangeNotifier {
       final data = res.data;
       if (data == null || data.isEmpty) {
         throw Exception('Empty response');
+      }
+      // Download confirmed: now safe to purge local data for a library switch.
+      if (pendingDataPurge.remove(source.key)) {
+        onPurgeLocalData?.call(source);
       }
       ComicSourceManager().remove(source.key);
       removed = true;

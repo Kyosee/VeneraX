@@ -355,36 +355,45 @@ class ComicSourceLibraryManager {
     }
   }
 
-  /// One-time migration: fold a legacy single `comicSourceListUrl` into the
-  /// first library. Guarded by a persisted flag so deleting every library can
-  /// never resurrect the legacy entry from a stale URL. Uses `saveData(false)`
-  /// to avoid scheduling an upload mid-initialization.
+  /// Folds a legacy single `comicSourceListUrl` into the library list when it
+  /// is set but not yet represented as a library. Runs on every init (not
+  /// one-shot): this self-heals the case where a legacy URL arrives AFTER first
+  /// launch via WebDAV sync or a backup import from an old-version device, which
+  /// a one-shot flag would miss — leaving the URL field populated but zero
+  /// libraries and discovery silently dead.
+  ///
+  /// It cannot resurrect a deliberately-deleted library: deleting libraries
+  /// rewrites the mirror via [save] → `_primaryUrlOf`, so a removed library's
+  /// URL no longer appears in `comicSourceListUrl` and is never re-folded. Uses
+  /// `saveData(false)` to avoid scheduling an upload mid-initialization.
   static void migrateIfNeeded() {
-    if (appdata.settings[_migratedKey] == true) {
-      return;
-    }
     final legacy =
         (appdata.settings['comicSourceListUrl']?.toString() ?? '').trim();
     final libraries = all();
-    if (legacy.isNotEmpty && libraries.every((e) => e.url != legacy)) {
-      final id = stableLibraryId(legacy);
-      if (libraries.every((e) => e.id != id)) {
-        libraries.add(
-          ComicSourceLibrary(
-            id: id,
-            name: defaultLibraryName(legacy),
-            url: legacy,
-            priority: libraries.length,
-          ),
-        );
+    final id = legacy.isEmpty ? '' : stableLibraryId(legacy);
+    final alreadyPresent =
+        legacy.isEmpty ||
+        libraries.any((e) => e.url == legacy || e.id == id);
+    if (!alreadyPresent) {
+      libraries.add(
+        ComicSourceLibrary(
+          id: id,
+          name: defaultLibraryName(legacy),
+          url: legacy,
+          priority: libraries.length,
+        ),
+      );
+      for (var i = 0; i < libraries.length; i++) {
+        libraries[i].priority = i;
       }
+      appdata.settings[_librariesKey] =
+          libraries.map((e) => e.toJson()).toList();
+      appdata.settings[_migratedKey] = true;
+      appdata.saveData(false);
+    } else if (appdata.settings[_migratedKey] != true) {
+      // Nothing to fold, but record that migration has run at least once.
+      appdata.settings[_migratedKey] = true;
+      appdata.saveData(false);
     }
-    for (var i = 0; i < libraries.length; i++) {
-      libraries[i].priority = i;
-    }
-    appdata.settings[_librariesKey] =
-        libraries.map((e) => e.toJson()).toList();
-    appdata.settings[_migratedKey] = true;
-    appdata.saveData(false);
   }
 }
