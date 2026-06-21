@@ -396,22 +396,43 @@ class _BodyState extends State<_Body> {
 
   Widget buildCard(BuildContext context) {
     return SliverToBoxAdapter(
-      child: SizedBox(
+      child: Container(
         width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+          color: context.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: context.colorScheme.outlineVariant.toOpacity(0.5),
+            width: 0.6,
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: Text("Add comic source".tl),
-              leading: const Icon(Icons.dashboard_customize),
+            Row(
+              children: [
+                Icon(
+                  Icons.dashboard_customize_outlined,
+                  color: context.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text("Add comic source".tl, style: ts.s16),
+              ],
             ),
+            const SizedBox(height: 12),
             TextField(
               decoration: InputDecoration(
                 hintText: "URL",
-                border: const UnderlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                suffix: IconButton(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                suffixIcon: IconButton(
                   onPressed: () => handleAddSource(url),
                   icon: const Icon(Icons.check),
                 ),
@@ -420,32 +441,32 @@ class _BodyState extends State<_Body> {
                 url = value;
               },
               onSubmitted: handleAddSource,
-            ).paddingHorizontal(16).paddingBottom(8),
+            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                FilledButton.tonalIcon(
-                  icon: Icon(Icons.article_outlined),
+                FilledButton.icon(
+                  icon: const Icon(Icons.collections_bookmark_outlined),
                   label: Text("Source Libraries".tl),
                   onPressed: () {
                     App.rootContext.to(() => const SourceLibrariesPage());
                   },
                 ),
                 FilledButton.tonalIcon(
-                  icon: Icon(Icons.file_open_outlined),
+                  icon: const Icon(Icons.file_open_outlined),
                   label: Text("Use a config file".tl),
                   onPressed: _selectFile,
                 ),
                 FilledButton.tonalIcon(
-                  icon: Icon(Icons.help_outline),
+                  icon: const Icon(Icons.help_outline),
                   label: Text("Help".tl),
                   onPressed: help,
                 ),
                 _CheckUpdatesButton(),
               ],
-            ).paddingHorizontal(12).paddingVertical(8),
-            const SizedBox(height: 8),
+            ),
           ],
         ),
       ),
@@ -599,47 +620,135 @@ class _ComicSourceListState extends State<_ComicSourceList> {
     }
 
     if (json!.isEmpty) {
-      return Center(child: Text("Network error".tl));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 48,
+              color: context.colorScheme.outline,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "Network error".tl,
+              style: ts.s14.copyWith(color: context.colorScheme.outline),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonal(
+              onPressed: load,
+              child: Text("Refresh".tl),
+            ),
+          ],
+        ),
+      );
     }
 
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: json!.length,
       itemBuilder: (context, index) {
-        var key = json![index]["key"];
-        var action = currentKey.contains(key)
-            ? const Icon(Icons.check, size: 20).paddingRight(8)
-            : Button.filled(
-                child: Text("Add".tl),
-                onPressed: () async {
-                  var fileName = json![index]["fileName"];
-                  var url = json![index]["url"];
-                  var resolved = _resolveSourceDownloadUrl(
-                    url: url?.toString(),
-                    fileName: fileName?.toString(),
-                    listUrl: library.url,
-                  );
-                  if (resolved == null) {
-                    context.showMessage(
-                      message: "Cannot resolve the source download url. "
-                              "Please check the repo URL."
-                          .tl,
-                    );
-                    return;
-                  }
-                  await widget.onAdd(resolved, library.id);
-                  setState(() {});
-                },
-              ).fixHeight(32);
+        var entry = json![index];
+        var key = entry["key"]?.toString();
+        var installed = key != null && currentKey.contains(key);
+        var version = entry["version"]?.toString();
+        var description = entry["description"]?.toString();
 
-        var description = json![index]["version"];
-        if (json![index]["description"] != null) {
-          description = "$description\n${json![index]["description"]}";
-        }
-
-        return ListTile(
-          title: Text(json![index]["name"] ?? key ?? ''),
-          subtitle: Text(description ?? ''),
-          trailing: action,
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: context.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: context.colorScheme.outlineVariant.toOpacity(0.5),
+              width: 0.6,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              entry["name"]?.toString() ?? key ?? '',
+                              style: ts.s16,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (version != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    context.colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(version, style: ts.s12),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (description != null && description.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          description,
+                          style: ts.s12.copyWith(
+                            color: context.colorScheme.outline,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                installed
+                    ? Tooltip(
+                        message: "Installed".tl,
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 22,
+                          color: context.colorScheme.primary,
+                        ),
+                      ).paddingRight(8)
+                    : Button.filled(
+                        child: Text("Add".tl),
+                        onPressed: () async {
+                          var fileName = entry["fileName"];
+                          var url = entry["url"];
+                          var resolved = _resolveSourceDownloadUrl(
+                            url: url?.toString(),
+                            fileName: fileName?.toString(),
+                            listUrl: library.url,
+                          );
+                          if (resolved == null) {
+                            context.showMessage(
+                              message:
+                                  "Cannot resolve the source download url. "
+                                          "Please check the repo URL."
+                                      .tl,
+                            );
+                            return;
+                          }
+                          await widget.onAdd(resolved, library.id);
+                          setState(() {});
+                        },
+                      ).fixHeight(32),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -849,16 +958,15 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
     }
   }
 
-  String _subtitleFor(ComicSourceLibrary library) {
-    var host = Uri.tryParse(library.url)?.host ?? library.url;
+  String _lastCheckedText(ComicSourceLibrary library) {
     if (library.lastChecked == null) {
-      return "$host\n${"Never checked".tl}";
+      return "Never checked".tl;
     }
     var t = DateTime.fromMillisecondsSinceEpoch(library.lastChecked!);
     var stamp =
         "${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} "
         "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
-    return "$host\n${"Last checked: @t".tlParams({"t": stamp})}";
+    return "Last checked: @t".tlParams({"t": stamp});
   }
 
   @override
@@ -886,55 +994,157 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
       body: libraries.isEmpty
           ? _buildEmptyState()
           : ReorderableListView.builder(
-              padding: EdgeInsets.only(bottom: context.padding.bottom),
+              padding: EdgeInsets.fromLTRB(
+                12,
+                8,
+                12,
+                context.padding.bottom + 8,
+              ),
+              buildDefaultDragHandles: false,
               onReorder: (oldIndex, newIndex) {
                 ComicSourceLibraryManager.reorder(oldIndex, newIndex);
                 _reload();
               },
               itemCount: libraries.length,
               itemBuilder: (context, index) {
-                final library = libraries[index];
-                return ListTile(
-                  key: ValueKey(library.id),
-                  title: Text(library.name),
-                  subtitle: Text(_subtitleFor(library)),
-                  isThreeLine: true,
-                  onTap: () => _browseLibrary(library),
-                  leading: Tooltip(
-                    message: library.enabled
-                        ? "Enabled".tl
-                        : "This library is disabled".tl,
-                    child: Switch(
-                      value: library.enabled,
-                      onChanged: (v) {
-                        ComicSourceLibraryManager.setEnabled(library.id, v);
-                        _reload();
-                      },
-                    ),
-                  ),
-                  trailing: MenuButton(
-                    entries: [
-                      MenuEntry(
-                        icon: Icons.travel_explore,
-                        text: "Browse".tl,
-                        onClick: () => _browseLibrary(library),
-                      ),
-                      MenuEntry(
-                        icon: Icons.edit,
-                        text: "Edit library".tl,
-                        onClick: () => _editLibrary(library),
-                      ),
-                      MenuEntry(
-                        icon: Icons.delete_outline,
-                        text: "Delete library".tl,
-                        color: context.colorScheme.error,
-                        onClick: () => _deleteLibrary(library),
-                      ),
-                    ],
-                  ),
-                );
+                return _buildLibraryCard(libraries[index], index);
               },
             ),
+    );
+  }
+
+  Widget _buildLibraryCard(ComicSourceLibrary library, int index) {
+    var host = Uri.tryParse(library.url)?.host ?? library.url;
+    var disabled = !library.enabled;
+    return Container(
+      key: ValueKey(library.id),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: context.colorScheme.outlineVariant.toOpacity(0.5),
+          width: 0.6,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _browseLibrary(library),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 10, 4, 10),
+          child: Row(
+            children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Icon(
+                    Icons.drag_indicator,
+                    color: context.colorScheme.outline,
+                    size: 22,
+                  ),
+                ),
+              ),
+              // Priority rank badge.
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: disabled
+                      ? context.colorScheme.surfaceContainerHighest
+                      : context.colorScheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  "${index + 1}",
+                  style: ts.s12.copyWith(
+                    color: disabled
+                        ? context.colorScheme.outline
+                        : context.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      library.name,
+                      style: ts.s16.copyWith(
+                        color: disabled ? context.colorScheme.outline : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      host,
+                      style: ts.s12.copyWith(color: context.colorScheme.outline),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.schedule,
+                          size: 12,
+                          color: context.colorScheme.outline,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            _lastCheckedText(library),
+                            style: ts.s12.copyWith(
+                              color: context.colorScheme.outline,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Tooltip(
+                message: library.enabled
+                    ? "Enabled".tl
+                    : "This library is disabled".tl,
+                child: Switch(
+                  value: library.enabled,
+                  onChanged: (v) {
+                    ComicSourceLibraryManager.setEnabled(library.id, v);
+                    _reload();
+                  },
+                ),
+              ),
+              MenuButton(
+                entries: [
+                  MenuEntry(
+                    icon: Icons.travel_explore,
+                    text: "Browse".tl,
+                    onClick: () => _browseLibrary(library),
+                  ),
+                  MenuEntry(
+                    icon: Icons.edit,
+                    text: "Edit library".tl,
+                    onClick: () => _editLibrary(library),
+                  ),
+                  MenuEntry(
+                    icon: Icons.delete_outline,
+                    text: "Delete library".tl,
+                    color: context.colorScheme.error,
+                    onClick: () => _deleteLibrary(library),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1270,174 +1480,212 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
       }
     }
 
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverPadding(padding: const EdgeInsets.only(top: 16)),
-        SliverToBoxAdapter(
-          child: ListTile(
-            leading: IconButton(
-              onPressed: () {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        decoration: BoxDecoration(
+          color: context.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: context.colorScheme.outlineVariant.toOpacity(0.5),
+            width: 0.6,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () {
                 setState(() {
                   _expanded = !_expanded;
                 });
               },
-              icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-            ),
-            title: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    source.name,
-                    style: ts.s18,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    source.version,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-                if (hasUpdate)
-                  Tooltip(
-                    message: newVersion,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        "New Version".tl,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            source.name,
+                            style: ts.s18,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _versionChip(source.version),
+                        if (hasUpdate) _updateChip(newVersion).paddingLeft(6),
+                        const Spacer(),
+                        Icon(
+                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          color: context.colorScheme.outline,
+                        ),
+                      ],
                     ),
-                  ).paddingLeft(4),
-              ],
-            ),
-            subtitle: (provenanceText == null && newerHint == null)
-                ? null
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (provenanceText != null)
-                        Row(
+                    if (provenanceText != null || newerHint != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
                           children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 13,
-                              color: context.colorScheme.outline,
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                provenanceText,
-                                style: ts.s12.copyWith(
-                                  color: context.colorScheme.outline,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            if (provenanceText != null)
+                              _infoChip(
+                                icon: Icons.inventory_2_outlined,
+                                text: provenanceText,
+                                color: context.colorScheme.outline,
                               ),
-                            ),
+                            if (newerHint != null)
+                              _infoChip(
+                                icon: Icons.upgrade,
+                                text: newerHint,
+                                color: context.colorScheme.tertiary,
+                              ),
                           ],
                         ),
-                      if (newerHint != null)
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 13,
-                              color: context.colorScheme.tertiary,
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                newerHint,
-                                style: ts.s12.copyWith(
-                                  color: context.colorScheme.tertiary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: "Edit".tl,
-                  child: IconButton(
-                    onPressed: () => widget.edit(source),
-                    icon: const Icon(Icons.edit_note),
-                  ),
-                ),
-                Tooltip(
-                  message: "Update".tl,
-                  child: IconButton(
-                    onPressed: () => widget.update(source),
-                    icon: const Icon(Icons.update),
-                  ),
-                ),
-                if (_offeringLibraries().length > 1)
-                  Tooltip(
-                    message: "Update from another library".tl,
-                    child: IconButton(
-                      onPressed: _showLibraryPicker,
-                      icon: const Icon(Icons.account_tree_outlined),
-                    ),
-                  ),
-                Tooltip(
-                  message: "Delete".tl,
-                  child: IconButton(
-                    onPressed: () => widget.delete(source),
-                    icon: const Icon(Icons.delete),
-                  ),
-                ),
-              ],
-            ),
-            onTap: () {
-              setState(() {
-                _expanded = !_expanded;
-              });
-            },
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: context.colorScheme.outlineVariant,
-                  width: 0.6,
+                      ),
+                  ],
                 ),
               ),
             ),
-          ),
+            Container(
+              height: 0.6,
+              color: context.colorScheme.outlineVariant.toOpacity(0.5),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _actionButton(
+                    icon: Icons.edit_note,
+                    tooltip: "Edit".tl,
+                    onPressed: () => widget.edit(source),
+                  ),
+                  _actionButton(
+                    icon: Icons.update,
+                    tooltip: "Update".tl,
+                    onPressed: () => widget.update(source),
+                    highlight: hasUpdate,
+                  ),
+                  if (_offeringLibraries().length > 1)
+                    _actionButton(
+                      icon: Icons.account_tree_outlined,
+                      tooltip: "Update from another library".tl,
+                      onPressed: _showLibraryPicker,
+                    ),
+                  _actionButton(
+                    icon: Icons.delete_outline,
+                    tooltip: "Delete".tl,
+                    onPressed: () => widget.delete(source),
+                    color: context.colorScheme.error,
+                  ),
+                ],
+              ),
+            ),
+            if (_expanded) ...[
+              Container(
+                height: 0.6,
+                color: context.colorScheme.outlineVariant.toOpacity(0.5),
+              ),
+              ...buildSourceSettings(),
+              ..._buildAccount(),
+              const SizedBox(height: 4),
+            ],
+          ],
         ),
-        if (_expanded) ...[
-          SliverToBoxAdapter(
-            child: Column(children: buildSourceSettings().toList()),
-          ),
-          SliverToBoxAdapter(child: Column(children: _buildAccount().toList())),
+      ),
+    );
+  }
+
+  Widget _versionChip(String version) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(version, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
+  Widget _updateChip(String newVersion) {
+    return Tooltip(
+      message: newVersion,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: context.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.arrow_upward,
+              size: 12,
+              color: context.colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              "New Version".tl,
+              style: TextStyle(
+                fontSize: 13,
+                color: context.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoChip({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.toOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(text, style: ts.s12.copyWith(color: color)),
         ],
-      ],
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    Color? color,
+    bool highlight = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          icon,
+          size: 22,
+          color: highlight
+              ? context.colorScheme.primary
+              : color ?? context.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 
