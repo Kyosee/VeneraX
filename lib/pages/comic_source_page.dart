@@ -1893,13 +1893,57 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
   }
 
   /// Lets the user pick which library to (re)install this source from when more
-  /// than one offers it. The chosen library's version/URL is written through to
+  /// than one offers it. Each library's offered version is fetched up front and
+  /// shown in the list. The chosen library's version/URL is written through to
   /// the update state so the existing update flow installs that variant. Since
   /// switching variants reinstalls the script and wipes the source's local data
   /// (login/cookies), it is gated behind an explicit confirmation.
   void _showLibraryPicker() async {
     final libraries = _offeringLibraries();
     if (libraries.isEmpty) return;
+
+    // Fetch every offering library's catalog in parallel and resolve this
+    // source's version + download URL there, so the picker can show the version
+    // each library carries and the pick needs no second fetch.
+    final controller = showLoadingDialog(
+      App.rootContext,
+      barrierDismissible: true,
+      allowCancel: true,
+    );
+    final resolved = <String, ({String version, String? url})>{};
+    await Future.wait(
+      libraries.map((lib) async {
+        try {
+          var res = await AppDio()
+              .get<String>(
+                lib.url,
+                options: Options(headers: {'cache-time': 'no'}),
+              )
+              .timeout(const Duration(seconds: 20));
+          var list = jsonDecode(res.data!) as List;
+          for (var entry in list) {
+            if (entry['key']?.toString() == source.key) {
+              final v = entry['version']?.toString();
+              if (v == null) break;
+              resolved[lib.id] = (
+                version: v,
+                url: _resolveSourceDownloadUrl(
+                  url: entry['url']?.toString(),
+                  fileName: entry['fileName']?.toString(),
+                  listUrl: lib.url,
+                ),
+              );
+              break;
+            }
+          }
+        } catch (e) {
+          Log.error("Switch source library", "${lib.name}: $e");
+        }
+      }),
+    );
+    controller.close();
+    if (!mounted) return;
+
     ComicSourceLibrary? chosen;
     await showDialog(
       context: App.rootContext,
@@ -1910,12 +1954,39 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (final lib in libraries)
-                ListTile(
-                  title: Text(lib.name),
-                  subtitle: Text(Uri.tryParse(lib.url)?.host ?? lib.url),
-                  onTap: () {
-                    chosen = lib;
-                    context.pop();
+                Builder(
+                  builder: (context) {
+                    final entry = resolved[lib.id];
+                    final host = Uri.tryParse(lib.url)?.host ?? lib.url;
+                    final subtitle = entry != null
+                        ? "$host · v${entry.version}"
+                        : "$host · ${"Unavailable".tl}";
+                    return ListTile(
+                      title: Text(lib.name),
+                      subtitle: Text(subtitle),
+                      trailing: entry != null
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: context
+                                    .colorScheme
+                                    .secondaryContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text("v${entry.version}", style: ts.s12),
+                            )
+                          : null,
+                      enabled: entry != null,
+                      onTap: entry == null
+                          ? null
+                          : () {
+                              chosen = lib;
+                              context.pop();
+                            },
+                    );
                   },
                 ),
             ],
@@ -1925,33 +1996,9 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
     );
     if (chosen == null) return;
     final library = chosen!;
-
-    // Re-fetch the chosen library's catalog to resolve this key's version+URL.
-    String? version;
-    String? downloadUrl;
-    try {
-      var res = await AppDio()
-          .get<String>(
-            library.url,
-            options: Options(headers: {'cache-time': 'no'}),
-          )
-          .timeout(const Duration(seconds: 20));
-      var list = jsonDecode(res.data!) as List;
-      for (var entry in list) {
-        if (entry['key']?.toString() == source.key) {
-          version = entry['version']?.toString();
-          downloadUrl = _resolveSourceDownloadUrl(
-            url: entry['url']?.toString(),
-            fileName: entry['fileName']?.toString(),
-            listUrl: library.url,
-          );
-          break;
-        }
-      }
-    } catch (e) {
-      App.rootContext.showMessage(message: "Network error".tl);
-      return;
-    }
+    final entry = resolved[library.id];
+    final version = entry?.version;
+    final downloadUrl = entry?.url;
     if (version == null || downloadUrl == null) {
       App.rootContext.showMessage(
         message: "This library no longer offers this source".tl,
@@ -1963,9 +2010,13 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
       context: App.rootContext,
       title: "Switch source library".tl,
       content:
-          "Reinstall '@n' from @lib? This replaces the installed script and "
-                  "clears its login and local data."
-              .tlParams({"n": source.name, "lib": library.name}),
+          "Reinstall '@n' from @lib (v@v)? This replaces the installed script "
+                  "and clears its login and local data."
+              .tlParams({
+                "n": source.name,
+                "lib": library.name,
+                "v": version,
+              }),
       onConfirm: () {
         // Defer the destructive purge: register it to run inside the update
         // task ONLY after the new script downloads successfully, so a failed
@@ -1974,10 +2025,10 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
         // Write through winner state so the standard update flow targets the
         // chosen library's variant, and re-stamp the origin.
         final manager = ComicSourceManager();
-        manager.setUpdateUrl(source.key, downloadUrl!);
+        manager.setUpdateUrl(source.key, downloadUrl);
         manager.replaceAvailableUpdates({
           ...manager.availableUpdates,
-          source.key: version!,
+          source.key: version,
         });
         final prov = manager.provenanceFor(source.key) ?? SourceProvenance();
         prov.originId = library.id;
