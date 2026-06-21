@@ -108,6 +108,12 @@ class Appdata with Init {
     "deviceId",
     "followUpdatesFolder",
     "syncLocalComicImages",
+    // Per-source origin/offering provenance is device-local: originId reflects
+    // where THIS device installed each source, and libraryIds/updateLibraryId
+    // are rebuilt from the library list on every update check. Syncing it
+    // whole-blob would let one device's map overwrite another's non-derivable
+    // originId. The library list itself (comicSourceLibraries) still syncs.
+    "comicSourceProvenance",
   ];
 
   /// Sync data from another device.

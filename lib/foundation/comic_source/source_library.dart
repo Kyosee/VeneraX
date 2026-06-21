@@ -167,16 +167,6 @@ class ComicSourceLibraryManager {
     return null;
   }
 
-  /// The lowest-priority enabled library URL, mirrored into the legacy
-  /// `comicSourceListUrl` setting so old builds and single-source update
-  /// fallbacks keep working.
-  static String primaryUrl() {
-    for (final lib in enabled()) {
-      if (lib.url.isNotEmpty) return lib.url;
-    }
-    return '';
-  }
-
   /// Persists [libraries], re-densifies priority to list order, mirrors the
   /// primary URL into the legacy setting, then saves (which triggers sync).
   static void save(List<ComicSourceLibrary> libraries) {
@@ -203,7 +193,19 @@ class ComicSourceLibraryManager {
   static ComicSourceLibrary add(String name, String url) {
     final libraries = all();
     final id = stableLibraryId(url);
-    final existing = _findIn(libraries, id);
+    // Dedup by the URL's derived id, matching against each library's CURRENT
+    // url rather than its stored id: a library edited to this url has a stored
+    // id derived from its old url, so an id-only match would miss it and append
+    // a duplicate pointing at the same catalog.
+    ComicSourceLibrary? existing = _findIn(libraries, id);
+    if (existing == null) {
+      for (final l in libraries) {
+        if (stableLibraryId(l.url) == id) {
+          existing = l;
+          break;
+        }
+      }
+    }
     if (existing != null) {
       if (name.isNotEmpty) existing.name = name;
       save(libraries);

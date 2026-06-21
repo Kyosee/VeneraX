@@ -145,10 +145,12 @@ class ComicSourcePage extends StatelessWidget {
 
     // libraryId -> (key -> {version, url}) from that library's catalog.
     var catalogByLibrary = <String, Map<String, ({String version, String? url})>>{};
-    // key -> ordered list of enabled library ids offering it.
+    // key -> ordered list of enabled library ids offering it (this round).
     var offeredBy = <String, List<String>>{};
+    // Libraries whose catalog actually fetched+parsed this round. Distinguishes
+    // "origin temporarily unreachable" from "origin no longer offers the key".
+    var succeeded = <String>{};
 
-    var anySucceeded = false;
     for (final library in libraries) {
       if (library.url.isEmpty) {
         continue;
@@ -169,7 +171,7 @@ class ComicSourcePage extends StatelessWidget {
         Log.error("Check comic source update", "${library.name}: $e");
         continue;
       }
-      anySucceeded = true;
+      succeeded.add(library.id);
       ComicSourceLibraryManager.markChecked(library.id);
       final entries = <String, ({String version, String? url})>{};
       for (var source in list) {
@@ -185,7 +187,10 @@ class ComicSourcePage extends StatelessWidget {
             listUrl: library.url,
           );
           entries[key] = (version: version, url: downloadUrl);
-          (offeredBy[key] ??= []).add(library.id);
+          final list = offeredBy[key] ??= [];
+          if (!list.contains(library.id)) {
+            list.add(library.id);
+          }
         } catch (e) {
           Log.error("Check comic source update", e.toString());
         }
@@ -193,60 +198,90 @@ class ComicSourcePage extends StatelessWidget {
       catalogByLibrary[library.id] = entries;
     }
 
-    if (!anySucceeded) {
+    if (succeeded.isEmpty) {
       return -1;
     }
 
     final manager = ComicSourceManager();
     var pending = <String, String>{};
     var provenanceUpdates = <String, SourceProvenance>{};
-    // key -> a DIFFERENT library offering a newer version than installed; only
-    // a hint for the explicit switch flow, never an automatic update.
+    // key -> a DIFFERENT library offering a newer version than the one the
+    // update library already offers; only a hint for the explicit switch flow.
     var newerElsewhere = <String, ({String libraryId, String version})>{};
 
     for (var source in ComicSource.all()) {
-      final ids = offeredBy[source.key];
+      final offered = offeredBy[source.key];
       final prov = manager.provenanceFor(source.key) ?? SourceProvenance();
+      final originId = prov.originId;
+      final originExists =
+          originId != null && ComicSourceLibraryManager.find(originId) != null;
 
-      // Resolve which library governs this source's auto-update: its recorded
-      // origin if that origin still offers the key, else the first offering
-      // library (covers sideloaded/legacy installs and single-library users).
+      // Resolve which library governs this source's auto-update.
       String? updateLibraryId;
-      if (prov.originId != null &&
-          (catalogByLibrary[prov.originId]?.containsKey(source.key) ?? false)) {
-        updateLibraryId = prov.originId;
-      } else if (ids != null && ids.isNotEmpty) {
-        updateLibraryId = ids.first;
+      if (originId != null &&
+          (catalogByLibrary[originId]?.containsKey(source.key) ?? false)) {
+        // Origin fetched OK and still offers the key — the normal path.
+        updateLibraryId = originId;
+      } else if (originExists && !succeeded.contains(originId)) {
+        // Origin still installed but unreachable THIS round: do not silently
+        // hand the source to a foreign maintainer's catalog. Skip auto-update
+        // and keep the existing provenance untouched.
+        updateLibraryId = null;
+      } else if (offered != null && offered.isNotEmpty) {
+        // No usable origin (sideloaded/legacy, or origin removed/disabled, or
+        // origin succeeded but dropped the key): fall back to first offerer.
+        updateLibraryId = offered.first;
       }
 
-      if (ids != null) {
-        prov.libraryIds = ids;
+      // Merge libraryIds: refresh ids from libraries that fetched this round,
+      // but preserve ids of libraries that failed to fetch (their absence from
+      // `offered` is transient, not authoritative).
+      if (offered != null || succeeded.isNotEmpty) {
+        final merged = <String>[];
+        // Keep previously-known ids whose library did NOT succeed this round.
+        for (final id in prov.libraryIds) {
+          if (!succeeded.contains(id) && !merged.contains(id)) {
+            merged.add(id);
+          }
+        }
+        // Add ids that offer the key this round.
+        if (offered != null) {
+          for (final id in offered) {
+            if (!merged.contains(id)) merged.add(id);
+          }
+        }
+        prov.libraryIds = merged;
         prov.updateLibraryId = updateLibraryId;
         provenanceUpdates[source.key] = prov;
       }
 
       if (updateLibraryId != null) {
-        final entry = catalogByLibrary[updateLibraryId]![source.key]!;
-        if (entry.url != null) {
-          manager.setUpdateUrl(source.key, entry.url!);
-        }
-        if (_isNewer(entry.version, source.version)) {
-          pending[source.key] = entry.version;
+        final entry = catalogByLibrary[updateLibraryId]?[source.key];
+        if (entry != null) {
+          if (entry.url != null) {
+            manager.setUpdateUrl(source.key, entry.url!);
+          }
+          if (_isNewer(entry.version, source.version)) {
+            pending[source.key] = entry.version;
+          }
         }
       }
 
-      // Surface a newer version in any OTHER library only as a switch hint.
-      if (ids != null) {
-        for (final libId in ids) {
-          if (libId == updateLibraryId) continue;
-          final entry = catalogByLibrary[libId]?[source.key];
-          if (entry != null && _isNewer(entry.version, source.version)) {
-            newerElsewhere[source.key] = (
-              libraryId: libId,
-              version: entry.version,
-            );
-            break;
-          }
+      // Surface a newer version in another library, beyond what the update
+      // library already offers, only as a switch hint.
+      String baseVersion = source.version;
+      if (updateLibraryId != null) {
+        final govEntry = catalogByLibrary[updateLibraryId]?[source.key];
+        if (govEntry != null) {
+          baseVersion = govEntry.version;
+        }
+      }
+      for (final id in prov.libraryIds) {
+        if (id == updateLibraryId) continue;
+        final entry = catalogByLibrary[id]?[source.key];
+        if (entry != null && _isNewer(entry.version, baseVersion)) {
+          newerElsewhere[source.key] = (libraryId: id, version: entry.version);
+          break;
         }
       }
     }
@@ -342,37 +377,7 @@ class _BodyState extends State<_Body> {
   /// cookies survive deletion, so a freshly reinstalled source appears already
   /// logged in with stale data.
   void _purgeComicSourceData(ComicSource source) {
-    // 1. The script file itself.
-    try {
-      var file = File(source.filePath);
-      if (file.existsSync()) file.deleteSync();
-    } catch (e) {
-      Log.error("Delete comic source", e.toString());
-    }
-    // 2. Persisted data: account/login flag, _localStorage, settings, etc.
-    try {
-      var dataFile = File("${App.dataPath}/comic_source/${source.key}.data");
-      if (dataFile.existsSync()) dataFile.deleteSync();
-    } catch (e) {
-      Log.error("Delete comic source", e.toString());
-    }
-    // 3. Cookies for the source domain, so a reinstall is not auto-logged-in.
-    //    Skip when another installed source shares the same host to avoid
-    //    logging that source out.
-    try {
-      var uri = Uri.tryParse(source.url);
-      var host = uri?.host ?? '';
-      if (host.isNotEmpty) {
-        var sharedByOther = ComicSource.all().any(
-          (e) => e.key != source.key && Uri.tryParse(e.url)?.host == host,
-        );
-        if (!sharedByOther) {
-          SingleInstanceCookieJar.instance?.deleteUri(uri!);
-        }
-      }
-    } catch (e) {
-      Log.error("Delete comic source", e.toString());
-    }
+    purgeSourceLocalData(source, deleteScript: true);
   }
 
   void edit(ComicSource source) async {
@@ -541,24 +546,46 @@ class _BodyState extends State<_Body> {
       await addSource(res.data!, fileName, originLibraryId);
     } catch (e, s) {
       if (cancel) return;
+      controller.close();
       context.showMessage(message: e.toString());
       Log.error("Add comic source", "$e\n$s");
     }
   }
 
-  Future<void> addSource(
+  /// Parses and installs a source script. Returns false if a source with the
+  /// same key is already installed — in that case the just-written script file
+  /// is removed and no pages/provenance are registered, so a duplicate cannot
+  /// leave a dangling `(name)(0).js` shadow on disk or falsely mark itself
+  /// installed.
+  Future<bool> addSource(
     String js,
     String fileName, [
     String? originLibraryId,
   ]) async {
     var comicSource = await ComicSourceParser().createAndParse(js, fileName);
-    ComicSourceManager().add(comicSource);
+    final added = ComicSourceManager().add(comicSource);
+    if (!added) {
+      // Duplicate key: remove the shadow file createAndParse wrote to disk.
+      try {
+        var f = File(comicSource.filePath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (e) {
+        Log.error("Add comic source", e.toString());
+      }
+      App.rootContext.showMessage(
+        message: "A source with key '@k' is already installed".tlParams({
+          "k": comicSource.key,
+        }),
+      );
+      return false;
+    }
     if (originLibraryId != null) {
       ComicSourceLibraryManager.recordOrigin(comicSource.key, originLibraryId);
     }
     _addAllPagesWithComicSource(comicSource);
     appdata.saveData();
     App.forceRebuild();
+    return true;
   }
 }
 
@@ -607,12 +634,11 @@ class _ComicSourceListState extends State<_ComicSourceList> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       context.showMessage(message: "Network error".tl);
-      if (mounted) {
-        setState(() {
-          json = [];
-        });
-      }
+      setState(() {
+        json = [];
+      });
     }
   }
 
@@ -805,6 +831,43 @@ String? _resolveSourceDownloadUrl({
   return resolved.isURL ? resolved : null;
 }
 
+/// Removes a source's locally persisted state so a (re)install starts clean.
+/// Deletes the `<key>.data` file (login flag, saved credentials, webview
+/// localStorage) and the source's domain cookies (unless another installed
+/// source shares the host). Set [deleteScript] true to also remove the `.js`
+/// (full uninstall); leave it false when the script is being replaced in place
+/// (library switch / update), so the freshly written script survives.
+void purgeSourceLocalData(ComicSource source, {required bool deleteScript}) {
+  if (deleteScript) {
+    try {
+      var file = File(source.filePath);
+      if (file.existsSync()) file.deleteSync();
+    } catch (e) {
+      Log.error("Purge comic source", e.toString());
+    }
+  }
+  try {
+    var dataFile = File("${App.dataPath}/comic_source/${source.key}.data");
+    if (dataFile.existsSync()) dataFile.deleteSync();
+  } catch (e) {
+    Log.error("Purge comic source", e.toString());
+  }
+  try {
+    var uri = Uri.tryParse(source.url);
+    var host = uri?.host ?? '';
+    if (host.isNotEmpty) {
+      var sharedByOther = ComicSource.all().any(
+        (e) => e.key != source.key && Uri.tryParse(e.url)?.host == host,
+      );
+      if (!sharedByOther) {
+        SingleInstanceCookieJar.instance?.deleteUri(uri!);
+      }
+    }
+  } catch (e) {
+    Log.error("Purge comic source", e.toString());
+  }
+}
+
 /// Downloads a source script from [url], installs it, and stamps its origin
 /// library. Shared by the library catalog browser and the libraries page so the
 /// install + provenance flow lives in one place. Shows its own loading dialog.
@@ -836,7 +899,22 @@ Future<bool> _installSourceFromUrl(String url, String originLibraryId) async {
       res.data!,
       fileName,
     );
-    ComicSourceManager().add(comicSource);
+    final added = ComicSourceManager().add(comicSource);
+    if (!added) {
+      // Duplicate key: drop the shadow file and report instead of half-adding.
+      try {
+        var f = File(comicSource.filePath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (e) {
+        Log.error("Add comic source", e.toString());
+      }
+      App.rootContext.showMessage(
+        message: "A source with key '@k' is already installed".tlParams({
+          "k": comicSource.key,
+        }),
+      );
+      return false;
+    }
     ComicSourceLibraryManager.recordOrigin(comicSource.key, originLibraryId);
     _addAllPagesWithComicSource(comicSource);
     appdata.saveData();
@@ -935,8 +1013,7 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
     final urlController = TextEditingController(text: url);
     showDialog(
       context: App.rootContext,
-      builder: (context) {
-        return ContentDialog(
+      builder: (context) {        return ContentDialog(
           title: "Edit library".tl,
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -981,7 +1058,10 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
           ],
         );
       },
-    );
+    ).then((_) {
+      nameController.dispose();
+      urlController.dispose();
+    });
   }
 
   void _deleteLibrary(ComicSourceLibrary library) {
@@ -1095,6 +1175,7 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
   Widget _buildLibraryCard(ComicSourceLibrary library, int index) {
     var host = Uri.tryParse(library.url)?.host ?? library.url;
     var disabled = !library.enabled;
+    final sourceCount = _sourceCountFor(library);
     return Container(
       key: ValueKey(library.id),
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -1171,7 +1252,7 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
               const SizedBox(width: 8),
               // Source-count badge.
               Tooltip(
-                message: "@c sources".tlParams({"c": _sourceCountFor(library)}),
+                message: "@c sources".tlParams({"c": sourceCount}),
                 child: Container(
                   width: 24,
                   height: 24,
@@ -1183,7 +1264,7 @@ class _SourceLibrariesPageState extends State<SourceLibrariesPage> {
                     shape: BoxShape.circle,
                   ),
                   child: Text(
-                    "${_sourceCountFor(library)}",
+                    "$sourceCount",
                     textAlign: TextAlign.center,
                     style: ts.s12.copyWith(
                       height: 1.0,
@@ -1401,6 +1482,7 @@ class _CheckUpdatesButtonState extends State<_CheckUpdatesButton> {
       isLoading = true;
     });
     var count = await ComicSourcePage.checkComicSourceUpdate();
+    if (!mounted) return;
     if (count == -1) {
       context.showMessage(message: "Network error".tl);
     } else if (count == 0) {
@@ -1416,7 +1498,7 @@ class _CheckUpdatesButtonState extends State<_CheckUpdatesButton> {
   void showUpdateDialog() async {
     var text = ComicSourceManager().availableUpdates.entries
         .map((e) {
-          return "${ComicSource.find(e.key)!.name}: ${e.value}";
+          return "${ComicSource.find(e.key)?.name ?? e.key}: ${e.value}";
         })
         .join("\n");
     bool doUpdate = false;
@@ -1439,6 +1521,7 @@ class _CheckUpdatesButtonState extends State<_CheckUpdatesButton> {
       },
     );
     if (doUpdate) {
+      if (!mounted) return;
       final updates = ComicSourceManager().availableUpdates;
       final sources = updates.keys
           .map((key) => ComicSource.find(key))
@@ -1867,6 +1950,11 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                   "clears its login and local data."
               .tlParams({"n": source.name, "lib": library.name}),
       onConfirm: () {
+        // Honor the dialog's promise: clear the source's persisted login/local
+        // data and cookies before the reinstall, since a switch to a different
+        // maintainer's script must not inherit the old session. The script file
+        // is left for updateSourceFile to overwrite.
+        purgeSourceLocalData(source, deleteScript: false);
         // Write through winner state so the standard update flow targets the
         // chosen library's variant, and re-stamp the origin.
         final manager = ComicSourceManager();
@@ -2034,6 +2122,7 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
           await context.to(
             () => _LoginPage(config: source.account!, source: source),
           );
+          if (!mounted) return;
           source.saveData();
           setState(() {});
         },
@@ -2066,6 +2155,7 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
             });
             final List account = source.data["account"];
             var res = await source.account!.login!(account[0], account[1]);
+            if (!mounted) return;
             if (res.error) {
               context.showMessage(message: res.errorMessage!);
             } else {
