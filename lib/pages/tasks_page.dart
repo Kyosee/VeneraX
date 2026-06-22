@@ -259,6 +259,49 @@ class _TasksPageState extends State<TasksPage> {
     return DateFormat('yyyy-MM-dd').format(time);
   }
 
+  /// 统一的任务图标获取方法
+  IconData getTaskIcon(String taskType, bool isRunning, {String? status}) {
+    if (!isRunning) {
+      // 历史任务根据状态显示不同图标
+      if (status == 'completed') return Icons.check_circle_outline;
+      if (status == 'failed') return Icons.error_outline;
+      if (status == 'canceled') return Icons.cancel_outlined;
+      return Icons.history;
+    }
+
+    // 运行中的任务根据类型显示图标
+    return switch (taskType) {
+      'follow_update' => Icons.sync,
+      'history_refresh' => Icons.manage_history,
+      'related_source' => Icons.hub_outlined,
+      'source_migration' => Icons.move_up_outlined,
+      'comic_source_update' => Icons.update,
+      'import' => Icons.cloud_download,
+      'export' => Icons.save_alt,
+      'data_sync_upload' => Icons.cloud_upload,
+      'data_sync_download' => Icons.cloud_download,
+      _ => Icons.task,
+    };
+  }
+
+  /// 统一的任务标题格式：[功能类型] 描述
+  String getTaskTitle(String taskType, Map<String, Object> params) {
+    return switch (taskType) {
+      'follow_update' => "Follow Update: @folder".tlParams(params),
+      'history_refresh' => "History Refresh".tl,
+      'related_source' => "Auto Link Sources: @folder".tlParams(params),
+      'source_migration' => "Source Migration: @folder".tlParams(params),
+      'comic_source_update' => "Update Sources".tl,
+      'import' => params['file']?.toString().isEmpty ?? true
+          ? "Import Data".tl
+          : "Import: @file".tlParams(params),
+      'export' => "Export Comics".tl,
+      'data_sync_upload' => "WebDAV Upload".tl,
+      'data_sync_download' => "WebDAV Download".tl,
+      _ => taskType,
+    };
+  }
+
   Widget buildFollowUpdateTaskCard(
     FollowUpdateTask task, {
     required bool expanded,
@@ -272,9 +315,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.sync : Icons.history),
+        leading: Icon(
+          getTaskIcon('follow_update', task.isRunning, status: task.status.name),
+        ),
         title: Text(
-          "Checking updates: @folder".tlParams({'folder': task.folder}),
+          getTaskTitle('follow_update', {'folder': task.folder}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -321,8 +366,10 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.manage_history : Icons.history),
-        title: Text("Refreshing histories".tl),
+        leading: Icon(
+          getTaskIcon('history_refresh', task.isRunning, status: task.status.name),
+        ),
+        title: Text(getTaskTitle('history_refresh', {})),
         subtitle: buildTaskSubtitle(
           [historyRefreshStatusText(task), progressText],
           task.createdAt,
@@ -362,9 +409,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.hub_outlined : Icons.history),
+        leading: Icon(
+          getTaskIcon('related_source', task.isRunning, status: task.status.name),
+        ),
         title: Text(
-          "Auto linking sources: @folder".tlParams({'folder': task.folder}),
+          getTaskTitle('related_source', {'folder': task.folder}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -418,9 +467,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.move_up_outlined : Icons.history),
+        leading: Icon(
+          getTaskIcon('source_migration', task.isRunning, status: task.status.name),
+        ),
         title: Text(
-          "Migrating sources: @folder".tlParams({'folder': task.folder}),
+          getTaskTitle('source_migration', {'folder': task.folder}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -475,9 +526,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.update : Icons.history),
+        leading: Icon(
+          getTaskIcon('comic_source_update', task.isRunning, status: task.status.name),
+        ),
         title: Text(
-          "Updating comic sources".tl,
+          getTaskTitle('comic_source_update', {}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -819,11 +872,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isRunning ? Icons.cloud_download : Icons.history),
+        leading: Icon(
+          getTaskIcon('import', task.isRunning, status: task.status.name),
+        ),
         title: Text(
-          task.fileName.isEmpty
-              ? "Importing data".tl
-              : "Importing: @file".tlParams({'file': task.fileName}),
+          getTaskTitle('import', {'file': task.fileName}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -919,9 +972,11 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
         initiallyExpanded: expanded,
-        leading: Icon(task.isActive ? Icons.save_alt : Icons.history),
+        leading: Icon(
+          getTaskIcon('export', task.isActive, status: task.status.name),
+        ),
         title: Text(
-          "Exporting comics".tl,
+          getTaskTitle('export', {}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1116,6 +1171,9 @@ class _TasksPageState extends State<TasksPage> {
 
   Widget buildDataSyncTaskCard(DataSyncTask task, {required bool expanded}) {
     var progressText = "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    final taskType = task.type == DataSyncTaskType.upload
+        ? 'data_sync_upload'
+        : 'data_sync_download';
     return Card(
       elevation: 0,
       color: context.colorScheme.surface,
@@ -1123,16 +1181,10 @@ class _TasksPageState extends State<TasksPage> {
       child: ExpansionTile(
         initiallyExpanded: expanded,
         leading: Icon(
-          task.isRunning
-              ? (task.type == DataSyncTaskType.upload
-                  ? Icons.cloud_upload
-                  : Icons.cloud_download)
-              : Icons.history,
+          getTaskIcon(taskType, task.isRunning, status: task.status.name),
         ),
         title: Text(
-          task.type == DataSyncTaskType.upload
-              ? "Uploading data to WebDAV".tl
-              : "Downloading data from WebDAV".tl,
+          getTaskTitle(taskType, {}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
