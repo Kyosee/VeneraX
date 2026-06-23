@@ -261,27 +261,30 @@ class _TasksPageState extends State<TasksPage> {
 
   /// 统一的任务图标获取方法
   IconData getTaskIcon(String taskType, bool isRunning, {String? status}) {
-    if (!isRunning) {
-      // 历史任务根据状态显示不同图标
-      if (status == 'completed') return Icons.check_circle_outline;
-      if (status == 'failed') return Icons.error_outline;
-      if (status == 'canceled') return Icons.cancel_outlined;
-      return Icons.history;
-    }
+    // 优先检查状态（包括运行中可能的 paused 状态）
+    if (status == 'paused') return Icons.pause_circle_outline;
+    if (status == 'completed') return Icons.check_circle_outline;
+    if (status == 'failed') return Icons.error_outline;
+    if (status == 'canceled') return Icons.cancel_outlined;
 
     // 运行中的任务根据类型显示图标
-    return switch (taskType) {
-      'follow_update' => Icons.sync,
-      'history_refresh' => Icons.manage_history,
-      'related_source' => Icons.hub_outlined,
-      'source_migration' => Icons.move_up_outlined,
-      'comic_source_update' => Icons.update,
-      'import' => Icons.cloud_download,
-      'export' => Icons.save_alt,
-      'data_sync_upload' => Icons.cloud_upload,
-      'data_sync_download' => Icons.cloud_download,
-      _ => Icons.task,
-    };
+    if (isRunning) {
+      return switch (taskType) {
+        'follow_update' => Icons.sync,
+        'history_refresh' => Icons.manage_history,
+        'related_source' => Icons.hub_outlined,
+        'source_migration' => Icons.move_up_outlined,
+        'comic_source_update' => Icons.update,
+        'import' => Icons.cloud_download,
+        'export' => Icons.save_alt,
+        'data_sync_upload' => Icons.cloud_upload,
+        'data_sync_download' => Icons.cloud_download,
+        _ => Icons.task,
+      };
+    }
+
+    // 其他历史任务
+    return Icons.history;
   }
 
   /// 统一的任务标题格式：[功能类型] 描述
