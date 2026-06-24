@@ -21,6 +21,7 @@ import 'package:venera/foundation/favorites_meta.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/foundation/image_provider/local_comic_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
@@ -47,6 +48,26 @@ part 'comments_preview.dart';
 part 'actions.dart';
 
 part 'cover_viewer.dart';
+
+/// Chooses the cover image provider for the comic detail header / viewer.
+///
+/// A pure local import ([ComicType.local]) stores a relative cover path such as
+/// "cover.jpg" and has no network source able to turn it into a URL, so routing
+/// it through the cached/network loader fails with "relative URL without a
+/// base" (issue #38). Such covers load straight from the comic's own files —
+/// the same way the local library grid does. Downloaded comics keep a
+/// resolvable network source, so they continue using the cached/network path.
+ImageProvider comicDetailCoverProvider({
+  required String sourceKey,
+  required String id,
+  required String cover,
+  required LocalComic? localComic,
+}) {
+  if (localComic != null && localComic.comicType == ComicType.local) {
+    return LocalComicImageProvider(localComic);
+  }
+  return CachedImageProvider(cover, sourceKey: sourceKey, cid: id);
+}
 
 class ComicPage extends StatefulWidget {
   const ComicPage({
@@ -88,6 +109,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   String? detailsLoadError;
 
   bool _networkFetching = false;
+
+  /// The backing local-library comic for this page, when there is one. Lets the
+  /// cover load directly from disk for pure local imports (issue #38).
+  LocalComic? _localComic;
 
   bool descriptionExpanded = false;
 
@@ -283,6 +308,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     // comments/recommendations.
     if (localComic != null) {
       _comicStateRepository.mirrorLocalComic(localComic);
+      _localComic = localComic;
       isAddToLocalFav = state.isLocalFavorite;
       history = state.history;
       isDownloaded = true;
@@ -486,10 +512,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 width: 144 * 0.72,
                 clipBehavior: Clip.antiAlias,
                 child: AnimatedImage(
-                  image: CachedImageProvider(
-                    widget.cover ?? comic.cover,
+                  image: comicDetailCoverProvider(
                     sourceKey: comic.sourceKey,
-                    cid: comic.id,
+                    id: comic.id,
+                    cover: widget.cover ?? comic.cover,
+                    localComic: _localComic,
                   ),
                   width: double.infinity,
                   height: double.infinity,
@@ -975,10 +1002,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   }
 
   void _viewCover(BuildContext context) {
-    final imageProvider = CachedImageProvider(
-      widget.cover ?? comic.cover,
+    final imageProvider = comicDetailCoverProvider(
       sourceKey: comic.sourceKey,
-      cid: comic.id,
+      id: comic.id,
+      cover: widget.cover ?? comic.cover,
+      localComic: _localComic,
     );
 
     context.to(
@@ -992,10 +1020,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   void _saveCover(BuildContext context) async {
     try {
-      final imageProvider = CachedImageProvider(
-        widget.cover ?? comic.cover,
+      final imageProvider = comicDetailCoverProvider(
         sourceKey: comic.sourceKey,
-        cid: comic.id,
+        id: comic.id,
+        cover: widget.cover ?? comic.cover,
+        localComic: _localComic,
       );
 
       final imageStream = imageProvider.resolve(const ImageConfiguration());

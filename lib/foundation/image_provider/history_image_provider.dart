@@ -6,6 +6,7 @@ import 'package:venera/network/images.dart';
 import '../history.dart';
 import 'base_image_provider.dart';
 import 'history_image_provider.dart' as image_provider;
+import 'local_comic_image.dart';
 
 class HistoryImageProvider
     extends BaseImageProvider<image_provider.HistoryImageProvider> {
@@ -22,7 +23,10 @@ class HistoryImageProvider
     if (!url.contains('/')) {
       var localComic = LocalManager().find(history.id, history.type);
       if (localComic != null) {
-        return localComic.coverFile.readAsBytes();
+        // Delegate to the local provider so a missing/renamed cover file falls
+        // back to scanning the comic directory (issue #38) instead of throwing
+        // and leaving the history tile blank.
+        return LocalComicImageProvider(localComic).load(chunkEvents, checkStop);
       }
       var comicSource =
           history.type.comicSource ?? (throw "Comic source not found.");
