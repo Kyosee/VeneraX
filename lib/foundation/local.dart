@@ -386,7 +386,7 @@ class LocalManager with ChangeNotifier {
     var started = 0;
     for (final t in downloadingTasks) {
       if (started >= limit) break;
-      if (t.wasRunning && !t.isError) {
+      if (t.wasRunning && !t.isError && !t.userPaused) {
         t.resume();
         started++;
       }
@@ -705,6 +705,79 @@ class LocalManager with ChangeNotifier {
     }
   }
 
+  /// User-initiated pause of a single task. Marks it [DownloadTask.userPaused]
+  /// so the queue won't auto-resume it, then lets the queue fill the freed slot
+  /// with the next runnable task (#9).
+  void pauseTask(DownloadTask task) {
+    task.userPaused = true;
+    task.pause();
+    notifyListeners();
+    _advanceQueue();
+  }
+
+  /// User-initiated resume/retry of a single task. Clears [userPaused] and the
+  /// auto-retry budget so an errored task gets a fresh start (#9 retry).
+  void resumeTask(DownloadTask task) {
+    task.userPaused = false;
+    task.autoRetryCount = 0;
+    task.resume();
+    notifyListeners();
+    DownloadKeepAlive.instance.refresh();
+  }
+
+  /// Pause every task and remember that the user did so, so nothing auto-resumes
+  /// until the user explicitly resumes (#9).
+  void pauseAll() {
+    for (final t in downloadingTasks) {
+      t.userPaused = true;
+      if (!t.isPaused) t.pause();
+    }
+    notifyListeners();
+    saveCurrentDownloadingTasks();
+    DownloadKeepAlive.instance.refresh();
+  }
+
+  /// Clear the user-paused flag on every task and let the queue resume up to the
+  /// configured parallelism (#9).
+  void resumeAll() {
+    for (final t in downloadingTasks) {
+      t.userPaused = false;
+      t.autoRetryCount = 0;
+    }
+    notifyListeners();
+    _advanceQueue();
+  }
+
+  /// Cancel every queued/active download (#9). Iterates over a copy because
+  /// [DownloadTask.cancel] mutates [downloadingTasks].
+  void cancelAll() {
+    for (final t in downloadingTasks.toList()) {
+      t.cancel();
+    }
+    notifyListeners();
+    DownloadKeepAlive.instance.refresh();
+  }
+
+  /// Reorder a task within the queue (drag-and-drop, #9). Pauses whatever was
+  /// running and re-fills slots from the new order so the user's intended
+  /// priority takes effect immediately.
+  void reorderTask(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= downloadingTasks.length) return;
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex < 0 || newIndex >= downloadingTasks.length) return;
+    if (oldIndex == newIndex) return;
+    final task = downloadingTasks.removeAt(oldIndex);
+    downloadingTasks.insert(newIndex, task);
+    // Pause non-user-paused running tasks so _advanceQueue re-picks from the
+    // top of the new order rather than leaving a lower-priority task running.
+    for (final t in downloadingTasks) {
+      if (!t.userPaused && !t.isPaused && !t.isError) t.pause();
+    }
+    notifyListeners();
+    saveCurrentDownloadingTasks();
+    _advanceQueue();
+  }
+
   static const _maxAutoRetry = 3;
 
   /// Invoked by a task when it enters the error state. Keeps the queue moving:
@@ -742,15 +815,19 @@ class LocalManager with ChangeNotifier {
       final running =
           downloadingTasks.where((x) => !x.isPaused && !x.isError).length;
       if (running >= limit) break;
-      // NOTE: can't yet tell a user-paused task from a queued one, so the rare
-      // "cancel a queued task while the head is user-paused" case may resume
-      // the head. Per-task user-pause tracking lands with the Phase 6 controls.
-      if (!t.isError && t.isPaused) {
+      // A user-paused task waits for the user; only auto-resume tasks that are
+      // merely queued (paused but not user-paused) and not in error.
+      if (!t.isError && t.isPaused && !t.userPaused) {
         t.resume();
       }
     }
     DownloadKeepAlive.instance.refresh();
-    if (!downloadingTasks.any((t) => !t.isPaused && !t.isError)) {
+    // Only fall back to error auto-retry when nothing is runnable AND the user
+    // hasn't deliberately paused everything.
+    final anyRunning = downloadingTasks.any((t) => !t.isPaused && !t.isError);
+    final anyQueued =
+        downloadingTasks.any((t) => t.isPaused && !t.userPaused && !t.isError);
+    if (!anyRunning && !anyQueued) {
       _scheduleErrorAutoRetry();
     }
   }

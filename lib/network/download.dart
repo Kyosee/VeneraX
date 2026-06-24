@@ -30,6 +30,10 @@ abstract class DownloadTask with ChangeNotifier {
   /// bytes per second
   int get speed;
 
+  /// Estimated time remaining, or null when it can't be estimated yet (no
+  /// throughput sample, unknown total). Shown in the download list (#12).
+  Duration? get eta => null;
+
   void cancel();
 
   void pause();
@@ -54,6 +58,11 @@ abstract class DownloadTask with ChangeNotifier {
   /// Bounded by [LocalManager] so a permanently-failing task eventually stops
   /// retrying and waits for the user. Reset when the user retries manually.
   int autoRetryCount = 0;
+
+  /// True when the user explicitly paused this task (vs. it merely waiting its
+  /// turn in the queue). The queue won't auto-resume a user-paused task, and it
+  /// stays paused across restarts. Set by [pause]/[resume] paths via the queue.
+  bool userPaused = false;
 
   /// convert current state to json, which can be used to restore the task
   Map<String, dynamic> toJson();
@@ -180,9 +189,29 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   @override
   double get progress {
     if (_totalChapters > 0) {
-      return _chapter / _totalChapters;
+      // Blend whole-chapter progress with the current chapter's in-flight image
+      // fraction so the bar advances smoothly instead of jumping a full chapter
+      // at a time (#11).
+      var base = _chapter / _totalChapters;
+      var images = _images;
+      var key = (images != null && _chapter < images.keys.length)
+          ? images.keys.elementAt(_chapter)
+          : null;
+      var chapterImages = key == null ? null : images![key];
+      if (chapterImages != null && chapterImages.isNotEmpty) {
+        base += (_index / chapterImages.length) / _totalChapters;
+      }
+      return base.clamp(0.0, 1.0);
     }
     return _totalCount == 0 ? 0 : _downloadedCount / _totalCount;
+  }
+
+  @override
+  Duration? get eta {
+    if (isPaused || isError || _imagesPerSecond <= 0) return null;
+    final remaining = (_totalCount - _downloadedCount).clamp(0, _totalCount);
+    if (remaining <= 0) return null;
+    return Duration(seconds: (remaining / _imagesPerSecond).ceil());
   }
 
   bool _isRunning = false;
@@ -210,6 +239,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   /// Current downloading chapter, index of [_images]
   int _chapter = 0;
+
+  /// Smoothed images-per-second throughput (EMA), driven once per second from
+  /// [onNextSecond]. Used to estimate [eta]. Zero until the first full second.
+  double _imagesPerSecond = 0;
+
+  /// Downloaded-count snapshot at the previous tick, to derive per-second rate.
+  int _lastDownloadedCount = 0;
 
   var tasks = <int, _ImageDownloadWrapper>{};
 
@@ -573,6 +609,15 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   @override
   void onNextSecond(Timer t) {
+    // Per-second image throughput as an EMA, smoothing out the bursty nature of
+    // image completions so the ETA doesn't swing wildly (#12).
+    final delta = _downloadedCount - _lastDownloadedCount;
+    _lastDownloadedCount = _downloadedCount;
+    if (delta >= 0) {
+      _imagesPerSecond = _imagesPerSecond == 0
+          ? delta.toDouble()
+          : _imagesPerSecond * 0.6 + delta * 0.4;
+    }
     notifyListeners();
     super.onNextSecond(t);
   }
@@ -609,6 +654,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "index": _index,
       "chapter": _chapter,
       "wasRunning": _isRunning,
+      "userPaused": userPaused,
     };
   }
 
@@ -634,6 +680,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     )
       ..path = json["path"]
       ..wasRunning = json["wasRunning"] ?? false
+      ..userPaused = json["userPaused"] ?? false
       .._cover = json["cover"]
       .._images = images
       .._downloadedCount = json["downloadedCount"] ?? 0
@@ -936,6 +983,14 @@ class ArchiveDownloadTask extends DownloadTask {
       _expectedBytes == 0 ? 0 : _currentBytes / _expectedBytes;
 
   @override
+  Duration? get eta {
+    if (isPaused || isError || _speed <= 0 || _expectedBytes <= 0) return null;
+    final remaining = _expectedBytes - _currentBytes;
+    if (remaining <= 0) return null;
+    return Duration(seconds: (remaining / _speed).ceil());
+  }
+
+  @override
   void resume() async {
     if (_isRunning) {
       return;
@@ -1039,6 +1094,7 @@ class ArchiveDownloadTask extends DownloadTask {
       "comic": comic.toJson(),
       "path": path,
       "wasRunning": _isRunning,
+      "userPaused": userPaused,
     };
   }
 
@@ -1051,7 +1107,8 @@ class ArchiveDownloadTask extends DownloadTask {
       ComicDetails.fromJson(json["comic"]),
     )
       ..path = json["path"]
-      ..wasRunning = json["wasRunning"] ?? false;
+      ..wasRunning = json["wasRunning"] ?? false
+      ..userPaused = json["userPaused"] ?? false;
   }
 
   String _findCover() {
