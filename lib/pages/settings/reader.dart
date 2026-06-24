@@ -308,18 +308,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   isEnabledSpecificSettings ? widget.comicSource : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
-            if (App.isAndroid)
-              _SwitchSetting(
-                title: 'Turn page by volume keys'.tl,
-                settingKey: 'enableTurnPageByVolumeKey',
-                onChanged: () {
-                  widget.onChanged?.call('enableTurnPageByVolumeKey');
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
             _SwitchSetting(
               title: "Night mode".tl,
               subtitle: "Dim the page with a warm overlay to reduce eye strain"
@@ -456,6 +444,18 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 optionTranslation: {
                   "press": "Press position".tl,
                   "center": "Screen center".tl,
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource:
+                    isEnabledSpecificSettings ? widget.comicSource : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            if (App.isAndroid)
+              _SwitchSetting(
+                title: 'Turn page by volume keys'.tl,
+                settingKey: 'enableTurnPageByVolumeKey',
+                onChanged: () {
+                  widget.onChanged?.call('enableTurnPageByVolumeKey');
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
                 comicSource:
