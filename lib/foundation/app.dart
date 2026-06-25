@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:venera/foundation/download_network_guard.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/read_later.dart';
 
@@ -115,6 +116,9 @@ class _App {
       local.init(),
     ];
     await Future.wait(futures);
+    // Begin watching connectivity so "WiFi only" downloads pause on metered
+    // networks. No-op while the setting is off (#15).
+    DownloadNetworkGuard.instance.start();
   }
 
   Function? _forceRebuildHandler;

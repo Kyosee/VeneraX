@@ -780,6 +780,29 @@ class LocalManager with ChangeNotifier {
 
   static const _maxAutoRetry = 3;
 
+  /// True while the network guard wants downloads held (e.g. "WiFi only" is on
+  /// and the device is on cellular). Queued tasks won't auto-resume and active
+  /// ones are paused until the block clears (#15).
+  bool _networkBlocked = false;
+
+  /// Toggle the metered-network block. When blocking, pauses currently-running
+  /// tasks WITHOUT marking them user-paused, so they auto-resume once an
+  /// unmetered connection returns. When unblocking, re-fills the queue.
+  void setNetworkBlocked(bool blocked) {
+    if (_networkBlocked == blocked) return;
+    _networkBlocked = blocked;
+    if (blocked) {
+      for (final t in downloadingTasks) {
+        if (!t.isPaused && !t.isError) t.pause();
+      }
+      notifyListeners();
+      saveCurrentDownloadingTasks();
+      DownloadKeepAlive.instance.refresh();
+    } else {
+      _advanceQueue();
+    }
+  }
+
   /// Invoked by a task when it enters the error state. Keeps the queue moving:
   /// the failed task is parked at the end so a persistent failure can't block
   /// healthy tasks, then the next runnable task starts. A few bounded, delayed
@@ -807,6 +830,15 @@ class LocalManager with ChangeNotifier {
   /// bounded delayed auto-retry of the least-tried task (#7).
   void _advanceQueue() {
     if (downloadingTasks.isEmpty) {
+      DownloadKeepAlive.instance.refresh();
+      return;
+    }
+    // Metered-network block ("WiFi only"): pause anything running without
+    // marking it user-paused, and resume nothing until the block clears.
+    if (_networkBlocked) {
+      for (final t in downloadingTasks) {
+        if (!t.isPaused && !t.isError) t.pause();
+      }
       DownloadKeepAlive.instance.refresh();
       return;
     }

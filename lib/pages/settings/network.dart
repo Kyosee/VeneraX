@@ -35,6 +35,11 @@ class _NetworkSettingsState extends State<NetworkSettings> {
           min: 1,
           max: 3,
         ).toSliver(),
+        _SwitchSetting(
+          title: "Download on WiFi Only".tl,
+          settingKey: 'downloadWifiOnly',
+          onChanged: () => DownloadNetworkGuard.instance.onSettingChanged(),
+        ).toSliver(),
       ],
     );
   }
