@@ -39,9 +39,17 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
     }
     this.sources = sources.map((e) => ComicSource.find(e)!).toList();
     _keyword = widget.keyword;
+    // Aggregated search also feeds the shared search history; without this,
+    // searches run in aggregated mode never showed up under recent searches.
+    if (widget.keyword.trim().isNotEmpty) {
+      appdata.addSearchHistory(widget.keyword);
+    }
     controller = SearchBarController(
       currentText: widget.keyword,
       onSearch: (text) {
+        if (text.trim().isNotEmpty) {
+          appdata.addSearchHistory(text);
+        }
         setState(() {
           _keyword = text;
         });
