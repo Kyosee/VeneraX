@@ -625,7 +625,9 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   void _setError(String message) {
     _isRunning = false;
     _isError = true;
-    _message = message;
+    // Surface a clear "out of storage" message instead of a raw errno (#18).
+    var key = diskFullMessageKey(message);
+    _message = key != null ? key.tl : message;
     notifyListeners();
     stopRecorder();
     LocalManager().onTaskError(this);
@@ -924,7 +926,9 @@ class ArchiveDownloadTask extends DownloadTask {
   void _setError(String message) {
     _isRunning = false;
     _isError = true;
-    _message = message;
+    // Surface a clear "out of storage" message instead of a raw errno (#18).
+    var key = diskFullMessageKey(message);
+    _message = key != null ? key.tl : message;
     notifyListeners();
     Log.error("Download", message);
     LocalManager().onTaskError(this);

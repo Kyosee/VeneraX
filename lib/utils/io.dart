@@ -446,6 +446,21 @@ String bytesToReadableString(int bytes) {
   }
 }
 
+/// Maps a disk-full IO error to a user-facing translation key, or null when the
+/// error isn't a storage-space problem. Reused by the download error paths so a
+/// full disk shows a clear message instead of a raw errno (#18).
+String? diskFullMessageKey(Object error) {
+  final s = error.toString().toLowerCase();
+  if (s.contains('no space') ||
+      s.contains('enospc') ||
+      s.contains('errno = 28') ||
+      s.contains('errno=28') ||
+      s.contains('os error 28')) {
+    return 'Not enough storage space';
+  }
+  return null;
+}
+
 class FileSelectResult {
   final String path;
 
