@@ -269,6 +269,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                     onPressed: openChapterComments,
                   ),
                 ),
+              if (canDownloadFromReader())
+                Tooltip(
+                  message: "Download".tl,
+                  child: IconButton(
+                    icon: const Icon(Icons.download_outlined),
+                    onPressed: downloadFromReader,
+                  ),
+                ),
               Tooltip(
                 message: "Settings".tl,
                 child: IconButton(
@@ -292,6 +300,74 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       context.reader.page,
       context.reader.chapter,
     );
+  }
+
+  /// Whether the in-reader download button should show: only for online source
+  /// comics (not local ones, whose images are file:// paths) that aren't already
+  /// fully downloaded, and whose source can actually download (#16).
+  bool canDownloadFromReader() {
+    final reader = context.reader;
+    if (reader.type == ComicType.local) return false;
+    final source = ComicSource.find(reader.type.sourceKey);
+    if (source == null || source.loadComicPages == null) return false;
+    final images = reader.images;
+    if (images != null && images.isNotEmpty && images[0].contains('file://')) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Queue a download from inside the reader. For a multi-chapter comic this
+  /// downloads the chapter currently open; for a single-chapter comic it
+  /// downloads the whole thing. Mirrors the dedup checks the detail page uses
+  /// so tapping it twice is harmless (#16).
+  void downloadFromReader() {
+    final reader = context.reader;
+    final source = ComicSource.find(reader.type.sourceKey);
+    if (source == null) return;
+    final chapters = reader.widget.chapters;
+
+    if (chapters == null) {
+      // Single-chapter comic: download the whole comic if not already done.
+      if (LocalManager().isDownloading(reader.cid, reader.type) ||
+          LocalManager().isDownloaded(reader.cid, reader.type, 0)) {
+        showToast(message: "Already downloaded".tl, context: context);
+        return;
+      }
+      LocalManager().addTask(
+        ImagesDownloadTask(
+          source: source,
+          comicId: reader.cid,
+          comicTitle: reader.widget.name,
+        ),
+      );
+      showToast(message: "Download started".tl, context: context);
+      return;
+    }
+
+    // Multi-chapter: download just the chapter currently being read.
+    final eid = reader.eid;
+    final local = LocalManager().find(reader.cid, reader.type);
+    if (local != null && local.downloadedChapters.contains(eid)) {
+      showToast(message: "Already downloaded".tl, context: context);
+      return;
+    }
+    if (LocalManager().isDownloading(reader.cid, reader.type)) {
+      // A task already exists; appending a single chapter to a running task is
+      // out of scope here, so point the user at the queue instead of silently
+      // doing nothing.
+      showToast(message: "The comic is downloading".tl, context: context);
+      return;
+    }
+    LocalManager().addTask(
+      ImagesDownloadTask(
+        source: source,
+        comicId: reader.cid,
+        comicTitle: reader.widget.name,
+        chapters: [eid],
+      ),
+    );
+    showToast(message: "Download started".tl, context: context);
   }
 
   void addImageFavorite() async {
