@@ -14,16 +14,27 @@ class ComicUpdateResult {
 
 Future<ComicUpdateResult> updateComic(
   FavoriteItemWithUpdateInfo c,
-  String folder,
-) async {
+  String folder, {
+  bool Function()? shouldCancel,
+}) async {
   int retries = 3;
   while (true) {
+    // Bail before the (slow) network call so a cancel that arrives mid-queue
+    // doesn't have to wait for this comic to finish fetching (#3).
+    if (shouldCancel?.call() ?? false) {
+      return ComicUpdateResult(false, null);
+    }
     try {
       var comicSource = c.type.comicSource;
       if (comicSource == null) {
         return ComicUpdateResult(false, "Comic source not found");
       }
       var newInfo = (await comicSource.loadComicInfo!(c.id)).data;
+      // The fetch may have taken seconds; if the user cancelled meanwhile, drop
+      // the result without touching the DB.
+      if (shouldCancel?.call() ?? false) {
+        return ComicUpdateResult(false, null);
+      }
 
       var newTags = <String>[];
       for (var entry in newInfo.tags.entries) {
@@ -76,7 +87,14 @@ Future<ComicUpdateResult> updateComic(
         return ComicUpdateResult(false, e.toString());
       }
       Log.warning("Check Updates", "Failed to update ${c.id}, retrying: $e");
-      await Future.delayed(const Duration(seconds: 2));
+      // Wait in short slices so a cancel during the retry backoff is honored
+      // promptly instead of blocking for the full 2 seconds.
+      for (var i = 0; i < 4; i++) {
+        if (shouldCancel?.call() ?? false) {
+          return ComicUpdateResult(false, null);
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
     }
   }
 }
@@ -180,7 +198,7 @@ void updateFolderBase(
         if (shouldCancel?.call() ?? false) {
           break;
         }
-        var result = await updateComic(comic, folder);
+        var result = await updateComic(comic, folder, shouldCancel: shouldCancel);
         current++;
         if (result.updated) {
           updated++;

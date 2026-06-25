@@ -1661,10 +1661,18 @@ class LocalFavoritesManager with ChangeNotifier {
         )
         .first['last_update_time'];
     var hasNewUpdate = oldTime != updateTime;
+    // The flag is sticky: a check may only RAISE has_new_update to 1, never
+    // clear it (`has_new_update | ?`). Clearing is the read path's job
+    // (markAsRead). This prevents a re-check / interrupted-and-restarted check
+    // from silently wiping an already-flagged-but-unread comic's badge when the
+    // in-memory snapshot (c.updateTime) has drifted from the DB — see the
+    // follow-update cancel race that turned "3 updates" into "2".
     _db.execute(
       """
       update "$folder"
-      set last_update_time = ?, has_new_update = ?, last_check_time = ?
+      set last_update_time = ?,
+          has_new_update = (coalesce(has_new_update, 0) | ?),
+          last_check_time = ?
       where id == ? and type == ?;
     """,
       [
