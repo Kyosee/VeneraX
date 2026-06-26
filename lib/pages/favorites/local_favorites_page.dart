@@ -649,6 +649,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                           context: App.rootContext,
                           title: "Rename".tl,
                           hintText: "New Name".tl,
+                          initialValue: widget.folder,
                           onConfirm: (value) {
                             var err = validateFolderName(value.toString());
                             if (err != null) {
