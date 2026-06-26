@@ -5,6 +5,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -278,6 +279,27 @@ class DataSync with ChangeNotifier {
     }
   }
 
+  /// 拉起/刷新 WebDAV 同步的共享保活前台通知（仅 Android 生效，其它平台 no-op）。
+  /// 只在确实要走网络传输时调用——快速的配置校验、版本探测、「无新数据」早退等都不触发，
+  /// 免得为转瞬即逝的操作反复起停前台服务、在通知栏闪烁。
+  void _refreshSyncKeepAlive(String status) {
+    BackgroundKeepAlive.instance.update(BackgroundKeepAlive.tagSync, status);
+  }
+
+  /// 仅当再无任何同步活动（上传/下载/图片同步/排队等待）时，移除共享的同步保活通知。
+  /// 各操作在 finally 里把自身标志清零后调用，最后一个收尾者才真正撤销，避免把仍在跑的
+  /// 其它同步赖以不被冻结的前台服务一并撤掉。
+  void _maybeStopSyncKeepAlive() {
+    if (!syncKeepAliveActive(
+      uploading: _isUploading,
+      downloading: _isDownloading,
+      syncingImages: _isSyncingImages,
+      waiting: _haveWaitingTask,
+    )) {
+      BackgroundKeepAlive.instance.remove(BackgroundKeepAlive.tagSync);
+    }
+  }
+
   Future<Res<bool>> uploadData() async {
     // No usable WebDAV config → nothing to sync. saveData() funnels every
     // settings/search-history change through here (plus comic-source saves,
@@ -337,6 +359,10 @@ class DataSync with ChangeNotifier {
       }
 
       taskManager.updateTask(task.id, currentPhase: 'Preparing', progress: 0.1);
+      // Past the cheap validation bail-outs and committed to an actual export +
+      // upload — pin the process to foreground priority so backgrounding the app
+      // mid-sync no longer freezes it (issue #78). Android-only; no-op elsewhere.
+      _refreshSyncKeepAlive('Uploading data'.tl);
 
       var client = newClient(
         url,
@@ -372,6 +398,9 @@ class DataSync with ChangeNotifier {
           fileName: filename,
           fileSize: fileSize,
         );
+        _refreshSyncKeepAlive(
+          formatTaskStatus(title: 'Uploading data'.tl, detail: filename),
+        );
 
         var files = await client.readDir('/');
         files = files.where((e) => e.name!.endsWith('.venera')).toList();
@@ -406,6 +435,7 @@ class DataSync with ChangeNotifier {
       }
     } finally {
       _isUploading = false;
+      _maybeStopSyncKeepAlive();
       notifyListeners();
     }
   }
@@ -476,6 +506,11 @@ class DataSync with ChangeNotifier {
           fileName: file.name,
           fileSize: file.size ?? 0,
         );
+        // A newer backup exists and we are about to pull + apply it; keep the
+        // process alive across backgrounding for the whole download + import.
+        _refreshSyncKeepAlive(
+          formatTaskStatus(title: 'Downloading data'.tl, detail: file.name),
+        );
 
         Log.info("Data Sync", "Downloading data from WebDAV server");
         var localFile = File(FilePath.join(App.cachePath, file.name!));
@@ -515,6 +550,7 @@ class DataSync with ChangeNotifier {
       }
     } finally {
       _isDownloading = false;
+      _maybeStopSyncKeepAlive();
       notifyListeners();
     }
   }
@@ -582,6 +618,11 @@ class DataSync with ChangeNotifier {
       String user = config[1];
       String pass = config[2];
       var client = newClient(url, user: user, password: pass, adapter: RHttpAdapter(timeout: _syncRequestTimeout));
+      // User explicitly chose this backup to restore — always a real transfer, so
+      // engage keep-alive across the download + apply.
+      _refreshSyncKeepAlive(
+        formatTaskStatus(title: 'Downloading data'.tl, detail: fileName),
+      );
       try {
         var files = await client.readDir('/');
         var latest = _latestBackup(files, (e) => e.name);
@@ -618,6 +659,7 @@ class DataSync with ChangeNotifier {
       }
     } finally {
       _isDownloading = false;
+      _maybeStopSyncKeepAlive();
       notifyListeners();
     }
   }
@@ -654,6 +696,9 @@ class DataSync with ChangeNotifier {
         adapter: RHttpAdapter(timeout: _imageSyncRequestTimeout),
       );
 
+      // Image-pack sync moves whole comic archives and is the longest-running,
+      // most background-prone sync op — hold the process across backgrounding.
+      _refreshSyncKeepAlive('Syncing images'.tl);
       await _ensureComicsDir(client);
       await _uploadComicImages(client);
       await _downloadComicImages(client);
@@ -661,6 +706,7 @@ class DataSync with ChangeNotifier {
       Log.error("Image Sync", e, s);
     } finally {
       _isSyncingImages = false;
+      _maybeStopSyncKeepAlive();
       notifyListeners();
     }
   }

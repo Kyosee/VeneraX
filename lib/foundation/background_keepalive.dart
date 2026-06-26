@@ -10,6 +10,21 @@ String formatTaskStatus({required String title, String? detail}) {
   return d.isEmpty ? title : '$title · $d';
 }
 
+/// 判断 WebDAV 同步那条共享保活通知是否仍需保留。
+///
+/// 同步子系统里数条操作可能交叠运行——数据上/下载，以及上传/下载完成后延时触发的图片包
+/// 同步，外加排队等待当前操作结束的下一次同步——但它们共用同一条 [`sync`]
+/// [BackgroundKeepAlive.tagSync] 通知。任何一个一结束就移除通知，会把仍在跑的其它操作赖以
+/// 不被系统冻结的前台服务一并撤掉。故此处以「活跃标志的引用计数」语义判断：只有当全部标志
+/// 都清零时才允许释放保活。纯函数，方便单测。
+bool syncKeepAliveActive({
+  required bool uploading,
+  required bool downloading,
+  required bool syncingImages,
+  required bool waiting,
+}) =>
+    uploading || downloading || syncingImages || waiting;
+
 /// 通用后台任务保活：Android 上在追更检查/导入/导出等任务运行时，按类别（tag）拉起原生
 /// 前台服务并各自展示一条独立的进度通知；该类任务结束时移除其通知，最后一类移除后服务自停。
 /// 其它平台（iOS/桌面）不做任何事。
@@ -28,6 +43,7 @@ class BackgroundKeepAlive {
   static const tagImport = 'import';
   static const tagExport = 'export';
   static const tagComicImport = 'comic_import';
+  static const tagSync = 'sync';
 
   bool get _supported => App.isAndroid;
 

@@ -11,6 +11,7 @@
     <string name="background_title_import">正在匯入資料</string>
     <string name="background_title_export">正在匯出漫畫</string>
     <string name="background_title_comic_import">正在匯入漫畫</string>
+    <string name="background_title_sync">正在同步資料</string>
     <string name="download_done_channel_name">下載完成</string>
     <string name="download_done_default">下載完成</string>
 </resources>
