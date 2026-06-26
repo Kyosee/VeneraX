@@ -450,7 +450,7 @@ abstract mixin class _ComicPageActions {
       context: App.rootContext,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) => SimpleDialog(
-          title: const Text("Rating"),
+          title: Text("Rating".tl),
           alignment: Alignment.center,
           children: [
             SizedBox(

@@ -294,8 +294,9 @@ Future<void> checkUpdateUi([
               children: [
                 Text("A new version is available. Do you want to update now?".tl),
                 const SizedBox(height: 8),
-                Text("Current version: ${App.version}"),
-                Text("Latest version: ${value.release!.version}"),
+                Text("Current version: @v".tlParams({"v": App.version})),
+                Text("Latest version: @v"
+                    .tlParams({"v": value.release!.version})),
                 if (changelog.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
