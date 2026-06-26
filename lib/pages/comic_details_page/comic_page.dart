@@ -812,10 +812,23 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           ),
         );
       } else {
-        return Container(
+        Widget tag = Container(
           decoration: BoxDecoration(color: color, borderRadius: borderRadius),
           child: Text(text).padding(padding),
         );
+        // Namespace headers (isTitle) are just labels — only the actual values
+        // are worth copying.
+        if (!isTitle) {
+          tag = GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPress: () {
+              Clipboard.setData(ClipboardData(text: text));
+              context.showMessage(message: "Copied".tl);
+            },
+            child: tag,
+          );
+        }
+        return tag;
       }
     }
 

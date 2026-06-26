@@ -875,6 +875,11 @@ class ComicDescription extends StatelessWidget {
     return math.max(1, math.min(5, count));
   }
 
+  void _copy(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    context.showMessage(message: "Copied".tl);
+  }
+
   Widget _infoRow(
     BuildContext context,
     String label,
@@ -906,13 +911,17 @@ class ComicDescription extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.colorScheme.onSurfaceVariant,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: () => _copy(context, value),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -960,6 +969,7 @@ class ComicDescription extends StatelessWidget {
                   InkWell(
                     borderRadius: BorderRadius.circular(4),
                     onTap: actions[i].onTap,
+                    onLongPress: () => _copy(context, actions[i].text),
                     child: Text(
                       actions[i].text,
                       style: TextStyle(
