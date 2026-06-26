@@ -591,16 +591,16 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
     );
     return Center(
       child: Container(
-        width: 88,
-        height: 36,
+        width: 64,
+        height: 28,
         decoration: BoxDecoration(
           borderRadius: const BorderRadius.all(Radius.circular(12)),
           color: isHovering ? colorScheme.surfaceContainer : Colors.transparent,
         ),
         child: Center(
           child: Container(
-            width: 40 + value * 48,
-            height: 36,
+            width: 32 + value * 32,
+            height: 28,
             decoration: BoxDecoration(
               borderRadius: const BorderRadius.all(Radius.circular(12)),
               color: value != 0
