@@ -52,6 +52,7 @@ part 'navigation_bar.dart';
 part 'pop_up_widget.dart';
 part 'scroll.dart';
 part 'select.dart';
+part 'selection.dart';
 part 'side_bar.dart';
 part 'comic.dart';
 part 'swipe_action.dart';

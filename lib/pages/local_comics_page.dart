@@ -22,7 +22,8 @@ class LocalComicsPage extends StatefulWidget {
 }
 
 class _LocalComicsPageState extends State<LocalComicsPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin,
+        SelectionMixin<LocalComicsPage, LocalComic> {
   late List<LocalComic> comics;
 
   late LocalSortType sortType;
@@ -31,9 +32,8 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
   bool searchMode = false;
 
-  bool multiSelectMode = false;
-
-  Map<LocalComic, bool> selectedComics = {};
+  @override
+  List<LocalComic> get selectableItems => comics;
 
   LocalComicStatus? currentTab; // null means "全部" (all)
 
@@ -164,12 +164,9 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         icon: Icons.delete_outline,
         text: "Delete".tl,
         onClick: () {
-          deleteComics(selectedComics.keys.toList()).then((value) {
+          deleteComics(selectedItems.keys.toList()).then((value) {
             if (value) {
-              setState(() {
-                multiSelectMode = false;
-                selectedComics.clear();
-              });
+              exitSelectMode();
             }
           });
         },
@@ -178,58 +175,37 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         icon: Icons.favorite_border,
         text: "Add to favorites".tl,
         onClick: () {
-          addFavorite(selectedComics.keys.toList());
+          addFavorite(selectedItems.keys.toList());
         },
       ),
-      if (selectedComics.length == 1)
+      if (selectedItems.length == 1)
         MenuEntry(
           icon: Icons.folder_open,
           text: "Open Folder".tl,
           onClick: () {
-            openComicFolder(selectedComics.keys.first);
+            openComicFolder(selectedItems.keys.first);
           },
         ),
-      if (selectedComics.length == 1)
+      if (selectedItems.length == 1)
         MenuEntry(
           icon: Icons.chrome_reader_mode_outlined,
           text: "View Detail".tl,
           onClick: () {
             context.to(() => ComicPage(
-                  id: selectedComics.keys.first.id,
-                  sourceKey: selectedComics.keys.first.sourceKey,
+                  id: selectedItems.keys.first.id,
+                  sourceKey: selectedItems.keys.first.sourceKey,
                 ));
           },
         ),
-      if (selectedComics.isNotEmpty)
-        ...exportActions(selectedComics.keys.toList()),
-      if (selectedComics.isNotEmpty)
+      if (selectedItems.isNotEmpty)
+        ...exportActions(selectedItems.keys.toList()),
+      if (selectedItems.isNotEmpty)
         MenuEntry(
           icon: Icons.archive_outlined,
           text: "Export .venera_comics".tl,
-          onClick: () => _startVeneraExport(selectedComics.keys.toList()),
+          onClick: () => _startVeneraExport(selectedItems.keys.toList()),
         ),
     ]);
-  }
-
-  void selectAll() {
-    setState(() {
-      selectedComics = comics.asMap().map((k, v) => MapEntry(v, true));
-    });
-  }
-
-  void deSelect() {
-    setState(() {
-      selectedComics.clear();
-    });
-  }
-
-  void invertSelection() {
-    setState(() {
-      comics.asMap().forEach((k, v) {
-        selectedComics[v] = !selectedComics.putIfAbsent(v, () => false);
-      });
-      selectedComics.removeWhere((k, v) => !v);
-    });
   }
 
   @override
@@ -314,10 +290,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                 child: IconButton(
                   onPressed: () {
                     if (multiSelectMode) {
-                      setState(() {
-                        multiSelectMode = false;
-                        selectedComics.clear();
-                      });
+                      exitSelectMode();
                     } else {
                       context.pop();
                     }
@@ -328,7 +301,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                 ),
               ),
               title: multiSelectMode
-                  ? Text(selectedComics.length.toString())
+                  ? Text(selectedItems.length.toString())
                   : Text("Local".tl),
               actions: multiSelectMode ? selectActions : normalActions,
             )
@@ -342,10 +315,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                       : const Icon(Icons.close),
                   onPressed: () {
                     if (multiSelectMode) {
-                      setState(() {
-                        multiSelectMode = false;
-                        selectedComics.clear();
-                      });
+                      exitSelectMode();
                     } else {
                       setState(() {
                         searchMode = false;
@@ -357,7 +327,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                 ),
               ),
               title: multiSelectMode
-                  ? Text(selectedComics.length.toString())
+                  ? Text(selectedItems.length.toString())
                   : TextField(
                       autofocus: true,
                       decoration: InputDecoration(
@@ -388,25 +358,16 @@ class _LocalComicsPageState extends State<LocalComicsPage>
           SliverGridComics(
             comics: comics,
             enableHero: false,
-            selections: selectedComics,
+            selections: selectedItems,
             onLongPressed: (c, heroID) {
               setState(() {
                 multiSelectMode = true;
-                selectedComics[c as LocalComic] = true;
+                selectedItems[c as LocalComic] = true;
               });
             },
             onTap: (c, heroID) {
               if (multiSelectMode) {
-                setState(() {
-                  if (selectedComics.containsKey(c as LocalComic)) {
-                    selectedComics.remove(c);
-                  } else {
-                    selectedComics[c] = true;
-                  }
-                  if (selectedComics.isEmpty) {
-                    multiSelectMode = false;
-                  }
-                });
+                toggleSelect(c as LocalComic);
               } else {
                 // `c` is already a LocalComic from the list; re-querying via
                 // find() returns null for a still-downloading comic that isn't
@@ -440,10 +401,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                   onClick: () {
                     deleteComics([c as LocalComic]).then((value) {
                       if (value && multiSelectMode) {
-                        setState(() {
-                          multiSelectMode = false;
-                          selectedComics.clear();
-                        });
+                        exitSelectMode();
                       }
                     });
                   },
@@ -461,10 +419,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (multiSelectMode) {
-          setState(() {
-            multiSelectMode = false;
-            selectedComics.clear();
-          });
+          exitSelectMode();
         } else if (searchMode) {
           setState(() {
             searchMode = false;

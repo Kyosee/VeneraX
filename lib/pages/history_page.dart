@@ -24,7 +24,8 @@ class HistoryPage extends StatefulWidget {
   State<HistoryPage> createState() => _HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage> {
+class _HistoryPageState extends State<HistoryPage>
+    with SelectionMixin<HistoryPage, History> {
   @override
   void initState() {
     HistoryManager().addListener(onUpdate);
@@ -76,8 +77,8 @@ class _HistoryPageState extends State<HistoryPage> {
       comics = HistoryManager().getAll();
       isLoading = false;
       if (multiSelectMode) {
-        selectedComics.removeWhere((comic, _) => !comics.contains(comic));
-        if (selectedComics.isEmpty) {
+        selectedItems.removeWhere((comic, _) => !comics.contains(comic));
+        if (selectedItems.isEmpty) {
           multiSelectMode = false;
         }
       }
@@ -92,8 +93,8 @@ class _HistoryPageState extends State<HistoryPage> {
   var readFilterSelect = "All";
   var sourceFilterSelect = <String>{};
 
-  bool multiSelectMode = false;
-  Map<History, bool> selectedComics = {};
+  @override
+  List<History> get selectableItems => filteredComics;
 
   List<History> get filteredComics {
     return comics.where((comic) {
@@ -162,27 +163,6 @@ class _HistoryPageState extends State<HistoryPage> {
     return ComicSource.find(sourceKey)?.name ?? sourceKey;
   }
 
-  void selectAll() {
-    setState(() {
-      selectedComics = filteredComics.asMap().map((k, v) => MapEntry(v, true));
-    });
-  }
-
-  void deSelect() {
-    setState(() {
-      selectedComics.clear();
-    });
-  }
-
-  void invertSelection() {
-    setState(() {
-      filteredComics.asMap().forEach((k, v) {
-        selectedComics[v] = !selectedComics.putIfAbsent(v, () => false);
-      });
-      selectedComics.removeWhere((k, v) => !v);
-    });
-  }
-
   void showFilterDialog() {
     var readFilter = readFilterSelect;
     var sourceFilter = {...sourceFilterSelect};
@@ -246,7 +226,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     setState(() {
                       readFilterSelect = readFilter;
                       sourceFilterSelect = sourceFilter;
-                      selectedComics.removeWhere(
+                      selectedItems.removeWhere(
                         (comic, _) => !filteredComics.contains(comic),
                       );
                     });
@@ -286,10 +266,7 @@ class _HistoryPageState extends State<HistoryPage> {
       btnColor: context.colorScheme.error,
       onConfirm: () {
         var removedHistories = List<History>.from(histories);
-        setState(() {
-          multiSelectMode = false;
-          selectedComics.clear();
-        });
+        exitSelectMode();
         for (final comic in removedHistories) {
           _removeHistory(comic);
         }
@@ -369,10 +346,10 @@ class _HistoryPageState extends State<HistoryPage> {
       IconButton(
         icon: const Icon(Icons.delete),
         tooltip: "Delete".tl,
-        onPressed: selectedComics.isEmpty
+        onPressed: selectedItems.isEmpty
             ? null
             : () => _removeHistoriesWithConfirm(
-                List<History>.from(selectedComics.keys),
+                List<History>.from(selectedItems.keys),
               ),
       ),
       MenuButton(
@@ -381,21 +358,18 @@ class _HistoryPageState extends State<HistoryPage> {
             icon: Icons.favorite_border,
             text: "Add to favorites".tl,
             onClick: () {
-              if (selectedComics.isEmpty) return;
-              addFavorite(List<History>.from(selectedComics.keys));
+              if (selectedItems.isEmpty) return;
+              addFavorite(List<History>.from(selectedItems.keys));
             },
           ),
           MenuEntry(
             icon: Icons.watch_later_outlined,
             text: "Read later".tl,
             onClick: () async {
-              if (selectedComics.isEmpty) return;
-              final picked = List<History>.from(selectedComics.keys);
+              if (selectedItems.isEmpty) return;
+              final picked = List<History>.from(selectedItems.keys);
               await ReadLaterManager().addComics(picked);
-              setState(() {
-                multiSelectMode = false;
-                selectedComics.clear();
-              });
+              exitSelectMode();
               if (mounted) {
                 App.rootContext.showMessage(
                   message: "Added to read later".tl,
@@ -472,10 +446,7 @@ class _HistoryPageState extends State<HistoryPage> {
       canPop: !multiSelectMode,
       onPopInvokedWithResult: (didPop, result) {
         if (multiSelectMode) {
-          setState(() {
-            multiSelectMode = false;
-            selectedComics.clear();
-          });
+          exitSelectMode();
         }
       },
       child: Scaffold(
@@ -489,10 +460,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 child: IconButton(
                   onPressed: () {
                     if (multiSelectMode) {
-                      setState(() {
-                        multiSelectMode = false;
-                        selectedComics.clear();
-                      });
+                      exitSelectMode();
                     } else {
                       context.pop();
                     }
@@ -503,7 +471,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
               ),
               title: multiSelectMode
-                  ? Text(selectedComics.length.toString())
+                  ? Text(selectedItems.length.toString())
                   : Text('History'.tl),
               actions: multiSelectMode ? selectActions : normalActions,
             ),
@@ -537,7 +505,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     onChanged: (value) {
                       setState(() {
                         keyword = value;
-                        selectedComics.removeWhere(
+                        selectedItems.removeWhere(
                           (comic, _) => !filteredComics.contains(comic),
                         );
                       });
@@ -570,7 +538,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
                 SliverGridComics(
                   comics: entry.value,
-                  selections: selectedComics,
+                  selections: selectedItems,
                   onLongPressed: null,
                   swipeActionBuilder: multiSelectMode
                       ? null
@@ -592,16 +560,7 @@ class _HistoryPageState extends State<HistoryPage> {
                           ),
                   onTap: multiSelectMode
                       ? (c, heroID) {
-                          setState(() {
-                            if (selectedComics.containsKey(c as History)) {
-                              selectedComics.remove(c);
-                            } else {
-                              selectedComics[c] = true;
-                            }
-                            if (selectedComics.isEmpty) {
-                              multiSelectMode = false;
-                            }
-                          });
+                          toggleSelect(c as History);
                         }
                       : null,
                   badgeBuilder: (c) {

@@ -13,7 +13,8 @@ class ReadLaterPage extends StatefulWidget {
   State<ReadLaterPage> createState() => _ReadLaterPageState();
 }
 
-class _ReadLaterPageState extends State<ReadLaterPage> {
+class _ReadLaterPageState extends State<ReadLaterPage>
+    with SelectionMixin<ReadLaterPage, ReadLaterItem> {
   @override
   void initState() {
     ReadLaterManager().addListener(onUpdate);
@@ -32,8 +33,8 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
     setState(() {
       comics = ReadLaterManager().getAll();
       if (multiSelectMode) {
-        selectedComics.removeWhere((comic, _) => !comics.contains(comic));
-        if (selectedComics.isEmpty) {
+        selectedItems.removeWhere((comic, _) => !comics.contains(comic));
+        if (selectedItems.isEmpty) {
           multiSelectMode = false;
         }
       }
@@ -45,8 +46,8 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
   var searchTextController = TextEditingController();
   var keyword = "";
 
-  bool multiSelectMode = false;
-  Map<ReadLaterItem, bool> selectedComics = {};
+  @override
+  List<ReadLaterItem> get selectableItems => filteredComics;
 
   List<ReadLaterItem> get filteredComics {
     return comics.where((comic) {
@@ -70,27 +71,6 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
     return ComicSource.find(sourceKey)?.name ?? sourceKey;
   }
 
-  void selectAll() {
-    setState(() {
-      selectedComics = filteredComics.asMap().map((k, v) => MapEntry(v, true));
-    });
-  }
-
-  void deSelect() {
-    setState(() {
-      selectedComics.clear();
-    });
-  }
-
-  void invertSelection() {
-    setState(() {
-      filteredComics.asMap().forEach((k, v) {
-        selectedComics[v] = !selectedComics.putIfAbsent(v, () => false);
-      });
-      selectedComics.removeWhere((k, v) => !v);
-    });
-  }
-
   void _removeWithConfirm(List<ReadLaterItem> items) {
     if (items.isEmpty) {
       return;
@@ -104,7 +84,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
         var removed = List<ReadLaterItem>.from(items);
         setState(() {
           multiSelectMode = false;
-          selectedComics.clear();
+          selectedItems.clear();
         });
         ReadLaterManager().removeMultiple(removed);
         if (mounted) {
@@ -167,10 +147,10 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
       IconButton(
         icon: const Icon(Icons.delete),
         tooltip: "Delete".tl,
-        onPressed: selectedComics.isEmpty
+        onPressed: selectedItems.isEmpty
             ? null
             : () => _removeWithConfirm(
-                List<ReadLaterItem>.from(selectedComics.keys),
+                List<ReadLaterItem>.from(selectedItems.keys),
               ),
       ),
       MenuButton(
@@ -179,8 +159,8 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
             icon: Icons.favorite_border,
             text: "Add to favorites".tl,
             onClick: () {
-              if (selectedComics.isEmpty) return;
-              addFavorite(List<ReadLaterItem>.from(selectedComics.keys));
+              if (selectedItems.isEmpty) return;
+              addFavorite(List<ReadLaterItem>.from(selectedItems.keys));
             },
           ),
         ],
@@ -233,10 +213,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
       canPop: !multiSelectMode,
       onPopInvokedWithResult: (didPop, result) {
         if (multiSelectMode) {
-          setState(() {
-            multiSelectMode = false;
-            selectedComics.clear();
-          });
+          exitSelectMode();
         }
       },
       child: Scaffold(
@@ -250,10 +227,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
                 child: IconButton(
                   onPressed: () {
                     if (multiSelectMode) {
-                      setState(() {
-                        multiSelectMode = false;
-                        selectedComics.clear();
-                      });
+                      exitSelectMode();
                     } else {
                       context.pop();
                     }
@@ -264,7 +238,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
                 ),
               ),
               title: multiSelectMode
-                  ? Text(selectedComics.length.toString())
+                  ? Text(selectedItems.length.toString())
                   : Text('Read Later'.tl),
               actions: multiSelectMode ? selectActions : normalActions,
             ),
@@ -298,7 +272,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
                     onChanged: (value) {
                       setState(() {
                         keyword = value;
-                        selectedComics.removeWhere(
+                        selectedItems.removeWhere(
                           (comic, _) => !filteredComics.contains(comic),
                         );
                       });
@@ -319,7 +293,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
             else
               SliverGridComics(
                 comics: filteredComics,
-                selections: selectedComics,
+                selections: selectedItems,
                 onLongPressed: null,
                 swipeActionBuilder: multiSelectMode
                     ? null
@@ -341,16 +315,7 @@ class _ReadLaterPageState extends State<ReadLaterPage> {
                         ),
                 onTap: multiSelectMode
                     ? (c, heroID) {
-                        setState(() {
-                          if (selectedComics.containsKey(c as ReadLaterItem)) {
-                            selectedComics.remove(c);
-                          } else {
-                            selectedComics[c] = true;
-                          }
-                          if (selectedComics.isEmpty) {
-                            multiSelectMode = false;
-                          }
-                        });
+                        toggleSelect(c as ReadLaterItem);
                       }
                     : null,
                 badgeBuilder: (c) {
