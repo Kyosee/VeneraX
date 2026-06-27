@@ -25,6 +25,10 @@ class FileDownloader {
   /// with an empty file when the size is unknown).
   bool _useRanges = true;
 
+  /// A bare [Dio], intentionally NOT [AppDio]: this is a low-level streaming /
+  /// byte-range downloader that installs its own proxy-aware client adapter
+  /// (see [_download]) and must bypass the shared cache / Cloudflare / cookie /
+  /// log interceptors, which would buffer or corrupt large ranged downloads.
   final _dio = Dio();
 
   RandomAccessFile? _file;
