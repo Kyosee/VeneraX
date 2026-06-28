@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.1.3",
+          "buildVersion": "218",
+          "date": "2026-06-28",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Settings page now supports keyword search\n- Swipe left on local favorites to unfavorite\n- Draggable scrollbar on long list pages for quick navigation\n\n### Fixed\n- Fix search results not refreshing after removing a favorite in search mode\n- Fix backup rotation sometimes deleting the newest backup instead of the oldest\n- Fix background sync being frozen by the system and missing its notification card\n- Fix long-press on list card tags accidentally copying text (long-press copy now only works on the detail page)\n- Fill in missing translations in settings, update dialog, and other places for non-Chinese languages\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.2...v2.1.3",
+          "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.3/venera-ios-2.1.3%2B218.ipa",
+          "size": 23059914,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.1.2",
           "buildVersion": "217",
           "date": "2026-06-26",
@@ -60,11 +69,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.1.2",
-      "versionDate": "2026-06-26",
-      "versionDescription": "## What's Changed\n\n### Added\n- Download the current chapter or the whole comic with one tap from inside the reader\n- Download page now supports pause / resume / cancel all, per-task pause, resume and retry, drag-to-reorder, and estimated time remaining\n- New \"Wi-Fi only download\" switch that auto-pauses on metered networks and resumes on Wi-Fi\n- New optional \"parallel downloads\" setting\n- A notification when all downloads finish\n- A clear warning when there isn't enough disk space to download\n- Unfinished downloads now resume automatically after restarting the app\n- Migrate WebDAV sync settings via QR code\n- Long-press to copy info on the comic detail page (author, tags, and more)\n- The WebDAV sync-failure dialog now has a \"Retry\" button to re-sync directly\n\n### Changed\n- Bottom navigation selected item now uses a rounded-rectangle highlight\n- The folder rename dialog is now pre-filled with the current name for quick edits\n- Keywords from aggregated search are now also saved to search history\n- The sync-config QR code now pops up instantly, with a refreshed interface\n\n### Fixed\n- Fixed an occasional crash on iOS at startup\n- Fixed WebDAV sync sometimes hanging / becoming unresponsive on iOS\n- Fixed the WebDAV auto-sync switch being reset under an empty config, and an empty config still triggering an upload\n- Fixed downloads getting stuck on the whole queue when one failed or was cancelled\n- Added integrity checks for downloaded images, rejecting corrupted / truncated images and retrying\n- Fixed update marks occasionally being lost when cancelling a follow-update check\n- Cancelled follow-update tasks now disappear from the list immediately\n- Fixed the left-swipe-to-favorite and right-swipe-to-go-back gestures conflicting and triggering an accidental back\n- Fixed the sidebar logo not aligning with the home search box\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.1...v2.1.2",
-      "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.2/venera-ios-2.1.2%2B217.ipa",
-      "size": 23054160
+      "version": "2.1.3",
+      "versionDate": "2026-06-28",
+      "versionDescription": "## What's Changed\n\n### Added\n- Settings page now supports keyword search\n- Swipe left on local favorites to unfavorite\n- Draggable scrollbar on long list pages for quick navigation\n\n### Fixed\n- Fix search results not refreshing after removing a favorite in search mode\n- Fix backup rotation sometimes deleting the newest backup instead of the oldest\n- Fix background sync being frozen by the system and missing its notification card\n- Fix long-press on list card tags accidentally copying text (long-press copy now only works on the detail page)\n- Fill in missing translations in settings, update dialog, and other places for non-Chinese languages\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.2...v2.1.3",
+      "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.3/venera-ios-2.1.3%2B218.ipa",
+      "size": 23059914
     }
   ],
   "news": []
