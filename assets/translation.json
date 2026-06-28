@@ -2,6 +2,8 @@
   "zh_CN": {
     "Cancel favorite": "取消收藏",
     "Removed from favorites": "已取消收藏",
+    "Search settings": "搜索设置",
+    "No matching settings": "没有匹配的设置",
     "Sync Config QR": "同步配置二维码",
     "Show Config QR": "显示配置二维码",
     "Scan to Import": "扫码导入",
@@ -892,6 +894,8 @@
   "zh_TW": {
     "Cancel favorite": "取消收藏",
     "Removed from favorites": "已取消收藏",
+    "Search settings": "搜尋設定",
+    "No matching settings": "沒有符合的設定",
     "Sync Config QR": "同步設定 QR 碼",
     "Show Config QR": "顯示設定 QR 碼",
     "Scan to Import": "掃碼匯入",

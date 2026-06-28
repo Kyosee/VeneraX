@@ -40,6 +40,33 @@ part 'app.dart';
 part 'about.dart';
 part 'network.dart';
 part 'debug.dart';
+part 'settings_search.dart';
+
+/// Settings category display names, indexed by page id. Top-level so the
+/// settings search index ([_settingsSearchIndex]) can map a result back to its
+/// category page. Keep in sync with [_settingsCategoryIcons] and the page
+/// switch in [_SettingsPageState._buildSettingsContent].
+const _settingsCategories = <String>[
+  "Explore",
+  "Reading",
+  "Appearance",
+  "Local Favorites",
+  "APP",
+  "Network",
+  "About",
+  "Debug",
+];
+
+const _settingsCategoryIcons = <IconData>[
+  Icons.explore,
+  Icons.book,
+  Icons.color_lens,
+  Icons.collections_bookmark_rounded,
+  Icons.apps,
+  Icons.public,
+  Icons.info,
+  Icons.bug_report,
+];
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({this.initialPage = -1, super.key});
@@ -57,27 +84,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool get enableTwoViews => context.width > 720;
 
-  final categories = <String>[
-    "Explore",
-    "Reading",
-    "Appearance",
-    "Local Favorites",
-    "APP",
-    "Network",
-    "About",
-    "Debug",
-  ];
+  final _searchController = TextEditingController();
 
-  final icons = <IconData>[
-    Icons.explore,
-    Icons.book,
-    Icons.color_lens,
-    Icons.collections_bookmark_rounded,
-    Icons.apps,
-    Icons.public,
-    Icons.info,
-    Icons.bug_report,
-  ];
+  String _searchQuery = "";
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -169,10 +184,54 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 4),
-          Expanded(child: buildCategories()),
+          buildSearchField(),
+          Expanded(
+            child: _searchQuery.trim().isEmpty
+                ? buildCategories()
+                : _buildSettingsSearchResults(
+                    context,
+                    _searchQuery,
+                    _openSettingsCategory,
+                  ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: "Search settings".tl,
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = "");
+                  },
+                ),
+          border: const OutlineInputBorder(),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        onChanged: (v) => setState(() => _searchQuery = v),
+      ),
+    );
+  }
+
+  void _openSettingsCategory(int id) {
+    if (enableTwoViews) {
+      setState(() => currentPage = id);
+    } else {
+      context.to(() => _SettingsDetailPage(pageIndex: id));
+    }
   }
 
   Widget buildCategories() {
@@ -196,7 +255,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         child: Row(
           children: [
-            Icon(icons[id]),
+            Icon(_settingsCategoryIcons[id]),
             const SizedBox(width: 16),
             Text(name, style: ts.s16),
             const Spacer(),
@@ -210,13 +269,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ? const EdgeInsets.fromLTRB(8, 0, 8, 0)
             : EdgeInsets.zero,
         child: InkWell(
-          onTap: () {
-            if (enableTwoViews) {
-              setState(() => currentPage = id);
-            } else {
-              context.to(() => _SettingsDetailPage(pageIndex: id));
-            }
-          },
+          onTap: () => _openSettingsCategory(id),
           child: content,
         ).paddingVertical(4),
       );
@@ -224,8 +277,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemCount: categories.length,
-      itemBuilder: (context, index) => buildItem(categories[index].tl, index),
+      itemCount: _settingsCategories.length,
+      itemBuilder: (context, index) =>
+          buildItem(_settingsCategories[index].tl, index),
     );
   }
 
