@@ -1,5 +1,7 @@
 {
   "zh_CN": {
+    "Cancel favorite": "取消收藏",
+    "Removed from favorites": "已取消收藏",
     "Sync Config QR": "同步配置二维码",
     "Show Config QR": "显示配置二维码",
     "Scan to Import": "扫码导入",
@@ -888,6 +890,8 @@
     "Cannot resolve the source download url. Please check the repo URL.": "无法解析源的下载地址，请检查仓库地址。"
   },
   "zh_TW": {
+    "Cancel favorite": "取消收藏",
+    "Removed from favorites": "已取消收藏",
     "Sync Config QR": "同步設定 QR 碼",
     "Show Config QR": "顯示設定 QR 碼",
     "Scan to Import": "掃碼匯入",

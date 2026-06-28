@@ -890,6 +890,24 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
           SliverGridComics(
             comics: currentComics,
             selections: selectedItems,
+            swipeActionBuilder: multiSelectMode
+                ? null
+                : (c) => (
+                    start: null,
+                    end: SwipePane(
+                      dismissOnFullSwipe: true,
+                      onFullSwipe: () =>
+                          _removeFavoriteSwipe(c as FavoriteItem),
+                      actions: [
+                        SwipeAction(
+                          icon: Icons.heart_broken_outlined,
+                          label: "Cancel favorite".tl,
+                          onPressed: () =>
+                              _removeFavoriteSwipe(c as FavoriteItem),
+                        ),
+                      ],
+                    ),
+                  ),
             menuBuilder: (c) {
               return [
                 if (!isAllFolder)
@@ -1437,6 +1455,38 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
         .toList();
     LocalFavoritesManager().batchDeleteComics(widget.folder, toBeDeleted);
     _cancel();
+  }
+
+  /// Swipe-cancel a favorite from the list without opening the comic. In a
+  /// specific folder it removes the comic from that folder; in the aggregated
+  /// "All" view "cancel favorite" means a full unfavorite, so it removes the
+  /// comic from every folder it belongs to. Either way an undo toast restores
+  /// the exact membership (mirrors the read-later swipe-delete pattern).
+  void _removeFavoriteSwipe(FavoriteItem c) {
+    void showUndo(VoidCallback undo) {
+      if (!mounted) return;
+      showToast(
+        context: context,
+        message: "Removed from favorites".tl,
+        trailing: TextButton(
+          onPressed: undo,
+          child: Text("Undo".tl),
+        ),
+      );
+    }
+
+    if (isAllFolder) {
+      var folders = manager.find(c.id, c.type);
+      manager.batchDeleteComicsInAllFolders([ComicID(c.type, c.id)]);
+      showUndo(() {
+        for (var f in folders) {
+          manager.addComic(f, c);
+        }
+      });
+    } else {
+      manager.deleteComicWithId(widget.folder, c.id, c.type);
+      showUndo(() => manager.addComic(widget.folder, c));
+    }
   }
 }
 
