@@ -87,6 +87,50 @@ extension FileExtension on File {
   }
 }
 
+/// Copies [src] into [dst] by streaming fixed-size chunks through a
+/// [RandomAccessFile], so a multi-gigabyte file is never fully loaded into
+/// memory the way [FileExtension.copyMem] / readAsBytes would (issue #93:
+/// merging a large library into a single .venera_comics archive ran out of
+/// memory while copying the finished archive into the destination folder).
+///
+/// Works for both plain files and SAF-backed ([AndroidFile]) destinations:
+/// SAF has no usable openRead/openWrite but does implement [RandomAccessFile].
+/// [dst] must not already exist — SAF's `create()` returns a detached handle
+/// for an existing path (its descriptor stays unset), so any stale file is
+/// removed first to keep the write target valid.
+Future<void> copyFileStreaming(File src, File dst) async {
+  const chunkSize = 8 * 1024 * 1024; // 8 MiB
+  if (await dst.exists()) {
+    await dst.delete();
+  }
+  await dst.create(recursive: true);
+  final reader = await src.open();
+  final writer = await dst.open(mode: FileMode.write);
+  var completed = false;
+  try {
+    while (true) {
+      final chunk = await reader.read(chunkSize);
+      if (chunk.isEmpty) break;
+      await writer.writeFrom(chunk);
+    }
+    await writer.flush();
+    completed = true;
+  } finally {
+    try {
+      await reader.close();
+    } catch (_) {}
+    try {
+      await writer.close();
+    } catch (_) {}
+    if (!completed) {
+      // Never leave a half-written file behind: callers (e.g. the merged
+      // export resume check) treat an existing destination as a finished
+      // archive, so a partial copy would masquerade as a complete one.
+      await dst.deleteIgnoreError();
+    }
+  }
+}
+
 extension DirectoryExtension on Directory {
   /// Calculate the size of the directory.
   Future<int> get size async {

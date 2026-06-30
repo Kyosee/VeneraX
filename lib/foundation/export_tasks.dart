@@ -326,7 +326,9 @@ class ExportTaskManager with ChangeNotifier {
           try {
             final produced =
                 await _buildToCache(comic, task.format, cacheDir.path);
-            await target.writeAsBytes(await produced.readAsBytes());
+            // Stream the built file into the destination instead of loading it
+            // whole into memory, so a large comic can't OOM the export (#93).
+            await copyFileStreaming(produced, target);
             produced.deleteIgnoreError();
           } catch (e, s) {
             Log.error('Export Comics', e.toString(), s);
@@ -422,7 +424,10 @@ class ExportTaskManager with ChangeNotifier {
         _refreshKeepAlive(task);
       },
     );
-    await target.writeAsBytes(await produced.readAsBytes());
+    // The merged archive can reach tens of gigabytes; stream it into the
+    // destination chunk by chunk instead of reading it fully into memory,
+    // which previously crashed with Out of Memory on large libraries (#93).
+    await copyFileStreaming(produced, target);
     produced.deleteIgnoreError();
     if (_canceledIds.contains(task.id)) {
       // Cancellation requested during the (uninterruptible) build: drop the
