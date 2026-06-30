@@ -103,11 +103,13 @@ Future<void> copyFileStreaming(File src, File dst) async {
   if (await dst.exists()) {
     await dst.delete();
   }
-  await dst.create(recursive: true);
-  final reader = await src.open();
-  final writer = await dst.open(mode: FileMode.write);
+  RandomAccessFile? reader;
+  RandomAccessFile? writer;
   var completed = false;
   try {
+    await dst.create(recursive: true);
+    reader = await src.open();
+    writer = await dst.open(mode: FileMode.write);
     while (true) {
       final chunk = await reader.read(chunkSize);
       if (chunk.isEmpty) break;
@@ -117,15 +119,15 @@ Future<void> copyFileStreaming(File src, File dst) async {
     completed = true;
   } finally {
     try {
-      await reader.close();
+      await reader?.close();
     } catch (_) {}
     try {
-      await writer.close();
+      await writer?.close();
     } catch (_) {}
     if (!completed) {
-      // Never leave a half-written file behind: callers (e.g. the merged
-      // export resume check) treat an existing destination as a finished
-      // archive, so a partial copy would masquerade as a complete one.
+      // Never leave a half-written (or just-created empty) file behind: callers
+      // such as the merged-export resume check treat any existing destination as
+      // a finished archive, so a partial copy would masquerade as a complete one.
       await dst.deleteIgnoreError();
     }
   }
