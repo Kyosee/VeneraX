@@ -93,6 +93,46 @@ mixin _AppRouteTransitionMixin<T> on PageRoute<T> {
 
   bool get preventRebuild;
 
+  /// Whether the system back gesture may pop this route.
+  ///
+  /// #101: A route living in a nested [Navigator] keeps a *live* predictive-back
+  /// gesture observer (via [PredictiveBackPageTransitionsBuilder]) even while an
+  /// opaque route on an ancestor navigator covers it. On Android that lets a
+  /// single system back gesture pop both the covering route *and* this buried
+  /// route at once (e.g. the reader sits on the root navigator above the
+  /// comic-details page in the nested "main" navigator, so one back skipped the
+  /// details page). 3-button navigation didn't hit this because it routes
+  /// through the single-pop `rootNavigator.maybePop()` path instead.
+  ///
+  /// Opt a buried route out of the gesture so only the top route pops, matching
+  /// the non-predictive behaviour. The check walks up the chain of
+  /// (navigator → its hosting route → that route's navigator → …): if any
+  /// hosting route is no longer current, an ancestor route is covering us.
+  @override
+  bool get popGestureEnabled {
+    if (!super.popGestureEnabled) {
+      return false;
+    }
+    return !_isCoveredByAncestorRoute();
+  }
+
+  bool _isCoveredByAncestorRoute() {
+    NavigatorState? nav = navigator;
+    while (nav != null) {
+      final ModalRoute<dynamic>? host = ModalRoute.of(nav.context);
+      if (host == null) {
+        // Reached the root navigator (no enclosing route): nothing covers us.
+        return false;
+      }
+      if (!host.isCurrent) {
+        // An opaque route on an ancestor navigator is on top of this subtree.
+        return true;
+      }
+      nav = host.navigator;
+    }
+    return false;
+  }
+
   Widget? _child;
 
   @override
