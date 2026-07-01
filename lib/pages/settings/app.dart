@@ -171,6 +171,19 @@ class _AppSettingsState extends State<AppSettings> {
             },
             actionTitle: 'Set'.tl,
           ).toSliver(),
+        SelectSetting(
+          title: "Auto clean reading history".tl,
+          settingKey: "autoCleanHistoryDays",
+          help: "Automatically delete reading history older than the selected period when the app starts.".tl,
+          optionTranslation: {
+            "0": "Never".tl,
+            "7": "7 days".tl,
+            "30": "30 days".tl,
+            "90": "90 days".tl,
+            "180": "180 days".tl,
+            "365": "365 days".tl,
+          },
+        ).toSliver(),
         _CallbackSetting(
           title: "Export App Data".tl,
           callback: () async {
@@ -232,19 +245,6 @@ class _AppSettingsState extends State<AppSettings> {
             listener();
           },
           actionTitle: 'Import'.tl,
-        ).toSliver(),
-        SelectSetting(
-          title: "Auto clean reading history".tl,
-          settingKey: "autoCleanHistoryDays",
-          help: "Automatically delete reading history older than the selected period when the app starts.".tl,
-          optionTranslation: {
-            "0": "Never".tl,
-            "7": "7 days".tl,
-            "30": "30 days".tl,
-            "90": "90 days".tl,
-            "180": "180 days".tl,
-            "365": "365 days".tl,
-          },
         ).toSliver(),
         _CallbackSetting(
           title: "Data Sync".tl,
