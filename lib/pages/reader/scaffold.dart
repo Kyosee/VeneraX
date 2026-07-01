@@ -321,7 +321,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   /// downloads the chapter currently open; for a single-chapter comic it
   /// downloads the whole thing. Mirrors the dedup checks the detail page uses
   /// so tapping it twice is harmless (#16).
-  void downloadFromReader() {
+  void downloadFromReader() async {
     final reader = context.reader;
     final source = ComicSource.find(reader.type.sourceKey);
     if (source == null) return;
@@ -334,6 +334,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         showToast(message: "Already downloaded".tl, context: context);
         return;
       }
+      if (!await ensureDownloadStorageWritable()) return;
       LocalManager().addTask(
         ImagesDownloadTask(
           source: source,
@@ -341,6 +342,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           comicTitle: reader.widget.name,
         ),
       );
+      if (!mounted) return;
       showToast(message: "Download started".tl, context: context);
       return;
     }
@@ -359,6 +361,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       showToast(message: "The comic is downloading".tl, context: context);
       return;
     }
+    if (!await ensureDownloadStorageWritable()) return;
     LocalManager().addTask(
       ImagesDownloadTask(
         source: source,
@@ -367,6 +370,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         chapters: [eid],
       ),
     );
+    if (!mounted) return;
     showToast(message: "Download started".tl, context: context);
   }
 

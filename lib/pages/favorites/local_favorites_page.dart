@@ -460,13 +460,14 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
     LocalFavoritesManager().removeListener(updateComics);
   }
 
-  bool downloadComic(FavoriteItem c) {
+  Future<bool> downloadComic(FavoriteItem c) async {
     var source = c.type.comicSource;
     if (source != null) {
       bool isDownloaded = LocalManager().isDownloaded(c.id, (c).type);
       if (isDownloaded) {
         return false;
       }
+      if (!await ensureDownloadStorageWritable()) return false;
       LocalManager().addTask(
         ImagesDownloadTask(source: source, comicId: c.id, comicTitle: c.title),
       );
@@ -475,7 +476,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
     return false;
   }
 
-  void downloadSelected() {
+  void downloadSelected() async {
+    if (!await ensureDownloadStorageWritable()) return;
     // Build the tasks first, then enqueue them in one batch so the queue is
     // persisted a single time instead of once per comic (#17).
     var tasks = <DownloadTask>[];
@@ -495,7 +497,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
     }
     if (tasks.isNotEmpty) {
       LocalManager().addTasks(tasks);
-      context.showMessage(
+      App.rootContext.showMessage(
         message: "Added @c comics to download queue.".tlParams(
           {"c": tasks.length},
         ),
@@ -971,9 +973,11 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                 MenuEntry(
                   icon: Icons.download,
                   text: "Download".tl,
-                  onClick: () {
-                    if (downloadComic(c as FavoriteItem)) {
-                      context.showMessage(message: "Download started".tl);
+                  onClick: () async {
+                    if (await downloadComic(c as FavoriteItem)) {
+                      App.rootContext.showMessage(
+                        message: "Download started".tl,
+                      );
                     }
                   },
                 ),

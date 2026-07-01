@@ -17,8 +17,24 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/translations.dart';
 
 import 'app.dart';
+
+/// UI-facing guard for the four download entry points. Ensures the download
+/// directory is writable, prompting for storage permission on Android when it
+/// isn't (#89). Shows a message and returns false when downloads must not
+/// proceed, so callers can simply `if (!await ensureDownloadStorageWritable())
+/// return;`. Always true off Android.
+Future<bool> ensureDownloadStorageWritable() async {
+  if (await LocalManager().ensureDownloadWritable()) {
+    return true;
+  }
+  App.rootContext.showMessage(
+    message: "Storage permission is required to download comics".tl,
+  );
+  return false;
+}
 
 class LocalComic with HistoryMixin implements Comic {
   @override
@@ -970,6 +986,44 @@ class LocalManager with ChangeNotifier {
         Log.error("LocalManager", "Failed to restore downloading tasks: $e");
       }
     }
+  }
+
+  /// Ensures the download directory is actually writable before a download is
+  /// enqueued. On Android a custom folder in shared storage silently no-ops
+  /// writes without all-files-access permission, so a download would "finish"
+  /// while nothing lands on disk (#89). This probes the folder, requests the
+  /// permission when it's missing, and re-resolves the saved path so the user's
+  /// chosen folder is restored without an app restart.
+  ///
+  /// Returns true when downloads may proceed. Non-Android platforms always
+  /// return true.
+  Future<bool> ensureDownloadWritable() async {
+    if (!App.isAndroid) return true;
+    var savedPathFile = File(FilePath.join(App.dataPath, 'local_path'));
+    var saved = savedPathFile.existsSync()
+        ? savedPathFile.readAsStringSync().trim()
+        : '';
+    // A custom download folder in shared storage is the #89 scenario. Without
+    // all-files access, init()'s validation either silently keeps it (writes
+    // no-op rather than throw, so the folder stays selected but downloads land
+    // nowhere) or falls back to app-private storage (so `path` is writable but
+    // points at the wrong place). Either way, make the user's *chosen* folder
+    // writable first so downloads land where they expect — don't let a writable
+    // fallback path mask the problem.
+    if (saved.isNotEmpty && saved != path) {
+      if (await StoragePermission.ensureGranted(saved)) {
+        path = saved;
+        _checkNoMedia();
+        return true;
+      }
+      // The user's folder still isn't writable even after prompting. Refuse
+      // rather than silently downloading into the fallback location, which is
+      // exactly the "looks done but folder is empty" symptom being fixed.
+      return false;
+    }
+    // No custom folder (default is app-private external storage, writable
+    // without the permission), or it's already the active path: just verify.
+    return await StoragePermission.ensureGranted(path);
   }
 
   void addTask(DownloadTask task) {

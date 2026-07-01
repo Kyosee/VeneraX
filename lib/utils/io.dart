@@ -300,6 +300,71 @@ class DirectoryPicker {
   }
 }
 
+/// Android全文件访问权限（MANAGE_EXTERNAL_STORAGE / R 以下的读写权限）。
+///
+/// 下载目录若指向共享存储（如 SD 卡、外置存储的自定义目录），没有该权限时
+/// dart:io 写入会静默失败——文件看似下完却一个都没落盘（#89）。下载入口在
+/// 入队前调用 [ensureGranted] 主动申请，避免用户白下一场。
+class StoragePermission {
+  StoragePermission._();
+
+  static const _channel = MethodChannel("venera/storage");
+
+  /// 是否已具备写入下载目录所需的存储权限。
+  ///
+  /// 仅在 Android 上有意义；其它平台恒为 true。通过对目标目录做一次探针写入
+  /// 判断——这与 LocalManager 判定路径可用的方式一致，能覆盖“有权限但目录本身
+  /// 不可写”的情况。
+  static bool isGrantedFor(String dirPath) {
+    if (!App.isAndroid) return true;
+    try {
+      var dir = Directory(dirPath);
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      var probe = File(FilePath.join(dirPath, '.venera_perm_probe'));
+      const marker = [0x76, 0x65, 0x6e]; // "ven"
+      probe.writeAsBytesSync(marker);
+      // Read the bytes back before deleting: without all-files access a write
+      // to shared storage can *silently* no-op (the #89 symptom) instead of
+      // throwing. A probe that only writes+deletes would be fooled by that and
+      // report the folder writable while real downloads land nowhere. Verifying
+      // the bytes actually persisted catches both the throw and the no-op case.
+      var readBack = probe.existsSync() ? probe.readAsBytesSync() : const <int>[];
+      probe.deleteSync();
+      return readBack.length == marker.length;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 向系统申请全文件访问权限，返回用户是否已授予。
+  ///
+  /// Android R+ 会跳转到系统的“所有文件访问权限”设置页，等待用户返回后回传
+  /// 结果；R 以下走运行时读写权限弹窗。其它平台无操作，直接返回 true。
+  static Future<bool> request() async {
+    if (!App.isAndroid) return true;
+    try {
+      var granted = await _channel.invokeMethod<bool>("request");
+      return granted ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 确保下载目录可写：可写则直接放行；不可写则申请权限并复检。
+  ///
+  /// 返回 true 表示目录已可写（本就可写或用户刚授予）；false 表示仍不可写，
+  /// 调用方应中止下载并提示用户。
+  static Future<bool> ensureGranted(String dirPath) async {
+    if (!App.isAndroid) return true;
+    if (isGrantedFor(dirPath)) return true;
+    var granted = await request();
+    if (!granted) return false;
+    return isGrantedFor(dirPath);
+  }
+}
+
 class IOSDirectoryPicker {
   static const MethodChannel _channel = MethodChannel("venera/method_channel");
 

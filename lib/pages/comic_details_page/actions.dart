@@ -180,6 +180,7 @@ abstract mixin class _ComicPageActions {
       App.rootContext.showMessage(message: "The comic is downloaded".tl);
       return;
     }
+    if (!await ensureDownloadStorageWritable()) return;
 
     if (source.archiveDownloader != null) {
       bool useNormalDownload = false;
