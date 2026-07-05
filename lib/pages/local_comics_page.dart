@@ -491,10 +491,26 @@ class _LocalComicsPageState extends State<LocalComicsPage>
   }
 
   String _exportTaskMessage(ExportTask task) {
-    return "Exporting @done/@total".tlParams({
-      'done': task.done,
-      'total': task.total,
-    });
+    // Show the current phase so the dialog no longer reads "Exporting N/N"
+    // frozen while packaging and writing to the destination run (#92).
+    switch (task.phase) {
+      case ExportPhase.packaging:
+        return "Packaging".tl;
+      case ExportPhase.writing:
+        var pct = task.writeProgress;
+        if (pct != null) {
+          return "Writing to folder @p%".tlParams({
+            'p': (pct * 100).clamp(0, 100).toStringAsFixed(0),
+          });
+        }
+        return "Writing to folder".tl;
+      case ExportPhase.preparing:
+      case ExportPhase.processing:
+        return "Exporting @done/@total".tlParams({
+          'done': task.done,
+          'total': task.total,
+        });
+    }
   }
 
   /// Picks a destination folder, then starts a background export task that
@@ -560,7 +576,13 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       barrierDismissible: false,
       message: _exportTaskMessage(task),
       secondaryButtonText: "Background",
-      onSecondary: () {},
+      onSecondary: () {
+        // The task keeps running and lives on in the Tasks page; tell the user
+        // where to find it since the dialog can't be re-summoned (#92).
+        App.rootContext.showMessage(
+          message: "Export moved to background; see the Tasks page".tl,
+        );
+      },
       cancelButtonText: "Cancel",
       onCancel: () => manager.cancel(task.id),
     );
@@ -569,7 +591,18 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         manager.removeListener(listener);
         return;
       }
-      controller.setProgress(task.total == 0 ? null : task.progress);
+      // Prefer real byte progress while writing to the destination; fall back
+      // to the per-comic ratio for the earlier phases, and an indeterminate
+      // bar while packaging in the isolate.
+      double? barValue;
+      if (task.phase == ExportPhase.writing) {
+        barValue = task.writeProgress;
+      } else if (task.phase == ExportPhase.packaging) {
+        barValue = null;
+      } else {
+        barValue = task.total == 0 ? null : task.progress;
+      }
+      controller.setProgress(barValue);
       controller.setMessage(_exportTaskMessage(task));
       if (!task.isActive) {
         manager.removeListener(listener);

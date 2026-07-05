@@ -1155,7 +1155,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: LinearProgressIndicator(
-              value: task.isRunning && task.total == 0 ? null : task.progress,
+              value: _exportBarValue(task),
             ),
           ),
           const SizedBox(height: 8),
@@ -1175,6 +1175,34 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
       ExportTaskStatus.canceled => "Canceled".tl,
       ExportTaskStatus.failed => "Failed".tl,
     };
+  }
+
+  /// Phase text for a running export, so the card reflects packaging/writing
+  /// instead of a frozen "done/total" (#92). Empty for non-running tasks.
+  String exportPhaseText(ExportTask task) {
+    if (!task.isRunning) return '';
+    return switch (task.phase) {
+      ExportPhase.preparing => "Preparing".tl,
+      ExportPhase.processing => task.currentTitle ?? "Exporting".tl,
+      ExportPhase.packaging => "Packaging".tl,
+      ExportPhase.writing => task.writeProgress != null
+          ? "Writing to folder @p%".tlParams({
+              'p': (task.writeProgress! * 100).clamp(0, 100).toStringAsFixed(0),
+            })
+          : "Writing to folder".tl,
+    };
+  }
+
+  /// Bar value for an export card: byte progress while writing, indeterminate
+  /// while packaging, per-comic ratio otherwise (#92).
+  double? _exportBarValue(ExportTask task) {
+    if (task.isRunning && task.phase == ExportPhase.writing) {
+      return task.writeProgress;
+    }
+    if (task.isRunning && task.phase == ExportPhase.packaging) {
+      return null;
+    }
+    return task.isRunning && task.total == 0 ? null : task.progress;
   }
 
   Widget buildExportDetails(ExportTask task) {
@@ -1201,10 +1229,10 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           }),
           style: ts.s14,
         ),
-        if (task.isRunning && task.currentTitle != null) ...[
+        if (task.isRunning && exportPhaseText(task).isNotEmpty) ...[
           const SizedBox(height: 2),
           Text(
-            task.currentTitle!,
+            "Status: @status".tlParams({'status': exportPhaseText(task)}),
             style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

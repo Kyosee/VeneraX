@@ -12,6 +12,10 @@ import 'package:venera/utils/epub.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/pdf.dart';
 import 'package:venera/utils/venera_comics.dart';
+// ExportPhase is defined in venera_comics.dart (the leaf module) to avoid a
+// circular import; re-export it so the pages that already import this file
+// for ExportTask see the phase enum too.
+export 'package:venera/utils/venera_comics.dart' show ExportPhase;
 
 enum ExportTaskStatus { running, paused, completed, canceled, failed }
 
@@ -92,6 +96,8 @@ class ExportTask {
     this.currentTitle,
     this.error,
     this.finishedAt,
+    this.phase = ExportPhase.preparing,
+    this.writeProgress,
   }) : doneKeys = doneKeys ?? <String>{};
 
   final String id;
@@ -113,6 +119,15 @@ class ExportTask {
   /// Translation key (or raw text) describing the failure when [status] failed.
   String? error;
   DateTime? finishedAt;
+
+  /// Current coarse phase, so the UI can show "packaging"/"writing" instead of
+  /// a bar frozen at 100% during those (uninstrumented-by-doneKeys) steps (#92).
+  ExportPhase phase;
+
+  /// Byte fraction (0..1) of the current destination-write, or null when not
+  /// in the writing phase. Drives a real progress bar for the SAF/folder copy,
+  /// which for a large library is the longest step.
+  double? writeProgress;
 
   int get total => comics.length;
 
@@ -139,6 +154,7 @@ class ExportTask {
         // Persist active tasks as paused so they are not auto-run on restart.
         'status': isActive ? ExportTaskStatus.paused.name : status.name,
         'error': error,
+        'phase': phase.name,
         'createdAt': createdAt.toIso8601String(),
         'finishedAt': finishedAt?.toIso8601String(),
       };
@@ -159,6 +175,10 @@ class ExportTask {
           orElse: () => ExportTaskStatus.paused,
         ),
         error: json['error'],
+        phase: ExportPhase.values.firstWhere(
+          (e) => e.name == json['phase'],
+          orElse: () => ExportPhase.preparing,
+        ),
         createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
         finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
       );
@@ -324,11 +344,28 @@ class ExportTaskManager with ChangeNotifier {
           }
 
           try {
+            task.phase = ExportPhase.processing;
+            task.writeProgress = null;
+            notifyListeners();
             final produced =
                 await _buildToCache(comic, task.format, cacheDir.path);
             // Stream the built file into the destination instead of loading it
             // whole into memory, so a large comic can't OOM the export (#93).
-            await copyFileStreaming(produced, target);
+            // The destination write (SAF on Android) is the slow step, so show
+            // real byte progress for it instead of a frozen bar (#92).
+            task.phase = ExportPhase.writing;
+            task.writeProgress = 0;
+            notifyListeners();
+            await copyFileStreaming(
+              produced,
+              target,
+              onProgress: (copied, totalBytes) {
+                task.writeProgress =
+                    totalBytes == 0 ? null : copied / totalBytes;
+                notifyListeners();
+              },
+            );
+            task.writeProgress = null;
             produced.deleteIgnoreError();
           } catch (e, s) {
             Log.error('Export Comics', e.toString(), s);
@@ -349,6 +386,9 @@ class ExportTaskManager with ChangeNotifier {
       Log.error('Export Comics', e.toString(), s);
     } finally {
       cacheDir.deleteIgnoreError(recursive: true);
+      // Clear the transient write fraction regardless of outcome so a
+      // finished/paused card never lingers on a stale writing percentage.
+      task.writeProgress = null;
       if (task.status != ExportTaskStatus.paused) {
         task.currentTitle = null;
         task.finishedAt = DateTime.now();
@@ -423,11 +463,30 @@ class ExportTaskManager with ChangeNotifier {
         notifyListeners();
         _refreshKeepAlive(task);
       },
+      onPhase: (phase, detail) {
+        task.phase = phase;
+        if (detail != null) task.currentTitle = detail;
+        notifyListeners();
+        _refreshKeepAlive(task);
+      },
     );
     // The merged archive can reach tens of gigabytes; stream it into the
     // destination chunk by chunk instead of reading it fully into memory,
     // which previously crashed with Out of Memory on large libraries (#93).
-    await copyFileStreaming(produced, target);
+    // Byte progress for this (slow) destination write (#92).
+    task.phase = ExportPhase.writing;
+    task.writeProgress = 0;
+    notifyListeners();
+    _refreshKeepAlive(task);
+    await copyFileStreaming(
+      produced,
+      target,
+      onProgress: (copied, totalBytes) {
+        task.writeProgress = totalBytes == 0 ? null : copied / totalBytes;
+        notifyListeners();
+      },
+    );
+    task.writeProgress = null;
     produced.deleteIgnoreError();
     if (_canceledIds.contains(task.id)) {
       // Cancellation requested during the (uninterruptible) build: drop the

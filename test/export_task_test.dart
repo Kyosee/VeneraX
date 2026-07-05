@@ -100,4 +100,21 @@ void main() {
     // Default is off (per-comic files).
     expect(makeTask().merged, isFalse);
   });
+
+  test('phase defaults to preparing and round-trips (#92)', () {
+    // Progress-phase tracking (#92): a fresh task starts at preparing, and the
+    // phase must survive persistence so a restored/paused task shows sensibly.
+    expect(makeTask().phase, ExportPhase.preparing);
+    final task = makeTask()..phase = ExportPhase.writing;
+    final restored = ExportTask.fromJson(task.toJson());
+    expect(restored.phase, ExportPhase.writing);
+  });
+
+  test('unknown/missing phase in JSON falls back to preparing', () {
+    // Backups written before #92 have no "phase" key.
+    final json = makeTask().toJson()..remove('phase');
+    expect(ExportTask.fromJson(json).phase, ExportPhase.preparing);
+    final bad = makeTask().toJson()..['phase'] = 'garbage';
+    expect(ExportTask.fromJson(bad).phase, ExportPhase.preparing);
+  });
 }

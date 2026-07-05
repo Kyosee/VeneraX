@@ -98,11 +98,16 @@ extension FileExtension on File {
 /// [dst] must not already exist — SAF's `create()` returns a detached handle
 /// for an existing path (its descriptor stays unset), so any stale file is
 /// removed first to keep the write target valid.
-Future<void> copyFileStreaming(File src, File dst) async {
+Future<void> copyFileStreaming(
+  File src,
+  File dst, {
+  void Function(int copied, int total)? onProgress,
+}) async {
   const chunkSize = 8 * 1024 * 1024; // 8 MiB
   if (await dst.exists()) {
     await dst.delete();
   }
+  final total = onProgress == null ? 0 : await src.length();
   RandomAccessFile? reader;
   RandomAccessFile? writer;
   var completed = false;
@@ -110,10 +115,15 @@ Future<void> copyFileStreaming(File src, File dst) async {
     await dst.create(recursive: true);
     reader = await src.open();
     writer = await dst.open(mode: FileMode.write);
+    var copied = 0;
     while (true) {
       final chunk = await reader.read(chunkSize);
       if (chunk.isEmpty) break;
       await writer.writeFrom(chunk);
+      if (onProgress != null) {
+        copied += chunk.length;
+        onProgress(copied, total);
+      }
     }
     await writer.flush();
     completed = true;

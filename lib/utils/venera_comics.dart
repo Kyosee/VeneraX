@@ -8,6 +8,29 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
+/// Coarse phase of a local-comic export, surfaced so the UI can show what the
+/// export is actually doing instead of freezing the bar at 100% during the
+/// (often longest) packaging and destination-write steps (issue #92).
+///
+/// Defined here — the leaf module — so both [exportVeneraComics] and
+/// `export_tasks.dart` (which imports this file) can reference it without a
+/// circular import.
+enum ExportPhase {
+  /// Setting up temp dirs / manifest before any comic is processed.
+  preparing,
+
+  /// Copying one comic's metadata and images into the staging tree.
+  processing,
+
+  /// Zipping the staged tree into the archive (runs in an isolate; not
+  /// sub-divisible, so the bar shows an indeterminate state here).
+  packaging,
+
+  /// Streaming the finished archive into the user-chosen destination folder
+  /// (SAF on Android) — byte-level progress is available for this step.
+  writing,
+}
+
 class VeneraComicsManifest {
   final int version;
   final int exportedAt;
@@ -72,6 +95,7 @@ Future<File> exportVeneraComics(
   List<LocalComic> comics, {
   bool includeImages = true,
   void Function(int current, int total)? onProgress,
+  void Function(ExportPhase phase, String? detail)? onPhase,
 }) async {
   final exportDir = Directory(
     FilePath.join(App.cachePath, 'venera_comics_export'),
@@ -108,6 +132,7 @@ Future<File> exportVeneraComics(
   for (var i = 0; i < comics.length; i++) {
     final comic = comics[i];
     final entry = entries[i];
+    onPhase?.call(ExportPhase.processing, comic.title);
     final comicDir = Directory(
       FilePath.join(exportDir.path, 'comics',
           '${comic.id}_${comic.comicType.value}'),
@@ -162,7 +187,9 @@ Future<File> exportVeneraComics(
     onProgress?.call(i + 1, comics.length);
   }
 
-  // Create zip
+  // Create zip. This runs in an isolate and can't report sub-progress, so the
+  // UI shows an indeterminate bar for this phase rather than a frozen 100%.
+  onPhase?.call(ExportPhase.packaging, null);
   final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final zipPath = FilePath.join(App.cachePath, '$time.venera_comics');
   final exportDirPath = exportDir.path;
