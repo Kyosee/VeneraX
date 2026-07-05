@@ -476,30 +476,10 @@ class LocalFavoritesManager with ChangeNotifier {
     return tables;
   }
 
-  Set<String> _tableColumns(String table) {
-    return _db
-        .select("""
-          pragma table_info("$table");
-        """)
-        .map((element) => element["name"] as String)
-        .toSet();
-  }
+  Set<String> _tableColumns(String table) => _columnsOf(_db, table);
 
-  bool _isFavoriteFolderTable(String table) {
-    if (_nonFavoriteTables.contains(table) || table.startsWith('sqlite_')) {
-      return false;
-    }
-    final columns = _tableColumns(table);
-    const requiredColumns = {
-      'id',
-      'name',
-      'author',
-      'tags',
-      'cover_path',
-      'time',
-    };
-    return columns.containsAll(requiredColumns);
-  }
+  bool _isFavoriteFolderTable(String table) =>
+      _isFavoriteFolderTableOf(_db, table);
 
   void _createLocalFolderTable(String name) {
     _db.execute("""
@@ -1473,8 +1453,8 @@ class LocalFavoritesManager with ChangeNotifier {
       }
     }
     if (changed) {
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   List<FavoriteItem> searchInFolder(String folder, String keyword) {
@@ -1670,7 +1650,10 @@ class LocalFavoritesManager with ChangeNotifier {
     }
   }
 
-  static List<String> _favoriteFolderTablesOf(CommonDatabase db) {
+  static bool _isFavoriteFolderTableOf(CommonDatabase db, String table) {
+    if (_nonFavoriteTables.contains(table) || table.startsWith('sqlite_')) {
+      return false;
+    }
     const requiredColumns = {
       'id',
       'name',
@@ -1679,15 +1662,14 @@ class LocalFavoritesManager with ChangeNotifier {
       'cover_path',
       'time',
     };
+    return _columnsOf(db, table).containsAll(requiredColumns);
+  }
+
+  static List<String> _favoriteFolderTablesOf(CommonDatabase db) {
     return db
         .select("SELECT name FROM sqlite_master WHERE type='table';")
         .map((e) => e["name"] as String)
-        .where(
-          (table) =>
-              !_nonFavoriteTables.contains(table) &&
-              !table.startsWith('sqlite_') &&
-              _columnsOf(db, table).containsAll(requiredColumns),
-        )
+        .where((table) => _isFavoriteFolderTableOf(db, table))
         .toList();
   }
 
@@ -1891,7 +1873,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   int countUpdates(String folder) {
-    if (!isInitialized) return 0;
+    if (!isInitialized || !existsFolder(folder)) return 0;
     return _db.select("""
       select count(*) as c from "$folder"
       where has_new_update == 1;
@@ -1996,7 +1978,10 @@ class LocalFavoritesManager with ChangeNotifier {
 
   void markAsRead(String id, ComicType type) {
     var folder = appdata.settings['followUpdatesFolder'];
-    if (!existsFolder(folder)) {
+    // Reading any comic funnels through here (onRead); the setting is null
+    // whenever follow-updates isn't configured, and passing null into
+    // existsFolder(String) would throw on every reader open.
+    if (folder is! String || !existsFolder(folder)) {
       return;
     }
     _db.execute(
