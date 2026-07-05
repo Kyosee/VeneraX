@@ -554,8 +554,12 @@ class DataSync with ChangeNotifier {
         // the day's newest snapshot. Writing the new backup before touching
         // anything else means every failure mode leaves the server holding at
         // least everything it held before.
+        //
+        // Streamed from disk: readAsBytes materialized the whole backup zip
+        // in RAM before the PUT — the same OOM class #93 fixed for local
+        // export, fatal for large libraries on mobile.
         taskManager.updateTask(task.id, currentPhase: 'Uploading', progress: 0.7);
-        await client.write(filename, await data.readAsBytes());
+        await client.writeFromFile(data.path, filename);
         data.deleteIgnoreError();
 
         // The backup is on the server — only now adopt the version locally.
@@ -1007,10 +1011,9 @@ class DataSync with ChangeNotifier {
       File? file;
       try {
         file = await exportVeneraComics([comic], includeImages: true);
-        await client.write(
-          '/venera-comics/$fileName',
-          await file.readAsBytes(),
-        );
+        // Streamed: image packs are whole comic archives (often hundreds of
+        // MB) — buffering one in RAM via readAsBytes was an OOM in waiting.
+        await client.writeFromFile(file.path, '/venera-comics/$fileName');
         Log.info("Image Sync", "Uploaded: ${comic.title}");
       } catch (e, s) {
         failures++;
