@@ -56,25 +56,44 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     // 横向阅读的时候, 如果纵向滑就触发收藏, 纵向阅读的时候, 如果横向滑动就触发收藏
     if (appdata.settings['quickCollectImage'] == 'Swipe') {
       if (_imageFavoriteDragListener == null) {
-        double distance = 0;
+        double crossAxisDistance = 0;
+        double mainAxisDistance = 0;
+        bool startedAtEdge = false;
+        // 系统返回手势（iOS 滑动返回、安卓手势导航）从屏幕左右边缘起始；
+        // 该区域起始的拖动不参与滑动收藏判定，否则返回手势会被误认成收藏。
+        const edgeExclusion = 44.0;
         _imageFavoriteDragListener = _DragListener(
+          onStart: (point) {
+            crossAxisDistance = 0;
+            mainAxisDistance = 0;
+            var width = context.reader.size.width;
+            startedAtEdge =
+                point.dx < edgeExclusion || point.dx > width - edgeExclusion;
+          },
           onMove: (offset) {
             switch (readerMode) {
               case ReaderMode.continuousTopToBottom:
               case ReaderMode.galleryTopToBottom:
-                distance += offset.dx;
+                crossAxisDistance += offset.dx;
+                mainAxisDistance += offset.dy;
               case ReaderMode.continuousLeftToRight:
               case ReaderMode.galleryLeftToRight:
               case ReaderMode.galleryRightToLeft:
               case ReaderMode.continuousRightToLeft:
-                distance += offset.dy;
+                crossAxisDistance += offset.dy;
+                mainAxisDistance += offset.dx;
             }
           },
           onEnd: () {
-            if (distance.abs() > 150) {
+            // 除跨轴位移达标外，还要求整段手势明显以跨轴为主：长距离翻页/滚动
+            // 里的斜向漂移（主轴位移远大于跨轴）不应触发收藏。
+            if (!startedAtEdge &&
+                crossAxisDistance.abs() > 150 &&
+                crossAxisDistance.abs() > mainAxisDistance.abs() * 2) {
               addImageFavorite();
             }
-            distance = 0;
+            crossAxisDistance = 0;
+            mainAxisDistance = 0;
           },
         );
       }

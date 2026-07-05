@@ -430,5 +430,5 @@ class _DragListener {
   void Function(Offset offset)? onMove;
   void Function()? onEnd;
 
-  _DragListener({this.onMove, this.onEnd});
+  _DragListener({this.onStart, this.onMove, this.onEnd});
 }
