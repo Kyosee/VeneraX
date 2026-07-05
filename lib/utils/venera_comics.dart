@@ -97,14 +97,22 @@ Future<File> exportVeneraComics(
   void Function(int current, int total)? onProgress,
   void Function(ExportPhase phase, String? detail)? onPhase,
 }) async {
+  // Unique staging dir per call. This function has two independent callers —
+  // the export task and WebDAV image-pack sync (data_sync.dart) — that are not
+  // mutually serialized, so a fixed shared dir let a concurrent run wipe the
+  // other's staging tree mid-export. A per-call dir also can't collide with a
+  // leftover from a crashed run.
   final exportDir = Directory(
-    FilePath.join(App.cachePath, 'venera_comics_export'),
+    FilePath.join(
+      App.cachePath,
+      'venera_comics_export_${DateTime.now().microsecondsSinceEpoch}',
+    ),
   );
   if (exportDir.existsSync()) {
     exportDir.deleteSync(recursive: true);
   }
   exportDir.createSync(recursive: true);
-
+  try {
   // Build manifest
   final entries = <VeneraComicEntry>[];
   for (final comic in comics) {
@@ -190,7 +198,9 @@ Future<File> exportVeneraComics(
   // Create zip. This runs in an isolate and can't report sub-progress, so the
   // UI shows an indeterminate bar for this phase rather than a frozen 100%.
   onPhase?.call(ExportPhase.packaging, null);
-  final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  // Microsecond stamp: two exports in the same second would otherwise write to
+  // the same output path and clobber each other.
+  final time = DateTime.now().microsecondsSinceEpoch;
   final zipPath = FilePath.join(App.cachePath, '$time.venera_comics');
   final exportDirPath = exportDir.path;
   await Isolate.run(() {
@@ -199,9 +209,11 @@ Future<File> exportVeneraComics(
     zipFile.close();
   });
 
-  // Clean up temp dir
-  exportDir.deleteSync(recursive: true);
   return File(zipPath);
+  } finally {
+    // Always clean the staging tree, even if building/zipping threw.
+    exportDir.deleteIgnoreError(recursive: true);
+  }
 }
 
 void _addDirectoryToZip(ZipFile zipFile, String dirPath, String basePath) {
@@ -219,26 +231,29 @@ void _addDirectoryToZip(ZipFile zipFile, String dirPath, String basePath) {
 /// Reads manifest from a .venera_comics file without full extraction.
 Future<VeneraComicsManifest> readVeneraComicsManifest(File file) async {
   final tempDir = Directory(
-    FilePath.join(App.cachePath, 'venera_comics_preview'),
+    FilePath.join(
+      App.cachePath,
+      'venera_comics_preview_${DateTime.now().microsecondsSinceEpoch}',
+    ),
   );
   if (tempDir.existsSync()) {
     tempDir.deleteSync(recursive: true);
   }
   tempDir.createSync(recursive: true);
 
-  final tempDirPath = tempDir.path;
-  final filePath = file.path;
-  await Isolate.run(() {
-    ZipFile.openAndExtract(filePath, tempDirPath);
-  });
+  try {
+    final tempDirPath = tempDir.path;
+    final filePath = file.path;
+    await Isolate.run(() {
+      ZipFile.openAndExtract(filePath, tempDirPath);
+    });
 
-  final manifestFile = File(FilePath.join(tempDirPath, 'manifest.json'));
-  final json = jsonDecode(manifestFile.readAsStringSync());
-  final manifest =
-      VeneraComicsManifest.fromJson(json as Map<String, dynamic>);
-
-  tempDir.deleteSync(recursive: true);
-  return manifest;
+    final manifestFile = File(FilePath.join(tempDirPath, 'manifest.json'));
+    final json = jsonDecode(manifestFile.readAsStringSync());
+    return VeneraComicsManifest.fromJson(json as Map<String, dynamic>);
+  } finally {
+    tempDir.deleteIgnoreError(recursive: true);
+  }
 }
 
 /// Moves [src] to [destPath], falling back to copy when the move fails.
@@ -264,14 +279,20 @@ Future<int> importVeneraComics(
   File file, {
   void Function(int current, int total)? onProgress,
 }) async {
+  // Unique staging dir per call. importVeneraComics has two independent,
+  // non-serialized callers — UI file import and WebDAV image-pack download
+  // (data_sync.dart) — so a fixed shared dir let one wipe the other mid-import.
   final importDir = Directory(
-    FilePath.join(App.cachePath, 'venera_comics_import'),
+    FilePath.join(
+      App.cachePath,
+      'venera_comics_import_${DateTime.now().microsecondsSinceEpoch}',
+    ),
   );
   if (importDir.existsSync()) {
     importDir.deleteSync(recursive: true);
   }
   importDir.createSync(recursive: true);
-
+  try {
   final importDirPath = importDir.path;
   final filePath = file.path;
   await Isolate.run(() {
@@ -358,7 +379,9 @@ Future<int> importVeneraComics(
     onProgress?.call(i + 1, total);
   }
 
-  // Clean up
-  importDir.deleteSync(recursive: true);
   return imported;
+  } finally {
+    // Always clean the staging tree, even if extraction/import threw partway.
+    importDir.deleteIgnoreError(recursive: true);
+  }
 }

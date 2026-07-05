@@ -197,9 +197,17 @@ abstract class CBZ {
   }
 
   static Future<File> export(LocalComic comic, String outFilePath) async {
-    var cache = Directory(FilePath.join(App.cachePath, 'cbz_export'));
+    // Unique per-call staging dir + guaranteed cleanup: the old fixed
+    // 'cbz_export' dir was left behind whenever an export threw mid-way
+    // (large libraries copy every image, so a disk-full/IO error is real),
+    // and only got cleared on the next export's entry.
+    var cache = Directory(FilePath.join(
+      App.cachePath,
+      'cbz_export_${DateTime.now().microsecondsSinceEpoch}',
+    ));
     if (cache.existsSync()) cache.deleteSync(recursive: true);
     cache.createSync();
+    try {
     List<ComicChapter>? chapters;
     if (comic.chapters == null) {
       var images = await LocalManager().getImages(comic.id, comic.comicType, 1);
@@ -266,8 +274,10 @@ abstract class CBZ {
     var cbz = File(outFilePath);
     if (cbz.existsSync()) cbz.deleteSync();
     await _compress(cache.path, cbz.path);
-    cache.deleteSync(recursive: true);
     return cbz;
+    } finally {
+      cache.deleteIgnoreError(recursive: true);
+    }
   }
 
   static String _buildComicInfoXml(ComicMetaData data) {
