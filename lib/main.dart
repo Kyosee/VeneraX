@@ -299,9 +299,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (widget != null) {
             /// 如果无法检测到状态栏高度设定指定高度
             /// https://github.com/flutter/flutter/issues/161086
+            var viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
             var isPaddingCheckError =
-                MediaQuery.of(context).viewPadding.top <= 0 ||
-                MediaQuery.of(context).viewPadding.top > 200;
+                viewPaddingTop <= 0 || viewPaddingTop > 200;
 
             if (isPaddingCheckError && Platform.isAndroid) {
               widget = MediaQuery(

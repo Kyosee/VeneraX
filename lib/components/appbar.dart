@@ -151,7 +151,7 @@ class SliverAppbar extends StatelessWidget {
         leading: leading,
         title: title,
         actions: actions,
-        topPadding: MediaQuery.of(context).padding.top,
+        topPadding: MediaQuery.paddingOf(context).top,
         radius: radius,
         style: style,
       ),
@@ -759,7 +759,7 @@ class _SliverSearchBarState extends State<SliverSearchBar>
       delegate: _SliverSearchBarDelegate(
         editingController: _editingController,
         controller: _controller,
-        topPadding: MediaQuery.of(context).padding.top,
+        topPadding: MediaQuery.paddingOf(context).top,
         onChanged: widget.onChanged,
         action: widget.action,
         focusNode: widget.focusNode,
@@ -932,7 +932,7 @@ class _SearchBarState extends State<AppSearchBar> with _SearchBarMixin {
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = MediaQuery.of(context).padding.top;
+    final topPadding = MediaQuery.paddingOf(context).top;
     return Container(
       height: _kAppBarHeight + topPadding,
       width: double.infinity,

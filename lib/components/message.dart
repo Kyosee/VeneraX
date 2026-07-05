@@ -33,7 +33,7 @@ class _ToastOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
+      bottom: 24 + MediaQuery.viewInsetsOf(context).bottom,
       left: 0,
       right: 0,
       child: Align(

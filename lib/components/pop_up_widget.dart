@@ -20,8 +20,8 @@ class PopUpWidget<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    var height = MediaQuery.of(context).size.height * 0.9;
-    bool showPopUp = MediaQuery.of(context).size.width > 500;
+    var height = MediaQuery.sizeOf(context).height * 0.9;
+    bool showPopUp = MediaQuery.sizeOf(context).width > 500;
     Widget body = PopupIndicatorWidget(
       child: Container(
         decoration: showPopUp
@@ -197,11 +197,11 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
           ),
           SizedBox(
             height:
-                MediaQuery.of(context).viewInsets.bottom -
-                        0.05 * MediaQuery.of(context).size.height >
+                MediaQuery.viewInsetsOf(context).bottom -
+                        0.05 * MediaQuery.sizeOf(context).height >
                     0
-                ? MediaQuery.of(context).viewInsets.bottom -
-                      0.05 * MediaQuery.of(context).size.height
+                ? MediaQuery.viewInsetsOf(context).bottom -
+                      0.05 * MediaQuery.sizeOf(context).height
                 : 0,
           ),
         ],

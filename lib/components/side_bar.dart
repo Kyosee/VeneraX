@@ -77,13 +77,13 @@ class SideBarRoute<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    bool showSideBar = MediaQuery.of(context).size.width > width;
+    bool showSideBar = MediaQuery.sizeOf(context).width > width;
 
     Widget body = widget;
 
     if (addTopPadding) {
       body = Padding(
-        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
         child: MediaQuery.removePadding(
           context: context,
           removeTop: true,
@@ -92,7 +92,7 @@ class SideBarRoute<T> extends PopupRoute<T> {
       );
     }
 
-    final sideBarWidth = math.min(width, MediaQuery.of(context).size.width);
+    final sideBarWidth = math.min(width, MediaQuery.sizeOf(context).width);
 
     body = Container(
       decoration: BoxDecoration(
@@ -112,7 +112,7 @@ class SideBarRoute<T> extends PopupRoute<T> {
       ),
       clipBehavior: Clip.antiAlias,
       constraints: BoxConstraints(maxWidth: sideBarWidth),
-      height: MediaQuery.of(context).size.height,
+      height: MediaQuery.sizeOf(context).height,
       child: GestureDetector(
         child: Material(
           child: ClipRect(
@@ -121,10 +121,10 @@ class SideBarRoute<T> extends PopupRoute<T> {
               padding: EdgeInsets.fromLTRB(
                 0,
                 0,
-                MediaQuery.of(context).padding.right,
+                MediaQuery.paddingOf(context).right,
                 addBottomPadding
-                    ? MediaQuery.of(context).padding.bottom +
-                          MediaQuery.of(context).viewInsets.bottom
+                    ? MediaQuery.paddingOf(context).bottom +
+                          MediaQuery.viewInsetsOf(context).bottom
                     : 0,
               ),
               color: useSurfaceTintColor

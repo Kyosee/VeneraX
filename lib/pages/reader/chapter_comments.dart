@@ -44,6 +44,11 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
   var controller = TextEditingController();
   bool sending = false;
 
+  /// Both loads are build-triggered (loading placeholder / list tail); a
+  /// rebuild during the request used to fire a duplicate one, double-loading
+  /// the same page.
+  bool _requestInFlight = false;
+
   @override
   void dispose() {
     controller.dispose();
@@ -51,12 +56,15 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
   }
 
   void firstLoad() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
       widget.epId,
       1,
       widget.replyComment?.id,
     );
+    _requestInFlight = false;
     if (!mounted) return;
     if (res.error) {
       setState(() {
@@ -76,12 +84,15 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
   }
 
   void loadMore() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
       widget.epId,
       _page + 1,
       widget.replyComment?.id,
     );
+    _requestInFlight = false;
     if (!mounted) return;
     if (res.error) {
       context.showMessage(message: res.errorMessage ?? "Unknown Error");
@@ -631,6 +642,11 @@ class _EmbeddedChapterCommentsPageState
   final scrollController = ScrollController();
   bool sending = false;
 
+  /// Both loads are build-triggered (loading placeholder / list tail); a
+  /// rebuild during the request used to fire a duplicate one, double-loading
+  /// the same page.
+  bool _requestInFlight = false;
+
   @override
   void dispose() {
     textController.dispose();
@@ -639,12 +655,15 @@ class _EmbeddedChapterCommentsPageState
   }
 
   void firstLoad() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
       widget.epId,
       1,
       null,
     );
+    _requestInFlight = false;
     if (res.error) {
       if (mounted) {
         setState(() {
@@ -665,12 +684,15 @@ class _EmbeddedChapterCommentsPageState
   }
 
   void loadMore() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
       widget.epId,
       _page + 1,
       null,
     );
+    _requestInFlight = false;
     if (res.error) {
       if (mounted) {
         context.showMessage(message: res.errorMessage ?? "Unknown Error");
@@ -691,7 +713,6 @@ class _EmbeddedChapterCommentsPageState
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return Container(
       color: context.colorScheme.surface,
       child: SafeArea(
@@ -700,7 +721,14 @@ class _EmbeddedChapterCommentsPageState
             _buildHeader(),
             Expanded(child: _buildBody()),
             _buildBottom(),
-            SizedBox(height: bottomInset),
+            // Only this spacer may depend on the keyboard inset: reading it at
+            // the page root rebuilt the whole comments grid on every frame of
+            // the IME animation (#107). Scoped here, those frames only resize
+            // an empty box and relayout the column.
+            Builder(
+              builder: (context) =>
+                  SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
+            ),
           ],
         ),
       ),
@@ -770,7 +798,7 @@ class _EmbeddedChapterCommentsPageState
 
   Widget _buildCommentsList(bool showAvatar) {
     final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final crossAxisCount = isLandscape ? 2 : 1;
 
     return Scrollbar(

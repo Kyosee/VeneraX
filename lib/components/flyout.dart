@@ -113,11 +113,11 @@ class FlyoutState extends State<Flyout> {
           var left = rect.left;
           var top = rect.bottom;
 
-          if (left + minFlyoutWidth > MediaQuery.of(context).size.width) {
-            left = MediaQuery.of(context).size.width - minFlyoutWidth;
+          if (left + minFlyoutWidth > MediaQuery.sizeOf(context).width) {
+            left = MediaQuery.sizeOf(context).width - minFlyoutWidth;
           }
-          if (top + minFlyoutHeight > MediaQuery.of(context).size.height) {
-            top = MediaQuery.of(context).size.height - minFlyoutHeight;
+          if (top + minFlyoutHeight > MediaQuery.sizeOf(context).height) {
+            top = MediaQuery.sizeOf(context).height - minFlyoutHeight;
           }
 
           Widget transition(BuildContext context, Animation<double> animation,

@@ -101,7 +101,7 @@ class NaviPaneState extends State<NaviPane>
   static const _kTopBarHeight = 48.0;
 
   double get bottomBarHeight =>
-      _kBottomBarHeight + MediaQuery.of(context).padding.bottom;
+      _kBottomBarHeight + MediaQuery.paddingOf(context).bottom;
 
   void onNavigatorStateChange() {
     onRebuild(context);
@@ -143,7 +143,7 @@ class NaviPaneState extends State<NaviPane>
   }
 
   double targetFormContext(BuildContext context) {
-    var width = MediaQuery.of(context).size.width;
+    var width = MediaQuery.sizeOf(context).width;
     double target = 0;
     if (width > changePoint) {
       target = 2;
@@ -174,11 +174,20 @@ class NaviPaneState extends State<NaviPane>
   @override
   Widget build(BuildContext context) {
     onRebuild(context);
-    final mq = MediaQuery.of(context);
-    final sideInsets = (App.isMobile && mq.orientation == Orientation.landscape)
+    // Aspect-scoped reads: the shell must not rebuild on every keyboard
+    // inset frame (#107), so avoid a full MediaQuery.of subscription here.
+    final sideInsets =
+        (App.isMobile &&
+            MediaQuery.orientationOf(context) == Orientation.landscape)
         ? EdgeInsets.only(
-            left: math.max(mq.viewPadding.left, mq.systemGestureInsets.left),
-            right: math.max(mq.viewPadding.right, mq.systemGestureInsets.right),
+            left: math.max(
+              MediaQuery.viewPaddingOf(context).left,
+              MediaQuery.systemGestureInsetsOf(context).left,
+            ),
+            right: math.max(
+              MediaQuery.viewPaddingOf(context).right,
+              MediaQuery.systemGestureInsetsOf(context).right,
+            ),
           )
         : EdgeInsets.zero;
     return _NaviPopScope(
@@ -355,7 +364,7 @@ class NaviPaneState extends State<NaviPane>
             // so the logo's vertical center lines up with the search box across
             // the divider. Keep these in sync with `_SearchBar` in home_page.dart.
             const SizedBox(height: 8),
-            SizedBox(height: MediaQuery.of(context).padding.top),
+            SizedBox(height: MediaQuery.paddingOf(context).top),
             SizedBox(
               height: App.isMobile ? 52 : 46,
               child: Material(

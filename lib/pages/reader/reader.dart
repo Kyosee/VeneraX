@@ -181,7 +181,7 @@ class _ReaderState extends State<Reader>
 
   @override
   bool get isPortrait =>
-      MediaQuery.of(context).orientation == Orientation.portrait;
+      MediaQuery.orientationOf(context) == Orientation.portrait;
 
   History? history;
 

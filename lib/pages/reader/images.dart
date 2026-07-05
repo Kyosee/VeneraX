@@ -216,17 +216,36 @@ class _GalleryModeState extends State<_GalleryMode>
       }
       context.readerScaffold.setFloatingButton(0);
     });
+    _schedulePrecache(reader.page);
     super.initState();
   }
 
   @override
   void dispose() {
     keyRepeatTimer?.cancel();
+    _precacheTimer?.cancel();
     controller.dispose();
     for (final controller in photoViewControllers.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Timer? _precacheTimer;
+
+  /// Defers neighbor precaching until the page has settled. [cache] used to be
+  /// invoked from the page builder — i.e. exactly while the page-turn
+  /// animation was running — so full-resolution decodes and texture uploads
+  /// competed with the animation frames and read as dropped frames (#107).
+  /// The delay also coalesces rapid flips into a single cache pass.
+  void _schedulePrecache(int page) {
+    _precacheTimer?.cancel();
+    _precacheTimer = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted || reader.page != page || isChapterCommentsPage(page)) {
+        return;
+      }
+      cache(page);
+    });
   }
 
   void _increaseFingers() {
@@ -374,8 +393,6 @@ class _GalleryModeState extends State<_GalleryMode>
               endIndex,
             );
 
-            cache(index);
-
             photoViewControllers[index] ??= PhotoViewController();
 
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
@@ -402,7 +419,10 @@ class _GalleryModeState extends State<_GalleryMode>
               );
             }
 
-            final viewportSize = MediaQuery.of(context).size;
+            // Size-only dependency: MediaQuery.of would also subscribe to
+            // viewInsets, rebuilding every live gallery page on each frame of
+            // the IME animation while typing in the embedded comments (#107).
+            final viewportSize = MediaQuery.sizeOf(context);
             return PhotoViewGalleryPageOptions.customChild(
               childSize: viewportSize,
               controller: photoViewControllers[index],
@@ -415,7 +435,7 @@ class _GalleryModeState extends State<_GalleryMode>
         pageController: controller,
         loadingBuilder: (context, event) {
           return PhotoView.customChild(
-            childSize: MediaQuery.of(context).size,
+            childSize: MediaQuery.sizeOf(context),
             initialScale: PhotoViewComputedScale.contained,
             minScale: PhotoViewComputedScale.contained * 1.0,
             maxScale: PhotoViewComputedScale.covered * 10.0,
@@ -448,6 +468,7 @@ class _GalleryModeState extends State<_GalleryMode>
             }
           } else {
             reader.setPage(i);
+            _schedulePrecache(i);
             context.readerScaffold.update();
             // Auto close toolbar when entering chapter comments page
             if (isChapterCommentsPage(i) && context.readerScaffold.isOpen) {
@@ -1829,7 +1850,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     } else {
       target = photoViewController.getInitialScale!.call()! * 1.75;
     }
-    var size = MediaQuery.of(context).size;
+    var size = MediaQuery.sizeOf(context);
     photoViewController.animateScale?.call(
       target,
       Offset(size.width / 2 - location.dx, size.height / 2 - location.dy),

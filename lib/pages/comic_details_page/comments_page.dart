@@ -40,9 +40,17 @@ class _CommentsPageState extends State<CommentsPage> {
   var controller = TextEditingController();
   bool sending = false;
 
+  /// Both loads are build-triggered (loading placeholder / list tail); a
+  /// rebuild during the request used to fire a duplicate one, double-loading
+  /// the same page.
+  bool _requestInFlight = false;
+
   void firstLoad() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.commentsLoader!(
         widget.data.comicId, widget.data.subId, 1, widget.replyComment?.id);
+    _requestInFlight = false;
     if (res.error) {
       setState(() {
         _error = res.errorMessage;
@@ -59,12 +67,15 @@ class _CommentsPageState extends State<CommentsPage> {
   }
 
   void loadMore() async {
+    if (_requestInFlight) return;
+    _requestInFlight = true;
     var res = await widget.source.commentsLoader!(
       widget.data.comicId,
       widget.data.subId,
       _page + 1,
       widget.replyComment?.id,
     );
+    _requestInFlight = false;
     if (res.error) {
       context.showMessage(message: res.errorMessage ?? "Unknown Error");
     } else {

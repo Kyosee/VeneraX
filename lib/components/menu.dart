@@ -26,7 +26,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
   Widget buildPage(BuildContext context, Animation<double> animation,
       Animation<double> secondaryAnimation) {
     var width = entries.first.icon == null ? 216.0 : 242.0;
-    final size = MediaQuery.of(context).size;
+    final size = MediaQuery.sizeOf(context);
     var left = location.dx;
     if (left < 10) {
       left = 10;

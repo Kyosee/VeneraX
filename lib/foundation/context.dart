@@ -24,13 +24,16 @@ extension Navigation on BuildContext {
         builder: (context) => builder()));
   }
 
-  double get width => MediaQuery.of(this).size.width;
+  // Aspect-scoped MediaQuery reads: MediaQuery.of would subscribe the caller
+  // to EVERY aspect, so all of these widgets rebuilt on each frame of the
+  // keyboard inset animation — a large part of the Android IME jank (#107).
+  double get width => MediaQuery.sizeOf(this).width;
 
-  double get height => MediaQuery.of(this).size.height;
+  double get height => MediaQuery.sizeOf(this).height;
 
-  EdgeInsets get padding => MediaQuery.of(this).padding;
+  EdgeInsets get padding => MediaQuery.paddingOf(this);
 
-  EdgeInsets get viewInsets => MediaQuery.of(this).viewInsets;
+  EdgeInsets get viewInsets => MediaQuery.viewInsetsOf(this);
 
   ColorScheme get colorScheme => Theme.of(this).colorScheme;
 
