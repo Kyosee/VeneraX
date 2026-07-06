@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.1.5",
+          "buildVersion": "220",
+          "date": "2026-07-06",
+          "localizedDescription": "## What's Changed\n\n### Added\n- WebDAV backups now keep the 3 most recent per platform and automatically clean up older ones\n\n### Changed\n- Smoother experience when dragging the list scrollbar\n\n### Fixed\n- Fix dropped frames when turning pages quickly and stutter when the keyboard pops up in the reader (#107)\n- Fix swipe-to-favorite triggering too easily (edge back gestures and diagonal scrolling no longer set it off)\n- Fix notification cards sometimes not disappearing after a background task finishes (#84)\n- Fix an occasional crash when a cloud backup was applied before startup finished\n- Fix settings possibly being fully reset when the process is killed by the system\n- Fix key data files getting corrupted on abnormal interruption, with fault-tolerant loading when data is damaged\n- Fix download resume failing outright when its state file was corrupted, instead of re-downloading\n- Fix the follow-updates list not refreshing during a check, and unread update marks being lost after a data restore (#106)\n- Fix timestamps in task records not shown in the local format\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.4...v2.1.5",
+          "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.5/venera-ios-2.1.5%2B220.ipa",
+          "size": 23085425,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.1.4",
           "buildVersion": "219",
           "date": "2026-07-05",
@@ -78,11 +87,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.1.4",
-      "versionDate": "2026-07-05",
-      "versionDescription": "## What's Changed\n\n### Added\n- Draggable scrollbar on the comic detail page for quick navigation (useful when a source shows a full preview there)\n- Local comic export now shows detailed progress for the packaging and folder-writing stages, so it no longer looks stuck at the end\n- New guide to ignore battery optimization, reducing background tasks (follow-updates / sync / import-export) being frozen by the system\n- One-tap entry to the album view from an image-favorite list item\n- New toggle for whether WebDAV sync goes through the proxy\n- New option to automatically clean up old reading history\n\n### Fixed\n- Fix stale data overwriting newer data and reverting your library when syncing across multiple devices\n- Fix a crash from high memory use when exporting a large comic library as a merged file\n- Fix a possible crash when syncing images of a large library over WebDAV\n- Fix theme color and other appearance settings needing a restart to take effect after a WebDAV restore\n- Fix page-turn gestures being hard to trigger when swiping quickly in the reader\n- Fix a crash from accidentally triggering favorite while scrolling on the chapter comments page\n- Fix the Android system back gesture occasionally going back twice and skipping the detail page\n- Fix the \"All\" section on the downloads page not showing in-progress downloads on first open\n- Fix downloads failing when the storage folder was not writable (permission is now requested as needed)\n- Fix manual import/export and WebDAV image sync interfering with each other when run at the same time\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.3...v2.1.4",
-      "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.4/venera-ios-2.1.4%2B219.ipa",
-      "size": 23081566
+      "version": "2.1.5",
+      "versionDate": "2026-07-06",
+      "versionDescription": "## What's Changed\n\n### Added\n- WebDAV backups now keep the 3 most recent per platform and automatically clean up older ones\n\n### Changed\n- Smoother experience when dragging the list scrollbar\n\n### Fixed\n- Fix dropped frames when turning pages quickly and stutter when the keyboard pops up in the reader (#107)\n- Fix swipe-to-favorite triggering too easily (edge back gestures and diagonal scrolling no longer set it off)\n- Fix notification cards sometimes not disappearing after a background task finishes (#84)\n- Fix an occasional crash when a cloud backup was applied before startup finished\n- Fix settings possibly being fully reset when the process is killed by the system\n- Fix key data files getting corrupted on abnormal interruption, with fault-tolerant loading when data is damaged\n- Fix download resume failing outright when its state file was corrupted, instead of re-downloading\n- Fix the follow-updates list not refreshing during a check, and unread update marks being lost after a data restore (#106)\n- Fix timestamps in task records not shown in the local format\n\n**Full Changelog**: https://github.com/Kyosee/venera/compare/v2.1.4...v2.1.5",
+      "downloadURL": "https://github.com/Kyosee/venera/releases/download/v2.1.5/venera-ios-2.1.5%2B220.ipa",
+      "size": 23085425
     }
   ],
   "news": []
