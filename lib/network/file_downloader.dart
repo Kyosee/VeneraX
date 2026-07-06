@@ -58,14 +58,42 @@ class FileDownloader {
     await file.writeAsString(_blocks.map((e) => e.toString()).join("\n"));
   }
 
-  Future<void> _readStatus() async {
+  /// Parse the resume status file. Returns false (and removes the file) when
+  /// it is truncated/corrupt or no longer covers [_fileSize], so the caller
+  /// restarts with fresh blocks instead of failing the download or resuming
+  /// against a mismatched file.
+  Future<bool> _readStatus() async {
     var file = File("$savePath.download");
     if (!await file.exists()) {
-      return;
+      return false;
     }
-
-    var lines = await file.readAsLines();
-    _blocks = lines.map((e) => _DownloadBlock.fromString(e)).toList();
+    try {
+      var lines = await file.readAsLines();
+      var blocks = lines.map((e) => _DownloadBlock.fromString(e)).toList();
+      var valid = blocks.isNotEmpty &&
+          blocks.first.start == 0 &&
+          blocks.last.end == _fileSize;
+      for (var i = 0; valid && i < blocks.length; i++) {
+        var b = blocks[i];
+        valid = b.start < b.end &&
+            b.downloadedBytes >= 0 &&
+            b.downloadedBytes <= b.end - b.start &&
+            (i == 0 || blocks[i - 1].end == b.start);
+      }
+      if (!valid) {
+        throw const FormatException("invalid resume status");
+      }
+      _blocks = blocks;
+      return true;
+    } catch (_) {
+      // A truncated status file (kill mid-write) used to throw out of
+      // int.parse and fail the whole resume with an error.
+      try {
+        await file.delete();
+      } catch (_) {}
+      _blocks = [];
+      return false;
+    }
   }
 
   /// create file and write empty bytes
@@ -108,8 +136,7 @@ class FileDownloader {
 
     await _prepareFile();
 
-    if (File("$savePath.download").existsSync()) {
-      await _readStatus();
+    if (await _readStatus()) {
       _currentBytes = _blocks.fold<int>(0,
           (previousValue, element) => previousValue + element.downloadedBytes);
     } else {
