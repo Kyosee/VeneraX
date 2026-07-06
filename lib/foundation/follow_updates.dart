@@ -136,7 +136,20 @@ void updateFolderBase(
   bool Function()? shouldCancel, {
   DateTime? checkedSince,
 }) async {
-  var comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
+  // This runs unawaited; a throw here (folder deleted mid-flight, database
+  // being swapped by a sync import) used to be an unhandled zone error that
+  // left the stream open forever — the consuming task then stayed "running"
+  // permanently and blocked every later check for the folder. Surface it
+  // through the stream instead so the task finalizes as failed.
+  List<FavoriteItemWithUpdateInfo> comics;
+  try {
+    comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
+  } catch (e, s) {
+    Log.error("Check Updates", e, s);
+    stream.addError(e);
+    stream.close();
+    return;
+  }
   int total = comics.length;
   int current = 0;
   int errors = 0;

@@ -63,12 +63,23 @@ class DataSync with ChangeNotifier {
   /// in data.dart), so the import is safe once the app is up.
   void _runStartupDownload() async {
     // The timeout is a safety net for environments that never complete
-    // deferredInitCompleter — notably the `--headless` CLI, which runs its own
-    // explicit sync and exits without calling initDeferred(); without it this
-    // fire-and-forget future would dangle unresolved.
+    // deferredInitCompleter. When it fires we SKIP this launch's auto
+    // download instead of proceeding: proceeding would let importAppData swap
+    // the very SQLite files a still-running init is opening — the silent
+    // native crash-at-launch class (crashes only with network on, heals after
+    // one successful sync aligns versions so later launches import nothing).
+    // A slow proxy can legitimately hold deferred init (comic script inits do
+    // network) past the window; syncing a bit late is better than crashing.
+    // The headless CLI completes the gate explicitly before its own sync.
     try {
       await deferredInitCompleter.future.timeout(const Duration(seconds: 60));
-    } catch (_) {}
+    } catch (_) {
+      Log.warning(
+        "Data Sync",
+        "Deferred init not settled in time; skipping startup download",
+      );
+      return;
+    }
     downloadData();
   }
 
@@ -614,11 +625,21 @@ class DataSync with ChangeNotifier {
     // _runStartupDownload already waits, but downloads can also be reached
     // early via the #86 catch-up path (auto upload converted to download);
     // gate ALL of them here. Headless completes the completer right after its
-    // own init, so CLI runs don't stall on the timeout.
+    // own init, so CLI runs don't stall on the timeout. If the gate times out
+    // we FAIL the download instead of proceeding — proceeding re-opened the
+    // exact crash the gate exists to prevent whenever init ran long (slow
+    // proxy holding comic script inits, etc.); a later download retries.
     if (!deferredInitCompleter.isCompleted) {
       try {
         await deferredInitCompleter.future.timeout(const Duration(seconds: 60));
-      } catch (_) {}
+      } catch (_) {
+        Log.warning(
+          "Data Sync",
+          "Deferred init not settled in time; refusing to apply a backup",
+        );
+        _lastError = 'App initialization not settled';
+        return const Res.error('App initialization not settled');
+      }
     }
     if (_haveWaitingTask) return const Res(true);
     // Also wait for image sync: applying a backup swaps local.db, which image
