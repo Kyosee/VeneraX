@@ -46,12 +46,28 @@ class BackgroundKeepAliveService : Service() {
             val stopTag = intent.getBooleanExtra(KEY_STOP, false)
             if (stopTag) {
                 statuses.remove(tag)
+                // 非前台载体的通知不属于 startForeground，也不在 refreshNotifications
+                // 的存活集合里——不在这里撤销的话，任务结束后它那条 ongoing 的
+                // 「进行中」卡片会永远留在通知栏且无法滑除（#84）。前台载体那条
+                // 由 refreshNotifications 换载体时撤销，或最后一个任务结束时由
+                // stopForeground 连带移除。
+                if (tag != foregroundTag) {
+                    NotificationManagerCompat.from(this).cancel(notificationId(tag))
+                }
             } else {
                 statuses[tag] = intent.getStringExtra(KEY_STATUS).orEmpty()
             }
         }
         if (statuses.isEmpty()) {
             // 没有任何任务在跑，收摊。stopForeground 连带移除前台通知。
+            // 若本次是冷启动就收摊（任务已结束后才送达的 remove）：
+            // startForegroundService 的契约要求本次启动必须调用过 startForeground，
+            // 否则系统会抛 ForegroundServiceDidNotStartInTimeException。
+            // 先短暂促前台，随后 stopForeground 会立即把这条通知一并移除。
+            if (foregroundTag == null) {
+                ensureChannelRegistered()
+                startForegroundCompat(BASE_NOTE_ID, composeNotification("", ""))
+            }
             stopForegroundCompat()
             stopSelf()
             return START_NOT_STICKY
@@ -84,17 +100,9 @@ class BackgroundKeepAliveService : Service() {
         val nextForeground = foregroundTag?.takeIf { statuses.containsKey(it) }
             ?: statuses.keys.first()
 
-        val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        } else {
-            0
-        }
-        // 经 ServiceCompat 调用，兼容 API 29 以下没有「带类型」startForeground 重载的系统。
-        ServiceCompat.startForeground(
-            this,
+        startForegroundCompat(
             notificationId(nextForeground),
             composeNotification(nextForeground, statuses[nextForeground].orEmpty()),
-            serviceType,
         )
 
         val manager = NotificationManagerCompat.from(this)
@@ -119,6 +127,16 @@ class BackgroundKeepAliveService : Service() {
             if (tag == nextForeground) continue
             manager.notify(notificationId(tag), composeNotification(tag, status))
         }
+    }
+
+    /** 经 ServiceCompat 调用，兼容 API 29 以下没有「带类型」startForeground 重载的系统。 */
+    private fun startForegroundCompat(noteId: Int, notification: Notification) {
+        val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        } else {
+            0
+        }
+        ServiceCompat.startForeground(this, noteId, notification, serviceType)
     }
 
     private fun stopForegroundCompat() {
