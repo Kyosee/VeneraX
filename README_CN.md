@@ -25,7 +25,7 @@
 ## 新功能&优化
 
 - [x] WebDAV 备份与同步优化
-- [x] Windows 检查更新与 Android APK 检查更新
+- [x] Windows 与 Android APK 自动检查更新
 - [x] 连续章节无缝阅读
 - [x] 本地、追更、收藏优化
 - [x] 新增任务功能，支持后台执行任务及相关视图界面

@@ -25,7 +25,7 @@ A cross-platform manga/comic reader.
 ## New Features & Improvements
 
 - [x] Improved WebDAV backup & sync
-- [x] Windows and Android APK update checks
+- [x] Automatic update checks on Windows and Android APK
 - [x] Seamless continuous-chapter reading
 - [x] Improved local library, follow-updates & favorites
 - [x] Task system with background execution and related views
