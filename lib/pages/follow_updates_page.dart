@@ -38,14 +38,22 @@ class _FollowUpdatesWidgetState
       _count = 0;
       return;
     }
-    if (!LocalFavoritesManager().folderNames.contains(folder)) {
+    final manager = LocalFavoritesManager();
+    if (!manager.isInitialized) {
+      // Store down (still initializing, or init failed): folderNames reads
+      // empty then, and the branch below would permanently unconfigure the
+      // device-local follow folder. Report zero and keep the setting.
+      _count = 0;
+      return;
+    }
+    if (!manager.folderNames.contains(folder)) {
       _count = 0;
       appdata.settings["followUpdatesFolder"] = null;
       Future.microtask(() {
         appdata.saveData();
       });
     } else {
-      _count = LocalFavoritesManager().countUpdates(folder!);
+      _count = manager.countUpdates(folder!);
     }
   }
 
@@ -810,6 +818,12 @@ abstract class FollowUpdatesService {
     if (_isChecking) {
       return;
     }
+    // A degraded session (favorites init failed) must not start a check: every
+    // step would trip over the uninitialized store. The periodic timer simply
+    // retries on a later tick.
+    if (!LocalFavoritesManager().isInitialized) {
+      return;
+    }
     var folder = appdata.settings["followUpdatesFolder"];
     if (folder == null) {
       return;
@@ -822,7 +836,10 @@ abstract class FollowUpdatesService {
     _isChecking = true;
 
     try {
-      while (DataSync().isDownloading) {
+      // Applying a backup restores the favorites DB in place; hold the check
+      // until both the download AND the apply (which manual imports run
+      // without a download) are over, so its writes don't interleave.
+      while (DataSync().isDownloading || DataSync().isApplyingBackup) {
         await Future.delayed(const Duration(milliseconds: 100));
         if (_cancelRequested) {
           return;

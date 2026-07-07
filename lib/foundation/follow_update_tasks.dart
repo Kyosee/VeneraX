@@ -5,6 +5,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_updates.dart';
+import 'package:venera/utils/data_sync.dart';
 
 enum FollowUpdateTaskStatus { running, completed, canceled, failed }
 
@@ -297,7 +298,15 @@ class FollowUpdateTaskManager with ChangeNotifier {
   /// Resumes follow-update tasks that were running when the app was last killed.
   /// Called once at startup, before the periodic checker, so an interrupted
   /// check continues from its breakpoint instead of starting over.
-  void resumePendingTasks() {
+  Future<void> resumePendingTasks() async {
+    // Startup resume used to race the startup WebDAV download: the resumed
+    // check wrote marks into the very database the download was applying a
+    // backup into. FollowUpdatesService._check waits this out; give the
+    // resume path the same courtesy. Cancels issued meanwhile are honored by
+    // _run's entry checks after the wait.
+    while (DataSync().isDownloading || DataSync().isApplyingBackup) {
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
     for (var task in currentTasks.toList()) {
       if (task.isRunning && !_runningIds.contains(task.id)) {
         // Resume with the task's original manual/auto semantics. Combined with
