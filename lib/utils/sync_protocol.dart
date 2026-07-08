@@ -102,7 +102,7 @@ int maxBackupVersion(Iterable<String?> fileNames) {
 /// every device keeps a few rollback points of its own lineage: if a stale or
 /// misbehaving device publishes bad data as the newest version, the previous
 /// good snapshots are still on the server for a manual restore.
-const int backupRetentionPerPlatform = 3;
+const int backupRetentionPerPlatform = 10;
 
 /// Backups to delete so every platform keeps at most [keepPerPlatform] of its
 /// newest versions. The just-uploaded [newFileName] counts toward its
