@@ -374,9 +374,11 @@ class HistoryManager with ChangeNotifier {
   }
 
   static Future<void> _addHistoryAsync(String dbPath, History newItem) {
-    return Isolate.run(() {
-      return withDatabase(dbPath, (db) async {
-        db.execute(_insertHistorySql, _historySqlArgs(newItem));
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(dbPath, (db) async {
+          db.execute(_insertHistorySql, _historySqlArgs(newItem));
+        });
       });
     });
   }
@@ -640,8 +642,10 @@ class HistoryManager with ChangeNotifier {
   static Future<List<History>> _getAllHistoryAsync(String dbPath) {
     // Runs in a separate isolate. Only [dbPath] (a String) is captured, never
     // `this` — the manager holds a live DB handle that can't cross isolates.
-    return Isolate.run(() {
-      return withDatabase(dbPath, (db) async => _queryAllHistory(db));
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(dbPath, (db) async => _queryAllHistory(db));
+      });
     });
   }
 

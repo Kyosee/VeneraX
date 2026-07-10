@@ -86,6 +86,35 @@ void main() {
     expect(target.select('SELECT v FROM t').first['v'], 'new');
   });
 
+  test('guard blocks new reads while restoring and drains in-flight ones',
+      () async {
+    final guard = DatabaseRestoreGuard.instance;
+
+    // A reader already dispatched before the restore arms.
+    var inFlightDone = false;
+    final inFlight = guard.guardedRead(() async {
+      await Future.delayed(const Duration(milliseconds: 60));
+      inFlightDone = true;
+    });
+
+    // beginRestore must not return until that reader finished.
+    await guard.beginRestore();
+    expect(inFlightDone, isTrue,
+        reason: 'beginRestore returned before draining in-flight reads');
+    await inFlight;
+
+    // A read requested during the restore is held off, not run.
+    var duringRan = false;
+    final during = guard.guardedRead(() async => duringRan = true);
+    await Future.delayed(const Duration(milliseconds: 40));
+    expect(duringRan, isFalse, reason: 'read ran while a restore held the DB');
+
+    // Releasing lets it proceed.
+    guard.endRestore();
+    await during;
+    expect(duringRan, isTrue);
+  });
+
   test('restore fails cleanly when the source is not a database', () async {
     final dir = tempDir();
     final targetPath = '${dir.path}${Platform.pathSeparator}target.db';

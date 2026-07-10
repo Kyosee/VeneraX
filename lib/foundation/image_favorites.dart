@@ -472,11 +472,13 @@ class ImageFavoriteManager with ChangeNotifier {
         if (token == null) {
           return Future.value(_computeImageFavorites());
         }
-        return Isolate.run(() async {
-          BackgroundIsolateBinaryMessenger.ensureInitialized(token);
-          await App.init();
-          await HistoryManager().init();
-          return _computeImageFavorites();
+        return DatabaseRestoreGuard.instance.guardedRead(() {
+          return Isolate.run(() async {
+            BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+            await App.init();
+            await HistoryManager().init();
+            return _computeImageFavorites();
+          });
         });
       }
     } catch (_) {

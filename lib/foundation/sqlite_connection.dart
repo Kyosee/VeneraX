@@ -17,6 +17,69 @@ Database openSqliteDatabase(String path) {
 
 void closeSqliteDatabase(String path) {}
 
+/// Serializes an in-place database restore against every background-isolate
+/// reader in this process.
+///
+/// A restore ([overwriteDatabaseContent]) runs SQLite's online backup on the
+/// live connection and rebuilds the target's `-wal`/`-shm` sidecars. Any OTHER
+/// connection that still has those files memory-mapped — the image-favorites
+/// compute isolate, async folder/history loads, a fresh `withDatabase` open —
+/// then reads through a now-dangling pointer, faulting inside `btreeParseCellPtr`
+/// / `walIndexReadHdr` and corrupting the process heap. That is the iOS
+/// "sync then relaunch" crash: the older fixes only held off startup init and
+/// follow-update writers, never these readers.
+///
+/// Readers dispatch through [guardedRead]; a restore [beginRestore]s (waiting
+/// for in-flight reads to drain and blocking new ones), runs, then [endRestore]s.
+/// Single-threaded Dart makes the check→count transitions atomic (no await
+/// between them), so no reader can slip past once a restore is armed.
+class DatabaseRestoreGuard {
+  DatabaseRestoreGuard._();
+
+  static final DatabaseRestoreGuard instance = DatabaseRestoreGuard._();
+
+  bool _restoring = false;
+  int _activeReaders = 0;
+
+  /// True while a restore holds the databases exclusively.
+  bool get isRestoring => _restoring;
+
+  /// Arms the guard: waits out any restore already running, marks a restore in
+  /// progress (which stops new [guardedRead]s), then waits for reads already
+  /// dispatched to an isolate to finish before returning. Idempotent-safe with
+  /// [endRestore] — a paired [endRestore] that runs without a preceding
+  /// [beginRestore] is a no-op.
+  Future<void> beginRestore() async {
+    while (_restoring) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    _restoring = true;
+    while (_activeReaders > 0) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  /// Releases the guard.
+  void endRestore() {
+    _restoring = false;
+  }
+
+  /// Runs [read] (typically an `Isolate.run` opening one of the shared DB
+  /// files) once no restore is active, counting it so an overlapping restore
+  /// waits for it to finish instead of yanking the files out from under it.
+  Future<T> guardedRead<T>(Future<T> Function() read) async {
+    while (_restoring) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    _activeReaders++;
+    try {
+      return await read();
+    } finally {
+      _activeReaders--;
+    }
+  }
+}
+
 /// Replaces [target]'s entire content — schema included — with the database
 /// file at [sourcePath], IN PLACE via SQLite's online backup API.
 ///
@@ -39,6 +102,18 @@ Future<void> overwriteDatabaseContent(
   final wasWal =
       target.select('PRAGMA journal_mode;').first.values.first.toString() ==
       'wal';
+  // Collapse the target's WAL into the main file before the page-level copy.
+  // A populated `-wal` left standing while backup rewrites every page — then
+  // the WAL re-assertion below — churns the `-shm`/`-wal` sidecars; a reader
+  // on another connection that mapped the old sidecars then faults on a
+  // dangling page. Truncating first (best-effort: needs a brief write lock)
+  // means there is no stale WAL segment to rebuild around. The restore runs
+  // under DatabaseRestoreGuard, so no other connection should hold them anyway.
+  if (wasWal) {
+    try {
+      target.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch (_) {}
+  }
   final source = sqlite3.open(sourcePath);
   try {
     await source.backup(target as Database, nPage: -1).drain();

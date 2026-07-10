@@ -451,8 +451,10 @@ class LocalFavoritesManager with ChangeNotifier {
     List<String> folders,
     String dbPath,
   ) {
-    return Isolate.run(() {
-      return withDatabase(dbPath, (db) async => _queryHashedIds(folders, db));
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(dbPath, (db) async => _queryHashedIds(folders, db));
+      });
     });
   }
 
@@ -792,8 +794,13 @@ class LocalFavoritesManager with ChangeNotifier {
     String folder,
     String dbPath,
   ) {
-    return Isolate.run(() {
-      return withDatabase(dbPath, (db) async => _queryFolderComics(folder, db));
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(
+          dbPath,
+          (db) async => _queryFolderComics(folder, db),
+        );
+      });
     });
   }
 
@@ -828,8 +835,10 @@ class LocalFavoritesManager with ChangeNotifier {
     List<String> folders,
     String dbPath,
   ) {
-    return Isolate.run(() {
-      return withDatabase(dbPath, (db) async => _queryAllComics(folders, db));
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(dbPath, (db) async => _queryAllComics(folders, db));
+      });
     });
   }
 
@@ -1977,11 +1986,13 @@ class LocalFavoritesManager with ChangeNotifier {
     String folder,
     String dbPath,
   ) {
-    return Isolate.run(() {
-      return withDatabase(
-        dbPath,
-        (db) async => _queryComicsWithUpdatesInfo(folder, db),
-      );
+    return DatabaseRestoreGuard.instance.guardedRead(() {
+      return Isolate.run(() {
+        return withDatabase(
+          dbPath,
+          (db) async => _queryComicsWithUpdatesInfo(folder, db),
+        );
+      });
     });
   }
 

@@ -12,6 +12,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/ext.dart';
@@ -479,6 +480,12 @@ Future<void> _importAppDataLocked(
         return;
       }
     }
+    // Hold every background-isolate DB reader off while the store restores run:
+    // each restoreFrom rebuilds its file's -wal/-shm, and a reader mapping the
+    // old sidecars faults natively (the iOS sync-relaunch crash). beginRestore
+    // also drains reads already dispatched to an isolate before returning.
+    await DatabaseRestoreGuard.instance.beginRestore();
+    try {
     if (await historyFile.exists()) {
       report(ImportPhase.applying, 'Importing history');
       await HistoryManager().restoreFrom(historyFile.path);
@@ -560,6 +567,9 @@ Future<void> _importAppDataLocked(
     if (await localDbFile.exists()) {
       report(ImportPhase.applying, 'Importing local library');
       await LocalManager().restoreFrom(localDbFile.path);
+    }
+    } finally {
+      DatabaseRestoreGuard.instance.endRestore();
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
     if (Directory(comicSourceDir).existsSync()) {
