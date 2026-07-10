@@ -109,6 +109,11 @@ class Appdata with Init {
   static const _disableSync = [
     "proxy",
     "authorizationRequired",
+    // App-lock method and credential are device-local security state: an
+    // e-reader with a PIN must not push it to (or receive it from) a phone
+    // using biometrics.
+    "appLockType",
+    "appLockCredential",
     "batteryOptimizationPrompted",
     "customImageProcessing",
     "webdav",
@@ -322,6 +327,8 @@ class Settings with ChangeNotifier {
     'quickCollectImage': 'No', // No, DoubleTap, Swipe
     'autoFavoriteCover': false, // 收藏图片时是否自动连带收藏该章节封面
     'authorizationRequired': false,
+    'appLockType': 'biometric', // biometric, pin, password, pattern
+    'appLockCredential': null, // {salt, hash} for non-biometric methods
     'batteryOptimizationPrompted': false, // 是否已提示过忽略电池优化（每设备一次，#84）
     'requireDisclaimerConsent': false,
     'disclaimerConsented': false,

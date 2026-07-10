@@ -8,6 +8,15 @@ class AppSettings extends StatefulWidget {
 }
 
 class _AppSettingsState extends State<AppSettings> {
+  String _appLockTypeName(AppLockType type) {
+    return switch (type) {
+      AppLockType.biometric => "Biometric".tl,
+      AppLockType.pin => "PIN".tl,
+      AppLockType.password => "Password".tl,
+      AppLockType.pattern => "Pattern".tl,
+    };
+  }
+
   String _importTaskMessage(ImportTask task) {
     if (task.phase == ImportPhase.extracting) {
       if (task.extractedBytes <= 0) return "Extracting".tl;
@@ -281,21 +290,17 @@ class _AppSettingsState extends State<AppSettings> {
             App.forceRebuild();
           },
         ).toSliver(),
-        if (!App.isLinux)
+        if (!App.isLinux) ...[
           _SwitchSetting(
             title: "Authorization Required".tl,
             settingKey: "authorizationRequired",
             onChanged: () async {
-              var current = appdata.settings['authorizationRequired'];
-              if (current) {
-                final auth = LocalAuthentication();
-                final bool canAuthenticateWithBiometrics =
-                    await auth.canCheckBiometrics;
-                final bool canAuthenticate =
-                    canAuthenticateWithBiometrics ||
-                    await auth.isDeviceSupported();
-                if (!canAuthenticate) {
-                  context.showMessage(message: "Biometrics not supported".tl);
+              var enabled = appdata.settings['authorizationRequired'];
+              if (enabled) {
+                // Just switched on: pick an unlock method and record its
+                // credential. Revert if the user backs out or setup fails.
+                var ok = await showAppLockSetup(context);
+                if (!ok) {
                   setState(() {
                     appdata.settings['authorizationRequired'] = false;
                   });
@@ -303,8 +308,20 @@ class _AppSettingsState extends State<AppSettings> {
                   return;
                 }
               }
+              setState(() {});
             },
           ).toSliver(),
+          if (appdata.settings['authorizationRequired'] == true)
+            _CallbackSetting(
+              title: "Unlock method".tl,
+              subtitle: _appLockTypeName(AppLock.type),
+              actionTitle: "Change".tl,
+              callback: () async {
+                var ok = await showAppLockSetup(context);
+                if (ok) setState(() {});
+              },
+            ).toSliver(),
+        ],
         if (App.isWindows) ...[
           _SettingPartTitle(title: "Window".tl, icon: Icons.web_asset),
           _SwitchSetting(
