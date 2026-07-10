@@ -379,6 +379,20 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     });
   }
 
+  /// Re-attempt the background network fetch after it failed (issue #105).
+  /// Useful when the user switched networks and wants to reload chapters
+  /// without leaving and re-entering the page.
+  void retryLoadDetails() {
+    if (_networkFetching) return;
+    var source = ComicSource.find(widget.sourceKey);
+    if (source == null || source.loadComicInfo == null) return;
+    setState(() {
+      detailsLoadError = null;
+      _networkFetching = true;
+    });
+    scheduleMicrotask(() => _fetchNetworkDetails(source));
+  }
+
   Future<void> _fetchNetworkDetails(ComicSource source) async {
     int retryCount = 0;
     while (retryCount < 3) {
@@ -955,11 +969,28 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                   color: context.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  "Chapter load failed: @message".tlParams({
-                    "message": detailsLoadError!,
-                  }),
-                  style: TextStyle(color: context.colorScheme.onErrorContainer),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Chapter load failed: @message".tlParams({
+                        "message": detailsLoadError!,
+                      }),
+                      style: TextStyle(
+                        color: context.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                    if (comicSource?.loadComicInfo != null) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.tonal(
+                          onPressed: retryLoadDetails,
+                          child: Text("Retry".tl),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
