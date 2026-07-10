@@ -115,6 +115,41 @@ void main() {
     expect(duringRan, isTrue);
   });
 
+  test('two guarded reads never overlap (serialized)', () async {
+    final guard = DatabaseRestoreGuard.instance;
+    // Drain any state left by earlier tests.
+    await guard.guardedRead(() async {});
+
+    var active = 0;
+    var maxConcurrent = 0;
+    Future<void> read() => guard.guardedRead(() async {
+          active++;
+          maxConcurrent = maxConcurrent > active ? maxConcurrent : active;
+          await Future.delayed(const Duration(milliseconds: 20));
+          active--;
+        });
+
+    // Fire several at once, as startup does (favorites hash, history load,
+    // image-favorites stats). Each opens its own sqlite handle in an isolate;
+    // on iOS concurrent opens corrupt the shared C-heap, so they must run one
+    // at a time.
+    await Future.wait([read(), read(), read(), read()]);
+    expect(maxConcurrent, 1,
+        reason: 'guarded reads ran concurrently — the crash race is back');
+  });
+
+  test('a failing guarded read does not wedge the chain', () async {
+    final guard = DatabaseRestoreGuard.instance;
+    await expectLater(
+      guard.guardedRead(() async => throw StateError('boom')),
+      throwsA(isA<StateError>()),
+    );
+    // The next op must still run.
+    var ran = false;
+    await guard.guardedRead(() async => ran = true);
+    expect(ran, isTrue);
+  });
+
   test('restore fails cleanly when the source is not a database', () async {
     final dir = tempDir();
     final targetPath = '${dir.path}${Platform.pathSeparator}target.db';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -38,45 +39,54 @@ class DatabaseRestoreGuard {
 
   static final DatabaseRestoreGuard instance = DatabaseRestoreGuard._();
 
-  bool _restoring = false;
-  int _activeReaders = 0;
+  /// Tail of the serialized-access chain. Every [guardedRead] and every
+  /// restore ([beginRestore]→[endRestore]) appends its critical section here,
+  /// so at most one of them touches the shared DB files at a time.
+  ///
+  /// This is not only about restore-vs-read: two background-isolate reads
+  /// running *concurrently* (favorites hash, async history/folder load,
+  /// image-favorites stats — all fired during startup) each open their own
+  /// `sqlite3` handle in a fresh `Isolate.run`. On iOS those handles share one
+  /// process C-heap, and overlapping opens/steps/`dispose`s corrupt it — an
+  /// `abort()` in libmalloc ("pointer being freed was not allocated") ~1s into
+  /// launch. Serializing every guarded op removes that race entirely; the ops
+  /// are short, so the added latency is negligible.
+  Future<void> _tail = Future.value();
+
+  /// Set while a restore holds the chain open between [beginRestore] and
+  /// [endRestore]; completing it releases the chain for the next waiter.
+  Completer<void>? _restoreGate;
 
   /// True while a restore holds the databases exclusively.
-  bool get isRestoring => _restoring;
+  bool get isRestoring => _restoreGate != null;
 
-  /// Arms the guard: waits out any restore already running, marks a restore in
-  /// progress (which stops new [guardedRead]s), then waits for reads already
-  /// dispatched to an isolate to finish before returning. Idempotent-safe with
-  /// [endRestore] — a paired [endRestore] that runs without a preceding
-  /// [beginRestore] is a no-op.
+  /// Arms the guard: waits for the chain to drain (any in-flight guarded read
+  /// or prior restore finishes first), then holds it open until [endRestore].
+  /// The caller's restore work runs between the two calls. Always pair with
+  /// [endRestore] in a `finally`, or the chain stays blocked forever.
   Future<void> beginRestore() async {
-    while (_restoring) {
-      await Future.delayed(const Duration(milliseconds: 20));
-    }
-    _restoring = true;
-    while (_activeReaders > 0) {
-      await Future.delayed(const Duration(milliseconds: 20));
-    }
+    final previous = _tail;
+    final gate = Completer<void>();
+    _tail = gate.future;
+    await previous;
+    _restoreGate = gate;
   }
 
-  /// Releases the guard.
+  /// Releases the guard, letting the next queued op run.
   void endRestore() {
-    _restoring = false;
+    final gate = _restoreGate;
+    _restoreGate = null;
+    gate?.complete();
   }
 
   /// Runs [read] (typically an `Isolate.run` opening one of the shared DB
-  /// files) once no restore is active, counting it so an overlapping restore
-  /// waits for it to finish instead of yanking the files out from under it.
-  Future<T> guardedRead<T>(Future<T> Function() read) async {
-    while (_restoring) {
-      await Future.delayed(const Duration(milliseconds: 20));
-    }
-    _activeReaders++;
-    try {
-      return await read();
-    } finally {
-      _activeReaders--;
-    }
+  /// files) once every earlier guarded op — reads and restores alike — has
+  /// finished. Serialized, so no two isolate DB ops overlap.
+  Future<T> guardedRead<T>(Future<T> Function() read) {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    return previous.then((_) => read()).whenComplete(done.complete);
   }
 }
 
