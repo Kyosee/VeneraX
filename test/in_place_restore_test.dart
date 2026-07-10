@@ -150,6 +150,44 @@ void main() {
     expect(ran, isTrue);
   });
 
+  test('restores a source whose page size differs from the WAL target',
+      () async {
+    // Reproduces the WebDAV "reinstall then sync" failure: SQLite's online
+    // backup throws SQLITE_READONLY (code 8) if it must change the page size
+    // while the destination is in WAL mode. A backup made by an older build
+    // (e.g. 1024-byte pages) restored into a freshly created 4096-byte WAL
+    // store hit exactly that.
+    final dir = tempDir();
+    final targetPath = '${dir.path}${Platform.pathSeparator}target.db';
+    final sourcePath = '${dir.path}${Platform.pathSeparator}source.db';
+
+    // WAL target at the default page size.
+    final target = openSqliteDatabase(targetPath);
+    addTearDown(target.dispose);
+    expect(target.select('PRAGMA page_size;').first.values.first, 4096);
+    target.execute('CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);');
+    target.execute("INSERT INTO t VALUES (1, 'old');");
+
+    // Source with a deliberately different page size.
+    final source = sqlite3.open(sourcePath);
+    source.execute('PRAGMA page_size = 1024;');
+    source.execute('CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);');
+    source.execute("INSERT INTO t VALUES (1, 'new');");
+    source.dispose();
+
+    await overwriteDatabaseContent(target, sourcePath);
+
+    expect(target.select('SELECT v FROM t').first['v'], 'new');
+    expect(target.select('PRAGMA page_size;').first.values.first, 1024);
+    // WAL is re-asserted and the connection stays writable.
+    expect(
+      target.select('PRAGMA journal_mode;').first.values.first.toString(),
+      'wal',
+    );
+    target.execute("INSERT INTO t VALUES (2, 'more');");
+    expect(target.select('SELECT count(*) c FROM t').first['c'], 2);
+  });
+
   test('restore fails cleanly when the source is not a database', () async {
     final dir = tempDir();
     final targetPath = '${dir.path}${Platform.pathSeparator}target.db';

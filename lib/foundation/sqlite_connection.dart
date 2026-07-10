@@ -119,9 +119,21 @@ Future<void> overwriteDatabaseContent(
   // dangling page. Truncating first (best-effort: needs a brief write lock)
   // means there is no stale WAL segment to rebuild around. The restore runs
   // under DatabaseRestoreGuard, so no other connection should hold them anyway.
+  //
+  // Leaving WAL mode entirely (→ rollback journal) is REQUIRED, not just
+  // hygiene: SQLite's online backup refuses to change the destination's page
+  // size while the destination is in WAL mode, throwing SQLITE_READONLY
+  // ("attempt to write a readonly database", code 8). A backup zip produced by
+  // an older/foreign build can carry a different page size than the freshly
+  // created 4096-byte WAL store here, so a WebDAV restore on a clean install
+  // died on the first WAL target (history.db) before this. In DELETE mode the
+  // backup is free to resize the destination; we re-assert WAL afterwards.
   if (wasWal) {
     try {
       target.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch (_) {}
+    try {
+      target.execute('PRAGMA journal_mode = DELETE;');
     } catch (_) {}
   }
   final source = sqlite3.open(sourcePath);
