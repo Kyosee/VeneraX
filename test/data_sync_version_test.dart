@@ -151,6 +151,7 @@ void main() {
             'notes.txt', null,
           ],
           newFileName: '20240-5.android.venera',
+          keepPerPlatform: 3,
         ),
         // New file + v4 + v3 fill the quota; v2 and v1 rotate out.
         unorderedEquals(['20237-2.android.venera', '20236-1.android.venera']),
@@ -189,6 +190,7 @@ void main() {
             '20235-8.win.venera',
           ],
           newFileName: '20240-9.android.venera',
+          keepPerPlatform: 3,
         ),
         ['20230-1.android.venera'],
       );
@@ -206,6 +208,7 @@ void main() {
             '20237-9.android.venera',
           ],
           newFileName: '20240-100.android.venera',
+          keepPerPlatform: 3,
         ),
         ['20237-9.android.venera'],
       );
@@ -239,8 +242,27 @@ void main() {
             '1781595522562-4.venera',
           ],
           newFileName: '20240-5.android.venera',
+          keepPerPlatform: 3,
         ),
         ['1781595522559-1.venera'],
+      );
+    });
+
+    test('default quota keeps the newest 10 per platform', () {
+      // Guards the backupRetentionPerPlatform constant: with 11 own-platform
+      // backups (10 existing + the new upload) exactly the oldest rotates out.
+      // The other tests pin keepPerPlatform explicitly to isolate ranking/
+      // bucketing behavior from this value; this one pins the value itself.
+      expect(backupRetentionPerPlatform, 10);
+      final existing = [
+        for (var v = 1; v <= 10; v++) '2023$v-$v.android.venera',
+      ];
+      expect(
+        backupsBeyondPlatformRetention(
+          fileNames: existing,
+          newFileName: '20240-11.android.venera',
+        ),
+        ['20231-1.android.venera'],
       );
     });
 
