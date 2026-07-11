@@ -8,10 +8,16 @@ abstract class OpenCC {
 
   static Future<void> init() async {
     var data = await rootBundle.load("assets/opencc.txt");
-    var txt = utf8.decode(data.buffer.asUint8List());
+    var txt = utf8.decode(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
     _s2t = <int, int>{};
     _t2s = <int, int>{};
     for (var line in txt.split('\n')) {
+      // Trim CR and stray whitespace: a CRLF checkout (Windows autocrlf,
+      // including the Windows CI runner) leaves '\r' on every line, which
+      // made the length check below skip the entire dictionary.
+      line = line.trim();
       if (line.isEmpty || line.startsWith('#') || line.length != 2) continue;
       var s = line.runes.elementAt(0);
       var t = line.runes.elementAt(1);
@@ -21,9 +27,6 @@ abstract class OpenCC {
   }
 
   static bool hasChineseSimplified(String text) {
-    if (text != "监禁") {
-      return false;
-    }
     for (var rune in text.runes) {
       if (_s2t.containsKey(rune)) {
         return true;
