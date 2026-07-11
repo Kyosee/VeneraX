@@ -1,42 +1,64 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
 
+/// Opens a connection with the standard pragmas for shared store files.
+///
+/// App code must NOT call this directly (enforced by
+/// `test/native_api_guard_test.dart`): long-lived handles go through
+/// [DatabaseGateway.openManaged] so restores can prove no handle is alive
+/// before swapping files, and background-isolate work goes through
+/// [DatabaseGateway.isolateOp]. Kept public for tests.
 Database openSqliteDatabase(String path) {
   final db = sqlite3.open(path);
-  db.execute('PRAGMA foreign_keys = ON;');
-  db.execute('PRAGMA journal_mode = WAL;');
-  db.execute('PRAGMA wal_autocheckpoint = 200;');
-  db.execute('PRAGMA synchronous = NORMAL;');
-  db.execute('PRAGMA busy_timeout = 5000;');
+  try {
+    db.execute('PRAGMA foreign_keys = ON;');
+    db.execute('PRAGMA journal_mode = WAL;');
+    db.execute('PRAGMA wal_autocheckpoint = 200;');
+    db.execute('PRAGMA synchronous = NORMAL;');
+    db.execute('PRAGMA busy_timeout = 5000;');
+  } catch (_) {
+    db.dispose();
+    rethrow;
+  }
   return db;
 }
 
-void closeSqliteDatabase(String path) {}
+/// Raw, pragma-free connection. For short-lived access to NON-shared database
+/// files — entries extracted from a backup, imported archives — or for
+/// checkpoint/validity probes that the caller already serializes against
+/// restores. Never hold one across an await that can reach a restore window.
+Database openRawDatabase(String path) => sqlite3.open(path);
 
-/// Single owner of database access ordering for this process.
+/// Single owner of database access ordering — and of connection lifetime —
+/// for this process.
 ///
 /// Two distinct hazards share one root cause — several native `sqlite3` handles
 /// bound to the same file share one process C-heap and one `-wal`/`-shm` memory
 /// mapping:
 ///
-///  1. Concurrent background reads. Startup fires several isolate reads at once
-///     (favorites hash, async history/folder load, image-favorites stats); each
-///     opens its own handle in a fresh `Isolate.run`. On iOS, overlapping
-///     opens/steps/`dispose`s corrupt the shared heap — an `abort()` in
-///     libmalloc ("pointer being freed was not allocated") ~1s into launch.
-///
+///  1. Concurrent background reads: startup fires several isolate reads at
+///     once, each opening its own handle in a fresh `Isolate.run`.
 ///  2. A restore that swaps a database file out from under a live reader.
 ///
-/// Both are removed by routing every access through one serial chain. Reads
-/// dispatch through [guardedRead] (so no two isolate opens overlap); a restore
-/// runs through [runExclusive], which drains every in-flight read and blocks
-/// new ones for the whole close→replace→reopen sequence, guaranteeing no handle
-/// is open against a file while it is being replaced. Single-threaded Dart
-/// makes the enqueue transitions atomic, so nothing slips past once queued.
+/// Both are removed by giving the gateway the only doors:
+///
+///  - Long-lived main-isolate handles are opened through [openManaged] and
+///    closed through [closeManaged], so the gateway KNOWS every live handle.
+///    File-swapping helpers call [assertNoLiveHandles] first — a forgotten
+///    close is a loud [StateError] at the swap point instead of silent native
+///    corruption.
+///  - Background-isolate work goes through [isolateOp], which serializes on
+///    the gateway chain and opens/disposes its own connection inside the
+///    isolate. [guardedRead] remains for the rare op that must run manager
+///    code inside the isolate; [runExclusive] drains and blocks everything
+///    for the whole close→replace→reopen sequence of a restore.
+///
+/// Opening a connection any other way is forbidden in `lib/` and enforced by
+/// `test/native_api_guard_test.dart`.
 class DatabaseGateway {
   DatabaseGateway._();
 
@@ -47,9 +69,54 @@ class DatabaseGateway {
   /// them touches the shared DB files at a time.
   Future<void> _tail = Future.value();
 
+  /// Live long-lived handles by database file path.
+  final Map<String, Database> _managed = {};
+
+  /// Opens (with the standard pragmas) and registers the long-lived handle
+  /// for the shared database file at [path]. Throws [StateError] on a double
+  /// open — a second live handle to the same store is always a bug.
+  Database openManaged(String path) {
+    if (_managed.containsKey(path)) {
+      throw StateError('Database is already open through the gateway: $path');
+    }
+    final db = openSqliteDatabase(path);
+    _managed[path] = db;
+    return db;
+  }
+
+  /// Disposes and unregisters the handle for [path]. Safe to call when no
+  /// handle is registered.
+  void closeManaged(String path) {
+    _managed.remove(path)?.dispose();
+  }
+
+  /// Throws [StateError] if any of [paths] still has a registered handle.
+  /// File-swapping helpers call this so that "forgot to close X before
+  /// replacing its file" fails loudly instead of corrupting native state.
+  void assertNoLiveHandles(Iterable<String> paths) {
+    final offenders = paths.where(_managed.containsKey).toList();
+    if (offenders.isNotEmpty) {
+      throw StateError(
+        'Live database handle(s) held during a file swap: $offenders',
+      );
+    }
+  }
+
+  /// Runs [op] against the shared database file at [path] on a background
+  /// isolate: serialized on the gateway chain, fresh connection opened inside
+  /// the isolate and disposed before it exits. The only sanctioned way for
+  /// app code to touch a shared database from an isolate.
+  Future<T> isolateOp<T>(String path, Future<T> Function(Database db) op) {
+    return guardedRead(() {
+      return Isolate.run(() => withDatabase(path, op));
+    });
+  }
+
   /// Runs [read] (typically an `Isolate.run` opening one of the shared DB
   /// files) once every earlier queued op — reads and restores alike — has
-  /// finished. Serialized, so no two isolate DB ops overlap.
+  /// finished. Serialized, so no two isolate DB ops overlap. Prefer
+  /// [isolateOp]; use this directly only when the isolate must run more than
+  /// a plain connection-bound function.
   Future<T> guardedRead<T>(Future<T> Function() read) {
     final previous = _tail;
     final done = Completer<void>();
@@ -91,6 +158,9 @@ class DatabaseGateway {
 /// a truncated backup entry or a mid-way error can never leave a half-restored
 /// data directory.
 void restoreDatabaseFiles(Map<String, String> swaps) {
+  // A live handle at the swap point means some store was not closed first —
+  // fail loudly here rather than corrupting the native side.
+  DatabaseGateway.instance.assertNoLiveHandles(swaps.keys);
   for (final sourcePath in swaps.values) {
     final db = sqlite3.open(sourcePath, mode: OpenMode.readOnly);
     try {
@@ -198,9 +268,8 @@ void backupAsideCorruptDatabase(String path) {
   }
 }
 
-Future<void> flushSqliteDatabases() async {}
-
 Future<void> deleteSqliteDatabase(String path) async {
+  DatabaseGateway.instance.assertNoLiveHandles([path]);
   for (final suffix in ['', '-wal', '-shm']) {
     final file = File('$path$suffix');
     if (await file.exists()) {
@@ -229,113 +298,4 @@ Uint8List exportDatabaseBytes(String path) {
     db.dispose();
   }
   return File(path).readAsBytesSync();
-}
-
-void rebuildDatabaseFromBytes(String path, Uint8List bytes) {
-  for (final suffix in ['', '-wal', '-shm']) {
-    final file = File('$path$suffix');
-    if (file.existsSync()) {
-      file.deleteSync();
-    }
-  }
-  final file = File(path);
-  file.parent.createSync(recursive: true);
-  file.writeAsBytesSync(bytes, flush: true);
-}
-
-String _quoteSqlIdentifier(String value) {
-  return '"${value.replaceAll('"', '""')}"';
-}
-
-Object? _decodeDumpValue(Object? value) {
-  if (value is Map) {
-    final map = value.cast<String, dynamic>();
-    if (map.containsKey(r'$blob')) {
-      return base64Decode(map[r'$blob']?.toString() ?? '');
-    }
-    if (map.containsKey(r'$bigint')) {
-      return int.tryParse(map[r'$bigint']?.toString() ?? '');
-    }
-  }
-  return value;
-}
-
-void rebuildDatabaseFromDump(
-  String path,
-  List<dynamic> tables, {
-  List<dynamic> indexes = const [],
-}) {
-  final db = openSqliteDatabase(path);
-  db.execute('PRAGMA foreign_keys = OFF;');
-  db.execute('BEGIN IMMEDIATE;');
-  try {
-    final existingTables = db
-        .select("SELECT name FROM sqlite_master WHERE type='table'")
-        .map((row) => row['name']?.toString())
-        .whereType<String>()
-        .where((name) => !name.toLowerCase().startsWith('sqlite_'))
-        .toList();
-    for (final table in existingTables) {
-      db.execute('DROP TABLE IF EXISTS ${_quoteSqlIdentifier(table)}');
-    }
-
-    for (final table in tables) {
-      if (table is! Map) {
-        throw FormatException('Invalid sqlite dump table entry: $table');
-      }
-      final sql = table['sql']?.toString();
-      if (sql == null || sql.trim().isEmpty) {
-        throw const FormatException('Missing sqlite dump table schema');
-      }
-      db.execute(sql);
-    }
-
-    for (final table in tables) {
-      if (table is! Map) continue;
-      final name = table['name']?.toString();
-      if (name == null || name.isEmpty) {
-        throw const FormatException('Missing sqlite dump table name');
-      }
-      final rows = table['rows'];
-      if (rows is! List || rows.isEmpty) continue;
-      final columns = table['columns'] is List
-          ? (table['columns'] as List).map((e) => e.toString()).toList()
-          : const <String>[];
-      for (final row in rows) {
-        if (row is! List) {
-          throw FormatException('Invalid sqlite dump row for $name');
-        }
-        final placeholders = List.filled(row.length, '?').join(',');
-        final columnSql = columns.length == row.length
-            ? ' (${columns.map(_quoteSqlIdentifier).join(',')})'
-            : '';
-        final stmt = db.prepare(
-          'INSERT INTO ${_quoteSqlIdentifier(name)}$columnSql '
-          'VALUES ($placeholders)',
-        );
-        try {
-          stmt.execute(row.map(_decodeDumpValue).toList());
-        } finally {
-          stmt.dispose();
-        }
-      }
-    }
-
-    for (final index in indexes) {
-      final sql = index?.toString() ?? '';
-      if (sql.trim().isNotEmpty) {
-        db.execute(sql);
-      }
-    }
-
-    db.execute('COMMIT;');
-  } catch (_) {
-    try {
-      db.execute('ROLLBACK;');
-    } catch (_) {}
-    rethrow;
-  } finally {
-    db.execute('PRAGMA foreign_keys = ON;');
-    db.dispose();
-  }
 }

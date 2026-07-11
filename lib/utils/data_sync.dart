@@ -15,11 +15,11 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/init.dart' show deferredInitCompleter;
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/sync_protocol.dart';
 import 'package:venera/utils/venera_comics.dart';
-import 'package:sqlite3/sqlite3.dart' as sqlite3_pkg;
 import 'package:webdav_client/webdav_client.dart' hide File;
 import 'package:venera/utils/translations.dart';
 
@@ -341,7 +341,7 @@ class DataSync with ChangeNotifier {
     var favDbPath = FilePath.join(App.dataPath, 'local_favorite.db');
     if (!File(favDbPath).existsSync()) return true;
     try {
-      var db = sqlite3_pkg.sqlite3.open(favDbPath);
+      var db = openRawDatabase(favDbPath);
       try {
         var tables = db
             .select("SELECT name FROM sqlite_master WHERE type='table'")

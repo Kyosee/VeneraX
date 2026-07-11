@@ -1,5 +1,3 @@
-import 'dart:isolate';
-
 import 'package:crypto/crypto.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
@@ -26,40 +24,36 @@ class CacheManager {
   int _limitSize = 2 * 1024 * 1024 * 1024;
 
   static Future<int> _scanDir(String dbPath, String dir) async {
-    // Open a FRESH connection inside the isolate rather than sharing the main
-    // isolate's handle: the sqlite3 package attaches a NativeFinalizer to every
-    // Database, so a wrapper built from a shared pointer could close the
+    // Runs on a fresh connection inside an isolate rather than sharing the
+    // main isolate's handle: the sqlite3 package attaches a NativeFinalizer to
+    // every Database, so a wrapper built from a shared pointer could close the
     // connection the main isolate is still using (double-free / use-after-free,
-    // a native heap abort). Route through the restore guard's serial chain so
-    // this scan never runs concurrently with another background DB isolate.
-    var res = await DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() async {
-        int totalSize = 0;
-        List<String> unmanagedFiles = [];
-        return withDatabase(dbPath, (db) async {
-          await for (var file in Directory(dir).list(recursive: true)) {
-            if (file is File) {
-              var size = await file.length();
-              var segments = file.uri.pathSegments;
-              var name = segments.last;
-              var dir = segments.elementAtOrNull(segments.length - 2) ?? "*";
-              var res = db.select(
-                '''
+    // a native heap abort). isolateOp serializes on the gateway chain so this
+    // scan never runs concurrently with another background DB isolate.
+    var res = await DatabaseGateway.instance.isolateOp(dbPath, (db) async {
+      int totalSize = 0;
+      List<String> unmanagedFiles = [];
+      await for (var file in Directory(dir).list(recursive: true)) {
+        if (file is File) {
+          var size = await file.length();
+          var segments = file.uri.pathSegments;
+          var name = segments.last;
+          var dir = segments.elementAtOrNull(segments.length - 2) ?? "*";
+          var res = db.select(
+            '''
                 SELECT * FROM cache
                 WHERE dir = ? AND name = ?
               ''',
-                [dir, name],
-              );
-              if (res.isEmpty) {
-                unmanagedFiles.add(file.path);
-              } else {
-                totalSize += size;
-              }
-            }
+            [dir, name],
+          );
+          if (res.isEmpty) {
+            unmanagedFiles.add(file.path);
+          } else {
+            totalSize += size;
           }
-          return {'totalSize': totalSize, 'unmanagedFiles': unmanagedFiles};
-        });
-      });
+        }
+      }
+      return {'totalSize': totalSize, 'unmanagedFiles': unmanagedFiles};
     });
     // delete unmanaged files
     // Only modify the database in the main isolate to avoid deadlock
@@ -84,7 +78,7 @@ class CacheManager {
 
   CacheManager._create() {
     Directory(cachePath).createSync(recursive: true);
-    _db = openSqliteDatabase(_dbPath);
+    _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute('''
       CREATE TABLE IF NOT EXISTS cache (
         key TEXT PRIMARY KEY NOT NULL,

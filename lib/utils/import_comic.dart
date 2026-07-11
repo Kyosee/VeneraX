@@ -8,6 +8,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
@@ -136,7 +137,7 @@ class ImportComic {
     });
 
     try {
-      var db = sql.sqlite3.open(dbFile.path);
+      var db = openRawDatabase(dbFile.path);
 
       Future<List<LocalComic>> validateComics(List<sql.Row> comics) async {
         List<LocalComic> imported = [];

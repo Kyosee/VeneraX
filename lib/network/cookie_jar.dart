@@ -55,7 +55,7 @@ class CookieJarSql {
 
   void init() {
     try {
-      _db = openSqliteDatabase(path);
+      _db = DatabaseGateway.instance.openManaged(path);
     } on SqliteException catch (e, s) {
       // A crash mid-WAL-write can leave sidecars the next open cannot recover
       // (seen live: SQLITE_IOERR_TRUNCATE from `PRAGMA journal_mode = WAL` at
@@ -64,7 +64,7 @@ class CookieJarSql {
       // aside and start fresh instead of failing every launch.
       Log.error("Cookie Jar", "Failed to open cookie.db, recreating: $e", s);
       backupAsideCorruptDatabase(path);
-      _db = openSqliteDatabase(path);
+      _db = DatabaseGateway.instance.openManaged(path);
     }
     _ensureTable();
   }
@@ -88,11 +88,11 @@ class CookieJarSql {
   /// closing the connection, swapping the file, and reopening — see
   /// [restoreDatabaseFiles]. Runs inside the caller's exclusive window.
   Future<void> restoreFrom(String sourcePath) async {
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(path);
     try {
       restoreDatabaseFiles({path: sourcePath});
     } finally {
-      _db = openSqliteDatabase(path);
+      _db = DatabaseGateway.instance.openManaged(path);
     }
     _ensureTable();
   }
@@ -295,9 +295,7 @@ class CookieJarSql {
   }
 
   void dispose() {
-    final dbPath = path;
-    _db.dispose();
-    closeSqliteDatabase(dbPath);
+    DatabaseGateway.instance.closeManaged(path);
   }
 }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/common.dart';
@@ -346,7 +345,7 @@ class LocalFavoritesManager with ChangeNotifier {
   Future<void> init() async {
     counts = {};
     _dbPath = "${App.dataPath}/local_favorite.db";
-    _db = openSqliteDatabase(_dbPath);
+    _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute("""
       create table if not exists folder_order (
         folder_name text primary key,
@@ -399,11 +398,11 @@ class LocalFavoritesManager with ChangeNotifier {
         "LocalFavoritesManager is not initialized; cannot restore",
       );
     }
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
     try {
       restoreDatabaseFiles({_dbPath: sourcePath});
     } finally {
-      _db = openSqliteDatabase(_dbPath);
+      _db = DatabaseGateway.instance.openManaged(_dbPath);
     }
     // Re-run the schema upkeep init() performs: the imported file may come
     // from an older version or lack the bookkeeping tables entirely.
@@ -458,11 +457,10 @@ class LocalFavoritesManager with ChangeNotifier {
     List<String> folders,
     String dbPath,
   ) {
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(dbPath, (db) async => _queryHashedIds(folders, db));
-      });
-    });
+    return DatabaseGateway.instance.isolateOp(
+      dbPath,
+      (db) async => _queryHashedIds(folders, db),
+    );
   }
 
   static Map<int, int> _queryHashedIds(
@@ -801,14 +799,10 @@ class LocalFavoritesManager with ChangeNotifier {
     String folder,
     String dbPath,
   ) {
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(
-          dbPath,
-          (db) async => _queryFolderComics(folder, db),
-        );
-      });
-    });
+    return DatabaseGateway.instance.isolateOp(
+      dbPath,
+      (db) async => _queryFolderComics(folder, db),
+    );
   }
 
   static List<FavoriteItem> _queryFolderComics(
@@ -842,11 +836,10 @@ class LocalFavoritesManager with ChangeNotifier {
     List<String> folders,
     String dbPath,
   ) {
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(dbPath, (db) async => _queryAllComics(folders, db));
-      });
-    });
+    return DatabaseGateway.instance.isolateOp(
+      dbPath,
+      (db) async => _queryAllComics(folders, db),
+    );
   }
 
   static List<FavoriteItem> _queryAllComics(
@@ -1397,7 +1390,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   Future<void> clearAll() async {
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
     await deleteSqliteDatabase(_dbPath);
     await init();
   }
@@ -1993,14 +1986,10 @@ class LocalFavoritesManager with ChangeNotifier {
     String folder,
     String dbPath,
   ) {
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(
-          dbPath,
-          (db) async => _queryComicsWithUpdatesInfo(folder, db),
-        );
-      });
-    });
+    return DatabaseGateway.instance.isolateOp(
+      dbPath,
+      (db) async => _queryComicsWithUpdatesInfo(folder, db),
+    );
   }
 
   /// Same as [getComicsWithUpdatesInfo] but runs the query + row mapping in a
@@ -2070,8 +2059,7 @@ class LocalFavoritesManager with ChangeNotifier {
   void close() {
     if (!isInitialized) return;
     isInitialized = false;
-    _db.dispose();
-    closeSqliteDatabase(_dbPath);
+    DatabaseGateway.instance.closeManaged(_dbPath);
   }
 
   void notifyChanges() {

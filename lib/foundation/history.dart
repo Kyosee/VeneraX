@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+// Used by part file image_favorites.dart: computeImageFavorites runs manager
+// code inside a raw guardedRead + Isolate.run (see the comment there).
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -246,7 +248,7 @@ class HistoryManager with ChangeNotifier {
     }
     _clearCache();
     _dbPath = "${App.dataPath}/history.db";
-    _db = openSqliteDatabase(_dbPath);
+    _db = DatabaseGateway.instance.openManaged(_dbPath);
     _ensureSchema();
 
     isInitialized = true;
@@ -295,11 +297,11 @@ class HistoryManager with ChangeNotifier {
       throw StateError("HistoryManager is not initialized; cannot restore");
     }
     _clearCache();
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
     try {
       restoreDatabaseFiles({_dbPath: sourcePath});
     } finally {
-      _db = openSqliteDatabase(_dbPath);
+      _db = DatabaseGateway.instance.openManaged(_dbPath);
     }
     _ensureSchema();
     _isCorrupted = false;
@@ -378,12 +380,8 @@ class HistoryManager with ChangeNotifier {
   }
 
   static Future<void> _addHistoryAsync(String dbPath, History newItem) {
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(dbPath, (db) async {
-          db.execute(_insertHistorySql, _historySqlArgs(newItem));
-        });
-      });
+    return DatabaseGateway.instance.isolateOp(dbPath, (db) async {
+      db.execute(_insertHistorySql, _historySqlArgs(newItem));
     });
   }
 
@@ -646,11 +644,10 @@ class HistoryManager with ChangeNotifier {
   static Future<List<History>> _getAllHistoryAsync(String dbPath) {
     // Runs in a separate isolate. Only [dbPath] (a String) is captured, never
     // `this` — the manager holds a live DB handle that can't cross isolates.
-    return DatabaseGateway.instance.guardedRead(() {
-      return Isolate.run(() {
-        return withDatabase(dbPath, (db) async => _queryAllHistory(db));
-      });
-    });
+    return DatabaseGateway.instance.isolateOp(
+      dbPath,
+      (db) async => _queryAllHistory(db),
+    );
   }
 
   /// Load all history in a background isolate, keeping the UI thread free when
@@ -684,7 +681,7 @@ class HistoryManager with ChangeNotifier {
     _clearCache();
     if (!isInitialized) return;
     isInitialized = false;
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
   }
 
   void batchDeleteHistories(List<ComicID> histories) {

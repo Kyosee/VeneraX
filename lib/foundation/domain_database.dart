@@ -124,18 +124,23 @@ class DomainDatabase {
   }
 
   CommonDatabase _openDatabase(String dbPath) {
-    CommonDatabase? database;
     try {
-      database = openSqliteDatabase(dbPath);
-      configure(database);
-      createSchema(database);
-      return database;
+      final database = DatabaseGateway.instance.openManaged(dbPath);
+      try {
+        configure(database);
+        createSchema(database);
+        return database;
+      } catch (_) {
+        // The handle is registered by now — release it before the recovery
+        // path moves the files aside and reopens.
+        DatabaseGateway.instance.closeManaged(dbPath);
+        rethrow;
+      }
     } catch (_) {
-      database?.dispose();
       _backupDatabaseFiles(dbPath);
     }
 
-    final recoveredDatabase = openSqliteDatabase(dbPath);
+    final recoveredDatabase = DatabaseGateway.instance.openManaged(dbPath);
     configure(recoveredDatabase);
     createSchema(recoveredDatabase);
     return recoveredDatabase;
@@ -143,11 +148,10 @@ class DomainDatabase {
 
   void close() {
     final dbPath = _db == null ? null : _dbPath;
-    _db?.dispose();
     _db = null;
     _dbPath = null;
     if (dbPath != null) {
-      closeSqliteDatabase(dbPath);
+      DatabaseGateway.instance.closeManaged(dbPath);
     }
   }
 
@@ -159,7 +163,7 @@ class DomainDatabase {
     if (_db == null || dbPath == null) {
       throw StateError('DomainDatabase is not initialized; cannot restore');
     }
-    _db!.dispose();
+    DatabaseGateway.instance.closeManaged(dbPath);
     _db = null;
     try {
       restoreDatabaseFiles({dbPath: sourcePath});

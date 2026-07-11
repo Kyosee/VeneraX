@@ -472,6 +472,11 @@ class ImageFavoriteManager with ChangeNotifier {
         if (token == null) {
           return Future.value(_computeImageFavorites());
         }
+        // Raw guardedRead instead of isolateOp: this op must bring up manager
+        // code inside the isolate (App.init + HistoryManager().init, which
+        // registers its handle with the isolate's OWN gateway singleton), not
+        // just open one connection. The handle is released by the sqlite3
+        // package's finalizer when the isolate exits.
         return DatabaseGateway.instance.guardedRead(() {
           return Isolate.run(() async {
             BackgroundIsolateBinaryMessenger.ensureInitialized(token);

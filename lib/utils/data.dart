@@ -221,7 +221,7 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
 
   var historyFile = cacheDir.joinFile("history.db");
   if (historyFile.existsSync()) {
-    var db = sqlite3.open(historyFile.path);
+    var db = openRawDatabase(historyFile.path);
     try {
       _rewriteLegacyTypeColumn(db, 'history', 'type', typeMap);
     } finally {
@@ -231,7 +231,7 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
 
   var localFavoriteFile = cacheDir.joinFile("local_favorite.db");
   if (localFavoriteFile.existsSync()) {
-    var db = sqlite3.open(localFavoriteFile.path);
+    var db = openRawDatabase(localFavoriteFile.path);
     try {
       var tables = db
           .select("SELECT name FROM sqlite_master WHERE type='table';")
@@ -248,7 +248,7 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
 
   var localFile = cacheDir.joinFile("local.db");
   if (localFile.existsSync()) {
-    var db = sqlite3.open(localFile.path);
+    var db = openRawDatabase(localFile.path);
     try {
       _rewriteLegacyTypeColumn(db, 'comics', 'comic_type', typeMap);
     } finally {
@@ -258,7 +258,7 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
 
   var readLaterFile = cacheDir.joinFile("read_later.db");
   if (readLaterFile.existsSync()) {
-    var db = sqlite3.open(readLaterFile.path);
+    var db = openRawDatabase(readLaterFile.path);
     try {
       _rewriteLegacyTypeColumn(db, 'read_later', 'type', typeMap);
     } finally {
@@ -297,7 +297,7 @@ Future<File> exportAppData([bool sync = true]) async {
     'cookie.db',
   ]) {
     try {
-      final db = sqlite3.open(FilePath.join(App.dataPath, dbName));
+      final db = openRawDatabase(FilePath.join(App.dataPath, dbName));
       db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
       db.dispose();
     } catch (e, s) {
@@ -632,7 +632,7 @@ Future<void> importPicaData(
     _loadLegacySourceTypeMap(cacheDir, "source_type_map.json");
     var localFavoriteFile = cacheDir.joinFile("local_favorite.db");
     if (localFavoriteFile.existsSync()) {
-      var db = sqlite3.open(localFavoriteFile.path);
+      var db = openRawDatabase(localFavoriteFile.path);
       try {
         var folderNames = db
             .select("SELECT name FROM sqlite_master WHERE type='table';")
@@ -684,7 +684,7 @@ Future<void> importPicaData(
     }
     var historyFile = cacheDir.joinFile("history.db");
     if (historyFile.existsSync()) {
-      var db = sqlite3.open(historyFile.path);
+      var db = openRawDatabase(historyFile.path);
       try {
         for (var comic in db.select("SELECT * FROM history;")) {
           HistoryManager().addHistory(

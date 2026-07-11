@@ -341,14 +341,16 @@ class LocalManager with ChangeNotifier {
 
   bool isInitialized = false;
 
+  String get _dbPath => '${App.dataPath}/local.db';
+
   void close() {
     if (!isInitialized) return;
     isInitialized = false;
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
   }
 
   Future<void> init() async {
-    _db = sqlite3.open('${App.dataPath}/local.db');
+    _db = DatabaseGateway.instance.openManaged(_dbPath);
     _ensureSchema();
     if (File(FilePath.join(App.dataPath, 'local_path')).existsSync()) {
       path = File(FilePath.join(App.dataPath, 'local_path')).readAsStringSync();
@@ -416,11 +418,11 @@ class LocalManager with ChangeNotifier {
     if (!isInitialized) {
       throw StateError("LocalManager is not initialized; cannot restore");
     }
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
     try {
-      restoreDatabaseFiles({'${App.dataPath}/local.db': sourcePath});
+      restoreDatabaseFiles({_dbPath: sourcePath});
     } finally {
-      _db = sqlite3.open('${App.dataPath}/local.db');
+      _db = DatabaseGateway.instance.openManaged(_dbPath);
     }
     _ensureSchema();
     notifyListeners();
@@ -579,7 +581,7 @@ class LocalManager with ChangeNotifier {
   @override
   void dispose() {
     super.dispose();
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
   }
 
   List<LocalComic> getRecent() {

@@ -123,7 +123,7 @@ class ReadLaterManager with ChangeNotifier {
       return;
     }
     _dbPath = "${App.dataPath}/read_later.db";
-    _db = openSqliteDatabase(_dbPath);
+    _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute(_createTableSql);
     _migrateSchema();
     _loadIds();
@@ -138,11 +138,11 @@ class ReadLaterManager with ChangeNotifier {
     if (!isInitialized) {
       throw StateError("ReadLaterManager is not initialized; cannot restore");
     }
-    _db.dispose();
+    DatabaseGateway.instance.closeManaged(_dbPath);
     try {
       restoreDatabaseFiles({_dbPath: sourcePath});
     } finally {
-      _db = openSqliteDatabase(_dbPath);
+      _db = DatabaseGateway.instance.openManaged(_dbPath);
     }
     _db.execute(_createTableSql);
     _migrateSchema();
@@ -431,9 +431,7 @@ class ReadLaterManager with ChangeNotifier {
   /// Reload from disk after an import — re-open DB and refresh cache.
   Future<void> reload() async {
     if (isInitialized) {
-      try {
-        _db.dispose();
-      } catch (_) {}
+      DatabaseGateway.instance.closeManaged(_dbPath);
       isInitialized = false;
     }
     await init();
@@ -441,9 +439,7 @@ class ReadLaterManager with ChangeNotifier {
 
   void close() {
     if (!isInitialized) return;
-    try {
-      _db.dispose();
-    } catch (_) {}
+    DatabaseGateway.instance.closeManaged(_dbPath);
     isInitialized = false;
   }
 }
