@@ -12,10 +12,13 @@ import 'package:venera/foundation/favorites.dart';
 
 const _folder = "favorites";
 
-Database _folderDb({bool withUpdateColumns = true}) {
+Database _folderDb({bool withUpdateColumns = true, bool withFlagTime = true}) {
   final db = sqlite3.openInMemory();
+  final flagTimeCol = withUpdateColumns && withFlagTime
+      ? ", flag_update_time int"
+      : "";
   final extra = withUpdateColumns
-      ? ", last_update_time TEXT, has_new_update int, last_check_time int"
+      ? ", last_update_time TEXT, has_new_update int, last_check_time int$flagTimeCol"
       : "";
   db.execute("""
     create table "$_folder" (
@@ -40,6 +43,7 @@ void _insert(
   String? updateTime,
   int? hasNewUpdate,
   int? lastCheckTime,
+  int? flagUpdateTime,
   bool bare = false,
 }) {
   if (bare) {
@@ -47,6 +51,18 @@ void _insert(
       'insert into "$_folder" (id, name, author, type, tags, cover_path, time, display_order) '
       'values (?, ?, ?, ?, ?, ?, ?, ?);',
       [id, "n$id", "a", 1, "", "c", "t", 0],
+    );
+    return;
+  }
+  final hasFlagTimeCol = db
+      .select('pragma table_info("$_folder");')
+      .any((e) => e["name"] == "flag_update_time");
+  if (hasFlagTimeCol) {
+    db.execute(
+      'insert into "$_folder" (id, name, author, type, tags, cover_path, time, display_order, '
+      'last_update_time, has_new_update, last_check_time, flag_update_time) '
+      'values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+      [id, "n$id", "a", 1, "", "c", "t", 0, updateTime, hasNewUpdate, lastCheckTime, flagUpdateTime],
     );
     return;
   }
@@ -112,6 +128,88 @@ void main() {
     expect(row["last_update_time"], "2026-07-05",
         reason: "backup checked more recently; its baseline must not be rolled back");
     expect(row["last_check_time"], 200);
+  });
+
+  test('a local read clears the flag on a backup that still has it (#106 regression)', () {
+    // The reported win->iOS bug: device A read a followed comic (flag -> 0,
+    // stamped), uploaded; device B imports a backup where the comic is still
+    // flagged from an older check. The read is newer, so it must win — the
+    // comic must leave B's follow list. The old sticky OR kept it forever.
+    final local = _folderDb();
+    _insert(local, "c1",
+        updateTime: "2026-07-05",
+        hasNewUpdate: 0,
+        lastCheckTime: 300,
+        flagUpdateTime: 300);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        updateTime: "2026-07-01",
+        hasNewUpdate: 1,
+        lastCheckTime: 100,
+        flagUpdateTime: 100);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 0,
+        reason: "newer read clears the flag across devices");
+    expect(row["flag_update_time"], 300);
+  });
+
+  test('a newer remote flag wins over an older local read', () {
+    // Symmetric direction: the backup was checked-and-flagged AFTER this
+    // device read the comic, so the fresh update mark must be adopted.
+    final local = _folderDb();
+    _insert(local, "c1",
+        hasNewUpdate: 0, lastCheckTime: 100, flagUpdateTime: 100);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        hasNewUpdate: 1, lastCheckTime: 300, flagUpdateTime: 300);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 1,
+        reason: "the more recent flag assertion wins");
+    expect(row["flag_update_time"], 300);
+  });
+
+  test('a dated local read wins over an undated (legacy) remote flag', () {
+    // The other device predates the flag_update_time column, so its flag is
+    // undated. A dated read is by definition from a newer build => newer.
+    final local = _folderDb();
+    _insert(local, "c1",
+        hasNewUpdate: 0, lastCheckTime: 300, flagUpdateTime: 300);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb(withFlagTime: false);
+    _insert(imported, "c1", hasNewUpdate: 1, lastCheckTime: 100);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 0,
+        reason: "a timestamped read outranks an undated legacy flag");
+  });
+
+  test('both sides undated falls back to the #106 sticky OR', () {
+    // Neither side carries a flag timestamp: preserve the original #106
+    // guarantee that an unread mark from either side is never lost.
+    final local = _folderDb(withFlagTime: false);
+    _insert(local, "c1", hasNewUpdate: 1, lastCheckTime: 200);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb(withFlagTime: false);
+    _insert(imported, "c1", hasNewUpdate: 0, lastCheckTime: 100);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    expect(_row(imported, "c1")["has_new_update"], 1,
+        reason: "legacy data keeps the sticky-OR protection");
   });
 
   test('merge adds missing follow-update columns to an old-format backup', () {

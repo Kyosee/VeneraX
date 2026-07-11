@@ -305,6 +305,11 @@ typedef FollowUpdateInfoRow = ({
   String? lastUpdateTime,
   bool hasNewUpdate,
   int? lastCheckTime,
+  // Epoch ms of the last time has_new_update's value was asserted — set to 1 by
+  // a check finding an update, or cleared to 0 by a read. Null for rows created
+  // before this column existed. Lets the merge arbitrate the flag across devices
+  // by recency instead of an OR that can never clear a read comic's mark.
+  int? flagUpdateTime,
 });
 
 /// Folder name -> rows carrying follow-update bookkeeping.
@@ -1491,12 +1496,19 @@ class LocalFavoritesManager with ChangeNotifier {
               0;
           updateLocationSql = "display_order = ${minValue - 1},";
         }
+        // Clearing the flag here is also a read assertion: stamp
+        // flag_update_time so a cross-device merge can rank this read against a
+        // remote unread mark (see mergeUpdateInfoInto). Same as markAsRead.
+        var clearFlagSql = followUpdatesFolder == folder
+            ? "has_new_update = 0, "
+              "flag_update_time = ${DateTime.now().millisecondsSinceEpoch},"
+            : "";
         _db.execute(
           """
             UPDATE "$folder"
-            SET 
+            SET
               $updateLocationSql
-              ${followUpdatesFolder == folder ? "has_new_update = 0," : ""}
+              $clearFlagSql
               time = ?
             WHERE id == ? and type == ?;
           """,
@@ -1683,7 +1695,7 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   /// Adds the follow-update columns ("last_update_time", "has_new_update",
-  /// "last_check_time") to [table] if missing.
+  /// "last_check_time", "flag_update_time") to [table] if missing.
   static void _ensureUpdateColumns(CommonDatabase db, String table) {
     var columns = _columnsOf(db, table);
     if (!columns.contains("last_update_time")) {
@@ -1702,6 +1714,12 @@ class LocalFavoritesManager with ChangeNotifier {
       db.execute("""
         alter table "$table"
         add column last_check_time int;
+      """);
+    }
+    if (!columns.contains("flag_update_time")) {
+      db.execute("""
+        alter table "$table"
+        add column flag_update_time int;
       """);
     }
   }
@@ -1738,13 +1756,18 @@ class LocalFavoritesManager with ChangeNotifier {
       var hasTime = columns.contains('last_update_time');
       var hasFlag = columns.contains('has_new_update');
       var hasCheck = columns.contains('last_check_time');
-      if (!hasTime && !hasFlag && !hasCheck) {
+      var hasFlagTime = columns.contains('flag_update_time');
+      if (!hasTime && !hasFlag && !hasCheck && !hasFlagTime) {
         continue;
       }
+      // A read that cleared the flag (has_new_update == 0, flag_update_time set)
+      // must be captured too — that's how a read on another device propagates
+      // through the merge. So the flag-time presence is its own capture reason.
       var conditions = [
         if (hasFlag) 'has_new_update == 1',
         if (hasTime) 'last_update_time is not null',
         if (hasCheck) 'last_check_time is not null',
+        if (hasFlagTime) 'flag_update_time is not null',
       ];
       var rows = db.select(
         'select * from "$table" where ${conditions.join(' or ')};',
@@ -1764,6 +1787,9 @@ class LocalFavoritesManager with ChangeNotifier {
           lastCheckTime: hasCheck
               ? (row['last_check_time'] as num?)?.toInt()
               : null,
+          flagUpdateTime: hasFlagTime
+              ? (row['flag_update_time'] as num?)?.toInt()
+              : null,
         ));
       }
       if (snapshot.isNotEmpty) {
@@ -1782,8 +1808,16 @@ class LocalFavoritesManager with ChangeNotifier {
   /// the follow-update task history kept counting them (#106).
   ///
   /// Per (id, type) row that exists on both sides:
-  /// - `has_new_update` is sticky-OR'd: an unread mark from either side
-  ///   survives; only the read path (markAsRead) may clear it.
+  /// - `has_new_update` is arbitrated by `flag_update_time` (the epoch-ms of
+  ///   the last time either device set the flag to 1 by a check or cleared it
+  ///   to 0 by a read): the more recent assertion wins its value. This lets a
+  ///   read on one device propagate the cleared flag to another — the reason a
+  ///   read comic used to stay stuck in the follow list after a cross-device
+  ///   sync. When only one side carries a timestamp (the other predates the
+  ///   column), that dated side wins, since an undated value is by definition
+  ///   from an older build and thus older in time. When NEITHER side has a
+  ///   timestamp (both legacy), it falls back to the sticky OR that #106
+  ///   introduced, so an unread mark is still never silently lost.
   /// - `last_update_time` / `last_check_time` follow the freshest check: they
   ///   are restored from the snapshot only when its check is at least as
   ///   recent as the imported row's. Restoring a stale baseline would make
@@ -1808,9 +1842,23 @@ class LocalFavoritesManager with ChangeNotifier {
           continue;
         }
         _ensureUpdateColumns(db, table);
+        // SQLite evaluates every RHS against the pre-update row, so the
+        // `flag_update_time` / `last_check_time` read inside these CASEs sees
+        // the imported value even though the same statement also reassigns it.
+        // `?l*` = snapshot (this device); bare columns = imported (backup).
         var statement = db.prepare("""
           update "$table" set
-            has_new_update = (coalesce(has_new_update, 0) | ?),
+            has_new_update = case
+              when ? is not null and flag_update_time is not null
+                then case when ? >= flag_update_time
+                  then ? else coalesce(has_new_update, 0) end
+              when ? is not null then ?
+              when flag_update_time is not null then coalesce(has_new_update, 0)
+              else (coalesce(has_new_update, 0) | ?) end,
+            flag_update_time = case
+              when ? is not null and (flag_update_time is null or ? >= flag_update_time)
+                then ?
+              else flag_update_time end,
             last_update_time = case
               when ? >= coalesce(last_check_time, 0) and ? is not null then ?
               else last_update_time end,
@@ -1822,14 +1870,20 @@ class LocalFavoritesManager with ChangeNotifier {
         try {
           for (var row in entry.value) {
             var checkTime = row.lastCheckTime ?? 0;
+            var flagTime = row.flagUpdateTime;
+            var flag = row.hasNewUpdate ? 1 : 0;
             statement.execute([
-              row.hasNewUpdate ? 1 : 0,
-              checkTime,
-              row.lastUpdateTime,
-              row.lastUpdateTime,
-              checkTime,
-              row.lastCheckTime,
-              row.lastCheckTime,
+              // has_new_update
+              flagTime, // both-dated guard
+              flagTime, flag, // local newer -> local flag
+              flagTime, flag, // only local dated -> local flag
+              flag, // neither dated -> OR
+              // flag_update_time
+              flagTime, flagTime, flagTime,
+              // last_update_time
+              checkTime, row.lastUpdateTime, row.lastUpdateTime,
+              // last_check_time
+              checkTime, row.lastCheckTime, row.lastCheckTime,
               row.id,
               row.type,
             ]);
@@ -1893,24 +1947,35 @@ class LocalFavoritesManager with ChangeNotifier {
     }
     var oldTime = row['last_update_time'];
     var hasNewUpdate = oldTime != updateTime;
+    var now = DateTime.now().millisecondsSinceEpoch;
     // The flag is sticky: a check may only RAISE has_new_update to 1, never
     // clear it (`has_new_update | ?`). Clearing is the read path's job
     // (markAsRead). This prevents a re-check / interrupted-and-restarted check
     // from silently wiping an already-flagged-but-unread comic's badge when the
     // in-memory snapshot (c.updateTime) has drifted from the DB — see the
     // follow-update cancel race that turned "3 updates" into "2".
+    //
+    // flag_update_time records WHEN the flag value was last asserted, so a
+    // cross-device merge can let the more recent assertion win (a read on one
+    // device clearing a flag another device raised earlier, and vice versa).
+    // Stamp it only when this check actually raises the flag — a no-op re-check
+    // (`| 0`) leaves the flag value untouched, so bumping its timestamp would
+    // wrongly out-rank a genuine later read on another device.
     _db.execute(
       """
       update "$folder"
       set last_update_time = ?,
           has_new_update = (coalesce(has_new_update, 0) | ?),
-          last_check_time = ?
+          last_check_time = ?,
+          flag_update_time = case when ? == 1 then ? else flag_update_time end
       where id == ? and type == ?;
     """,
       [
         updateTime,
         hasNewUpdate ? 1 : 0,
-        DateTime.now().millisecondsSinceEpoch,
+        now,
+        hasNewUpdate ? 1 : 0,
+        now,
         id,
         type.value,
       ],
@@ -2038,13 +2103,18 @@ class LocalFavoritesManager with ChangeNotifier {
     if (folder is! String || !existsFolder(folder)) {
       return;
     }
+    // Stamp flag_update_time so this clear can out-rank a remote flag on the
+    // next sync merge: reading a comic on one device must propagate "read" to
+    // the others, which the old sticky-OR merge could never express.
+    _ensureUpdateColumns(_db, folder);
     _db.execute(
       """
       update "$folder"
-      set has_new_update = 0
+      set has_new_update = 0,
+          flag_update_time = ?
       where id == ? and type == ?;
     """,
-      [id, type.value],
+      [DateTime.now().millisecondsSinceEpoch, id, type.value],
     );
     // Refresh the follow-updates count badge on the home screen and the
     // follow-updates page list. Without this, reading a comic (which calls
