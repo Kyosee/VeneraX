@@ -15,14 +15,15 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/utils/archive.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'io.dart';
 
 /// Coarse phases of a data import, reported to the UI for progress display.
-/// `zip_flutter` has no per-entry extraction API, so the extracting phase can
-/// only report bytes-written-so-far (indeterminate), not a precise percentage.
+/// The extracting phase reports bytes-written-so-far (indeterminate) by
+/// polling the output directory, not a precise percentage.
 enum ImportPhase { preparing, extracting, applying, reloading }
 
 /// Progress callback for [importAppData] / [importPicaData].
@@ -77,7 +78,7 @@ void _extractIsolateEntry(List<dynamic> args) {
   final String src = args[1] as String;
   final String dest = args[2] as String;
   try {
-    ZipFile.openAndExtract(src, dest);
+    extractZip(src, dest);
     sendPort.send(null);
   } catch (e) {
     sendPort.send(e.toString());

@@ -11,11 +11,11 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/utils/archive.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
-import 'package:zip_flutter/zip_flutter.dart';
 
 import 'file_downloader.dart';
 
@@ -1073,13 +1073,13 @@ class ArchiveDownloadTask extends DownloadTask {
       var cacheDir = FilePath.join(App.cachePath, "archive_downloading");
       Directory(cacheDir).forceCreateSync();
       await Isolate.run(() {
-        ZipFile.openAndExtract(archive, cacheDir);
+        extractZip(archive, cacheDir);
       });
       await copyDirectoryIsolate(Directory(cacheDir), Directory(outDir));
       await Directory(cacheDir).deleteIgnoreError(recursive: true);
     } else {
       await Isolate.run(() {
-        ZipFile.openAndExtract(archive, outDir);
+        extractZip(archive, outDir);
       });
     }
   }

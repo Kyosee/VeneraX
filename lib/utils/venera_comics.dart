@@ -5,6 +5,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/utils/archive.dart';
 import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
@@ -253,7 +254,7 @@ Future<VeneraComicsManifest> readVeneraComicsManifest(File file) async {
     final tempDirPath = tempDir.path;
     final filePath = file.path;
     await Isolate.run(() {
-      ZipFile.openAndExtract(filePath, tempDirPath);
+      extractZip(filePath, tempDirPath);
     });
 
     final manifestFile = File(FilePath.join(tempDirPath, 'manifest.json'));
@@ -304,7 +305,7 @@ Future<int> importVeneraComics(
     final importDirPath = importDir.path;
     final filePath = file.path;
     await Isolate.run(() {
-      ZipFile.openAndExtract(filePath, importDirPath);
+      extractZip(filePath, importDirPath);
     });
 
     final manifestFile = File(FilePath.join(importDirPath, 'manifest.json'));
