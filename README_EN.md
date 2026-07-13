@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/new_logo.png" width="120" alt="VeneraX" />
+  <img src="assets/new_logo.png" width="180" alt="VeneraX" />
   <h1>VeneraX</h1>
 </div>
 
