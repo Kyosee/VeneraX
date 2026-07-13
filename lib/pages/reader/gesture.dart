@@ -290,42 +290,78 @@ class _ReaderGestureDetectorState
         bool isCenter = false;
         var prev = () => context.reader.toPrevPage();
         var next = () => context.reader.toNextPage();
-        if (appdata.settings.getReaderSetting(
+        final customZones = appdata.settings.getReaderSetting(
           reader.cid,
           reader.type.sourceKey,
-          'reverseTapToTurnPages',
-        )) {
-          prev = () => context.reader.toNextPage();
-          next = () => context.reader.toPrevPage();
-        }
-        switch (context.reader.mode) {
-          case ReaderMode.galleryLeftToRight:
-          case ReaderMode.continuousLeftToRight:
-            if (isLeft) {
-              prev();
-            } else if (isRight) {
-              next();
-            } else {
-              isCenter = true;
+          'enableCustomTapZones',
+        );
+        if (customZones == true) {
+          // 自定义翻页区域：由用户为四条边缘各自指定动作。角落同属两条边时
+          // 上下优先于左右；若命中边动作为 'none' 则回退到相邻边的非 none 动作。
+          String action = 'none';
+          String? zone(String key) => appdata.settings.getReaderSetting(
+            reader.cid,
+            reader.type.sourceKey,
+            key,
+          );
+          for (final a in <String?>[
+            if (isTop) zone('tapZoneTop'),
+            if (isBottom) zone('tapZoneBottom'),
+            if (isLeft) zone('tapZoneLeft'),
+            if (isRight) zone('tapZoneRight'),
+          ]) {
+            if (a != null && a != 'none') {
+              action = a;
+              break;
             }
-          case ReaderMode.galleryRightToLeft:
-          case ReaderMode.continuousRightToLeft:
-            if (isLeft) {
-              next();
-            } else if (isRight) {
-              prev();
-            } else {
-              isCenter = true;
-            }
-          case ReaderMode.galleryTopToBottom:
-          case ReaderMode.continuousTopToBottom:
-            if (isTop) {
-              prev();
-            } else if (isBottom) {
-              next();
-            } else {
-              isCenter = true;
-            }
+          }
+          if (action == 'prev') {
+            prev();
+            return;
+          } else if (action == 'next') {
+            next();
+            return;
+          }
+          // 'none' 或点在中心区域：落到打开/关闭工具栏
+          isCenter = true;
+        } else {
+          if (appdata.settings.getReaderSetting(
+            reader.cid,
+            reader.type.sourceKey,
+            'reverseTapToTurnPages',
+          )) {
+            prev = () => context.reader.toNextPage();
+            next = () => context.reader.toPrevPage();
+          }
+          switch (context.reader.mode) {
+            case ReaderMode.galleryLeftToRight:
+            case ReaderMode.continuousLeftToRight:
+              if (isLeft) {
+                prev();
+              } else if (isRight) {
+                next();
+              } else {
+                isCenter = true;
+              }
+            case ReaderMode.galleryRightToLeft:
+            case ReaderMode.continuousRightToLeft:
+              if (isLeft) {
+                next();
+              } else if (isRight) {
+                prev();
+              } else {
+                isCenter = true;
+              }
+            case ReaderMode.galleryTopToBottom:
+            case ReaderMode.continuousTopToBottom:
+              if (isTop) {
+                prev();
+              } else if (isBottom) {
+                next();
+              } else {
+                isCenter = true;
+              }
+          }
         }
         if (!isCenter) {
           return;

@@ -305,6 +305,13 @@ class Settings with ChangeNotifier {
     'readerScreenPicNumberForPortrait': 1, // 1 - 5
     'enableTapToTurnPages': true,
     'reverseTapToTurnPages': false,
+    // 自定义翻页区域（覆盖默认的按模式翻页）。开启后由 tapZone* 决定四条边缘
+    // 区域点击的动作：'prev' 上一页 / 'next' 下一页 / 'none' 不翻页(打开工具栏)。
+    'enableCustomTapZones': false,
+    'tapZoneTop': 'prev',
+    'tapZoneBottom': 'next',
+    'tapZoneLeft': 'none',
+    'tapZoneRight': 'none',
     'enablePageAnimation': true,
     'language': 'system', // system, zh-CN, zh-TW, en-US
     'cacheSize': 2048, // in MB
@@ -361,6 +368,10 @@ class Settings with ChangeNotifier {
     'deviceId': '',
     'ignoreBadCertificate': false,
     'readerScrollSpeed': 1.0, // 0.5 - 3.0
+    // 连续模式翻页后让目标页垂直居中（默认贴顶）。仅上下连续滑动生效。
+    'readerCenterPageOnTurn': false,
+    // 连续模式相邻图片之间的间隙（逻辑像素，0 = 紧贴）。
+    'readerPageSpacing': 0.0, // 0 - 50
     'localFavoritesFirst': true,
     'autoCloseFavoritePanel': false,
     'showChapterComments': true, // show chapter comments in reader

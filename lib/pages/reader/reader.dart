@@ -307,7 +307,11 @@ class _ReaderState extends State<Reader>
             builder: (context) {
               return _ReaderScaffold(
                 child: _ReaderGestureDetector(
-                  child: _ReaderImages(key: Key(chapter.toString())),
+                  child: _ReaderImages(
+                    key: _isSeamlessContinuous
+                        ? const Key('seamless')
+                        : Key(chapter.toString()),
+                  ),
                 ),
               );
             },
@@ -326,6 +330,22 @@ class _ReaderState extends State<Reader>
 
   @override
   int get maxChapter => widget.chapters?.length ?? 1;
+
+  /// Seamless continuous reading spans every chapter inside a single
+  /// [_ContinuousMode]; scrolling into the next chapter bumps [chapter] without
+  /// a rebuild. Keying [_ReaderImages] by chapter would then tear down and
+  /// reload that widget on the next [update] (the tap-turn loading flash,
+  /// issue #117-4), so the key must stay stable in this mode.
+  bool get _isSeamlessContinuous =>
+      mode.isContinuous &&
+      widget.chapters != null &&
+      maxChapter > 1 &&
+      appdata.settings.getReaderSetting(
+            cid,
+            type.sourceKey,
+            'enableContinuousChapterReading',
+          ) ==
+          true;
 
   @override
   void onPageChanged() {
@@ -679,11 +699,19 @@ abstract mixin class _ReaderLocation {
 
   /// Returns true if the page is changed
   bool toNextPage() {
+    // 连续模式自行在扁平 entry 序列里移动（可跨衔接页/跨章），不走按页码
+    // 重建的老路径，避免翻页触发本章重载(bug#117-4)与卡在章尾(bug#117-5)。
+    if (_imageViewController?.turnPage(true) == true) {
+      return true;
+    }
     return toPage(page + 1);
   }
 
   /// Returns true if the page is changed
   bool toPrevPage() {
+    if (_imageViewController?.turnPage(false) == true) {
+      return true;
+    }
     return toPage(page - 1);
   }
 
@@ -839,6 +867,15 @@ abstract interface class _ImageViewController {
   void toPage(int page);
 
   Future<void> animateToPage(int page);
+
+  /// Continuous mode: turn one page by moving to the adjacent image entry,
+  /// crossing chapter join pages and (in seamless mode) chapter boundaries
+  /// without rebuilding. The single-chapter page-number model can't reach a
+  /// seamless join page or the next chapter's first page (issue #117), and
+  /// rebuilding on chapter change reloads the whole chapter (the loading
+  /// flash). Returns true if handled; false lets the caller fall back to the
+  /// page-number model (gallery, and non-seamless continuous at a boundary).
+  bool turnPage(bool forward);
 
   void handleDoubleTap(Offset location);
 

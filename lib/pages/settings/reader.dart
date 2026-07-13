@@ -394,6 +394,36 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     isEnabledSpecificSettings ? widget.comicSource : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
+            if (appdata.settings['readerMode'] == 'continuousTopToBottom')
+              _SwitchSetting(
+                title: "Center page after turning".tl,
+                subtitle:
+                    "Center a short page vertically instead of pinning it to the top"
+                        .tl,
+                settingKey: "readerCenterPageOnTurn",
+                onChanged: () {
+                  widget.onChanged?.call("readerCenterPageOnTurn");
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource:
+                    isEnabledSpecificSettings ? widget.comicSource : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            if (appdata.settings['readerMode']!.startsWith('continuous'))
+              _SliderSetting(
+                title: "Spacing between pages".tl,
+                settingsIndex: "readerPageSpacing",
+                interval: 2,
+                min: 0,
+                max: 50,
+                onChanged: () {
+                  widget.onChanged?.call("readerPageSpacing");
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource:
+                    isEnabledSpecificSettings ? widget.comicSource : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
             _SliderSetting(
               title: "Number of images preloaded".tl,
               settingsIndex: "preloadImageCount",
@@ -461,6 +491,46 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 comicSource:
                     isEnabledSpecificSettings ? widget.comicSource : null,
                 useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            if (appdata.settings['enableTapToTurnPages'] == true)
+              _SwitchSetting(
+                title: 'Custom tap-to-turn zones'.tl,
+                subtitle:
+                    'Choose what tapping each screen edge does'.tl,
+                settingKey: 'enableCustomTapZones',
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call('enableCustomTapZones');
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource:
+                    isEnabledSpecificSettings ? widget.comicSource : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            if (appdata.settings['enableTapToTurnPages'] == true &&
+                appdata.settings['enableCustomTapZones'] == true)
+              ...[
+                ('tapZoneTop', 'Top edge tap'.tl),
+                ('tapZoneBottom', 'Bottom edge tap'.tl),
+                ('tapZoneLeft', 'Left edge tap'.tl),
+                ('tapZoneRight', 'Right edge tap'.tl),
+              ].map(
+                (e) => SelectSetting(
+                  title: e.$2,
+                  settingKey: e.$1,
+                  optionTranslation: {
+                    'prev': 'Previous page'.tl,
+                    'next': 'Next page'.tl,
+                    'none': 'No action'.tl,
+                  },
+                  onChanged: () {
+                    widget.onChanged?.call(e.$1);
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource:
+                      isEnabledSpecificSettings ? widget.comicSource : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
               ),
           ],
         ).toSliver(),

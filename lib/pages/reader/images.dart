@@ -578,6 +578,9 @@ class _GalleryModeState extends State<_GalleryMode>
   }
 
   @override
+  bool turnPage(bool forward) => false; // gallery 用默认按页码翻页
+
+  @override
   void handleDoubleTap(Offset location) {
     if (appdata.settings['quickCollectImage'] == 'DoubleTap') {
       context.readerScaffold.addImageFavorite();
@@ -1480,7 +1483,22 @@ class _ContinuousModeState extends State<_ContinuousMode>
       }
       return _buildChapterJoinPage(context, entry);
     }
-    return _buildImageEntry(entry);
+    Widget child = _buildImageEntry(entry);
+    // 相邻图片之间的可选间隙(issue #117-3)。沿主轴在图片后加内边距，间隙区域
+    // 由外层 ColoredBox 背景色填充。仅图片条目加，衔接页不受影响。
+    final spacing = (appdata.settings.getReaderSetting(
+              reader.cid,
+              reader.type.sourceKey,
+              'readerPageSpacing',
+            ) as num?)
+            ?.toDouble() ??
+        0.0;
+    if (spacing > 0) {
+      child = reader.mode == ReaderMode.continuousTopToBottom
+          ? child.paddingBottom(spacing)
+          : child.paddingRight(spacing);
+    }
+    return child;
   }
 
   ScrollPhysics get _physics => isCTRLPressed || _isMouseScrolling || disableScroll
@@ -1764,13 +1782,17 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// center-keyed coordinate space (negative offsets above the pivot) which a
   /// naive idx/length * maxScrollExtent mapping got wrong (it ignored the
   /// negative region, so jumps to the first/middle pages missed).
-  Future<void> _goToEntry(int chapter, int page, {required bool animate}) async {
+  Future<void> _goToEntry(int chapter, int page,
+      {required bool animate, bool center = false}) async {
     if (!_scrollController.hasClients) return;
 
     // Fast path: target already laid out — one precise move.
     final delta = _offsetDeltaToEntry(chapter, page);
     if (delta != null) {
-      await _applyScroll(_scrollController.position.pixels + delta,
+      await _applyScroll(
+          _scrollController.position.pixels +
+              delta -
+              _centerAdjust(chapter, page, center),
           animate: animate);
       return;
     }
@@ -1796,7 +1818,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final refDelta = _offsetDeltaToEntry(ref.chapter, ref.page) ?? 0;
       final refIdx = _indexOfEntry(ref.chapter, ref.page);
       if (refIdx == targetIdx) {
-        await _applyScroll(pos.pixels + refDelta, animate: animate);
+        await _applyScroll(
+            pos.pixels + refDelta - _centerAdjust(chapter, page, center),
+            animate: animate);
         return;
       }
       // Estimate per-entry extent from the reference item's own size.
@@ -1809,11 +1833,62 @@ class _ContinuousModeState extends State<_ContinuousMode>
       // Did the target come into layout? If so, finish precisely.
       final d = _offsetDeltaToEntry(chapter, page);
       if (d != null) {
-        await _applyScroll(_scrollController.position.pixels + d,
+        await _applyScroll(
+            _scrollController.position.pixels +
+                d -
+                _centerAdjust(chapter, page, center),
             animate: animate);
         return;
       }
     }
+  }
+
+  /// When [center] is on (and vertical), the extra scroll-back offset that
+  /// moves the target page from the viewport's leading edge to vertically
+  /// centered. Only when the page is shorter than the viewport; taller pages
+  /// stay pinned to the top so their top isn't clipped (issue #117-2).
+  double _centerAdjust(int chapter, int page, bool center) {
+    if (!center || reader.mode != ReaderMode.continuousTopToBottom) {
+      return 0;
+    }
+    final ctx = _itemKeys['$chapter:$page']?.currentContext;
+    final box = ctx?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return 0;
+    final pageExtent = box.size.height;
+    final viewExtent = reader.size.height;
+    if (pageExtent >= viewExtent) return 0;
+    // Positive value: subtracted from the leading-edge target so equal margins
+    // sit above and below the page.
+    return (viewExtent - pageExtent) / 2;
+  }
+
+  /// Continuous-mode page turn: move to the adjacent *image* entry in the flat
+  /// [_entries] list, skipping chapter-join separators and crossing chapter
+  /// boundaries (seamless). Scrolling — never a page-number rebuild — so it
+  /// neither reloads the chapter (issue #117-4) nor stalls on a join page
+  /// (issue #117-5). Returns false at a hard boundary (no adjacent image) so
+  /// the caller falls back to chapter navigation.
+  @override
+  bool turnPage(bool forward) {
+    if (_entries.isEmpty) return false;
+    final curIdx = _indexOfEntry(reader.chapter, reader.page);
+    final step = forward ? 1 : -1;
+    for (var i = curIdx + step; i >= 0 && i < _entries.length; i += step) {
+      final entry = _entries[i];
+      if (!entry.isImage) continue;
+      final center = appdata.settings.getReaderSetting(
+            reader.cid,
+            reader.type.sourceKey,
+            'readerCenterPageOnTurn',
+          ) ==
+          true;
+      _futurePosition = null;
+      final animate = reader.enablePageAnimation(reader.cid, reader.type);
+      _goToEntry(entry.chapter, entry.page, animate: animate, center: center);
+      return true;
+    }
+    // No adjacent image in the loaded window — let the caller try chapter nav.
+    return false;
   }
 
   /// Scroll-axis extent of a laid-out entry, or null if not laid out.
