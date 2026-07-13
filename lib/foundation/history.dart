@@ -227,7 +227,9 @@ class HistoryManager with ChangeNotifier {
   int get length {
     if (!isInitialized || _isCorrupted) return 0;
     try {
-      return _db.select("select count(*) from history;").first[0] as int;
+      return _db
+          .select("select count(*) from history where ifnull(hidden, 0) = 0;")
+          .first[0] as int;
     } on SqliteException catch (e) {
       _handleCorruption(e);
       return 0;
@@ -273,6 +275,7 @@ class HistoryManager with ChangeNotifier {
           readEpisode text,
           max_page int,
           chapter_group int,
+          hidden int,
           primary key (id, type)
         );
       """);
@@ -284,6 +287,13 @@ class HistoryManager with ChangeNotifier {
     }
     if (!columns.any((element) => element["name"] == "chapter_group")) {
       _db.execute("alter table history add column chapter_group int;");
+    }
+    // `hidden` marks a record removed from the *history list* while its reading
+    // state (position + read-episode marks) is kept, so clearing the list never
+    // wipes a comic's read progress. Absent/NULL/0 = visible. Reading again does
+    // an `insert or replace` that resets this column to NULL, un-hiding the row.
+    if (!columns.any((element) => element["name"] == "hidden")) {
+      _db.execute("alter table history add column hidden int;");
     }
   }
 
@@ -494,9 +504,12 @@ class HistoryManager with ChangeNotifier {
     return newItem;
   }
 
+  /// Clears the history *list* by hiding every record. Reading position and
+  /// per-chapter read marks are preserved (see [hide]); a comic reappears in
+  /// the list the next time it is read.
   void clearHistory() {
     if (!isInitialized) return;
-    _db.execute("delete from history;");
+    _db.execute("update history set hidden = 1 where ifnull(hidden, 0) = 0;");
     updateCache();
     notifyListeners();
   }
@@ -505,7 +518,7 @@ class HistoryManager with ChangeNotifier {
     _db.execute('BEGIN TRANSACTION;');
     try {
       final idAndTypes = _db.select("""
-      select id, type from history;
+      select id, type from history where ifnull(hidden, 0) = 0;
     """);
       for (var element in idAndTypes) {
         final id = element["id"] as String;
@@ -513,7 +526,7 @@ class HistoryManager with ChangeNotifier {
         if (!LocalFavoritesManager().isExist(id, type)) {
           _db.execute(
             """
-          delete from history
+          update history set hidden = 1
           where id == ? and type == ?;
         """,
             [id, type.value],
@@ -527,6 +540,8 @@ class HistoryManager with ChangeNotifier {
     }
   }
 
+  /// Hides unfavorited comics from the history list, keeping their reading
+  /// state (see [hide]).
   void clearUnfavoritedHistory() {
     if (!isInitialized) return;
     _clearLocalUnfavoritedHistory();
@@ -534,14 +549,18 @@ class HistoryManager with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Delete history records older than [maxAge], counted from each record's
-  /// last-read time. Returns the number of rows removed. A no-op (returns 0)
-  /// when not initialized or corrupted.
+  /// Hides history records older than [maxAge] from the list, counted from each
+  /// record's last-read time. Reading state is preserved (see [hide]). Returns
+  /// the number of rows hidden. A no-op (returns 0) when not initialized or
+  /// corrupted.
   int cleanHistoryOlderThan(Duration maxAge) {
     if (!isInitialized || _isCorrupted) return 0;
     var cutoff = DateTime.now().subtract(maxAge).millisecondsSinceEpoch;
     try {
-      _db.execute("delete from history where time < ?;", [cutoff]);
+      _db.execute(
+        "update history set hidden = 1 where ifnull(hidden, 0) = 0 and time < ?;",
+        [cutoff],
+      );
       var removed = _db.updatedRows;
       if (removed > 0) {
         updateCache();
@@ -554,6 +573,51 @@ class HistoryManager with ChangeNotifier {
     }
   }
 
+  /// Removes a single comic from the history *list* by hiding it, keeping its
+  /// reading position and per-chapter read marks intact so the comic's details
+  /// page still shows read chapters and can resume where the user left off.
+  /// Used by the history list page (single/swipe/batch delete). Reading the
+  /// comic again un-hides the record.
+  void hide(String id, ComicType type) {
+    if (!isInitialized) return;
+    _db.execute(
+      """
+      update history set hidden = 1
+      where id == ? and type == ?;
+    """,
+      [id, type.value],
+    );
+    updateCache();
+    notifyListeners();
+  }
+
+  /// Hides multiple comics from the history list, keeping their reading state
+  /// (see [hide]).
+  void batchHide(List<ComicID> histories) {
+    if (!isInitialized || histories.isEmpty) return;
+    _db.execute('BEGIN TRANSACTION;');
+    try {
+      for (var history in histories) {
+        _db.execute(
+          """
+          update history set hidden = 1
+          where id == ? and type == ?;
+        """,
+          [history.id, history.type.value],
+        );
+      }
+      _db.execute('COMMIT;');
+    } catch (e) {
+      _db.execute('ROLLBACK;');
+      rethrow;
+    }
+    updateCache();
+    notifyListeners();
+  }
+
+  /// Permanently deletes a history record, including its reading state. Use for
+  /// genuine comic removal (e.g. a local comic deleted from disk), NOT for
+  /// clearing the history list — use [hide] for that.
   void remove(String id, ComicType type) async {
     if (!isInitialized) return;
     _db.execute(
@@ -624,8 +688,11 @@ class HistoryManager with ChangeNotifier {
   }
 
   static List<History> _queryAllHistory(CommonDatabase db) {
+    // List view: hidden rows (cleared from the list but keeping their reading
+    // state) are excluded. [find]/[updateCache] intentionally still see them.
     var res = db.select("""
       select * from history
+      where ifnull(hidden, 0) = 0
       order by time DESC;
     """);
     return res.map((element) => History.fromRow(element)).toList();
@@ -662,6 +729,7 @@ class HistoryManager with ChangeNotifier {
     if (!isInitialized) return [];
     var res = _db.select("""
       select * from history
+      where ifnull(hidden, 0) = 0
       order by time DESC
       limit 20;
     """);
@@ -672,7 +740,7 @@ class HistoryManager with ChangeNotifier {
   int count() {
     if (!isInitialized) return 0;
     var res = _db.select("""
-      select count(*) from history;
+      select count(*) from history where ifnull(hidden, 0) = 0;
     """);
     return res.first[0] as int;
   }

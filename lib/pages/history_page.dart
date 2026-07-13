@@ -243,15 +243,18 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   void _removeHistory(History comic) {
+    // Hide from the list, keeping reading position + chapter read marks so the
+    // comic's details page still shows read chapters. Reading it again (or the
+    // Undo action, which re-inserts the record) brings it back to the list.
     if (comic.sourceKey.startsWith("Unknown")) {
-      HistoryManager().remove(
+      HistoryManager().hide(
         comic.id,
         ComicType(int.parse(comic.sourceKey.split(':')[1])),
       );
     } else if (comic.sourceKey == 'local') {
-      HistoryManager().remove(comic.id, ComicType.local);
+      HistoryManager().hide(comic.id, ComicType.local);
     } else {
-      HistoryManager().remove(comic.id, ComicType.fromKey(comic.sourceKey));
+      HistoryManager().hide(comic.id, ComicType.fromKey(comic.sourceKey));
     }
   }
 
