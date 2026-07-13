@@ -1,7 +1,6 @@
 <div align="center">
   <img src="assets/new_logo.png" width="180" alt="VeneraX" />
   <h1>VeneraX</h1>
-</div>
 
 [![Flutter](https://img.shields.io/badge/flutter-3.44.3-blue)](https://flutter.dev/)
 ![AI-Driven](https://img.shields.io/badge/AI--Driven-Claude%20|%20Codex%20|%20DeepSeek-6e47ff)
@@ -9,7 +8,8 @@
 [![Stars](https://img.shields.io/github/stars/Kyosee/VeneraX?style=flat)](https://github.com/Kyosee/VeneraX/stargazers)
 [![Release](https://img.shields.io/github/v/release/Kyosee/VeneraX)](https://github.com/Kyosee/VeneraX/releases)
 
-**[中文](README.md) | English**
+  <h3><a href="README.md">中文</a> | English</h3>
+</div>
 
 VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original.
 
