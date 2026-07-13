@@ -1156,6 +1156,23 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final viewportLeadingGlobal = box.localToGlobal(Offset.zero);
     final vertical = reader.mode == ReaderMode.continuousTopToBottom;
 
+    // Anchor line for resolving the current page. Normally the viewport's
+    // leading edge (offset 1). But with center-on-turn on, a turned-to page is
+    // parked at the viewport center, leaving the *previous* page straddling the
+    // leading edge — resolving against the edge would write the page back to
+    // the previous one, so the next tap re-centers the same target and the
+    // reader looks stuck one page in (issue #117-2 regression). Probe the
+    // center instead so the centered page resolves as current.
+    final center = vertical &&
+        appdata.settings.getReaderSetting(
+              reader.cid,
+              reader.type.sourceKey,
+              'readerCenterPageOnTurn',
+            ) ==
+            true;
+    final viewExtent = vertical ? box.size.height : box.size.width;
+    final probe = center ? viewExtent / 2 : 1.0;
+
     _ContinuousReaderEntry? current;
     // Last image whose box lies entirely at/above the leading edge. When the
     // edge falls on a chapter separator (a mid-chapter join page or the final
@@ -1178,19 +1195,19 @@ class _ContinuousModeState extends State<_ContinuousMode>
           ? topLeft.dy - viewportLeadingGlobal.dy
           : topLeft.dx - viewportLeadingGlobal.dx;
       final extent = vertical ? itemBox.size.height : itemBox.size.width;
-      // The entry crossing the leading edge: starts at/above 0 and ends below.
-      if (start <= 1 && start + extent > 1) {
+      // The entry crossing the anchor line: starts at/above it and ends below.
+      if (start <= probe && start + extent > probe) {
         current = entry;
         break;
       }
-      if (start <= 1) {
-        // Wholly above the edge; remember as the running "last above".
+      if (start <= probe) {
+        // Wholly above the anchor; remember as the running "last above".
         lastAbove = entry;
         continue;
       }
-      // start > 1: first image beginning below the edge. If an earlier image
-      // sits above it, a separator holds the edge between them — stay on that
-      // finished page rather than advancing into the page below.
+      // start > probe: first image beginning below the anchor. If an earlier
+      // image sits above it, a separator holds the anchor between them — stay
+      // on that finished page rather than advancing into the page below.
       current = lastAbove ?? entry;
       break;
     }

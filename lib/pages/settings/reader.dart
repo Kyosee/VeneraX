@@ -166,7 +166,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           initiallyExpanded: true,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 8),
-          title: Text("Reading settings".tl),
+          title: Text("Reading settings".tl, style: ts.bold.s18),
           children: [
             _PageTurnModeSetting(
               onChanged: widget.onChanged,
@@ -441,7 +441,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           key: const PageStorageKey('readerGestureGroup'),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 8),
-          title: Text("Gesture settings".tl),
+          title: Text("Gesture settings".tl, style: ts.bold.s18),
           children: [
             _SwitchSetting(
               title: 'Double tap to zoom'.tl,
@@ -538,7 +538,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           key: const PageStorageKey('readerFavoritesGroup'),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 8),
-          title: Text("Favorites settings".tl),
+          title: Text("Favorites settings".tl, style: ts.bold.s18),
           children: [
             _SwitchSetting(
               title: "Also collect chapter cover when collecting image".tl,
@@ -576,7 +576,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           key: const PageStorageKey('readerImageProcessingGroup'),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 8),
-          title: Text("Image processing / enhancement".tl),
+          title: Text("Image processing / enhancement".tl, style: ts.bold.s18),
           children: [
             _SwitchSetting(
               title: 'Limit image width'.tl,
@@ -654,7 +654,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           key: const PageStorageKey('readerDisplayGroup'),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 8),
-          title: Text("Display settings".tl),
+          title: Text("Display settings".tl, style: ts.bold.s18),
           children: [
             _SwitchSetting(
               title: "Display time & battery info in reader".tl,
