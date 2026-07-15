@@ -674,15 +674,29 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     final buttonShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
     );
+    // 宽屏按钮被拉到封面高度，默认 14/19 的字号图标偏小、比例失衡；
+    // 宽屏统一放大一档（16/24），窄屏保持原样。
+    final double labelSize = isWide ? 16 : 14;
+    final double iconSize = isWide ? 24 : 19;
+    final filledStyle = FilledButton.styleFrom(
+      shape: buttonShape,
+      textStyle: TextStyle(fontSize: labelSize, fontWeight: FontWeight.w600),
+      iconSize: iconSize,
+    );
+    final outlinedStyle = OutlinedButton.styleFrom(
+      shape: buttonShape,
+      textStyle: TextStyle(fontSize: labelSize, fontWeight: FontWeight.w600),
+      iconSize: iconSize,
+    );
     final hasHistory =
         history != null && (history!.ep > 1 || history!.page > 1);
     if (!hasHistory) {
-      // 单按钮：独占自身高度，不随封面拉伸。
+      // 单按钮：宽屏下独占整个封面高度（100%），窄屏保持固定高度。
       return SizedBox(
-        height: 52,
+        height: isWide && maxHeight != null ? maxHeight : 52,
         child: FilledButton.icon(
           onPressed: read,
-          style: FilledButton.styleFrom(shape: buttonShape),
+          style: filledStyle,
           icon: const Icon(Icons.play_arrow_rounded),
           label: Text("Read".tl),
         ),
@@ -693,13 +707,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     // emphasis despite being the lower button.
     final startButton = OutlinedButton.icon(
       onPressed: read,
-      style: OutlinedButton.styleFrom(shape: buttonShape),
+      style: outlinedStyle,
       icon: const Icon(Icons.restart_alt_rounded),
       label: Text("Start".tl),
     );
     final continueButton = FilledButton.icon(
       onPressed: continueRead,
-      style: FilledButton.styleFrom(shape: buttonShape),
+      style: filledStyle,
       icon: const Icon(Icons.menu_book_rounded),
       label: Text("Continue".tl),
     );
