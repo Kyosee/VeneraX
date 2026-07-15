@@ -142,6 +142,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ["webdav", "backup", "sync", "cloud"],
   ),
   _SettingsSearchEntry("Sync Logs", 4, keywords: ["webdav", "log"]),
+  _SettingsSearchEntry(
+    "WebDAV Comic Library",
+    4,
+    keywords: ["webdav", "library", "comic", "remote", "nas", "cloud"],
+  ),
   _SettingsSearchEntry("Language", 4, keywords: ["locale", "language"]),
   _SettingsSearchEntry(
     "Authorization Required",

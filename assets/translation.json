@@ -981,7 +981,16 @@
     "Right edge tap": "点击右侧区域",
     "Previous page": "上一页",
     "Next page": "下一页",
-    "No action": "无动作"
+    "No action": "无动作",
+    "WebDAV Library": "WebDAV 漫画库",
+    "WebDAV Comic Library": "WebDAV 漫画库",
+    "WebDAV comic library is not configured": "尚未配置 WebDAV 漫画库",
+    "Browse comics on a WebDAV server without downloading them first.": "无需下载即可浏览 WebDAV 服务器上的漫画。",
+    "Library Folder (Optional)": "漫画库文件夹（可选）",
+    "Configure": "去配置",
+    "Nothing here": "这里什么都没有",
+    "Fill in the URL first": "请先填写 URL",
+    "Archives": "压缩包"
   },
   "zh_TW": {
     "Classic": "經典版",
@@ -1965,6 +1974,15 @@
     "Right edge tap": "點擊右側區域",
     "Previous page": "上一頁",
     "Next page": "下一頁",
-    "No action": "無動作"
+    "No action": "無動作",
+    "WebDAV Library": "WebDAV 漫畫庫",
+    "WebDAV Comic Library": "WebDAV 漫畫庫",
+    "WebDAV comic library is not configured": "尚未設定 WebDAV 漫畫庫",
+    "Browse comics on a WebDAV server without downloading them first.": "無需下載即可瀏覽 WebDAV 伺服器上的漫畫。",
+    "Library Folder (Optional)": "漫畫庫資料夾（可選）",
+    "Configure": "去設定",
+    "Nothing here": "這裡什麼都沒有",
+    "Fill in the URL first": "請先填寫 URL",
+    "Archives": "壓縮檔"
   }
 }

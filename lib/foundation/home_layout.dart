@@ -29,6 +29,7 @@ const List<HomeSectionMeta> kHomeSections = [
   HomeSectionMeta('followUpdates', 'Follow Updates', Icons.dynamic_feed),
   HomeSectionMeta('comicSource', 'Comic Source', Icons.source_outlined),
   HomeSectionMeta('imageFavorites', 'Image Favorites', Icons.image_outlined),
+  HomeSectionMeta('webdavLibrary', 'WebDAV Library', Icons.cloud_outlined),
 ];
 
 HomeSectionMeta? homeSectionMetaById(String id) {

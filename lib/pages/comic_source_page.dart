@@ -12,6 +12,7 @@ import 'package:venera/foundation/comic_source_update_tasks.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/network/webdav_library.dart';
 import 'package:venera/pages/webview.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
@@ -358,14 +359,17 @@ class _BodyState extends State<_Body> {
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
         buildCard(context),
+        // The built-in WebDAV library source has no script to edit/update/
+        // delete, so it never appears in this management list.
         for (var source in ComicSource.all())
-          _SliverComicSource(
-            key: ValueKey(source.key),
-            source: source,
-            edit: edit,
-            update: update,
-            delete: delete,
-          ),
+          if (source.key != WebdavLibrary.sourceKey)
+            _SliverComicSource(
+              key: ValueKey(source.key),
+              source: source,
+              edit: edit,
+              update: update,
+              delete: delete,
+            ),
         SliverPadding(padding: EdgeInsets.only(bottom: context.padding.bottom)),
       ],
     );

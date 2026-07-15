@@ -8,6 +8,8 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
+import 'package:venera/foundation/comic_source/webdav_source.dart';
+import 'package:venera/network/webdav_library.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/res.dart';
@@ -61,6 +63,11 @@ class ComicSourceManager with ChangeNotifier, Init {
   Future<void> doInit() async {
     await JsEngine().ensureInit();
     ComicSourceLibraryManager.migrateIfNeeded();
+    // The built-in WebDAV library is a native (non-script) source, so it is
+    // registered directly rather than parsed from disk. Registered before the
+    // script scan (which may early-return when no scripts exist) so it is
+    // always present.
+    _addParsedSource(buildWebdavComicSource(), WebdavLibrary.sourceKey);
     final path = "${App.dataPath}/comic_source";
     if (!(await Directory(path).exists())) {
       await Directory(path).create(recursive: true);

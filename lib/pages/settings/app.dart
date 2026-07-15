@@ -274,6 +274,13 @@ class _AppSettingsState extends State<AppSettings> {
               },
               actionTitle: 'View'.tl,
             ),
+            _CallbackSetting(
+              title: "WebDAV Comic Library".tl,
+              callback: () async {
+                showPopUpWidget(context, const WebdavLibrarySetting());
+              },
+              actionTitle: 'Set'.tl,
+            ),
           ],
         ).toSliver(),
         if (App.isAndroid)
@@ -1251,6 +1258,163 @@ class _RemoteBackupListDialog extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Configures the built-in WebDAV comic library (browse comics stored on a
+/// WebDAV server without downloading them first). Independent of the data-sync
+/// WebDAV config above: a user may sync data to one server and read comics from
+/// another.
+class WebdavLibrarySetting extends StatefulWidget {
+  const WebdavLibrarySetting({super.key});
+
+  @override
+  State<WebdavLibrarySetting> createState() => _WebdavLibrarySettingState();
+}
+
+class _WebdavLibrarySettingState extends State<WebdavLibrarySetting> {
+  String url = "";
+  String user = "";
+  String pass = "";
+  String root = "";
+
+  bool isTesting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = appdata.settings['webdavComicLibrary'];
+    if (c is List && c.whereType<String>().length >= 3) {
+      url = c[0] as String;
+      user = c[1] as String;
+      pass = c[2] as String;
+      root = (c.length > 3 && c[3] is String) ? c[3] as String : '';
+    }
+  }
+
+  void _test() async {
+    if (url.trim().isEmpty) {
+      context.showMessage(message: "Fill in the URL first".tl);
+      return;
+    }
+    setState(() => isTesting = true);
+    final result = await WebdavLibrary.instance.testConnection(
+      url: url,
+      user: user,
+      pass: pass,
+      root: root,
+    );
+    if (!mounted) return;
+    setState(() => isTesting = false);
+    if (result.error) {
+      context.showMessage(
+        message: "Connection failed: @error"
+            .tlParams({"error": result.errorMessage ?? ""}),
+      );
+    } else {
+      context.showMessage(message: "Connection successful".tl);
+    }
+  }
+
+  void _save() {
+    WebdavLibrary.saveConfig(
+      url: url,
+      user: user,
+      pass: pass,
+      root: root,
+    );
+    context.showMessage(message: "Saved".tl);
+    App.rootPop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopUpWidgetScaffold(
+      title: "WebDAV Library".tl,
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            Text(
+              "Browse comics on a WebDAV server without downloading them first."
+                  .tl,
+              style: TextStyle(color: context.colorScheme.outline),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: InputDecoration(
+                labelText: "URL",
+                hintText: "A valid WebDav directory URL".tl,
+                border: const OutlineInputBorder(),
+              ),
+              controller: TextEditingController(text: url),
+              onChanged: (value) => url = value,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: InputDecoration(
+                labelText: "Username".tl,
+                border: const OutlineInputBorder(),
+              ),
+              controller: TextEditingController(text: user),
+              onChanged: (value) => user = value,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: "Password".tl,
+                border: const OutlineInputBorder(),
+              ),
+              controller: TextEditingController(text: pass),
+              onChanged: (value) => pass = value,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: InputDecoration(
+                labelText: "Library Folder (Optional)".tl,
+                hintText: "/comics",
+                border: const OutlineInputBorder(),
+              ),
+              controller: TextEditingController(text: root),
+              onChanged: (value) => root = value,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: Button.outlined(
+                isLoading: isTesting,
+                onPressed: _test,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wifi_tethering, size: 18),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        "Test Connection".tl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: Button.filled(
+                onPressed: _save,
+                child: Text("Save".tl),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ).paddingHorizontal(16),
       ),
     );
   }

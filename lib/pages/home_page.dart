@@ -13,7 +13,9 @@ import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/network/webdav_library.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/webdav_library_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
@@ -86,6 +88,7 @@ class _HomePageState extends State<HomePage> {
       'followUpdates' => const FollowUpdatesWidget(key: ValueKey('followUpdates')),
       'comicSource' => const _ComicSourceWidget(key: ValueKey('comicSource')),
       'imageFavorites' => const ImageFavorites(key: ValueKey('imageFavorites')),
+      'webdavLibrary' => const _WebdavLibrary(key: ValueKey('webdavLibrary')),
       _ => const SliverToBoxAdapter(child: SizedBox.shrink()),
     };
   }
@@ -1142,6 +1145,77 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
   }
 }
 
+/// Home card for the built-in WebDAV comic library. Hidden entirely until the
+/// library is configured, so users who don't use the feature never see it.
+class _WebdavLibrary extends StatefulWidget {
+  const _WebdavLibrary({super.key});
+
+  @override
+  State<_WebdavLibrary> createState() => _WebdavLibraryState();
+}
+
+class _WebdavLibraryState extends State<_WebdavLibrary> {
+  @override
+  void initState() {
+    appdata.settings.addListener(_onSettingsChanged);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    appdata.settings.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!WebdavLibrary.isConfigured) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 0.6,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            context.to(() => const WebdavLibraryPage());
+          },
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'WebDAV Library'.tl,
+                    style: ts.s18,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.cloud_outlined),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_right),
+              ],
+            ),
+          ).paddingHorizontal(16),
+        ),
+      ),
+    );
+  }
+}
+
 class _ComicSourceWidget extends StatefulWidget {
   const _ComicSourceWidget({super.key});
 
@@ -1154,13 +1228,20 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
 
   void onComicSourceChange() {
     setState(() {
-      comicSources = ComicSource.all().map((e) => e.name).toList();
+      comicSources = _scriptSourceNames();
     });
   }
 
+  /// Script sources only — the built-in WebDAV library is hidden from the
+  /// Comic Source management surface, so it must not inflate the count either.
+  static List<String> _scriptSourceNames() => ComicSource.all()
+      .where((e) => e.key != WebdavLibrary.sourceKey)
+      .map((e) => e.name)
+      .toList();
+
   @override
   void initState() {
-    comicSources = ComicSource.all().map((e) => e.name).toList();
+    comicSources = _scriptSourceNames();
     ComicSourceManager().addListener(onComicSourceChange);
     super.initState();
   }
