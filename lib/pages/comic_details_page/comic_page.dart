@@ -14,7 +14,6 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
-import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/favorites_meta.dart';
@@ -48,6 +47,14 @@ part 'comments_preview.dart';
 part 'actions.dart';
 
 part 'cover_viewer.dart';
+
+const double _comicDetailsWideBreakpoint = 760;
+
+double _comicDetailsPageInset(BuildContext context) {
+  // 主区域自适应窗口宽度：只保留基础边距，不再把内容夹在固定最大宽度内，
+  // 避免宽屏/大分辨率下两侧留出大片空白。
+  return context.width < 700 ? 12.0 : 24.0;
+}
 
 /// Chooses the cover image provider for the comic detail header / viewer.
 ///
@@ -148,19 +155,21 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
     // 如果已下载，显示阅读按钮
     if (isDownloaded) {
-      actions.add(FilledButton.tonal(
-        child: Text("Read".tl),
-        onPressed: () {
-          final localComic = _comicStateRepository
-              .load(widget.sourceKey, widget.id)
-              .localComic;
-          if (localComic == null) {
-            context.showMessage(message: "Local comic not found".tl);
-            return;
-          }
-          localComic.read();
-        },
-      ));
+      actions.add(
+        FilledButton.tonal(
+          child: Text("Read".tl),
+          onPressed: () {
+            final localComic = _comicStateRepository
+                .load(widget.sourceKey, widget.id)
+                .localComic;
+            if (localComic == null) {
+              context.showMessage(message: "Local comic not found".tl);
+              return;
+            }
+            localComic.read();
+          },
+        ),
+      );
     }
 
     // 查询已关联的源
@@ -191,13 +200,19 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     return NetworkError(
       message: error!,
       retry: retry,
-      action: actions.isEmpty ? null : Row(
-        mainAxisSize: MainAxisSize.min,
-        children: actions.map((action) => Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: action,
-        )).toList(),
-      ),
+      action: actions.isEmpty
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: actions
+                  .map(
+                    (action) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: action,
+                    ),
+                  )
+                  .toList(),
+            ),
       relatedLinks: relatedLinks,
       comic: widget.title != null || widget.cover != null
           ? Comic(
@@ -263,6 +278,15 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   Widget buildContent(BuildContext context, ComicDetails data) {
+    final horizontalInset = _comicDetailsPageInset(context);
+
+    Widget inset(Widget sliver) {
+      return SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalInset),
+        sliver: sliver,
+      );
+    }
+
     return Scaffold(
       floatingActionButton: showFAB
           ? FloatingActionButton(
@@ -285,13 +309,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         scrollbar: true,
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
-          ...buildTitle(),
-          buildActions(),
-          buildDescription(),
-          buildChapters(),
-          buildComments(),
-          buildThumbnails(),
-          buildRecommend(),
+          ...buildTitle(horizontalInset),
+          inset(buildActions()),
+          inset(buildDescription()),
+          inset(buildChapters()),
+          inset(buildComments()),
+          inset(buildThumbnails()),
+          inset(buildRecommend()),
           SliverPadding(
             padding: EdgeInsets.only(
               bottom: context.padding.bottom + 80,
@@ -409,7 +433,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           return;
         }
         retryCount++;
-        if (retryCount < 3) await Future.delayed(const Duration(milliseconds: 200));
+        if (retryCount < 3) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
       } catch (e) {
         if (!mounted) return;
         retryCount++;
@@ -478,7 +504,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
   }
 
-  Iterable<Widget> buildTitle() sync* {
+  Iterable<Widget> buildTitle(double horizontalInset) sync* {
     yield SliverAppbar(
       title: AnimatedOpacity(
         opacity: showAppbarTitle ? 1.0 : 0.0,
@@ -504,91 +530,293 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       ],
     );
 
-    yield const SliverPadding(padding: EdgeInsets.only(top: 8));
+    yield SliverPadding(
+      padding: EdgeInsets.fromLTRB(horizontalInset, 12, horizontalInset, 0),
+      sliver: SliverLazyToBoxAdapter(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= _comicDetailsWideBreakpoint;
+            // 宽屏/大分辨率下封面缩小 10%（180 → 162）。
+            final coverWidth = isWide
+                ? 162.0
+                : constraints.maxWidth < 400
+                ? 96.0
+                : 112.0;
+            final coverHeight = coverWidth / 0.72;
+            final surfacePadding = isWide ? 24.0 : 16.0;
+            final cover = _buildDetailsCover(coverWidth);
+            final summary = _buildComicSummary(isWide);
+            // 宽屏时把阅读按钮的高度对齐封面高度，多按钮竖排时均分该高度。
+            final readingActions = _buildReadingActions(
+              isWide: isWide,
+              maxHeight: coverHeight,
+            );
 
-    yield SliverLazyToBoxAdapter(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(width: 16),
-          GestureDetector(
-            onTap: () => _viewCover(context),
-            onLongPress: () => _saveCover(context),
-            child: Hero(
-              tag: "cover${widget.heroID}",
-              child: Container(
-                decoration: BoxDecoration(
-                  color: context.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: context.colorScheme.outlineVariant,
-                      blurRadius: 1,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                height: 144,
-                width: 144 * 0.72,
-                clipBehavior: Clip.antiAlias,
-                child: AnimatedImage(
-                  image: comicDetailCoverProvider(
-                    sourceKey: comic.sourceKey,
-                    id: comic.id,
-                    cover: widget.cover ?? comic.cover,
-                    localComic: _localComic,
-                  ),
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
+            return Container(
+              padding: EdgeInsets.all(surfacePadding),
+              decoration: BoxDecoration(
+                color: context.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(isWide ? 24 : 20),
               ),
+              child: isWide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        cover,
+                        const SizedBox(width: 24),
+                        Expanded(child: summary),
+                        const SizedBox(width: 24),
+                        SizedBox(width: 220, child: readingActions),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            cover,
+                            const SizedBox(width: 16),
+                            Expanded(child: summary),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        readingActions,
+                      ],
+                    ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsCover(double width) {
+    return GestureDetector(
+      onTap: () => _viewCover(context),
+      onLongPress: () => _saveCover(context),
+      child: Hero(
+        tag: "cover${widget.heroID}",
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            width: width,
+            height: width / 0.72,
+            child: AnimatedImage(
+              image: comicDetailCoverProvider(
+                sourceKey: comic.sourceKey,
+                id: comic.id,
+                cover: widget.cover ?? comic.cover,
+                localComic: _localComic,
+              ),
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComicSummary(bool isWide) {
+    final chapterProgress = _comicStateRepository.chapterProgressFromDetails(
+      comic,
+      history,
+    );
+    final titleStyle =
+        (isWide
+                ? Theme.of(context).textTheme.headlineSmall
+                : Theme.of(context).textTheme.titleLarge)
+            ?.copyWith(fontWeight: FontWeight.w700, height: 1.2);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SelectableText(comic.title, style: titleStyle),
+        if (comic.subTitle?.trim().isNotEmpty == true) ...[
+          const SizedBox(height: 6),
+          SelectableText(
+            comic.subTitle!,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        ComicDescription(
+          title: comic.title,
+          subtitle:
+              comic.findAuthor() ?? comic.subTitle ?? comic.uploader ?? '',
+          description: comic.description ?? '',
+          badge: ComicSource.find(comic.sourceKey)?.name,
+          tags: comic.plainTags,
+          maxLines: isWide ? 5 : 4,
+          enableTranslate:
+              ComicSource.find(comic.sourceKey)?.enableTagsTranslate ?? false,
+          rating: comic.stars,
+          updateText: comic.findUpdateTime() ?? comic.updateTime,
+          progressText: chapterProgress.currentTitle ?? history?.description,
+          pagesText: comic.maxPage?.toString(),
+          showTitle: false,
+          onTapAuthor: (author, namespace) {
+            onTapTag(author, namespace ?? 'author');
+          },
+          onTapTag: onTapTag,
+          enableLongPressCopy: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadingActions({bool isWide = false, double? maxHeight}) {
+    final hasHistory =
+        history != null && (history!.ep > 1 || history!.page > 1);
+    if (!hasHistory) {
+      // 单按钮：独占自身高度，不随封面拉伸。
+      return SizedBox(
+        height: 52,
+        child: FilledButton.icon(
+          onPressed: read,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: Text("Read".tl),
+        ),
+      );
+    }
+    // With reading history: "Start" (from the beginning) sits on top and
+    // "Continue" (resume progress) below it. Continue keeps the filled/primary
+    // emphasis despite being the lower button.
+    final startButton = OutlinedButton.icon(
+      onPressed: read,
+      icon: const Icon(Icons.restart_alt_rounded),
+      label: Text("Start".tl),
+    );
+    final continueButton = FilledButton.icon(
+      onPressed: continueRead,
+      icon: const Icon(Icons.menu_book_rounded),
+      label: Text("Continue".tl),
+    );
+    // 宽屏且多按钮竖排：把封面高度均分给两个按钮，填满整列。
+    if (isWide && maxHeight != null) {
+      return SizedBox(
+        height: maxHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: startButton),
+            const SizedBox(height: 10),
+            Expanded(child: continueButton),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: 52, child: startButton),
+        const SizedBox(height: 10),
+        SizedBox(height: 52, child: continueButton),
+      ],
+    );
+  }
+
+  Widget buildActions() {
+    final source = ComicSource.find(comic.sourceKey);
+    return SliverLazyToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                SelectableText(comic.title, style: ts.s18),
-                if (comic.subTitle != null)
-                  SelectableText(
-                    comic.subTitle!,
-                    style: ts.s14,
-                  ).paddingVertical(4),
-                const SizedBox(height: 6),
-                () {
-                    final chapterProgress = _comicStateRepository
-                        .chapterProgressFromDetails(comic, history);
-                    return ComicDescription(
-                      title: comic.title,
-                      subtitle:
-                          comic.findAuthor() ??
-                          comic.subTitle ??
-                          comic.uploader ??
-                          '',
-                      description: comic.description ?? '',
-                      badge: ComicSource.find(comic.sourceKey)?.name,
-                      tags: comic.plainTags,
-                      maxLines: 3,
-                      enableTranslate:
-                          ComicSource.find(
-                            comic.sourceKey,
-                          )?.enableTagsTranslate ??
-                          false,
-                      rating: comic.stars,
-                      updateText: comic.findUpdateTime() ?? comic.updateTime,
-                      progressText:
-                          chapterProgress.currentTitle ?? history?.description,
-                      pagesText: comic.maxPage?.toString(),
-                      showTitle: false,
-                      onTapAuthor: (author, namespace) {
-                        onTapTag(author, namespace ?? 'author');
-                      },
-                      onTapTag: onTapTag,
-                      enableLongPressCopy: true,
-                    );
-                  }(),
+                if (data!.isLiked != null)
+                  _ActionButton(
+                    icon: const Icon(Icons.favorite_border_rounded),
+                    activeIcon: const Icon(Icons.favorite_rounded),
+                    isActive: isLiked,
+                    text:
+                        ((data!.likesCount != null)
+                                ? (data!.likesCount! + (isLiked ? 1 : 0))
+                                : (isLiked ? 'Liked'.tl : 'Like'.tl))
+                            .toString(),
+                    isLoading: isLiking,
+                    onPressed: likeOrUnlike,
+                  ),
+                _ActionButton(
+                  icon: const Icon(Icons.bookmark_border_rounded),
+                  activeIcon: const Icon(Icons.bookmark_rounded),
+                  isActive: isFavorite || isAddToLocalFav,
+                  text: 'Favorite'.tl,
+                  onPressed: openFavPanel,
+                  onLongPressed: quickFavorite,
+                ),
+                _ActionButton(
+                  icon: const Icon(Icons.schedule_rounded),
+                  activeIcon: const Icon(Icons.watch_later_rounded),
+                  isActive: isInReadLater,
+                  text: 'Read Later'.tl,
+                  onPressed: toggleReadLater,
+                ),
+                if (source?.commentsLoader != null)
+                  _ActionButton(
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    text: (comic.commentCount ?? 'Comments'.tl).toString(),
+                    onPressed: showComments,
+                  ),
               ],
+            ),
+            if (history != null) ...[
+              const SizedBox(height: 12),
+              _buildHistorySummary(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistorySummary() {
+    final page = history!.page;
+    final ep = history!.ep;
+    final group = history!.group;
+    String text;
+    if (comic.chapters != null) {
+      final groupName = group == null
+          ? null
+          : comic.chapters!.groupTitleAt(group);
+      final chapterTitle = comic.chapters!.titleAt(ep, group: group);
+      final epName = chapterTitle?.isNotEmpty == true ? chapterTitle! : "E$ep";
+      text = groupName == null
+          ? "${"Last Reading".tl}: $epName P$page"
+          : "${"Last Reading".tl}: $groupName $epName P$page";
+    } else {
+      text = "${"Last Reading".tl}: P$page";
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.history_rounded,
+            size: 18,
+            color: context.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ],
@@ -596,168 +824,90 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     );
   }
 
-  Widget buildActions() {
-    bool isMobile = context.width < changePoint;
-    bool hasHistory = history != null && (history!.ep > 1 || history!.page > 1);
-    final source = ComicSource.find(comic.sourceKey);
-    return SliverLazyToBoxAdapter(
-      child: Column(
-        children: [
-          ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            children: [
-              if (hasHistory && !isMobile)
-                _ActionButton(
-                  icon: const Icon(Icons.menu_book),
-                  text: 'Continue'.tl,
-                  onPressed: continueRead,
-                  iconColor: context.useTextColor(Colors.yellow),
-                ),
-              if (!isMobile || hasHistory)
-                _ActionButton(
-                  icon: const Icon(Icons.play_circle_outline),
-                  text: 'Start'.tl,
-                  onPressed: read,
-                  iconColor: context.useTextColor(Colors.orange),
-                ),
-              if (data!.isLiked != null)
-                _ActionButton(
-                  icon: const Icon(Icons.favorite_border),
-                  activeIcon: const Icon(Icons.favorite),
-                  isActive: isLiked,
-                  text:
-                      ((data!.likesCount != null)
-                              ? (data!.likesCount! + (isLiked ? 1 : 0))
-                              : (isLiked ? 'Liked'.tl : 'Like'.tl))
-                          .toString(),
-                  isLoading: isLiking,
-                  onPressed: likeOrUnlike,
-                  iconColor: context.useTextColor(Colors.red),
-                ),
-              _ActionButton(
-                icon: const Icon(Icons.bookmark_outline_outlined),
-                activeIcon: const Icon(Icons.bookmark),
-                isActive: isFavorite || isAddToLocalFav,
-                text: 'Favorite'.tl,
-                onPressed: openFavPanel,
-                onLongPressed: quickFavorite,
-                iconColor: context.useTextColor(Colors.purple),
-              ),
-              _ActionButton(
-                icon: const Icon(Icons.watch_later_outlined),
-                activeIcon: const Icon(Icons.watch_later),
-                isActive: isInReadLater,
-                text: 'Read Later'.tl,
-                onPressed: toggleReadLater,
-                iconColor: context.useTextColor(Colors.teal),
-              ),
-              if (source?.commentsLoader != null)
-                _ActionButton(
-                  icon: const Icon(Icons.comment),
-                  text: (comic.commentCount ?? 'Comments'.tl).toString(),
-                  onPressed: showComments,
-                  iconColor: context.useTextColor(Colors.green),
-                ),
-            ],
-          ).fixHeight(48),
-          if (isMobile)
-            Row(
-              children: [
-                Expanded(
-                  child: hasHistory
-                      ? FilledButton(
-                          onPressed: continueRead,
-                          child: Text("Continue".tl),
-                        )
-                      : FilledButton(onPressed: read, child: Text("Read".tl)),
-                ),
-              ],
-            ).paddingHorizontal(16).paddingVertical(8),
-          if (history != null)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.history, color: context.useTextColor(Colors.teal)),
-                  const SizedBox(width: 8),
-                  Builder(
-                    builder: (context) {
-                      bool haveChapter = comic.chapters != null;
-                      var page = history!.page;
-                      var ep = history!.ep;
-                      var group = history!.group;
-                      String text;
-                      if (haveChapter) {
-                        final groupName = group == null
-                            ? null
-                            : comic.chapters!.groupTitleAt(group);
-                        final chapterTitle = comic.chapters!.titleAt(
-                          ep,
-                          group: group,
-                        );
-                        final epName =
-                            (chapterTitle != null && chapterTitle.isNotEmpty)
-                            ? chapterTitle
-                            : "E$ep";
-                        text = groupName == null
-                            ? "${"Last Reading".tl}: $epName P$page"
-                            : "${"Last Reading".tl}: $groupName $epName P$page";
-                      } else {
-                        text = "${"Last Reading".tl}: P$page";
-                      }
-                      return Text(text);
-                    },
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              ),
-            ).toAlign(Alignment.centerLeft),
-          const Divider(),
-        ],
-      ).paddingTop(16),
-    );
-  }
-
   Widget buildDescription() {
-    if (comic.description == null || comic.description!.trim().isEmpty) {
+    final description = comic.description?.trim() ?? '';
+    if (description.isEmpty) {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      height: 1.55,
+      color: context.colorScheme.onSurfaceVariant,
+    );
+    // Horizontal padding around the description text (see the Padding below);
+    // subtracted from the card width when measuring whether it overflows.
+    const textHPadding = 20.0 * 2;
     return SliverLazyToBoxAdapter(
-      child: Column(
-        children: [
-          ListTile(
-            title: Text("Description".tl),
-            trailing: TextButton.icon(
-              icon: Icon(
-                descriptionExpanded
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down,
-              ),
-              onPressed: () {
-                setState(() {
-                  descriptionExpanded = !descriptionExpanded;
-                });
-              },
-              label: Text(descriptionExpanded ? 'Collapse'.tl : 'Expand'.tl),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SelectableText(
-              comic.description!,
-              maxLines: descriptionExpanded ? null : 1,
-            ).fixWidth(double.infinity),
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-        ],
+      child: Container(
+        margin: const EdgeInsets.only(top: 16, bottom: 8),
+        decoration: BoxDecoration(
+          color: context.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Only surface the expand/collapse toggle when the text actually
+            // spills past a single line. Previously the toggle was always shown
+            // yet did nothing for short descriptions: SelectableText ignores
+            // maxLines' ellipsis, so a "collapsed" description still rendered in
+            // full. Measure the real line count up front and drive both the
+            // toggle's visibility and the collapsed rendering from it.
+            final painter = TextPainter(
+              text: TextSpan(text: description, style: textStyle),
+              maxLines: 1,
+              textDirection: Directionality.of(context),
+            )..layout(maxWidth: constraints.maxWidth - textHPadding);
+            final overflows = painter.didExceedMaxLines;
+            final collapsed = overflows && !descriptionExpanded;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ComicSectionHeader(
+                  icon: Icons.notes_rounded,
+                  title: "Description".tl,
+                  trailing: overflows
+                      ? TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              descriptionExpanded = !descriptionExpanded;
+                            });
+                          },
+                          icon: Icon(
+                            descriptionExpanded
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                          ),
+                          label: Text(
+                            descriptionExpanded ? 'Collapse'.tl : 'Expand'.tl,
+                          ),
+                        )
+                      : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    alignment: Alignment.topCenter,
+                    child: collapsed
+                        // Truncated preview: a plain Text renders the ellipsis
+                        // SelectableText can't. Selection isn't useful on
+                        // clipped text anyway — the full text below is
+                        // selectable once expanded.
+                        ? Text(
+                            description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textStyle,
+                          )
+                        : SelectableText(
+                            description,
+                            style: textStyle,
+                          ).fixWidth(double.infinity),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -957,62 +1107,77 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     if (comic.chapters == null) {
       if (detailsLoadError != null) {
         return SliverLazyToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ListTile(title: Text("Chapters".tl)),
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: context.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
+          child: Container(
+            margin: const EdgeInsets.only(top: 16, bottom: 8),
+            decoration: BoxDecoration(
+              color: context.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ComicSectionHeader(
+                  icon: Icons.view_list_rounded,
+                  title: "Chapters".tl,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Chapter load failed: @message".tlParams({
-                        "message": detailsLoadError!,
-                      }),
-                      style: TextStyle(
-                        color: context.colorScheme.onErrorContainer,
-                      ),
-                    ),
-                    if (comicSource?.loadComicInfo != null) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.tonal(
-                          onPressed: retryLoadDetails,
-                          child: Text("Retry".tl),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Chapter load failed: @message".tlParams({
+                          "message": detailsLoadError!,
+                        }),
+                        style: TextStyle(
+                          color: context.colorScheme.onErrorContainer,
                         ),
                       ),
+                      if (comicSource?.loadComicInfo != null) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.tonal(
+                            onPressed: retryLoadDetails,
+                            child: Text("Retry".tl),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-            ],
+              ],
+            ),
           ),
         );
       }
       if (_networkFetching) {
         return SliverLazyToBoxAdapter(
-          child: Column(
-            children: [
-              ListTile(title: Text("Chapters".tl)),
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: CircularProgressIndicator(strokeWidth: 2),
+          child: Container(
+            margin: const EdgeInsets.only(top: 16, bottom: 8),
+            decoration: BoxDecoration(
+              color: context.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                _ComicSectionHeader(
+                  icon: Icons.view_list_rounded,
+                  title: "Chapters".tl,
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-            ],
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(0, 12, 0, 28),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }
@@ -1039,8 +1204,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
     return SliverMainAxisGroup(
       slivers: [
-        SliverToBoxAdapter(child: ListTile(title: Text("Related".tl))),
+        SliverToBoxAdapter(
+          child: _ComicSectionHeader(
+            icon: Icons.auto_awesome_mosaic_outlined,
+            title: "Related".tl,
+          ).paddingTop(20),
+        ),
         SliverGridComics(comics: comic.recommend!),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 12)),
       ],
     );
   }
@@ -1103,6 +1274,52 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   }
 }
 
+class _ComicSectionHeader extends StatelessWidget {
+  const _ComicSectionHeader({
+    required this.icon,
+    required this.title,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 14, 8, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: context.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              size: 19,
+              color: context.colorScheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
     required this.icon,
@@ -1112,7 +1329,6 @@ class _ActionButton extends StatelessWidget {
     this.activeIcon,
     this.isActive,
     this.isLoading,
-    this.iconColor,
   });
 
   final Widget icon;
@@ -1127,21 +1343,19 @@ class _ActionButton extends StatelessWidget {
 
   final bool? isLoading;
 
-  final Color? iconColor;
-
   final void Function()? onLongPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: context.colorScheme.outlineVariant,
-          width: 0.6,
-        ),
-      ),
+    final active = isActive ?? false;
+    final foreground = active
+        ? context.colorScheme.primary
+        : context.colorScheme.onSurfaceVariant;
+    return Material(
+      color: active
+          ? context.colorScheme.primaryContainer
+          : context.colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: () {
           if (!(isLoading ?? false)) {
@@ -1149,24 +1363,41 @@ class _ActionButton extends StatelessWidget {
           }
         },
         onLongPress: onLongPressed,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         child: IconTheme.merge(
-          data: IconThemeData(size: 20, color: iconColor),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isLoading ?? false)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 1.8),
-                )
-              else
-                (isActive ?? false) ? (activeIcon ?? icon) : icon,
-              const SizedBox(width: 8),
-              Text(text),
-            ],
-          ).paddingHorizontal(16),
+          data: IconThemeData(size: 19, color: foreground),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isLoading ?? false)
+                    SizedBox(
+                      width: 19,
+                      height: 19,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: foreground,
+                      ),
+                    )
+                  else
+                    active ? (activeIcon ?? icon) : icon,
+                  const SizedBox(width: 8),
+                  Text(
+                    text,
+                    style: TextStyle(
+                      color: active
+                          ? context.colorScheme.onPrimaryContainer
+                          : context.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1301,7 +1532,7 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
         width: width,
         decoration: BoxDecoration(
           color: color ?? context.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(radius ?? 4),
+          borderRadius: BorderRadius.circular(radius ?? 10),
         ),
       );
     }
@@ -1311,12 +1542,12 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
       child: Column(
         children: [
           Appbar(title: Text(""), backgroundColor: context.colorScheme.surface),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(width: 16),
-              buildImage(context),
+              SizedBox(width: _comicDetailsPageInset(context)),
+              buildImage(context, context.width >= 840 ? 162 : 112),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -1331,19 +1562,32 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
                   ],
                 ),
               ),
+              if (context.width >= 840) ...[
+                const SizedBox(width: 24),
+                SizedBox(
+                  width: 220,
+                  child: Column(
+                    children: [
+                      buildContainer(null, 52, radius: 14),
+                      const SizedBox(height: 10),
+                      buildContainer(null, 52, radius: 14),
+                    ],
+                  ),
+                ),
+              ],
+              SizedBox(width: _comicDetailsPageInset(context)),
             ],
           ),
           const SizedBox(height: 8),
-          if (context.width < changePoint)
-            Row(
+          if (context.width < 840)
+            Column(
               children: [
-                Expanded(child: buildContainer(null, 36, radius: 18)),
-                const SizedBox(width: 16),
-                Expanded(child: buildContainer(null, 36, radius: 18)),
+                buildContainer(null, 52, radius: 14),
+                const SizedBox(height: 10),
+                buildContainer(null, 52, radius: 14),
               ],
-            ).paddingHorizontal(16),
-          const Divider(),
-          const SizedBox(height: 8),
+            ).paddingHorizontal(_comicDetailsPageInset(context)),
+          const SizedBox(height: 20),
           Center(
             child: CircularProgressIndicator(
               strokeWidth: 2.4,
@@ -1354,7 +1598,7 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
     );
   }
 
-  Widget buildImage(BuildContext context) {
+  Widget buildImage(BuildContext context, double width) {
     Widget child;
     if (cover != null) {
       child = AnimatedImage(
@@ -1377,17 +1621,10 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: context.colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: context.colorScheme.outlineVariant,
-              blurRadius: 1,
-              offset: const Offset(0, 1),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(14),
         ),
-        height: 144,
-        width: 144 * 0.72,
+        height: width / 0.72,
+        width: width,
         clipBehavior: Clip.antiAlias,
         child: child,
       ),
