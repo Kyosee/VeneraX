@@ -753,9 +753,9 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     }
   }
 
-  /// Scans another device's QR code and fills the form with the recovered
-  /// config (the user still taps Save to apply). Mobile only — the button is
-  /// hidden on desktop.
+  /// Scans another device's QR code, fills the form with the recovered config,
+  /// and applies it immediately (no separate Save tap needed). Mobile only —
+  /// the button is hidden on desktop.
   void _scanConfigQr() async {
     final payload = await scanAndDecodeSyncConfig(context);
     if (payload == null || !mounted) return;
@@ -763,16 +763,72 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       url = payload.url;
       user = payload.user;
       pass = payload.pass;
-      // Legacy boolean → tier: false was "nothing automatic". Applied on
-      // Save, like the rest of the scanned form.
+      // Legacy boolean → tier: false was "nothing automatic".
       syncMode = payload.autoSync
           ? WebdavSyncMode.realtime
           : WebdavSyncMode.manual;
       disableSync = payload.disableSyncFields;
     });
-    context.showMessage(
-      message: "Sync config imported. Tap Save to apply.".tl,
-    );
+    // Persist and sync right away — the scan already carries a complete,
+    // validated config, so requiring a manual Save afterwards is redundant.
+    await _saveConfig();
+  }
+
+  /// Persists the WebDAV config the form currently holds, then runs a
+  /// best-effort initial sync (unless the tier is manual). Pops the settings
+  /// page when done. Shared by the Save button and the QR-scan handler.
+  Future<void> _saveConfig() async {
+    if (url.trim().isEmpty && user.trim().isEmpty && pass.trim().isEmpty) {
+      appdata.settings['webdav'] = [];
+      // Persist the tier the form holds (it may come from a QR scan that is
+      // only applied on Save). With no config the tier stays inert —
+      // everything gates on isConfigured — and activates once a config is
+      // added (#67 semantics).
+      DataSync().setSyncMode(syncMode);
+      appdata.saveData();
+      context.showMessage(message: "Saved".tl);
+      App.rootPop();
+      return;
+    }
+
+    final config = [url.trim(), user.trim(), pass];
+    appdata.settings['webdav'] = config;
+    appdata.settings['disableSyncFields'] = disableSync;
+    DataSync().setSyncMode(syncMode);
+
+    // Persisting the configuration always succeeds at this point. The initial
+    // sync below is best-effort: its result is only surfaced as a hint and
+    // never rolls the config back.
+    appdata.saveData();
+
+    if (syncMode == WebdavSyncMode.manual) {
+      // No automatic uploads wanted; skip the immediate test sync too — the
+      // user triggers everything by hand.
+      context.showMessage(message: "Saved".tl);
+      App.rootPop();
+      return;
+    }
+
+    setState(() {
+      isTesting = true;
+    });
+    // Use syncData() instead of uploadData() so a fresh install with no local
+    // data downloads the remote backup instead of being blocked by the
+    // empty-data upload guards.
+    var syncResult = await DataSync().syncData();
+    if (!mounted) return;
+    setState(() {
+      isTesting = false;
+    });
+    if (syncResult.error) {
+      context.showMessage(
+        message: "Saved, but sync failed: @error"
+            .tlParams({"error": syncResult.errorMessage ?? ""}),
+      );
+    } else {
+      context.showMessage(message: "Saved".tl);
+    }
+    App.rootPop();
   }
 
   void _showRemoteBackupList(BuildContext context) async {
@@ -1138,61 +1194,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             Center(
               child: Button.filled(
                 isLoading: isTesting,
-                onPressed: () async {
-                  if (url.trim().isEmpty &&
-                      user.trim().isEmpty &&
-                      pass.trim().isEmpty) {
-                    appdata.settings['webdav'] = [];
-                    // Persist the tier the form holds (it may come from a QR
-                    // scan that is only applied on Save). With no config the
-                    // tier stays inert — everything gates on isConfigured —
-                    // and activates once a config is added (#67 semantics).
-                    DataSync().setSyncMode(syncMode);
-                    appdata.saveData();
-                    context.showMessage(message: "Saved".tl);
-                    App.rootPop();
-                    return;
-                  }
-
-                  final config = [url.trim(), user.trim(), pass];
-                  appdata.settings['webdav'] = config;
-                  appdata.settings['disableSyncFields'] = disableSync;
-                  DataSync().setSyncMode(syncMode);
-
-                  // Persisting the configuration always succeeds at this
-                  // point. The initial sync below is best-effort: its result
-                  // is only surfaced as a hint and never rolls the config back.
-                  appdata.saveData();
-
-                  if (syncMode == WebdavSyncMode.manual) {
-                    // No automatic uploads wanted; skip the immediate test
-                    // sync too — the user triggers everything by hand.
-                    context.showMessage(message: "Saved".tl);
-                    App.rootPop();
-                    return;
-                  }
-
-                  setState(() {
-                    isTesting = true;
-                  });
-                  // Use syncData() instead of uploadData() so a fresh install
-                  // with no local data downloads the remote backup instead of
-                  // being blocked by the empty-data upload guards.
-                  var syncResult = await DataSync().syncData();
-                  if (!mounted) return;
-                  setState(() {
-                    isTesting = false;
-                  });
-                  if (syncResult.error) {
-                    context.showMessage(
-                      message: "Saved, but sync failed: @error"
-                          .tlParams({"error": syncResult.errorMessage ?? ""}),
-                    );
-                  } else {
-                    context.showMessage(message: "Saved".tl);
-                  }
-                  App.rootPop();
-                },
+                onPressed: _saveConfig,
                 child: Text("Save".tl),
               ),
             ),
