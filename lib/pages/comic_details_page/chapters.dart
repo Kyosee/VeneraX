@@ -101,50 +101,96 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
 
   /// The toolbar shown in place of the title row while selecting.
   Widget buildSelectionBar(BuildContext context) {
-    return Row(
-      children: [
-        Tooltip(
-          message: "Cancel".tl,
-          child: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: exitSelectMode,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            "Selected @count".tlParams({"count": selected.length}),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        Tooltip(
-          message: "Select All".tl,
-          child: IconButton(
-            icon: const Icon(Icons.select_all),
-            onPressed: selectAll,
-          ),
-        ),
-        Tooltip(
-          message: "Invert Selection".tl,
-          child: IconButton(
-            icon: const Icon(Icons.flip),
-            onPressed: invertSelection,
-          ),
-        ),
-        Tooltip(
-          message: "Mark as read".tl,
-          child: IconButton(
-            icon: const Icon(Icons.done_all),
-            onPressed: selected.isEmpty ? null : () => _applyMark(true),
-          ),
-        ),
-        Tooltip(
-          message: "Mark as unread".tl,
-          child: IconButton(
-            icon: const Icon(Icons.remove_done),
-            onPressed: selected.isEmpty ? null : () => _applyMark(false),
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 520;
+        return Row(
+          children: [
+            Tooltip(
+              message: "Cancel".tl,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: exitSelectMode,
+              ),
+            ),
+            Expanded(
+              child: Text(
+                "Selected @count".tlParams({"count": selected.length}),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (compact)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'all':
+                      selectAll();
+                      break;
+                    case 'invert':
+                      invertSelection();
+                      break;
+                    case 'read':
+                      _applyMark(true);
+                      break;
+                    case 'unread':
+                      _applyMark(false);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(value: 'all', child: Text("Select All".tl)),
+                  PopupMenuItem(
+                    value: 'invert',
+                    child: Text("Invert Selection".tl),
+                  ),
+                  PopupMenuItem(
+                    value: 'read',
+                    enabled: selected.isNotEmpty,
+                    child: Text("Mark as read".tl),
+                  ),
+                  PopupMenuItem(
+                    value: 'unread',
+                    enabled: selected.isNotEmpty,
+                    child: Text("Mark as unread".tl),
+                  ),
+                ],
+              )
+            else ...[
+              Tooltip(
+                message: "Select All".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.select_all_rounded),
+                  onPressed: selectAll,
+                ),
+              ),
+              Tooltip(
+                message: "Invert Selection".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.flip_rounded),
+                  onPressed: invertSelection,
+                ),
+              ),
+              Tooltip(
+                message: "Mark as read".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.done_all_rounded),
+                  onPressed: selected.isEmpty ? null : () => _applyMark(true),
+                ),
+              ),
+              Tooltip(
+                message: "Mark as unread".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.remove_done_rounded),
+                  onPressed: selected.isEmpty ? null : () => _applyMark(false),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -154,15 +200,16 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
     required bool reverse,
     required VoidCallback onToggleOrder,
   }) {
-    return ListTile(
-      title: Text("Chapters".tl),
+    return _ComicSectionHeader(
+      icon: Icons.view_list_rounded,
+      title: "Chapters".tl,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
             message: "Batch manage".tl,
             child: IconButton(
-              icon: const Icon(Icons.checklist),
+              icon: const Icon(Icons.checklist_rounded),
               onPressed: enterSelectMode,
             ),
           ),
@@ -170,7 +217,9 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
             message: "Order".tl,
             child: IconButton(
               icon: Icon(
-                reverse ? Icons.arrow_upward : Icons.arrow_downward,
+                reverse
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
               ),
               onPressed: onToggleOrder,
             ),
@@ -269,62 +318,62 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
                     ),
             ),
             SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                childCount: length,
-                (context, i) {
-                  if (reverse) {
-                    i = chapters.length - i - 1;
-                  }
-                  var key = chapters.ids.elementAt(i);
-                  var value = chapters[key]!;
-                  var epKey = (i + 1).toString();
-                  bool visited =
-                      (_history?.readEpisode ?? const {}).contains(epKey);
-                  bool isSelected = selected.contains(epKey);
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                    child: Material(
-                      color: isSelected
-                          ? context.colorScheme.primaryContainer
-                          : context.colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(16),
-                      child: InkWell(
-                        onTap: () => selectMode
-                            ? toggleSelect(epKey)
-                            : state.read(i + 1),
-                        onLongPress: selectMode
-                            ? null
-                            : () {
-                                enterSelectMode();
-                                toggleSelect(epKey);
-                              },
-                        borderRadius: BorderRadius.circular(16),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Center(
-                            child: Text(
-                              value,
-                              maxLines: 1,
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? context.colorScheme.onPrimaryContainer
-                                    : visited
-                                        ? context.colorScheme.outline
-                                        : null,
-                              ),
+              delegate: SliverChildBuilderDelegate(childCount: length, (
+                context,
+                i,
+              ) {
+                if (reverse) {
+                  i = chapters.length - i - 1;
+                }
+                var key = chapters.ids.elementAt(i);
+                var value = chapters[key]!;
+                var epKey = (i + 1).toString();
+                bool visited = (_history?.readEpisode ?? const {}).contains(
+                  epKey,
+                );
+                bool isSelected = selected.contains(epKey);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                  child: Material(
+                    color: isSelected
+                        ? context.colorScheme.primaryContainer
+                        : context.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      onTap: () =>
+                          selectMode ? toggleSelect(epKey) : state.read(i + 1),
+                      onLongPress: selectMode
+                          ? null
+                          : () {
+                              enterSelectMode();
+                              toggleSelect(epKey);
+                            },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Center(
+                          child: Text(
+                            value,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? context.colorScheme.onPrimaryContainer
+                                  : visited
+                                  ? context.colorScheme.outline
+                                  : null,
                             ),
                           ),
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              }),
               gridDelegate: const SliverGridDelegateWithFixedHeight(
-                maxCrossAxisExtent: 250,
-                itemHeight: 48,
+                maxCrossAxisExtent: 220,
+                itemHeight: 44,
               ),
             ).sliverPadding(const EdgeInsets.symmetric(horizontal: 8)),
             if (!canShowAll)
@@ -342,9 +391,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
                   ).paddingTop(12),
                 ),
               ),
-            const SliverToBoxAdapter(
-              child: Divider(),
-            ),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 12)),
           ],
         );
       },
@@ -402,10 +449,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   @override
   Set<String> get selectableKeys {
     final group = chapters.getGroupByIndex(index);
-    return List.generate(
-      group.length,
-      (i) => "${index + 1}-${i + 1}",
-    ).toSet();
+    return List.generate(group.length, (i) => "${index + 1}-${i + 1}").toSet();
   }
 
   @override
@@ -501,7 +545,9 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
       if (read) {
         current.add(groupedKey);
       } else {
-        current..remove(groupedKey)..remove(rawKey);
+        current
+          ..remove(groupedKey)
+          ..remove(rawKey);
       }
     }
     final updated = HistoryManager().updateReadEpisodes(
@@ -558,67 +604,68 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
             ),
             SliverPadding(padding: const EdgeInsets.only(top: 8)),
             SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                childCount: length,
-                (context, i) {
-                  if (reverse) {
-                    i = group.length - i - 1;
-                  }
-                  var key = group.keys.elementAt(i);
-                  var value = group[key]!;
-                  var chapterIndex = _groupOffset + i;
-                  String rawIndex = (chapterIndex + 1).toString();
-                  String groupedIndex = "${index + 1}-${i + 1}";
-                  bool visited = false;
-                  if (_history != null) {
-                    visited = _history!.readEpisode.contains(groupedIndex) ||
-                        _history!.readEpisode.contains(rawIndex);
-                  }
-                  bool isSelected = selected.contains(groupedIndex);
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                    child: Material(
-                      color: isSelected
-                          ? context.colorScheme.primaryContainer
-                          : context.colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        onTap: () => selectMode
-                            ? toggleSelect(groupedIndex)
-                            : state.read(chapterIndex + 1),
-                        onLongPress: selectMode
-                            ? null
-                            : () {
-                                enterSelectMode();
-                                toggleSelect(groupedIndex);
-                              },
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Center(
-                            child: Text(
-                              value,
-                              maxLines: 1,
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? context.colorScheme.onPrimaryContainer
-                                    : visited
-                                        ? context.colorScheme.outline
-                                        : null,
-                              ),
+              delegate: SliverChildBuilderDelegate(childCount: length, (
+                context,
+                i,
+              ) {
+                if (reverse) {
+                  i = group.length - i - 1;
+                }
+                var key = group.keys.elementAt(i);
+                var value = group[key]!;
+                var chapterIndex = _groupOffset + i;
+                String rawIndex = (chapterIndex + 1).toString();
+                String groupedIndex = "${index + 1}-${i + 1}";
+                bool visited = false;
+                if (_history != null) {
+                  visited =
+                      _history!.readEpisode.contains(groupedIndex) ||
+                      _history!.readEpisode.contains(rawIndex);
+                }
+                bool isSelected = selected.contains(groupedIndex);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                  child: Material(
+                    color: isSelected
+                        ? context.colorScheme.primaryContainer
+                        : context.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      onTap: () => selectMode
+                          ? toggleSelect(groupedIndex)
+                          : state.read(chapterIndex + 1),
+                      onLongPress: selectMode
+                          ? null
+                          : () {
+                              enterSelectMode();
+                              toggleSelect(groupedIndex);
+                            },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Center(
+                          child: Text(
+                            value,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? context.colorScheme.onPrimaryContainer
+                                  : visited
+                                  ? context.colorScheme.outline
+                                  : null,
                             ),
                           ),
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              }),
               gridDelegate: const SliverGridDelegateWithFixedHeight(
-                maxCrossAxisExtent: 250,
-                itemHeight: 48,
+                maxCrossAxisExtent: 220,
+                itemHeight: 44,
               ),
             ).sliverPadding(const EdgeInsets.symmetric(horizontal: 8)),
             if (!canShowAll)
@@ -636,9 +683,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
                   ).paddingTop(12),
                 ),
               ),
-            const SliverToBoxAdapter(
-              child: Divider(),
-            ),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 12)),
           ],
         );
       },
