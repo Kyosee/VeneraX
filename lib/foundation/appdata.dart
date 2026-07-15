@@ -130,6 +130,13 @@ class Appdata with Init {
     // whole-blob would let one device's map overwrite another's non-derivable
     // originId. The library list itself (comicSourceLibraries) still syncs.
     "comicSourceProvenance",
+    // Night mode's on/off state is device-local runtime state, not a portable
+    // preference (#125). When "follow system dark mode" is on it's purely
+    // derived from THIS device's current system brightness; backing it up at
+    // night on device A and restoring it in the morning on device B forced B
+    // into night mode with no way out but toggling the switch. The follow-
+    // system toggle and the color/intensity preferences still sync.
+    "readerNightMode",
   ];
 
   /// Sync data from another device.
