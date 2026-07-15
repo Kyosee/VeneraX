@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio_io.dart';
@@ -150,12 +151,17 @@ class WebdavLibrary {
 
   static bool get _useProxy => appdata.settings['webdavUseProxy'] != false;
 
-  /// Basic-auth header for the direct image/cover GETs that bypass the webdav
-  /// client and go through [AppDio]. Digest is not attempted on this path.
+  /// Headers for the direct image/cover GETs that bypass the webdav client and
+  /// go through [AppDio]: a User-Agent (matching the app's other requests, since
+  /// the shared loader only injects one when headers are null) plus Basic auth
+  /// when credentials exist. Digest is not attempted on this path.
   Map<String, String> _authHeaders() {
-    if (_user.isEmpty && _pass.isEmpty) return {};
-    final token = base64Encode(utf8.encode('$_user:$_pass'));
-    return {'authorization': 'Basic $token'};
+    final headers = <String, String>{'user-agent': webUA};
+    if (_user.isNotEmpty || _pass.isNotEmpty) {
+      final token = base64Encode(utf8.encode('$_user:$_pass'));
+      headers['authorization'] = 'Basic $token';
+    }
+    return headers;
   }
 
   static String _ensureDir(String p) => p.endsWith('/') ? p : '$p/';

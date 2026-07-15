@@ -209,16 +209,26 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
       savePath,
     );
     controller.close();
-    if (!mounted) return;
+    if (!mounted) {
+      // Left the page mid-download: still clean up the temp file.
+      File(savePath).deleteIgnoreError();
+      return;
+    }
     if (res.error) {
+      // A failed download may leave a half-written file behind.
+      File(savePath).deleteIgnoreError();
       context.showMessage(message: res.errorMessage!);
       return;
     }
     // Reuse the existing archive importer; it opens its own progress dialog and
-    // registers the comic into the local library.
-    final importer = ImportComic(copyToLocal: true);
-    await importer.cbzFile(File(savePath));
-    File(savePath).deleteIgnoreError();
+    // registers the comic into the local library. The temp file is always
+    // removed afterwards, even if extraction throws on a corrupt archive.
+    try {
+      final importer = ImportComic(copyToLocal: true);
+      await importer.cbzFile(File(savePath));
+    } finally {
+      File(savePath).deleteIgnoreError();
+    }
   }
 
   static String _humanSize(int bytes) {
