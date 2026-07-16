@@ -1405,7 +1405,6 @@ class _WebdavLibrarySettingState extends State<WebdavLibrarySetting> {
             ),
             const SizedBox(height: 12),
             TextField(
-              obscureText: true,
               decoration: InputDecoration(
                 labelText: "Password".tl,
                 border: const OutlineInputBorder(),
