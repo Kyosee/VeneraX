@@ -392,7 +392,7 @@ class MainActivity : FlutterFragmentActivity() {
         val pm = packageManager
         fun setState(name: String, enabled: Boolean) {
             pm.setComponentEnabledSetting(
-                android.content.ComponentName(this, "$packageName.$name"),
+                ComponentName(this, "$packageName.$name"),
                 if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                 else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP,
