@@ -385,7 +385,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     // 与 AndroidManifest 中声明的三个 activity-alias 一一对应。切换时启用目标、
     // 停用其余，任何时刻只有一个入口处于启用态（launcher 里就不会出现重复图标）。
-    private val launcherAliases = listOf("IconDefault", "IconOrig", "IconFlat")
+    private val launcherAliases =
+        listOf("IconDefault", "IconOrig", "IconFlat", "IconMono", "IconIllust")
 
     private fun applyLauncherIcon(alias: String): Boolean {
         if (alias !in launcherAliases) return false

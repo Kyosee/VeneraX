@@ -19,7 +19,13 @@ enum LauncherIconPreset {
   orig('orig'),
 
   /// Flat icon variant (issue #120).
-  flat('flat');
+  flat('flat'),
+
+  /// Monogram "Vx" gradient lettermark on a white field.
+  mono('mono'),
+
+  /// Illustrated "VeneraX" artwork on a night-sky field.
+  illust('illust');
 
   const LauncherIconPreset(this.id);
 
@@ -39,6 +45,8 @@ enum LauncherIconPreset {
     LauncherIconPreset.defaultIcon => 'IconDefault',
     LauncherIconPreset.orig => 'IconOrig',
     LauncherIconPreset.flat => 'IconFlat',
+    LauncherIconPreset.mono => 'IconMono',
+    LauncherIconPreset.illust => 'IconIllust',
   };
 
   /// iOS alternate-icon key (from `CFBundleAlternateIcons` in Info.plist).
@@ -50,6 +58,8 @@ enum LauncherIconPreset {
       LauncherIconPreset.defaultIcon => null,
       LauncherIconPreset.orig => 'IconOrig',
       LauncherIconPreset.flat => 'IconFlat',
+      LauncherIconPreset.mono => 'IconMono',
+      LauncherIconPreset.illust => 'IconIllust',
     };
   }
 
@@ -60,6 +70,8 @@ enum LauncherIconPreset {
     LauncherIconPreset.defaultIcon => 'assets/app_icon.png',
     LauncherIconPreset.orig => 'assets/venera_original.png',
     LauncherIconPreset.flat => 'assets/user_logo.png',
+    LauncherIconPreset.mono => 'assets/new_logo2.png',
+    LauncherIconPreset.illust => 'assets/new_logo3.png',
   };
 }
 

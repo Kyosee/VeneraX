@@ -132,6 +132,8 @@ flutter:
     - assets/tags_tw.json
     - assets/opencc.txt
     - assets/new_logo.png
+    - assets/new_logo2.png
+    - assets/new_logo3.png
     - assets/user_logo.png
     - assets/venera_original.png
   shaders:

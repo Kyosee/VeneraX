@@ -2,6 +2,8 @@
   "zh_CN": {
     "Classic": "经典版",
     "Flat": "扁平版",
+    "Monogram": "字母徽标",
+    "Illustrated": "插画版",
     "This device does not support this": "此设备不支持该功能",
     "Icon changed": "图标已更改",
     "Icon updated": "图标已更新",
@@ -1006,6 +1008,8 @@
   "zh_TW": {
     "Classic": "經典版",
     "Flat": "扁平版",
+    "Monogram": "字母徽標",
+    "Illustrated": "插畫版",
     "This device does not support this": "此裝置不支援該功能",
     "Icon changed": "圖示已變更",
     "Icon updated": "圖示已更新",

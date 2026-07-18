@@ -18,12 +18,16 @@ class _LauncherIconSettingsState extends State<LauncherIconSettings> {
     LauncherIconPreset.defaultIcon: 'assets/new_logo.png',
     LauncherIconPreset.orig: 'assets/venera_original.png',
     LauncherIconPreset.flat: 'assets/user_logo.png',
+    LauncherIconPreset.mono: 'assets/new_logo2.png',
+    LauncherIconPreset.illust: 'assets/new_logo3.png',
   };
 
   String _label(LauncherIconPreset preset) => switch (preset) {
     LauncherIconPreset.defaultIcon => "Default".tl,
     LauncherIconPreset.orig => "Classic".tl,
     LauncherIconPreset.flat => "Flat".tl,
+    LauncherIconPreset.mono => "Monogram".tl,
+    LauncherIconPreset.illust => "Illustrated".tl,
   };
 
   Future<void> _select(LauncherIconPreset preset) async {

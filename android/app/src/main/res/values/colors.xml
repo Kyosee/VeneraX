@@ -5,4 +5,6 @@
          background fallback where the mask reveals edges. -->
     <color name="ic_launcher_orig_background">#2143F3</color>
     <color name="ic_launcher_flat_background">#7C40ED</color>
+    <color name="ic_launcher_mono_background">#FFFFFF</color>
+    <color name="ic_launcher_illust_background">#14102A</color>
 </resources>

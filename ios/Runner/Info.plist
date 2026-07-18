@@ -84,6 +84,24 @@
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
+			<key>IconMono</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AltIconMono</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>IconIllust</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AltIconIllust</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 		</dict>
 	</dict>
 	<key>CFBundleIcons~ipad</key>
@@ -104,6 +122,24 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>AltIconFlat</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>IconMono</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AltIconMono</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>IconIllust</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AltIconIllust</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>

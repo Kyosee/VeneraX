@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transparent monogram art; the foreground already bakes in its margin
+     (subject ~64% of canvas), so no inset. The white background shows where
+     the launcher mask reveals edges, matching the loose legacy/iOS icons. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@color/ic_launcher_mono_background"/>
+  <foreground android:drawable="@mipmap/ic_launcher_mono_foreground"/>
+</adaptive-icon>
