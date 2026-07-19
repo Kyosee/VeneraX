@@ -67,7 +67,20 @@ class _ToastOverlay extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (trailing != null) trailing!.paddingLeft(8)
+                    if (trailing != null)
+                      // The toast surface is inverseSurface; a default
+                      // TextButton keeps the theme's primary foreground which
+                      // is near-invisible on it (issue #136). Force the
+                      // inverse-scheme accent for any trailing action.
+                      TextButtonTheme(
+                        data: TextButtonThemeData(
+                          style: TextButton.styleFrom(
+                            foregroundColor:
+                                Theme.of(context).colorScheme.inversePrimary,
+                          ),
+                        ),
+                        child: trailing!,
+                      ).paddingLeft(8)
                   ],
                 ),
               ),
