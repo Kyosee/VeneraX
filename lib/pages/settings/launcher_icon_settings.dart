@@ -48,7 +48,8 @@ class _LauncherIconSettingsState extends State<LauncherIconSettings> {
     App.forceRebuild();
     // Android now switches the launcher alias immediately (see
     // LauncherIconService.apply); the home-screen icon may still take a moment
-    // for the launcher to repaint. iOS pops its own system alert.
+    // for the launcher to repaint. iOS pops its own system alert. Windows swaps
+    // only the live window/taskbar/tray icon.
     context.showMessage(
       message: App.isIOS
           ? "Icon changed".tl
@@ -67,7 +68,10 @@ class _LauncherIconSettingsState extends State<LauncherIconSettings> {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Text(
-              "Change the icon shown on your home screen.".tl,
+              LauncherIconService.isWindowIconOnly
+                  ? "Changes the window and taskbar icon while the app is running. The pinned and Start menu icon stays the same."
+                      .tl
+                  : "Change the icon shown on your home screen.".tl,
               style: ts.s12.copyWith(color: context.colorScheme.outline),
             ),
           ),

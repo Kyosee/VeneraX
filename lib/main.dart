@@ -15,6 +15,7 @@ import 'components/components.dart';
 import 'components/window_frame.dart';
 import 'foundation/app.dart';
 import 'foundation/appdata.dart';
+import 'foundation/launcher_icon.dart';
 import 'foundation/download_keepalive.dart';
 import 'foundation/tray.dart';
 import 'headless.dart';
@@ -53,6 +54,9 @@ void main(List<String> args) {
 
           WindowPlacement.loop();
           await TrayController.instance.init();
+          // WM_SETICON is per-process; re-apply the stored icon each launch so
+          // the window/taskbar icon follows the user's choice (issue #134).
+          await LauncherIconService.applyForStartup();
         });
       }
     }, (error, stack) {

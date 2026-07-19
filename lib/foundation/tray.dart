@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -36,6 +37,11 @@ class TrayController with TrayListener, WindowListener {
     _wired = true;
     trayManager.addListener(this);
     windowManager.addListener(this);
+    // Keep the tray icon in step when the user switches the app icon preset
+    // (issue #134); no-op while the tray is disabled.
+    LauncherIconService.onWindowsIconChanged = (icoAsset) async {
+      if (_enabled) await trayManager.setIcon(icoAsset);
+    };
   }
 
   /// 切换开关时调用。启用即建立托盘并接管关闭；关闭即移除托盘并放行关闭。
@@ -46,7 +52,8 @@ class TrayController with TrayListener, WindowListener {
       // 先把托盘图标/菜单与关闭拦截都准备好，最后才置 _enabled=true。
       // 否则窗口可能在托盘尚未建好时就被隐藏，出现“窗口消失却没有托盘图标”
       // 的情况，只能重启恢复。
-      await trayManager.setIcon('assets/app_icon.ico');
+      // Follow the chosen app-icon preset so the tray matches the window.
+      await trayManager.setIcon(LauncherIconService.current.windowsIcoAsset);
       await trayManager.setToolTip('VeneraX');
       await trayManager.setContextMenu(_buildMenu());
       await windowManager.setPreventClose(true);

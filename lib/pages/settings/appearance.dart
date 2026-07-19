@@ -60,12 +60,16 @@ class _AppearanceSettingsState extends State<AppearanceSettings> {
             context.to(() => const ImageFavoritesTabsSettings());
           },
         ).toSliver(),
-        // Launcher icon switching only exists on mobile; desktop icons are
-        // fixed at build time.
+        // Icon switching exists on mobile and Windows; other desktops have a
+        // fixed build-time icon (see LauncherIconService.isSupported).
         if (LauncherIconService.isSupported)
           ListTile(
             title: Text("App Icon".tl),
-            subtitle: Text("Choose the home screen icon".tl),
+            subtitle: Text(
+              LauncherIconService.isWindowIconOnly
+                  ? "Choose the window and taskbar icon".tl
+                  : "Choose the home screen icon".tl,
+            ),
             leading: const Icon(Icons.apps_outlined),
             trailing: const Icon(Icons.arrow_right),
             onTap: () {

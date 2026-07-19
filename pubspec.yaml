@@ -136,6 +136,10 @@ flutter:
     - assets/new_logo3.png
     - assets/user_logo.png
     - assets/venera_original.png
+    - assets/new_logo2.ico
+    - assets/new_logo3.ico
+    - assets/user_logo.ico
+    - assets/venera_original.ico
   shaders:
     - shaders/image_enhance.frag
 # fonts:
