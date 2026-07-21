@@ -393,4 +393,83 @@ void main() {
       tempDir.deleteSync(recursive: true);
     }
   });
+
+  test('replaceSourceChapters skips the rewrite when nothing changed', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final platform = SourcePlatformResolver.fromSourceKey('source_a');
+      final comicId = domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'abc',
+        title: 'Title',
+        timestamp: 10,
+      );
+      List<DomainComicChapterInfo> chapters(String secondTitle) => [
+        DomainComicChapterInfo(
+          chapterId: '$comicId:chapter:1',
+          title: 'Ch 1',
+          chapterIndex: 1,
+          sourceChapterId: 'c1',
+          sourceChapterIndex: 1,
+        ),
+        DomainComicChapterInfo(
+          chapterId: '$comicId:chapter:2',
+          title: secondTitle,
+          chapterIndex: 2,
+          sourceChapterId: 'c2',
+          sourceChapterIndex: 2,
+        ),
+      ];
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: chapters('Ch 2'),
+        timestamp: 11,
+      );
+      // Tamper a column outside the comparison fingerprint; an identical
+      // re-mirror must skip the delete+reinsert and leave it untouched.
+      domain.db.execute(
+        "UPDATE chapters SET title = 'TAMPERED' WHERE chapter_index = 2;",
+      );
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: chapters('Ch 2'),
+        timestamp: 12,
+      );
+      expect(
+        domain.db
+            .select('SELECT title FROM chapters WHERE chapter_index = 2;')
+            .single['title'],
+        'TAMPERED',
+        reason: 'an unchanged chapter list must not be rewritten',
+      );
+
+      // A real change must still rewrite.
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: chapters('Ch 2 (fixed)'),
+        timestamp: 13,
+      );
+      expect(
+        domain.db
+            .select('SELECT title FROM chapters WHERE chapter_index = 2;')
+            .single['title'],
+        'Ch 2 (fixed)',
+      );
+      expect(
+        domain
+            .getSourceChapters(platform: platform, sourceComicId: 'abc')
+            .map((chapter) => chapter.title),
+        ['Ch 1', 'Ch 2 (fixed)'],
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
 }

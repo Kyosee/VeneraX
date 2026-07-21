@@ -253,7 +253,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
           _saveActiveTasksThrottled();
           _refreshKeepAlive(task);
         }
-        notifyListeners();
+        _notifyProgress();
       }
       if (task.status == FollowUpdateTaskStatus.running) {
         task.status = FollowUpdateTaskStatus.completed;
@@ -261,10 +261,29 @@ class FollowUpdateTaskManager with ChangeNotifier {
     } catch (_) {
       task.status = FollowUpdateTaskStatus.failed;
     } finally {
+      _progressNotifyTimer?.cancel();
+      _progressNotifyTimer = null;
       _finalize(task);
       onTaskFinished?.call(task);
       notifyListeners();
     }
+  }
+
+  Timer? _progressNotifyTimer;
+
+  /// Coalesces per-comic progress notifications. Several concurrent workers
+  /// can finish comics near-simultaneously; notifying on every event rebuilt
+  /// listeners multiple times within one frame during a check. Progress UI
+  /// doesn't need more than a few updates per second; terminal transitions
+  /// still notify immediately (cancel() and _run's finally).
+  void _notifyProgress() {
+    if (_progressNotifyTimer != null) {
+      return;
+    }
+    _progressNotifyTimer = Timer(const Duration(milliseconds: 250), () {
+      _progressNotifyTimer = null;
+      notifyListeners();
+    });
   }
 
   /// Clears a task's run/cancel tracking and ensures it's in history. Called

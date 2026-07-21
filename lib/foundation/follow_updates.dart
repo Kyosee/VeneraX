@@ -1,9 +1,51 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/scheduler.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/channel.dart';
+
+/// Serializes the per-comic database writes of a bulk update check and slots
+/// them into the gaps between frames.
+///
+/// The check's 5 concurrent workers all apply their results with synchronous
+/// SQLite statements on the UI isolate; when several comics finish near each
+/// other those bursts used to land inside a single frame and read as dropped
+/// frames while reading or scrolling. The network fetch is the throughput
+/// bottleneck, so running the (millisecond-scale) write batches one at a time
+/// costs nothing in check speed.
+class _FollowUpdateDbGate {
+  Future<void> _tail = Future.value();
+
+  Future<void> run(void Function() writes) {
+    final result = _tail.then((_) async {
+      await _yieldToUi();
+      writes();
+    });
+    _tail = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _yieldToUi() async {
+    try {
+      final scheduler = SchedulerBinding.instance;
+      if (scheduler.hasScheduledFrame ||
+          scheduler.schedulerPhase != SchedulerPhase.idle) {
+        // A frame is being produced (the user is interacting); land the write
+        // right after it completes so it gets the largest possible slice of
+        // the inter-frame budget instead of competing with build/paint.
+        await scheduler.endOfFrame;
+        return;
+      }
+    } catch (_) {
+      // No frame pipeline (headless mode); just break the synchronous chain.
+    }
+    await Future.delayed(Duration.zero);
+  }
+}
+
+final _dbWriteGate = _FollowUpdateDbGate();
 
 class ComicUpdateResult {
   final bool updated;
@@ -55,8 +97,6 @@ Future<ComicUpdateResult> updateComic(
         }
       }
 
-      const ComicStateRepository().mirrorComicDetails(newInfo);
-
       var item = FavoriteItem(
         id: c.id,
         name: newInfo.title,
@@ -67,21 +107,25 @@ Future<ComicUpdateResult> updateComic(
         tags: newTags,
       );
 
-      LocalFavoritesManager().updateInfo(folder, item, false);
-
-      var updated = false;
       var updateTime = newInfo.findUpdateTime();
-      if (updateTime != null && updateTime != c.updateTime) {
-        LocalFavoritesManager().updateUpdateTime(
-          folder,
-          c.id,
-          c.type,
-          updateTime,
-        );
-        updated = true;
-      } else {
-        LocalFavoritesManager().updateCheckTime(folder, c.id, c.type);
-      }
+      var updated = updateTime != null && updateTime != c.updateTime;
+
+      await _dbWriteGate.run(() {
+        const ComicStateRepository().mirrorComicDetails(newInfo);
+        // mirrorComicDetails above already mirrored strictly more data than
+        // updateInfo's own mirror pass would; skip the duplicate.
+        LocalFavoritesManager().updateInfo(folder, item, false, false);
+        if (updated) {
+          LocalFavoritesManager().updateUpdateTime(
+            folder,
+            c.id,
+            c.type,
+            updateTime,
+          );
+        } else {
+          LocalFavoritesManager().updateCheckTime(folder, c.id, c.type);
+        }
+      });
       return ComicUpdateResult(updated, null);
     } catch (e, s) {
       retries--;

@@ -513,6 +513,13 @@ class DomainDatabase {
     final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final comicSourceId = sourceRows.single['comic_source_id'] as int;
     final comicId = sourceRows.single['comic_id'] as String;
+    // Bulk update checks re-mirror every followed comic's chapter list on each
+    // pass; deleting and re-inserting hundreds of rows when nothing changed is
+    // the largest synchronous write burst on the UI isolate (reader jank
+    // during a check). One indexed read to compare is far cheaper.
+    if (_sourceChaptersUnchanged(comicSourceId, comicId, chapters)) {
+      return;
+    }
     db.execute('BEGIN TRANSACTION;');
     try {
       db.execute(
@@ -586,6 +593,53 @@ class DomainDatabase {
       db.execute('ROLLBACK;');
       rethrow;
     }
+  }
+
+  /// Whether the stored chapter rows for [comicSourceId] already match
+  /// [chapters] field-for-field, so [replaceSourceChapters] can skip its
+  /// delete+reinsert. Compares exactly the columns that call would write.
+  bool _sourceChaptersUnchanged(
+    int comicSourceId,
+    String comicId,
+    List<DomainComicChapterInfo> chapters,
+  ) {
+    final rows = db.select(
+      '''
+      SELECT
+        chapter_id,
+        source_chapter_id,
+        source_chapter_index,
+        source_title,
+        source_chapter_group,
+        source_group_title,
+        source_chapter_index_in_group
+      FROM chapter_sources
+      WHERE comic_source_id = ?
+      ORDER BY source_chapter_index, chapter_id;
+      ''',
+      [comicSourceId],
+    );
+    if (rows.length != chapters.length) {
+      return false;
+    }
+    for (var i = 0; i < chapters.length; i++) {
+      final chapter = chapters[i];
+      final row = rows[i];
+      final chapterId = '$comicId:chapter:${chapter.chapterIndex}';
+      final sourceChapterId = chapter.sourceChapterId ?? chapterId;
+      if (row['chapter_id'] != chapterId ||
+          row['source_chapter_id'] != sourceChapterId ||
+          row['source_chapter_index'] !=
+              (chapter.sourceChapterIndex ?? chapter.chapterIndex) ||
+          row['source_title'] != chapter.title ||
+          row['source_chapter_group'] != chapter.sourceChapterGroup ||
+          row['source_group_title'] != chapter.sourceGroupTitle ||
+          row['source_chapter_index_in_group'] !=
+              chapter.sourceChapterIndexInGroup) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<DomainComicChapterInfo> getSourceChapters({

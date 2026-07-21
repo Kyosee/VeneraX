@@ -1619,7 +1619,12 @@ class LocalFavoritesManager with ChangeNotifier {
     return _hashedIds.containsKey(hash);
   }
 
-  void updateInfo(String folder, FavoriteItem comic, [bool notify = true]) {
+  void updateInfo(
+    String folder,
+    FavoriteItem comic, [
+    bool notify = true,
+    bool mirror = true,
+  ]) {
     _db.execute(
       """
       update "$folder"
@@ -1635,9 +1640,11 @@ class LocalFavoritesManager with ChangeNotifier {
         comic.type.value,
       ],
     );
-    try {
-      const ComicStateRepository().mirrorComic(comic);
-    } catch (_) {}
+    if (mirror) {
+      try {
+        const ComicStateRepository().mirrorComic(comic);
+      } catch (_) {}
+    }
     if (notify) {
       notifyListeners();
     }
