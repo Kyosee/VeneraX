@@ -97,6 +97,8 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.2.3
   flutter_dynamic_icon_plus: ^1.4.1
+  flutter_onnxruntime: ^1.8.3
+  unorm_dart: ^0.3.2
 
 dev_dependencies:
   flutter_test:

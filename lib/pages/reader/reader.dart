@@ -29,6 +29,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/reader_image.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
@@ -234,7 +235,16 @@ class _ReaderState extends State<Reader>
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
     });
+    ImageTranslationService.instance.addListener(_onPageTranslated);
     super.initState();
+  }
+
+  /// A background page translation finished: rebuild so the affected page's
+  /// provider identity changes and the translated image swaps in.
+  void _onPageTranslated() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   bool _isInitialized = false;
@@ -284,6 +294,8 @@ class _ReaderState extends State<Reader>
     }
     autoPageTurningTimer?.cancel();
     focusNode.dispose();
+    ImageTranslationService.instance.removeListener(_onPageTranslated);
+    ImageTranslationService.instance.clearQueue();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     stopVolumeEvent();
     Future.microtask(() {

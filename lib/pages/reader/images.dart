@@ -2122,6 +2122,17 @@ ImageProvider _createImageProviderFromKey(
   final eid = chapter == null
       ? reader.eid
       : reader.widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
+  String? translationKey;
+  var translated = false;
+  if (ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
+    translationKey = ImageTranslationService.cacheKeyFor(
+      imageKey,
+      reader.type.comicSource?.key,
+      reader.cid,
+      eid,
+    );
+    translated = ImageTranslationService.instance.isTranslated(translationKey);
+  }
   return ReaderImageProvider(
     imageKey,
     reader.type.comicSource?.key,
@@ -2131,6 +2142,8 @@ ImageProvider _createImageProviderFromKey(
     enableResize: reader
         .mode
         .isContinuous, // For continuous mode, we need to resize the image to improve performance
+    translationKey: translationKey,
+    translated: translated,
   );
 }
 

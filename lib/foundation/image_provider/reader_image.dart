@@ -1,6 +1,7 @@
 import 'dart:async' show Future;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/io.dart';
@@ -18,6 +19,8 @@ class ReaderImageProvider
     this.eid,
     this.page, {
     this.enableResize = false,
+    this.translationKey,
+    this.translated = false,
   });
 
   final String imageKey;
@@ -29,6 +32,17 @@ class ReaderImageProvider
   final String eid;
 
   final int page;
+
+  /// Cache key of the offline-translated variant of this page, or null when
+  /// translation is off. When set, a cached translated page is shown instead
+  /// of the original; otherwise the original is shown and a translation is
+  /// scheduled in the background.
+  final String? translationKey;
+
+  /// Whether the translated page is already known to exist. Only used to
+  /// change the provider identity so the reader can swap the image in place
+  /// once a background translation completes.
+  final bool translated;
 
   @override
   final bool enableResize;
@@ -65,6 +79,20 @@ class ReaderImageProvider
     }
     if (imageBytes == null) {
       throw "Error: Empty response body.";
+    }
+    if (translationKey != null) {
+      var translatedFile = await ImageTranslationService.instance
+          .findTranslated(translationKey!);
+      if (translatedFile != null) {
+        ImageTranslationService.instance.markTranslated(translationKey!);
+        return await translatedFile.readAsBytes();
+      }
+      // Show the original for now; when the background translation lands the
+      // reader is notified, this provider's cache entry is evicted and the
+      // next resolve picks up the translated file above.
+      ImageTranslationService.instance.schedule(translationKey!, imageBytes, () {
+        ImageTranslationService.evictImage(this);
+      });
     }
     if (appdata.settings['enableCustomImageProcessing']) {
       var script = appdata.settings['customImageProcessing'].toString();
@@ -133,5 +161,7 @@ class ReaderImageProvider
   }
 
   @override
-  String get key => "$imageKey@$sourceKey@$cid@$eid@$enableResize";
+  String get key =>
+      "$imageKey@$sourceKey@$cid@$eid@$enableResize"
+      "${translationKey == null ? '' : '@tr:$translated'}";
 }

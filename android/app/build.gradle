@@ -99,6 +99,8 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
+            // flutter_onnxruntime: keep the ONNX Runtime Java API from R8
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             ndk {
                 abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
             }

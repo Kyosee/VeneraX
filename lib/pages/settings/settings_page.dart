@@ -15,6 +15,7 @@ import 'package:venera/foundation/download_network_guard.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
+import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/launcher_icon.dart';
@@ -35,6 +36,7 @@ import 'package:venera/utils/sync_config_transfer.dart';
 import 'package:venera/utils/translations.dart';
 
 part 'reader.dart';
+part 'translation_models_settings.dart';
 part 'explore_settings.dart';
 part 'setting_components.dart';
 part 'appearance.dart';

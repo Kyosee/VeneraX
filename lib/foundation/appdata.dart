@@ -403,6 +403,13 @@ class Settings with ChangeNotifier {
     'readerImageEnhanceClarity': 0.0, // 0.0 - 1.0 mid-radius local contrast
     'readerImageEnhanceContrast': 0.0, // 0.0 - 1.0 level-stretch amount
     'readerImageEnhanceVibrance': 0.0, // 0.0 - 1.0 colour-page saturation lift
+    // 本地离线漫画翻译（模型按需下载，见 foundation/image_translation/）。
+    // enableImageTranslation 走阅读器设置通道，支持按漫画覆盖。
+    'enableImageTranslation': false,
+    'imageTranslationSource': 'ja', // ja, zh, en, ko
+    'imageTranslationTarget': 'zh', // zh, zh-TW, en
+    'imageTranslationHfEndpoint':
+        'https://huggingface.co', // model download endpoint (mirrorable)
   };
 
   operator [](String key) {

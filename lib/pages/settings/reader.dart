@@ -717,6 +717,66 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
           ],
         ).toSliver(),
+        _SettingsExpansionTile(
+          expansionKey: const PageStorageKey('readerTranslationGroup'),
+          icon: Icons.translate,
+          title: "AI Translation".tl,
+          children: [
+            _SwitchSetting(
+              title: "Translate pages while reading".tl,
+              subtitle:
+                  "Fully offline. The original shows until a page finishes translating."
+                      .tl,
+              settingKey: "enableImageTranslation",
+              onChanged: () {
+                setState(() {});
+                widget.onChanged?.call("enableImageTranslation");
+              },
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource:
+                  isEnabledSpecificSettings ? widget.comicSource : null,
+              useDeviceSettings: useDeviceSpecificSettings,
+            ),
+            SelectSetting(
+              title: "Source language".tl,
+              settingKey: "imageTranslationSource",
+              optionTranslation: {
+                "ja": "Japanese".tl,
+                "en": "English".tl,
+                "ko": "Korean".tl,
+                "zh": "Chinese".tl,
+              },
+              onChanged: () {
+                setState(() {});
+                widget.onChanged?.call("imageTranslationSource");
+              },
+            ),
+            SelectSetting(
+              title: "Target language".tl,
+              settingKey: "imageTranslationTarget",
+              optionTranslation: {
+                "zh": "Simplified Chinese".tl,
+                "zh-TW": "Traditional Chinese".tl,
+                "en": "English".tl,
+              },
+              onChanged: () {
+                setState(() {});
+                widget.onChanged?.call("imageTranslationTarget");
+              },
+            ),
+            _CallbackSetting(
+              title: "Translation models".tl,
+              subtitle: TranslationModels.isReadyFor(
+                    appdata.settings['imageTranslationSource'] as String? ??
+                        'ja',
+                  )
+                  ? "Models ready".tl
+                  : "Models not downloaded".tl,
+              actionTitle: "Manage".tl,
+              callback: () => context.to(() => const TranslationModelsPage()),
+            ),
+          ],
+        ).toSliver(),
       ],
     );
   }
