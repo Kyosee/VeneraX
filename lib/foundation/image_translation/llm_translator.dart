@@ -155,8 +155,10 @@ abstract class LlmTranslator {
         '拟声词按含义意译；OCR 造成的少量错字请按上下文推断原意。\n'
         '同一部漫画跨页阅读，人名、地名、招式名等专有名词的译法必须前后一致：'
         'glossary 字段给出的是已确定的译法（键为原文，值为译文），出现时必须沿用。\n'
-        '同时，请把本次新出现（glossary 中没有）的人名与专有名词，连同你采用的译法，'
-        '收集到 names 字段返回，供后续页面保持一致。\n'
+        '同时，请把本次新出现（glossary 中没有）的人名、地名、招式/组织名等专有名词，'
+        '连同你采用的译法，收集到 names 字段返回，供后续页面保持一致。'
+        'names 只收录简短的专有名词（通常不超过 8 个字），'
+        '不要收录整句对白、拟声词、普通词组、数字或网址。\n'
         '只输出一个 JSON 对象，格式为 '
         '{"lines":[{"id":0,"text":"译文"}],"names":{"原文":"译文"}}，'
         'lines 中每个 id 恰好出现一次，不要输出任何其他内容。';
@@ -231,8 +233,12 @@ abstract class LlmTranslator {
       }
       if (object['names'] is Map) {
         (object['names'] as Map).forEach((k, v) {
-          if (k is String && v is String && k.trim().isNotEmpty && v.trim().isNotEmpty) {
-            names[k.trim()] = v.trim();
+          if (k is String && v is String) {
+            var key = k.trim();
+            var value = v.trim();
+            if (isValidGlossaryTerm(key, value)) {
+              names[key] = value;
+            }
           }
         });
       }
@@ -253,6 +259,39 @@ abstract class LlmTranslator {
     }
     return LlmTranslationResult(results, names);
   }
+
+  /// Whether a reported name/translation pair is worth keeping in the glossary.
+  /// The glossary exists only for short proper nouns (names, places, techniques)
+  /// that must stay consistent across pages; it is sent with every request, so
+  /// it must stay small. Models occasionally return whole sentences, URLs or
+  /// numbers as "names" — those bloat the prompt without helping consistency,
+  /// so they are rejected here as a backstop to the prompt's own instruction.
+  /// Also used by the service to sanitize a glossary loaded from an earlier
+  /// version that had no such filtering.
+  static bool isValidGlossaryTerm(String source, String translation) {
+    if (source.isEmpty || translation.isEmpty) return false;
+    // Proper nouns are short. Anything long is almost certainly a sentence.
+    if (source.length > 16 || translation.length > 16) return false;
+    for (var s in [source, translation]) {
+      // URLs / emails / paths — never proper nouns, and long enough to bloat.
+      if (_urlLike.hasMatch(s)) return false;
+      // Sentence-like: contains terminal/comma punctuation or whitespace runs
+      // typical of a clause rather than a single term.
+      if (_sentenceLike.hasMatch(s)) return false;
+    }
+    // Pure numbers (page numbers, counts) carry no naming to keep consistent.
+    if (_numericOnly.hasMatch(source)) return false;
+    return true;
+  }
+
+  static final _urlLike = RegExp(
+    r'https?://|www\.|@|[./\\][a-zA-Z]{2,}|\.(com|net|org|io|cn|jp)\b',
+    caseSensitive: false,
+  );
+
+  static final _sentenceLike = RegExp(r'[。！？.!?、,，；;]|\s{1,}\S+\s');
+
+  static final _numericOnly = RegExp(r'^[0-9\s.,]+$');
 
   /// Pulls the first JSON object or array out of [content], tolerating code
   /// fences and surrounding prose. Prefers an object (the requested shape);

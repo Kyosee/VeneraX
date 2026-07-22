@@ -414,24 +414,48 @@ class ImageTranslationService with ChangeNotifier {
   /// inherits the same names.
   static const _comicGlossaryKey = 'imageTranslationComicGlossary';
 
-  /// Cap per comic: a glossary is only names/proper nouns, so a few hundred
-  /// entries is generous; bounding it keeps the prompt small and implicitData
-  /// from growing without limit.
-  static const _maxGlossaryEntries = 200;
+  /// Cap per comic. The glossary is sent verbatim with every page request, so
+  /// an oversized one both wastes tokens and risks overflowing the model's
+  /// context. It only holds short proper nouns, so a modest cap is plenty;
+  /// once full, the oldest entries are dropped.
+  static const _maxGlossaryEntries = 80;
   Map<String, Map<String, String>>? _glossaries;
 
   Map<String, Map<String, String>> get _allGlossaries {
     if (_glossaries == null) {
       var stored = appdata.implicitData[_comicGlossaryKey];
       _glossaries = <String, Map<String, String>>{};
+      var cleaned = false;
       if (stored is Map) {
         stored.forEach((k, v) {
-          if (v is Map) {
-            _glossaries![k.toString()] = v.map(
-              (ik, iv) => MapEntry(ik.toString(), iv.toString()),
-            );
+          if (v is! Map) return;
+          var glossary = <String, String>{};
+          v.forEach((ik, iv) {
+            var source = ik.toString();
+            var translation = iv.toString();
+            // Drop entries an earlier version stored before the term filter
+            // existed (whole sentences, URLs, numbers) so they stop being fed
+            // back to the model and inflating the prompt.
+            if (LlmTranslator.isValidGlossaryTerm(source, translation)) {
+              glossary[source] = translation;
+            } else {
+              cleaned = true;
+            }
+          });
+          if (glossary.length > _maxGlossaryEntries) {
+            var keys = glossary.keys.toList();
+            for (var key in keys.take(glossary.length - _maxGlossaryEntries)) {
+              glossary.remove(key);
+            }
+            cleaned = true;
           }
+          _glossaries![k.toString()] = glossary;
         });
+      }
+      // Persist the cleaned form once so the cost is paid a single time.
+      if (cleaned) {
+        appdata.implicitData[_comicGlossaryKey] = _glossaries;
+        appdata.writeImplicitData();
       }
     }
     return _glossaries!;
@@ -449,7 +473,9 @@ class ImageTranslationService with ChangeNotifier {
     discovered.forEach((source, translation) {
       // First agreed translation wins: an established name is not overwritten
       // by a later page's rephrasing, which keeps it stable.
-      if (source.isEmpty || translation.isEmpty) return;
+      // Validate here too: the parse-time filter is the primary guard, but a
+      // future caller of _mergeGlossary must not be able to insert bloat.
+      if (!LlmTranslator.isValidGlossaryTerm(source, translation)) return;
       if (!glossary.containsKey(source)) {
         glossary[source] = translation;
         changed = true;
