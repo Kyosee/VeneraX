@@ -12,6 +12,18 @@ import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/io.dart';
 
+/// Result of the shared translation core [_translateToCache].
+enum _TranslateOutcome {
+  /// A rendered translated page was already in the cache.
+  alreadyCached,
+
+  /// A translated page was produced and written to the cache this call.
+  translated,
+
+  /// The page has no translatable text; an empty text-result was cached.
+  noContent,
+}
+
 class _TranslationTask {
   _TranslationTask(this.cacheKey, this.comicKey, this.imageBytes);
 
@@ -184,9 +196,33 @@ class ImageTranslationService with ChangeNotifier {
     Uint8List imageBytes, {
     bool Function()? shouldCancel,
   }) async {
+    var outcome = await _translateToCache(
+      cacheKey,
+      comicKey,
+      imageBytes,
+      shouldCancel: shouldCancel,
+    );
+    if (outcome == _TranslateOutcome.noContent) {
+      return false;
+    }
+    _completed.add(cacheKey);
+    return true;
+  }
+
+  /// The shared translation core used by both the awaitable [translateOne]
+  /// (pre-translation manager) and the queued [_process] (reader). It performs
+  /// the cache probe, OCR/translation analysis (with the text-level cache),
+  /// language lock + glossary updates and the final render, writing both cache
+  /// levels. Callers layer their own bookkeeping (queue management, listener
+  /// notification, failure tracking) on top of the returned outcome.
+  Future<_TranslateOutcome> _translateToCache(
+    String cacheKey,
+    String comicKey,
+    Uint8List imageBytes, {
+    bool Function()? shouldCancel,
+  }) async {
     if (await CacheManager().findCache(cacheKey) != null) {
-      _completed.add(cacheKey);
-      return true;
+      return _TranslateOutcome.alreadyCached;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
     var regions = await _loadTextCache(cacheKey);
@@ -210,13 +246,14 @@ class ImageTranslationService with ChangeNotifier {
       throw const PipelineCanceled();
     }
     if (regions.isEmpty) {
+      // Nothing translatable; the cached empty result keeps this page from
+      // being re-analyzed, even across restarts.
       _noContent.add(cacheKey);
-      return false;
+      return _TranslateOutcome.noContent;
     }
     var rendered = await pipeline.renderPage(imageBytes, regions);
     await CacheManager().writeCache(cacheKey, rendered, _imageCacheDuration);
-    _completed.add(cacheKey);
-    return true;
+    return _TranslateOutcome.translated;
   }
 
   /// Releases pipeline/model memory when no reader is scheduling and the
@@ -283,42 +320,14 @@ class ImageTranslationService with ChangeNotifier {
       if (!task.cacheKey.startsWith(_cachePrefix)) {
         return;
       }
-      if (await CacheManager().findCache(task.cacheKey) != null) {
-        _notifyDone(task);
-        return;
-      }
-      var pipeline = _pipeline ??= PageTranslationPipeline();
-
-      var regions = await _loadTextCache(task.cacheKey);
-      if (regions == null) {
-        var analysis = await pipeline.analyzePage(
-          task.imageBytes,
-          sourceLang: _effectiveSourceFor(task.comicKey),
-          targetLang: targetLang,
-          glossary: _glossaryFor(task.comicKey),
-        );
-        _updateLanguageLock(task.comicKey, analysis.languageVotes);
-        _mergeGlossary(task.comicKey, analysis.newGlossary);
-        regions = analysis.regions;
-        await CacheManager().writeCache(
-          _textKeyOf(task.cacheKey),
-          utf8.encode(jsonEncode([for (var r in regions) r.toJson()])),
-          _textCacheDuration,
-        );
-      }
-      if (regions.isEmpty) {
-        // Nothing translatable; the cached empty result keeps this page from
-        // being re-analyzed, even across restarts.
-        _noContent.add(task.cacheKey);
-        return;
-      }
-      var rendered = await pipeline.renderPage(task.imageBytes, regions);
-      await CacheManager().writeCache(
+      var outcome = await _translateToCache(
         task.cacheKey,
-        rendered,
-        _imageCacheDuration,
+        task.comicKey,
+        task.imageBytes,
       );
-      _notifyDone(task);
+      if (outcome != _TranslateOutcome.noContent) {
+        _notifyDone(task);
+      }
     } on PipelineCanceled {
       // ignore
     } catch (e, s) {
