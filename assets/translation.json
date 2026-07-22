@@ -1050,7 +1050,8 @@
     "A pre-translation task is already running": "该漫画的预翻译任务已在进行中",
     "Configure AI translation first": "请先配置 AI 翻译",
     "Select chapters": "选择章节",
-    "@count chapters": "@count 章"
+    "@count chapters": "@count 章",
+    "Translating": "翻译中"
   },
   "zh_TW": {
     "Translation engine": "翻譯引擎",
@@ -2103,6 +2104,7 @@
     "A pre-translation task is already running": "該漫畫的預翻譯任務已在進行中",
     "Configure AI translation first": "請先配置 AI 翻譯",
     "Select chapters": "選擇章節",
-    "@count chapters": "@count 章"
+    "@count chapters": "@count 章",
+    "Translating": "翻譯中"
   }
 }

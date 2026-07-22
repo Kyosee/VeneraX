@@ -4,14 +4,26 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
+/// One page's translation outcome: the per-bubble texts (aligned with the
+/// input, empty where the model refused/failed) plus any proper-noun
+/// renderings the model reported for this page, which the caller folds back
+/// into the comic's glossary so later pages/chapters stay consistent.
+class LlmTranslationResult {
+  const LlmTranslationResult(this.texts, this.glossary);
+
+  final List<String> texts;
+
+  /// source term -> agreed translation, discovered on this page.
+  final Map<String, String> glossary;
+}
+
 /// Translates recognized bubble texts through a user-configured
 /// OpenAI-compatible chat endpoint.
 ///
 /// The app ships with no endpoint, key or vendor — everything is supplied by
 /// the user in settings, so translation quality is whatever model they point
-/// it at. All bubbles of a page go out as ONE request (id + text list), which
-/// both preserves cross-bubble context and keeps latency at one round-trip
-/// per page.
+/// it at. All bubbles of a page go out as ONE request, together with the
+/// comic's running glossary so names stay consistent across pages/chapters.
 abstract class LlmTranslator {
   static String get _rawUrl =>
       (appdata.settings['imageTranslationLlmUrl'] as String? ?? '').trim();
@@ -120,23 +132,40 @@ abstract class LlmTranslator {
     };
   }
 
-  /// Translates [texts] into [targetLang]. The result list is aligned with
-  /// the input; entries the model refused/failed are empty strings.
-  static Future<List<String>> translateBatch(
+  /// Translates [texts] into [targetLang]. [glossary] carries agreed
+  /// translations of names/proper nouns established on earlier pages of the
+  /// same comic; it is sent to the model as a must-follow reference so a
+  /// character's name is rendered the same way across pages and chapters.
+  ///
+  /// The returned [LlmTranslationResult] holds the aligned translations plus
+  /// any new name/proper-noun pairs the model reported for this page, which
+  /// the caller merges back into the comic's glossary.
+  static Future<LlmTranslationResult> translateBatch(
     List<String> texts,
-    String targetLang,
-  ) async {
-    if (texts.isEmpty) return const [];
+    String targetLang, {
+    Map<String, String> glossary = const {},
+  }) async {
+    if (texts.isEmpty) {
+      return const LlmTranslationResult([], {});
+    }
+    var target = _targetName(targetLang);
     var systemPrompt =
-        '你是专业的漫画对白翻译引擎。将用户提供的 JSON 数组中每个对象的 text '
-        '字段翻译成${_targetName(targetLang)}。要求：符合漫画口语风格，简洁自然；'
-        '拟声词按含义意译；OCR 造成的少量错字请按上下文推断原意；'
-        '人名与专有名词保持前后一致。'
-        '只输出 JSON 数组，格式为 [{"id":0,"text":"译文"}]，'
-        '每个 id 恰好出现一次，不要输出任何其他内容。';
-    var payload = jsonEncode([
-      for (var i = 0; i < texts.length; i++) {'id': i, 'text': texts[i]},
-    ]);
+        '你是专业的漫画对白翻译引擎。将用户提供的 JSON 对象中 lines 数组里每个元素的 '
+        'text 字段翻译成$target。要求：符合漫画口语风格，简洁自然；'
+        '拟声词按含义意译；OCR 造成的少量错字请按上下文推断原意。\n'
+        '同一部漫画跨页阅读，人名、地名、招式名等专有名词的译法必须前后一致：'
+        'glossary 字段给出的是已确定的译法（键为原文，值为译文），出现时必须沿用。\n'
+        '同时，请把本次新出现（glossary 中没有）的人名与专有名词，连同你采用的译法，'
+        '收集到 names 字段返回，供后续页面保持一致。\n'
+        '只输出一个 JSON 对象，格式为 '
+        '{"lines":[{"id":0,"text":"译文"}],"names":{"原文":"译文"}}，'
+        'lines 中每个 id 恰好出现一次，不要输出任何其他内容。';
+    var payload = jsonEncode({
+      if (glossary.isNotEmpty) 'glossary': glossary,
+      'lines': [
+        for (var i = 0; i < texts.length; i++) {'id': i, 'text': texts[i]},
+      ],
+    });
 
     var dio = AppDio(
       BaseOptions(
@@ -185,20 +214,36 @@ abstract class LlmTranslator {
     throw Exception('LLM translation failed: $lastError');
   }
 
-  /// Extracts the JSON array from the model output (tolerating code fences
-  /// and surrounding prose) and aligns it by id.
-  static List<String> _parse(String content, int count) {
-    var start = content.indexOf('[');
-    var end = content.lastIndexOf(']');
-    if (start == -1 || end <= start) {
-      throw Exception('LLM response is not a JSON array');
+  /// Parses the model output into aligned translations plus reported names.
+  ///
+  /// The prompt asks for a JSON object
+  /// `{"lines":[{"id,"text"}],"names":{...}}`, but models sometimes return a
+  /// bare `[{"id","text"}]` array (ignoring the wrapper). Both shapes are
+  /// accepted so a slightly non-compliant model still works; a bare array
+  /// simply yields no new glossary entries.
+  static LlmTranslationResult _parse(String content, int count) {
+    var object = _extractJsonObject(content);
+    List<dynamic>? lines;
+    var names = <String, String>{};
+    if (object is Map) {
+      if (object['lines'] is List) {
+        lines = object['lines'] as List;
+      }
+      if (object['names'] is Map) {
+        (object['names'] as Map).forEach((k, v) {
+          if (k is String && v is String && k.trim().isNotEmpty && v.trim().isNotEmpty) {
+            names[k.trim()] = v.trim();
+          }
+        });
+      }
+    } else if (object is List) {
+      lines = object;
     }
-    var items = jsonDecode(content.substring(start, end + 1));
-    if (items is! List) {
-      throw Exception('LLM response is not a JSON array');
+    if (lines == null) {
+      throw Exception('LLM response is not in the expected JSON shape');
     }
     var results = List.filled(count, '');
-    for (var item in items) {
+    for (var item in lines) {
       if (item is! Map) continue;
       var id = item['id'];
       var text = item['text'];
@@ -206,7 +251,30 @@ abstract class LlmTranslator {
         results[id] = text.trim();
       }
     }
-    return results;
+    return LlmTranslationResult(results, names);
+  }
+
+  /// Pulls the first JSON object or array out of [content], tolerating code
+  /// fences and surrounding prose. Prefers an object (the requested shape);
+  /// falls back to an array.
+  static dynamic _extractJsonObject(String content) {
+    var objStart = content.indexOf('{');
+    var objEnd = content.lastIndexOf('}');
+    var arrStart = content.indexOf('[');
+    var arrEnd = content.lastIndexOf(']');
+    // An object wrapping the array has its '{' before the '['.
+    if (objStart != -1 && objEnd > objStart &&
+        (arrStart == -1 || objStart < arrStart)) {
+      try {
+        return jsonDecode(content.substring(objStart, objEnd + 1));
+      } catch (_) {
+        // fall through to array
+      }
+    }
+    if (arrStart != -1 && arrEnd > arrStart) {
+      return jsonDecode(content.substring(arrStart, arrEnd + 1));
+    }
+    throw Exception('LLM response has no JSON payload');
   }
 
   static String _briefBody(Object? body) {

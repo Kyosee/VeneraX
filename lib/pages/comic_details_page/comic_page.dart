@@ -235,12 +235,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   void initState() {
     scrollController.addListener(onScroll);
+    PreTranslationTaskManager.instance.addListener(update);
     super.initState();
   }
 
   @override
   void dispose() {
     scrollController.removeListener(onScroll);
+    PreTranslationTaskManager.instance.removeListener(update);
     super.dispose();
   }
 
@@ -785,10 +787,32 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     onPressed: showComments,
                   ),
                 if (ImageTranslationService.isReady)
-                  _ActionButton(
-                    icon: const Icon(Icons.translate_rounded),
-                    text: 'Pre-translate'.tl,
-                    onPressed: preTranslate,
+                  Builder(
+                    builder: (context) {
+                      var task = PreTranslationTaskManager.instance
+                          .runningTaskFor(comic.id, comic.sourceKey);
+                      if (task != null) {
+                        var pct = task.total == 0
+                            ? null
+                            : (task.progress * 100)
+                                  .clamp(0, 100)
+                                  .toStringAsFixed(0);
+                        return _ActionButton(
+                          icon: const Icon(Icons.translate_rounded),
+                          activeIcon: const Icon(Icons.translate_rounded),
+                          isActive: true,
+                          text: pct == null
+                              ? 'Translating'.tl
+                              : '${'Translating'.tl} $pct%',
+                          onPressed: preTranslate,
+                        );
+                      }
+                      return _ActionButton(
+                        icon: const Icon(Icons.translate_rounded),
+                        text: 'Pre-translate'.tl,
+                        onPressed: preTranslate,
+                      );
+                    },
                   ),
               ],
             ),

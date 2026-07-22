@@ -15,10 +15,14 @@ import 'package:venera/utils/opencc.dart';
 /// already being in the target language) — the service uses the votes to
 /// lock a comic's dominant language.
 class PageAnalysis {
-  PageAnalysis(this.regions, this.languageVotes);
+  PageAnalysis(this.regions, this.languageVotes, [this.newGlossary = const {}]);
 
   final List<TranslatedRegion> regions;
   final Map<String, int> languageVotes;
+
+  /// Name/proper-noun translations the model reported for this page, to be
+  /// merged into the comic's running glossary for later pages.
+  final Map<String, String> newGlossary;
 }
 
 /// Per-page translation orchestrator. Runs on the main isolate but does no
@@ -34,6 +38,7 @@ class PageTranslationPipeline {
     Uint8List imageBytes, {
     required String sourceLang,
     required String targetLang,
+    Map<String, String> glossary = const {},
   }) async {
     var image = await _decode(imageBytes);
     var paths = TranslationModels.workerPaths();
@@ -48,7 +53,7 @@ class PageTranslationPipeline {
       votes[block.language] = (votes[block.language] ?? 0) + 1;
     }
     if (blocks.isEmpty) {
-      return PageAnalysis(const [], votes);
+      return PageAnalysis(const [], votes, const {});
     }
 
     var targetBase = targetLang == 'zh-TW' ? 'zh' : targetLang;
@@ -69,18 +74,21 @@ class PageTranslationPipeline {
       pending.add(block);
     }
 
+    var newGlossary = <String, String>{};
     if (pending.isNotEmpty) {
-      var translated = await LlmTranslator.translateBatch(
+      var result = await LlmTranslator.translateBatch(
         pending.map((b) => b.text).toList(),
         targetLang,
+        glossary: glossary,
       );
+      newGlossary = result.glossary;
       for (var i = 0; i < pending.length; i++) {
-        var text = translated[i].trim();
+        var text = result.texts[i].trim();
         if (text.isEmpty || text == pending[i].text) continue;
         regions.add(_region(pending[i], text));
       }
     }
-    return PageAnalysis(regions, votes);
+    return PageAnalysis(regions, votes, newGlossary);
   }
 
   /// Renders [regions] over the page. Split from [analyzePage] so a page

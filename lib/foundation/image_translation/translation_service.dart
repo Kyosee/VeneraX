@@ -143,8 +143,10 @@ class ImageTranslationService with ChangeNotifier {
         imageBytes,
         sourceLang: _effectiveSourceFor(comicKey),
         targetLang: targetLang,
+        glossary: _glossaryFor(comicKey),
       );
       _updateLanguageLock(comicKey, analysis.languageVotes);
+      _mergeGlossary(comicKey, analysis.newGlossary);
       regions = analysis.regions;
       await CacheManager().writeCache(
         _textKeyOf(cacheKey),
@@ -241,8 +243,10 @@ class ImageTranslationService with ChangeNotifier {
           task.imageBytes,
           sourceLang: _effectiveSourceFor(task.comicKey),
           targetLang: targetLang,
+          glossary: _glossaryFor(task.comicKey),
         );
         _updateLanguageLock(task.comicKey, analysis.languageVotes);
+        _mergeGlossary(task.comicKey, analysis.newGlossary);
         regions = analysis.regions;
         await CacheManager().writeCache(
           _textKeyOf(task.cacheKey),
@@ -344,6 +348,67 @@ class ImageTranslationService with ChangeNotifier {
       'Image Translation',
       'Locked language "${dominant.key}" for $comicKey',
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // Per-comic glossary
+  // ---------------------------------------------------------------------
+
+  /// Agreed name/proper-noun translations per comic ('cid@sourceKey' ->
+  /// {source term -> translation}). Sent to the LLM on every page so a
+  /// character's name renders identically across pages and chapters, and
+  /// grown with the terms the model reports back. Persisted so a later
+  /// reading session — or the pre-translation of a different chapter —
+  /// inherits the same names.
+  static const _comicGlossaryKey = 'imageTranslationComicGlossary';
+
+  /// Cap per comic: a glossary is only names/proper nouns, so a few hundred
+  /// entries is generous; bounding it keeps the prompt small and implicitData
+  /// from growing without limit.
+  static const _maxGlossaryEntries = 200;
+  Map<String, Map<String, String>>? _glossaries;
+
+  Map<String, Map<String, String>> get _allGlossaries {
+    if (_glossaries == null) {
+      var stored = appdata.implicitData[_comicGlossaryKey];
+      _glossaries = <String, Map<String, String>>{};
+      if (stored is Map) {
+        stored.forEach((k, v) {
+          if (v is Map) {
+            _glossaries![k.toString()] = v.map(
+              (ik, iv) => MapEntry(ik.toString(), iv.toString()),
+            );
+          }
+        });
+      }
+    }
+    return _glossaries!;
+  }
+
+  Map<String, String> _glossaryFor(String comicKey) {
+    return _allGlossaries[comicKey] ?? const {};
+  }
+
+  void _mergeGlossary(String comicKey, Map<String, String> discovered) {
+    if (discovered.isEmpty) return;
+    var all = _allGlossaries;
+    var glossary = all.putIfAbsent(comicKey, () => <String, String>{});
+    var changed = false;
+    discovered.forEach((source, translation) {
+      // First agreed translation wins: an established name is not overwritten
+      // by a later page's rephrasing, which keeps it stable.
+      if (source.isEmpty || translation.isEmpty) return;
+      if (!glossary.containsKey(source)) {
+        glossary[source] = translation;
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    while (glossary.length > _maxGlossaryEntries) {
+      glossary.remove(glossary.keys.first);
+    }
+    appdata.implicitData[_comicGlossaryKey] = all;
+    appdata.writeImplicitData();
   }
 
   void _notifyDone(_TranslationTask task) {
