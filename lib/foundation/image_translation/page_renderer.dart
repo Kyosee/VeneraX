@@ -57,10 +57,34 @@ void _drawRegion(ui.Canvas canvas, TranslatedRegion region) {
     region.rect.right.toDouble(),
     region.rect.bottom.toDouble(),
   );
-  var background = ui.Paint()..color = ui.Color(region.backgroundColor);
+  var background = ui.Color(region.backgroundColor);
+
+  // Coverage margin scales with the region so the original text — which
+  // routinely bleeds a few pixels past the detected box — is fully hidden
+  // instead of leaving edges/corners poking out. A fixed 2px was far too
+  // small for large bubbles.
+  var minSide = math.min(rect.width, rect.height);
+  var margin = math.max(3.0, minSide * 0.14);
+  var core = rect.inflate(margin);
+
+  // Small corner radius: a large radius leaves the original text's square
+  // corners uncovered (the visible "漏边角"). Keep corners nearly square.
+  var radius = ui.Radius.circular(math.min(margin, 4.0));
+
+  // Feathered halo first: a blurred patch in the sampled surrounding color
+  // blends the fill into the artwork, so a semi-transparent or textured
+  // bubble no longer gets a hard, pasted-on opaque rectangle. The opaque
+  // core drawn on top still guarantees the original text is covered.
+  var sigma = math.max(1.5, margin * 0.6);
   canvas.drawRRect(
-    ui.RRect.fromRectAndRadius(rect.inflate(2), const ui.Radius.circular(6)),
-    background,
+    ui.RRect.fromRectAndRadius(core.inflate(sigma * 0.5), radius),
+    ui.Paint()
+      ..color = background
+      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, sigma),
+  );
+  canvas.drawRRect(
+    ui.RRect.fromRectAndRadius(core, radius),
+    ui.Paint()..color = background,
   );
 
   var painter = _fitText(

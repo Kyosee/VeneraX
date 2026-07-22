@@ -725,7 +725,7 @@
     "Migrated": "已迁移",
     "Skipped": "已跳过",
     "Total: @total  Checked: @checked  Migrated: @migrated  Failed: @failed": "总数: @total  已检查: @checked  已迁移: @migrated  失败: @failed",
-    "Chapter load failed: @message": "章节加载失败: @message",
+    "Chapter load failed: @message": "章节加载失败：@message",
     "Expand": "展开",
     "Collapse": "折叠",
     "No comics": "没有漫画",
@@ -1042,7 +1042,15 @@
     "WebDAV Sync": "WebDAV 同步",
     "Select model": "选择模型",
     "Enter manually": "手动输入",
-    "Failed to fetch model list": "获取模型列表失败"
+    "Failed to fetch model list": "获取模型列表失败",
+    "Pre-translate": "预翻译",
+    "Pre-translate: @title": "预翻译：@title",
+    "Pre-translation": "预翻译",
+    "Pre-translation started": "已开始预翻译",
+    "A pre-translation task is already running": "该漫画的预翻译任务已在进行中",
+    "Configure AI translation first": "请先配置 AI 翻译",
+    "Select chapters": "选择章节",
+    "@count chapters": "@count 章"
   },
   "zh_TW": {
     "Translation engine": "翻譯引擎",
@@ -1770,7 +1778,7 @@
     "Migrated": "已遷移",
     "Skipped": "已跳過",
     "Total: @total  Checked: @checked  Migrated: @migrated  Failed: @failed": "總數: @total  已檢查: @checked  已遷移: @migrated  失敗: @failed",
-    "Chapter load failed: @message": "章節載入失敗: @message",
+    "Chapter load failed: @message": "章節載入失敗：@message",
     "Expand": "展開",
     "Collapse": "折疊",
     "No comics": "沒有漫畫",
@@ -2087,6 +2095,14 @@
     "WebDAV Sync": "WebDAV 同步",
     "Select model": "選擇模型",
     "Enter manually": "手動輸入",
-    "Failed to fetch model list": "取得模型清單失敗"
+    "Failed to fetch model list": "取得模型清單失敗",
+    "Pre-translate": "預翻譯",
+    "Pre-translate: @title": "預翻譯：@title",
+    "Pre-translation": "預翻譯",
+    "Pre-translation started": "已開始預翻譯",
+    "A pre-translation task is already running": "該漫畫的預翻譯任務已在進行中",
+    "Configure AI translation first": "請先配置 AI 翻譯",
+    "Select chapters": "選擇章節",
+    "@count chapters": "@count 章"
   }
 }

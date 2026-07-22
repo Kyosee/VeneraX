@@ -128,6 +128,61 @@ abstract mixin class _ComicPageActions {
     Share.shareText(text);
   }
 
+  /// Queues selected chapters for background pre-translation so their pages are
+  /// rendered and cached before the user opens the reader (no in-reader wait).
+  void preTranslate() {
+    if (!ImageTranslationService.isReady) {
+      App.rootContext.showMessage(
+        message: "Configure AI translation first".tl,
+      );
+      return;
+    }
+    // Ordered (id, title) list of chapters; a chapter-less comic is one job.
+    final entries = <(String, String)>[];
+    final chapters = comic.chapters;
+    if (chapters == null) {
+      entries.add(('0', comic.title));
+    } else {
+      var index = 1;
+      for (var entry in chapters.allChapters.entries) {
+        entries.add((entry.key, entry.value.isEmpty ? 'E$index' : entry.value));
+        index++;
+      }
+    }
+
+    void startJob(List<int> selected) {
+      if (selected.isEmpty) return;
+      var picked = [
+        for (var i in selected)
+          PreTranslationChapter(eid: entries[i].$1, title: entries[i].$2),
+      ];
+      var task = PreTranslationTaskManager.instance.start(
+        cid: comic.id,
+        sourceKey: comic.sourceKey,
+        comicType: comic.comicType,
+        title: comic.title,
+        chapters: picked,
+      );
+      App.rootContext.showMessage(
+        message: task == null
+            ? "A pre-translation task is already running".tl
+            : "Pre-translation started".tl,
+      );
+    }
+
+    // A chapter-less comic needs no picker: translate its single page set.
+    if (chapters == null) {
+      startJob([0]);
+      return;
+    }
+    App.rootContext.to(
+      () => _SelectPreTranslateChapter(
+        [for (var e in entries) e.$2],
+        startJob,
+      ),
+    );
+  }
+
   /// read the comic
   ///
   /// [ep] the episode number, start from 1

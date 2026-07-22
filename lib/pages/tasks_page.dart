@@ -9,6 +9,7 @@ import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
+import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
 import 'package:venera/foundation/widget_utils.dart';
@@ -32,6 +33,8 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
   final exportManager = ExportTaskManager.instance;
   final dataSyncManager = DataSyncTaskManager.instance;
   final modelStore = TranslationModelStore.instance;
+  final preTranslateManager = PreTranslationTaskManager.instance;
+  final preTranslationManager = PreTranslationTaskManager.instance;
 
   late TabController _tabController;
 
@@ -51,6 +54,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     exportManager.addListener(update);
     dataSyncManager.addListener(update);
     modelStore.addListener(update);
+    preTranslateManager.addListener(update);
   }
 
   @override
@@ -65,6 +69,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     exportManager.removeListener(update);
     dataSyncManager.removeListener(update);
     modelStore.removeListener(update);
+    preTranslateManager.removeListener(update);
     super.dispose();
   }
 
@@ -82,7 +87,8 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         sourceMigrationManager.historyTasks.isNotEmpty ||
         comicSourceUpdateManager.historyTasks.isNotEmpty ||
         importManager.historyTasks.isNotEmpty ||
-        exportManager.historyTasks.isNotEmpty;
+        exportManager.historyTasks.isNotEmpty ||
+        preTranslateManager.historyTasks.isNotEmpty;
   }
 
   void _clearAllHistory() {
@@ -106,6 +112,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
               comicSourceUpdateManager.clearHistory();
               importManager.clearHistory();
               exportManager.clearHistory();
+              preTranslateManager.clearHistory();
               Navigator.pop(context);
             },
             child: Text("Delete".tl),
@@ -135,6 +142,8 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         importManager.removeTask(id);
       case 'export':
         exportManager.removeTask(id);
+      case 'pre_translate':
+        preTranslateManager.removeTask(id);
     }
   }
 
@@ -445,6 +454,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         'export' => Icons.save_alt,
         'data_sync_upload' => Icons.cloud_upload,
         'data_sync_download' => Icons.cloud_download,
+        'pre_translate' => Icons.translate,
         _ => Icons.task,
       };
     }
@@ -467,6 +477,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
       'export' => "Export Comics".tl,
       'data_sync_upload' => "WebDAV Upload".tl,
       'data_sync_download' => "WebDAV Download".tl,
+      'pre_translate' => "Pre-translate: @title".tlParams(params),
       _ => taskType,
     };
   }
@@ -524,6 +535,87 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     );
 
     return _wrapHistoryCard(card, 'follow_update', task.id, task.isRunning);
+  }
+
+  String preTranslateStatusText(PreTranslationTask task) {
+    return switch (task.status) {
+      PreTranslationTaskStatus.running => "Running".tl,
+      PreTranslationTaskStatus.completed => "Completed".tl,
+      PreTranslationTaskStatus.canceled => "Canceled".tl,
+      PreTranslationTaskStatus.failed => "Failed".tl,
+    };
+  }
+
+  Widget buildPreTranslateTaskCard(
+    PreTranslationTask task, {
+    required bool expanded,
+  }) {
+    var progressText = task.total == 0
+        ? "0%"
+        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    final card = Card(
+      elevation: 0,
+      color: context.colorScheme.surface,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        initiallyExpanded: expanded,
+        leading: _wrapIconWithRotation(
+          getTaskIcon('pre_translate', task.isRunning, status: task.status.name),
+          task.isRunning,
+          task.status.name,
+        ),
+        title: Text(
+          getTaskTitle('pre_translate', {'title': task.title}),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: buildTaskSubtitle(
+          [
+            preTranslateStatusText(task),
+            "@count chapters".tlParams({'count': task.chapters.length}),
+            progressText,
+          ],
+          task.createdAt,
+          task.finishedAt,
+        ),
+        trailing: task.isRunning
+            ? TextButton(
+                onPressed: () => preTranslateManager.cancel(task.id),
+                child: Text("Cancel".tl),
+              )
+            : null,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: task.isRunning && task.total == 0 ? null : task.progress,
+            ),
+          ),
+          const SizedBox(height: 8),
+          buildSourceBox(
+            title: "Details".tl,
+            children: [
+              Text(
+                "Pages: @done/@total".tlParams({
+                  'done': task.done,
+                  'total': task.total,
+                }),
+                style: ts.s14,
+              ),
+              if (task.failed > 0) ...[
+                const SizedBox(height: 2),
+                Text(
+                  "Failed: @count".tlParams({'count': task.failed}),
+                  style: ts.s14.withColor(context.colorScheme.error),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return _wrapHistoryCard(card, 'pre_translate', task.id, task.isRunning);
   }
 
   Widget buildHistoryRefreshTaskCard(

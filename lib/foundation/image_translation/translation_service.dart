@@ -111,6 +111,68 @@ class ImageTranslationService with ChangeNotifier {
     return CacheManager().findCache(cacheKey);
   }
 
+  /// Whether a fully rendered translated page (not just the text result) is
+  /// already cached. Used by the pre-translation task manager to skip pages
+  /// that were done in an earlier run or read online.
+  Future<bool> hasRenderedPage(String cacheKey) async {
+    return await CacheManager().findCache(cacheKey) != null;
+  }
+
+  /// Translates one page synchronously (awaitable), writing both cache levels,
+  /// and returns whether a translated page was produced. Unlike [schedule]
+  /// this does not go through the reader's bounded/LRU queue — the
+  /// pre-translation task manager drives its own pacing and needs to await
+  /// each page. Reuses the shared pipeline and language lock.
+  ///
+  /// Returns true when a translated page image is now cached (or already was),
+  /// false when the page has no translatable text.
+  Future<bool> translateOne(
+    String cacheKey,
+    String comicKey,
+    Uint8List imageBytes, {
+    bool Function()? shouldCancel,
+  }) async {
+    if (await CacheManager().findCache(cacheKey) != null) {
+      _completed.add(cacheKey);
+      return true;
+    }
+    var pipeline = _pipeline ??= PageTranslationPipeline();
+    var regions = await _loadTextCache(cacheKey);
+    if (regions == null) {
+      var analysis = await pipeline.analyzePage(
+        imageBytes,
+        sourceLang: _effectiveSourceFor(comicKey),
+        targetLang: targetLang,
+      );
+      _updateLanguageLock(comicKey, analysis.languageVotes);
+      regions = analysis.regions;
+      await CacheManager().writeCache(
+        _textKeyOf(cacheKey),
+        utf8.encode(jsonEncode([for (var r in regions) r.toJson()])),
+        _textCacheDuration,
+      );
+    }
+    if (shouldCancel?.call() ?? false) {
+      throw const PipelineCanceled();
+    }
+    if (regions.isEmpty) {
+      _noContent.add(cacheKey);
+      return false;
+    }
+    var rendered = await pipeline.renderPage(imageBytes, regions);
+    await CacheManager().writeCache(cacheKey, rendered, _imageCacheDuration);
+    _completed.add(cacheKey);
+    return true;
+  }
+
+  /// Releases pipeline/model memory when no reader is scheduling and the
+  /// pre-translation manager has finished a batch. Safe to call any time.
+  void releaseIfIdle() {
+    if (_active.isEmpty && _queue.isEmpty) {
+      _scheduleRelease();
+    }
+  }
+
   /// Queues a page for translation. [onTranslated] fires (once per caller)
   /// after the translated page is cached, right before listeners are
   /// notified — providers use it to evict their stale image cache entry.

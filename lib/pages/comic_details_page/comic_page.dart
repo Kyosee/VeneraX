@@ -18,6 +18,8 @@ import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/favorites_meta.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
@@ -782,6 +784,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     text: (comic.commentCount ?? 'Comments'.tl).toString(),
                     onPressed: showComments,
                   ),
+                if (ImageTranslationService.isReady)
+                  _ActionButton(
+                    icon: const Icon(Icons.translate_rounded),
+                    text: 'Pre-translate'.tl,
+                    onPressed: preTranslate,
+                  ),
               ],
             ),
             if (history != null) ...[
@@ -1510,6 +1518,100 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
                             context.pop();
                           },
                     child: Text("Download Selected".tl),
+                  ),
+                ),
+                const SizedBox(width: 16),
+              ],
+            ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom),
+        ],
+      ),
+    );
+  }
+}
+
+/// Chapter multi-select for background pre-translation. Mirrors
+/// [_SelectDownloadChapter] but has no "already done" disabled rows — a
+/// chapter can always be re-queued (cached pages are skipped at run time).
+class _SelectPreTranslateChapter extends StatefulWidget {
+  const _SelectPreTranslateChapter(this.eps, this.finishSelect);
+
+  final List<String> eps;
+  final void Function(List<int>) finishSelect;
+
+  @override
+  State<_SelectPreTranslateChapter> createState() =>
+      _SelectPreTranslateChapterState();
+}
+
+class _SelectPreTranslateChapterState
+    extends State<_SelectPreTranslateChapter> {
+  List<int> selected = [];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: Appbar(
+        title: Text("Pre-translate".tl),
+        backgroundColor: context.colorScheme.surfaceContainerLow,
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: widget.eps.length,
+              itemBuilder: (context, i) {
+                return CheckboxListTile(
+                  title: Text(widget.eps[i]),
+                  value: selected.contains(i),
+                  onChanged: (v) {
+                    setState(() {
+                      if (selected.contains(i)) {
+                        selected.remove(i);
+                      } else {
+                        selected.add(i);
+                      }
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+          Container(
+            height: 50,
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: context.colorScheme.outlineVariant),
+              ),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      widget.finishSelect(
+                        [for (int i = 0; i < widget.eps.length; i++) i],
+                      );
+                      context.pop();
+                    },
+                    child: Text("Select All".tl),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () {
+                            selected.sort();
+                            widget.finishSelect(selected);
+                            context.pop();
+                          },
+                    child: Text("Start".tl),
                   ),
                 ),
                 const SizedBox(width: 16),

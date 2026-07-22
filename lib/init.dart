@@ -9,6 +9,7 @@ import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
+import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
@@ -176,6 +177,7 @@ void checkUpdates() {
   // Delay to make sure navigator context is ready for update dialogs.
   Future.delayed(const Duration(seconds: 2), _checkAppUpdates).wait();
   FollowUpdatesService.initChecker();
+  PreTranslationTaskManager.instance.resumePendingTasks();
 }
 
 Future<void> initPlatformServices() async {

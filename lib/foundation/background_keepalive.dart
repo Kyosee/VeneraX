@@ -44,6 +44,7 @@ class BackgroundKeepAlive {
   static const tagExport = 'export';
   static const tagComicImport = 'comic_import';
   static const tagSync = 'sync';
+  static const tagPreTranslate = 'pre_translate';
 
   bool get _supported => App.isAndroid;
 
