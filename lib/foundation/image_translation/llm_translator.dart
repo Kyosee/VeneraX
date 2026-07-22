@@ -84,7 +84,9 @@ abstract class LlmTranslator {
           _endpoint,
           data: {
             'model': _model,
-            'temperature': 0.3,
+            // No sampling params: some endpoints only accept their model's
+            // fixed values (e.g. "only 1 is allowed") and reject the request
+            // outright; the server-side default works everywhere.
             'messages': [
               {'role': 'system', 'content': systemPrompt},
               {'role': 'user', 'content': payload},
