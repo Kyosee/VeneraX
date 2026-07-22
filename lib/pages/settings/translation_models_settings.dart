@@ -33,7 +33,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       'ocr_zh' => "Chinese / Latin OCR".tl,
       'ocr_en' => "English OCR".tl,
       'ocr_ko' => "Korean OCR".tl,
-      'translator' => "Offline translation model (multilingual)".tl,
       _ => id,
     };
   }
@@ -52,7 +51,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
   Widget build(BuildContext context) {
     var requiredIds = TranslationModels.requiredFor(
       appdata.settings['imageTranslationSource'] as String? ?? 'auto',
-      engine: appdata.settings['imageTranslationEngine'] as String? ?? 'llm',
     ).map((c) => c.id).toSet();
     return Scaffold(
       body: SmoothCustomScrollView(

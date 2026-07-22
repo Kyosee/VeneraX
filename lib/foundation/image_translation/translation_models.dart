@@ -132,25 +132,7 @@ abstract class TranslationModels {
     ],
   );
 
-  /// Neural translation model (M2M100-418M, int8 quantized ONNX export).
-  /// One model translates between any pair of ~100 languages, fully offline.
-  static const translator = ModelComponent(
-    id: 'translator',
-    approxSizeBytes: 350000000,
-    files: [
-      ModelFile('encoder.onnx', [
-        '{hf}/Xenova/m2m100_418M/resolve/main/onnx/encoder_model_quantized.onnx',
-      ]),
-      ModelFile('decoder.onnx', [
-        '{hf}/Xenova/m2m100_418M/resolve/main/onnx/decoder_model_quantized.onnx',
-      ]),
-      ModelFile('tokenizer.json', [
-        '{hf}/Xenova/m2m100_418M/resolve/main/tokenizer.json',
-      ]),
-    ],
-  );
-
-  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo, translator];
+  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo];
 
   static ModelComponent? find(String id) {
     for (var c in all) {
@@ -189,7 +171,6 @@ abstract class TranslationModels {
       }
     }
     var hasJa = ocrJa.isInstalled;
-    var hasTranslator = translator.isInstalled;
     return WorkerModelPaths(
       detector: detector.filePath('det.onnx'),
       jaEncoder: hasJa ? ocrJa.filePath('encoder.onnx') : null,
@@ -198,30 +179,16 @@ abstract class TranslationModels {
       recModels: recModels,
       recDicts: recDicts,
       recHeights: recHeights,
-      translatorEncoder: hasTranslator
-          ? translator.filePath('encoder.onnx')
-          : null,
-      translatorDecoder: hasTranslator
-          ? translator.filePath('decoder.onnx')
-          : null,
-      translatorTokenizer: hasTranslator
-          ? translator.filePath('tokenizer.json')
-          : null,
     );
   }
 
   /// Components required for the current settings, for the model management
-  /// UI. With 'auto' any one OCR component suffices, so only the detector
-  /// (plus the offline translator when that engine is selected) is strictly
-  /// required.
-  static List<ModelComponent> requiredFor(
-    String sourceLang, {
-    String engine = 'llm',
-  }) {
+  /// UI. With 'auto' any one OCR component suffices, so only the detector is
+  /// strictly required.
+  static List<ModelComponent> requiredFor(String sourceLang) {
     return [
       detector,
       if (sourceLang != 'auto') ocrFor(sourceLang),
-      if (engine == 'local') translator,
     ];
   }
 

@@ -26,6 +26,10 @@ abstract class LlmTranslator {
   /// one-api instances on LAN) often run without authentication.
   static bool get isConfigured => _rawUrl.isNotEmpty && _model.isNotEmpty;
 
+  /// Whether just the URL is set — enough to try fetching the model list
+  /// before the user has picked a model.
+  static bool get baseUrlConfigured => _rawUrl.isNotEmpty;
+
   /// Accepts either a base URL ("https://host/v1") or a full chat-completions
   /// URL; normalizes to the latter.
   static String get _endpoint {
@@ -37,6 +41,74 @@ abstract class LlmTranslator {
       return url;
     }
     return '$url/chat/completions';
+  }
+
+  /// Base URL with any trailing '/chat/completions' and slashes stripped, so
+  /// sibling endpoints (e.g. '/models') can be derived from it.
+  static String get _baseUrl {
+    var url = _rawUrl;
+    while (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    if (url.endsWith('/chat/completions')) {
+      url = url.substring(0, url.length - '/chat/completions'.length);
+    }
+    return url;
+  }
+
+  /// Fetches the model id list from the endpoint's `/models` (OpenAI-style).
+  /// Returns the ids; throws with a readable message on failure so the UI can
+  /// fall back to manual entry.
+  static Future<List<String>> fetchModels() async {
+    if (_rawUrl.isEmpty) {
+      throw Exception('LLM API URL not configured');
+    }
+    var dio = AppDio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: {
+          if (_apiKey.isNotEmpty) 'Authorization': 'Bearer $_apiKey',
+        },
+        validateStatus: (status) => status != null && status < 500,
+      ),
+    );
+    try {
+      var response = await dio.get('$_baseUrl/models');
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Endpoint returned ${response.statusCode}: '
+          '${_briefBody(response.data)}',
+        );
+      }
+      var data = response.data;
+      // OpenAI shape: {data: [{id: ...}, ...]}. Some gateways return a bare
+      // list or {models:[...]} (ollama); tolerate all three.
+      List<dynamic>? list;
+      if (data is Map && data['data'] is List) {
+        list = data['data'] as List;
+      } else if (data is Map && data['models'] is List) {
+        list = data['models'] as List;
+      } else if (data is List) {
+        list = data;
+      }
+      if (list == null) {
+        throw Exception('Unexpected /models response');
+      }
+      var ids = <String>[];
+      for (var item in list) {
+        if (item is Map) {
+          var id = item['id'] ?? item['name'] ?? item['model'];
+          if (id is String && id.isNotEmpty) ids.add(id);
+        } else if (item is String && item.isNotEmpty) {
+          ids.add(item);
+        }
+      }
+      ids.sort();
+      return ids;
+    } finally {
+      dio.close();
+    }
   }
 
   static String _targetName(String targetLang) {

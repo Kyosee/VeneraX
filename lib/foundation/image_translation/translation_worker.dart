@@ -18,9 +18,6 @@ class WorkerModelPaths {
     this.recModels = const {},
     this.recDicts = const {},
     this.recHeights = const {},
-    this.translatorEncoder,
-    this.translatorDecoder,
-    this.translatorTokenizer,
   });
 
   final String detector;
@@ -32,9 +29,6 @@ class WorkerModelPaths {
   final Map<String, String> recModels;
   final Map<String, String> recDicts;
   final Map<String, int> recHeights;
-  final String? translatorEncoder;
-  final String? translatorDecoder;
-  final String? translatorTokenizer;
 }
 
 class _OcrPageRequest {
@@ -57,16 +51,6 @@ class _OcrPageRequest {
   final String sourceLang;
   final WorkerModelPaths paths;
   final int intraThreads;
-}
-
-class _TranslateLocalRequest {
-  _TranslateLocalRequest(this.id, this.texts, this.sourceLangs, this.targetLang, this.paths);
-
-  final int id;
-  final List<String> texts;
-  final List<String> sourceLangs;
-  final String targetLang;
-  final WorkerModelPaths paths;
 }
 
 class _ReleaseRequest {
@@ -165,18 +149,6 @@ class TranslationWorker {
     );
   }
 
-  /// Local (experimental) offline translation of a batch of texts.
-  Future<List<String>> translateLocal(
-    List<String> texts,
-    List<String> sourceLangs,
-    String targetLang,
-    WorkerModelPaths paths,
-  ) {
-    return _request<List<String>>(
-      (id) => _TranslateLocalRequest(id, texts, sourceLangs, targetLang, paths),
-    );
-  }
-
   /// Frees model memory inside the worker (sessions are re-created lazily).
   void release() {
     _sendPort?.send(const _ReleaseRequest());
@@ -216,13 +188,6 @@ void _workerMain(SendPort mainPort) {
       } catch (e, s) {
         mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
       }
-    } else if (message is _TranslateLocalRequest) {
-      try {
-        var results = state.translateLocal(message);
-        mainPort.send(_WorkerResponse(message.id, results, null));
-      } catch (e, s) {
-        mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
-      }
     } else if (message is _ReleaseRequest) {
       state.release();
     }
@@ -233,7 +198,6 @@ class _WorkerState {
   final _sessions = <String, OrtFfiSession>{};
   final _charsets = <String, List<String>>{};
   WordPieceVocab? _jaVocab;
-  HfTokenizer? _tokenizer;
   int _intraThreads = 2;
 
   OrtFfiSession _session(String path) {
@@ -249,7 +213,6 @@ class _WorkerState {
     }
     _sessions.clear();
     _jaVocab = null;
-    _tokenizer = null;
   }
 
   // -------------------------------------------------------------------------
@@ -551,66 +514,6 @@ class _WorkerState {
       prev = best;
     }
     return buffer.toString().trim();
-  }
-
-  // -------------------------------------------------------------------------
-  // Local translation (experimental fallback)
-  // -------------------------------------------------------------------------
-
-  List<String> translateLocal(_TranslateLocalRequest req) {
-    var paths = req.paths;
-    if (paths.translatorEncoder == null) {
-      throw Exception('Local translation model not installed');
-    }
-    _tokenizer ??= HfTokenizer.loadSync(paths.translatorTokenizer!);
-    var tokenizer = _tokenizer!;
-    var encoder = _session(paths.translatorEncoder!);
-    var decoder = _session(paths.translatorDecoder!);
-    const eosToken = 2;
-
-    var results = <String>[];
-    for (var i = 0; i < req.texts.length; i++) {
-      var text = req.texts[i];
-      var srcId = tokenizer.tokenId('__${req.sourceLangs[i]}__');
-      var tgtId = tokenizer.tokenId('__${req.targetLang}__');
-      var contentIds = tokenizer.encode(text);
-      if (srcId == null || tgtId == null || contentIds.isEmpty) {
-        results.add('');
-        continue;
-      }
-      var inputIds = [srcId, ...contentIds, eosToken];
-      var mask = Int64List.fromList(List.filled(inputIds.length, 1));
-      var encoderInputs = <String, OrtInput>{
-        'input_ids': OrtInput.int64(
-          Int64List.fromList(inputIds),
-          [1, inputIds.length],
-        ),
-        if (encoder.inputNames.contains('attention_mask'))
-          'attention_mask': OrtInput.int64(mask, [1, inputIds.length]),
-      };
-      var hidden = encoder.run(encoderInputs).values.first;
-
-      var maxTokens = math.min(160, inputIds.length * 2 + 12);
-      var decoded = <int>[eosToken, tgtId];
-      while (decoded.length < maxTokens) {
-        var next = decoder.runArgmaxLastRow({
-          'input_ids': OrtInput.int64(
-            Int64List.fromList(decoded),
-            [1, decoded.length],
-          ),
-          'encoder_hidden_states': OrtInput.float32(hidden.data, hidden.shape),
-          if (decoder.inputNames.contains('encoder_attention_mask'))
-            'encoder_attention_mask': OrtInput.int64(mask, [
-              1,
-              inputIds.length,
-            ]),
-        }, 'logits');
-        if (next == eosToken) break;
-        decoded.add(next);
-      }
-      results.add(tokenizer.decode(decoded.sublist(2)).trim());
-    }
-    return results;
   }
 }
 

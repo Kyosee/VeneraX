@@ -1039,7 +1039,10 @@
     "Using your data-sync WebDAV credentials. Save to customize.": "已沿用数据同步的 WebDAV 账号，保存后可自定义。",
     "Archives": "压缩包",
     "Using data-sync WebDAV credentials. Save to set a library-specific config.": "已沿用数据同步的 WebDAV 账号，保存后可为漫画库单独设置",
-    "WebDAV Sync": "WebDAV 同步"
+    "WebDAV Sync": "WebDAV 同步",
+    "Select model": "选择模型",
+    "Enter manually": "手动输入",
+    "Failed to fetch model list": "获取模型列表失败"
   },
   "zh_TW": {
     "Translation engine": "翻譯引擎",
@@ -2081,6 +2084,9 @@
     "Archives": "壓縮檔",
     "Using data-sync WebDAV credentials. Save to set a library-specific config.": "已沿用資料同步的 WebDAV 帳號，儲存後可為漫畫庫單獨設定",
     "Using your data-sync WebDAV credentials. Save to customize.": "已沿用資料同步的 WebDAV 帳號，儲存後可自訂。",
-    "WebDAV Sync": "WebDAV 同步"
+    "WebDAV Sync": "WebDAV 同步",
+    "Select model": "選擇模型",
+    "Enter manually": "手動輸入",
+    "Failed to fetch model list": "取得模型清單失敗"
   }
 }

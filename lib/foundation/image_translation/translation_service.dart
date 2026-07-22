@@ -65,22 +65,15 @@ class ImageTranslationService with ChangeNotifier {
   static String get targetLang =>
       appdata.settings['imageTranslationTarget'] as String? ?? 'zh';
 
-  /// 'llm' (user-configured endpoint) or 'local' (experimental offline).
-  static String get engine =>
-      appdata.settings['imageTranslationEngine'] as String? ?? 'llm';
-
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
-  int get _maxConcurrent => engine == 'llm' ? 2 : 1;
+  int get _maxConcurrent => 2;
 
-  /// Whether detection/OCR models AND the selected translation engine are
-  /// usable right now.
+  /// Whether detection/OCR models AND the user's LLM endpoint are usable
+  /// right now.
   static bool get isReady {
     if (!TranslationModels.isReadyFor(sourceLang)) {
       return false;
-    }
-    if (engine == 'local') {
-      return TranslationModels.translator.isInstalled;
     }
     return LlmTranslator.isConfigured;
   }
@@ -98,10 +91,10 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   static String get _cachePrefix =>
-      'pageTranslation@$engine@$sourceLang>$targetLang@';
+      'pageTranslation@$sourceLang>$targetLang@';
 
-  /// Cache key of the translated variant of one page. It embeds the engine
-  /// and language pair so changing settings re-translates instead of serving
+  /// Cache key of the translated variant of one page. It embeds the
+  /// language pair so changing settings re-translates instead of serving
   /// stale pages.
   static String cacheKeyFor(
     String imageKey,
@@ -186,7 +179,6 @@ class ImageTranslationService with ChangeNotifier {
           task.imageBytes,
           sourceLang: _effectiveSourceFor(task.comicKey),
           targetLang: targetLang,
-          engine: engine,
         );
         _updateLanguageLock(task.comicKey, analysis.languageVotes);
         regions = analysis.regions;

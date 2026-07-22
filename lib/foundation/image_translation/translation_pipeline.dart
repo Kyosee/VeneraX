@@ -23,8 +23,8 @@ class PageAnalysis {
 
 /// Per-page translation orchestrator. Runs on the main isolate but does no
 /// heavy work itself: image decoding goes through the engine, detection/OCR
-/// run inside the worker isolate, and translation is either one LLM request
-/// or an offline pass in the worker.
+/// run inside the worker isolate, and translation is one request to the
+/// user-configured LLM endpoint.
 class PageTranslationPipeline {
   PageTranslationPipeline();
 
@@ -34,7 +34,6 @@ class PageTranslationPipeline {
     Uint8List imageBytes, {
     required String sourceLang,
     required String targetLang,
-    required String engine,
   }) async {
     var image = await _decode(imageBytes);
     var paths = TranslationModels.workerPaths();
@@ -71,25 +70,10 @@ class PageTranslationPipeline {
     }
 
     if (pending.isNotEmpty) {
-      List<String> translated;
-      if (engine == 'local') {
-        translated = await TranslationWorker.instance.translateLocal(
-          pending.map((b) => b.text).toList(),
-          pending.map((b) => b.language).toList(),
-          targetBase,
-          paths,
-        );
-        if (targetLang == 'zh-TW') {
-          translated = [
-            for (var text in translated) OpenCC.simplifiedToTraditional(text),
-          ];
-        }
-      } else {
-        translated = await LlmTranslator.translateBatch(
-          pending.map((b) => b.text).toList(),
-          targetLang,
-        );
-      }
+      var translated = await LlmTranslator.translateBatch(
+        pending.map((b) => b.text).toList(),
+        targetLang,
+      );
       for (var i = 0; i < pending.length; i++) {
         var text = translated[i].trim();
         if (text.isEmpty || text == pending[i].text) continue;

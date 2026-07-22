@@ -282,7 +282,6 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
       'ocr_zh' => "Chinese / Latin OCR".tl,
       'ocr_en' => "English OCR".tl,
       'ocr_ko' => "Korean OCR".tl,
-      'translator' => "Offline translation model (multilingual)".tl,
       _ => id,
     };
   }
