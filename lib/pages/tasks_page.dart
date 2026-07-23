@@ -556,30 +556,46 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     };
   }
 
-  Widget _buildPreTranslateTrailing(PreTranslationTask task) {
-    return switch (task.status) {
-      PreTranslationTaskStatus.running => TextButton(
-          onPressed: () => preTranslationManager.pause(task.id),
-          child: Text("Pause".tl),
-        ),
-      PreTranslationTaskStatus.paused => Row(
+  Widget? _buildPreTranslateTrailing(PreTranslationTask task) {
+    // Running and paused jobs can both be canceled; use compact icon buttons so
+    // pause/resume + cancel fit the ExpansionTile trailing without overflow.
+    switch (task.status) {
+      case PreTranslationTaskStatus.running:
+        return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextButton(
-              onPressed: () => preTranslationManager.resume(task.id),
-              child: Text("Resume".tl),
+            IconButton(
+              tooltip: "Pause".tl,
+              icon: const Icon(Icons.pause),
+              onPressed: () => preTranslationManager.pause(task.id),
             ),
-            TextButton(
+            IconButton(
+              tooltip: "Cancel".tl,
+              icon: const Icon(Icons.close),
               onPressed: () => preTranslationManager.cancel(task.id),
-              child: Text("Cancel".tl),
             ),
           ],
-        ),
-      _ => TextButton(
-          onPressed: () => preTranslationManager.cancel(task.id),
-          child: Text("Cancel".tl),
-        ),
-    };
+        );
+      case PreTranslationTaskStatus.paused:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: "Resume".tl,
+              icon: const Icon(Icons.play_arrow),
+              onPressed: () => preTranslationManager.resume(task.id),
+            ),
+            IconButton(
+              tooltip: "Cancel".tl,
+              icon: const Icon(Icons.close),
+              onPressed: () => preTranslationManager.cancel(task.id),
+            ),
+          ],
+        );
+      default:
+        // Finished/canceled/failed jobs live in history; no actions.
+        return null;
+    }
   }
 
   Widget buildPreTranslateTaskCard(
