@@ -887,21 +887,42 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           icon: Icons.translate,
           title: "AI Translation (experimental)".tl,
           children: [
-            _SwitchSetting(
-              title: "Translate pages while reading".tl,
-              subtitle:
-                  "The original shows until a page finishes translating."
+            // Translation is per-comic on purpose (it spends tokens): the
+            // switch only appears when a specific comic is in context (opened
+            // from the reader / detail page), and toggles that comic alone.
+            if (widget.comicId != null && widget.comicSource != null)
+              ListTile(
+                title: Text("Translate pages while reading".tl),
+                subtitle: Text(
+                  "Applies to this comic only. The original shows until a page finishes translating."
                       .tl,
-              settingKey: "enableImageTranslation",
-              onChanged: () {
-                setState(() {});
-                widget.onChanged?.call("enableImageTranslation");
-              },
-              comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
-              useDeviceSettings: useDeviceSpecificSettings,
-            ),
+                ),
+                trailing: Switch(
+                  value: ImageTranslationService.isEnabledForComic(
+                    widget.comicId!,
+                    widget.comicSource!,
+                  ),
+                  onChanged: (v) {
+                    ImageTranslationService.setEnabledForComic(
+                      widget.comicId!,
+                      widget.comicSource!,
+                      v,
+                    );
+                    appdata.saveData();
+                    setState(() {});
+                    widget.onChanged?.call("enableImageTranslation");
+                  },
+                ),
+              )
+            else
+              ListTile(
+                title: Text("Translate pages while reading".tl),
+                subtitle: Text(
+                  "Enable this per comic from its detail page or the in-reader settings."
+                      .tl,
+                ),
+                enabled: false,
+              ),
             _CallbackSetting(
               title: "LLM API URL".tl,
               subtitle: (appdata.settings['imageTranslationLlmUrl'] as String)

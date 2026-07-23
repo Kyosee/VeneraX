@@ -408,8 +408,10 @@ class Settings with ChangeNotifier {
     'readerImageEnhanceClarity': 0.0, // 0.0 - 1.0 mid-radius local contrast
     'readerImageEnhanceContrast': 0.0, // 0.0 - 1.0 level-stretch amount
     'readerImageEnhanceVibrance': 0.0, // 0.0 - 1.0 colour-page saturation lift
-    // 本地离线漫画翻译（模型按需下载，见 foundation/image_translation/）。
-    // enableImageTranslation 走阅读器设置通道，支持按漫画覆盖。
+    // 本地漫画翻译（模型按需下载，见 foundation/image_translation/）。
+    // 注意：翻译是否开启按漫画独立存储于 implicitData
+    // ['imageTranslationEnabledComics']，不走这里的全局阅读器设置通道——翻译
+    // 消耗 token，绝不能一开即对所有漫画全局生效。此键为历史遗留，已不再读取。
     'enableImageTranslation': false,
     'imageTranslationSource': 'auto', // auto, ja, zh, en, ko
     'imageTranslationTarget': 'zh', // zh, zh-TW, en

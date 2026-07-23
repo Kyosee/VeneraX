@@ -137,13 +137,7 @@ abstract mixin class _ComicPageActions {
       );
       return;
     }
-    var enabled = appdata.settings.getReaderSetting(
-          comic.id,
-          comic.sourceKey,
-          'enableImageTranslation',
-        ) ==
-        true;
-    if (!enabled) {
+    if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       App.rootContext.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
       );
@@ -547,13 +541,7 @@ abstract mixin class _ComicPageActions {
       context.showMessage(message: "Configure AI translation first".tl);
       return;
     }
-    var enabled = appdata.settings.getReaderSetting(
-          comic.id,
-          comic.sourceKey,
-          'enableImageTranslation',
-        ) ==
-        true;
-    if (!enabled) {
+    if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       context.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
       );

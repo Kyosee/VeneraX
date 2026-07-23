@@ -237,6 +237,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void initState() {
     scrollController.addListener(onScroll);
     PreTranslationTaskManager.instance.addListener(update);
+    // The per-comic translation toggle lives in the service; listen so the
+    // pre-translate button appears/disappears the moment it changes.
+    ImageTranslationService.instance.addListener(update);
     super.initState();
   }
 
@@ -244,6 +247,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void dispose() {
     scrollController.removeListener(onScroll);
     PreTranslationTaskManager.instance.removeListener(update);
+    ImageTranslationService.instance.removeListener(update);
     super.dispose();
   }
 
@@ -787,7 +791,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     text: (comic.commentCount ?? 'Comments'.tl).toString(),
                     onPressed: showComments,
                   ),
-                if (ImageTranslationService.isReady)
+                if (ImageTranslationService.isReady &&
+                    ImageTranslationService.isEnabledForComic(
+                      comic.id,
+                      comic.sourceKey,
+                    ))
                   Builder(
                     builder: (context) {
                       var task = PreTranslationTaskManager.instance

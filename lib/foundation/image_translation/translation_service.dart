@@ -145,16 +145,41 @@ class ImageTranslationService with ChangeNotifier {
     return LlmTranslator.isConfigured;
   }
 
-  /// Whether translation should run for a comic right now (per-comic reader
-  /// setting + usable engine).
+  /// Comics the user explicitly turned translation on for. This is a dedicated
+  /// per-comic store — NOT the reader-settings channel, which falls back to a
+  /// single global value when a comic has no per-comic override. Translation
+  /// spends tokens, so it must never be globally "on": enabling it for one
+  /// comic must not translate every other comic the user opens.
+  static const _enabledComicsKey = 'imageTranslationEnabledComics';
+
+  /// Whether the user turned translation on for this specific comic.
+  static bool isEnabledForComic(String cid, String sourceKey) {
+    var stored = appdata.implicitData[_enabledComicsKey];
+    if (stored is! Map) return false;
+    return stored['$cid@$sourceKey'] == true;
+  }
+
+  /// Turns translation on/off for one comic only.
+  static void setEnabledForComic(String cid, String sourceKey, bool enabled) {
+    var stored = appdata.implicitData[_enabledComicsKey];
+    var map = stored is Map
+        ? Map<String, dynamic>.from(stored)
+        : <String, dynamic>{};
+    var comicKey = '$cid@$sourceKey';
+    if (enabled) {
+      map[comicKey] = true;
+    } else {
+      map.remove(comicKey);
+    }
+    appdata.implicitData[_enabledComicsKey] = map;
+    appdata.writeImplicitData();
+    instance.notifyListeners();
+  }
+
+  /// Whether translation should run for a comic right now (per-comic switch +
+  /// usable engine).
   static bool enabledFor(String cid, String sourceKey) {
-    return appdata.settings.getReaderSetting(
-              cid,
-              sourceKey,
-              'enableImageTranslation',
-            ) ==
-            true &&
-        isReady;
+    return isEnabledForComic(cid, sourceKey) && isReady;
   }
 
   static String get _cachePrefix =>
