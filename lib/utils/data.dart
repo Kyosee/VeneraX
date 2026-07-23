@@ -10,6 +10,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
@@ -299,6 +301,9 @@ Future<File> exportAppData({
     'local_favorite.db',
     'local.db',
     'read_later.db',
+    // Finished per-page translation text (durable, user-cleared). Riding the
+    // backup lets another device render a page without re-paying OCR + LLM.
+    'image_translation.db',
     // Without a checkpoint, logins living in cookie.db's WAL sidecar were
     // silently missing from every backup.
     'cookie.db',
@@ -323,6 +328,24 @@ Future<File> exportAppData({
       jsonEncode({'types': sourceTypeRegistry}),
     );
   }
+  // Per-comic image-translation state (enable switch, learned language lock,
+  // glossary, blocked terms). It lives in implicitData, which is NOT part of
+  // appdata.json, so — like the source-type registry above — it must be
+  // serialized out explicitly to ride the backup. Import merges it back
+  // (see [_importTranslationPrefs]).
+  Uint8List? translationPrefsBytes;
+  {
+    final prefs = <String, dynamic>{};
+    for (final key in ImageTranslationService.syncedPrefKeys) {
+      final value = appdata.implicitData[key];
+      if (value is Map && value.isNotEmpty) {
+        prefs[key] = value;
+      }
+    }
+    if (prefs.isNotEmpty) {
+      translationPrefsBytes = utf8.encode(jsonEncode(prefs));
+    }
+  }
   await Isolate.run(() {
     var zipFile = ZipFile.open(cacheFilePath);
     var historyFile = FilePath.join(dataPath, "history.db");
@@ -337,6 +360,16 @@ Future<File> exportAppData({
     zipFile.addFile("local_favorite.db", localFavoriteFile);
     if (sourceTypeMapBytes != null) {
       zipFile.addFileFromBytes("source_type_map.json", sourceTypeMapBytes);
+    }
+    if (translationPrefsBytes != null) {
+      zipFile.addFileFromBytes(
+        "image_translation_prefs.json",
+        translationPrefsBytes,
+      );
+    }
+    var translationStoreFile = FilePath.join(dataPath, "image_translation.db");
+    if (File(translationStoreFile).existsSync()) {
+      zipFile.addFile("image_translation.db", translationStoreFile);
     }
     if (File(domainFile).existsSync()) {
       zipFile.addFile("data/venera.db", domainFile);
@@ -597,7 +630,39 @@ Future<void> _importAppDataLocked(
       report(ImportPhase.applying, 'Importing local library');
       await LocalManager().restoreFrom(localDbFile.path);
     }
+    // Finished per-page translation text. Unlike the wholesale-replaced stores
+    // above, this MERGES: two devices that translated different chapters keep
+    // both halves, and a shared page keeps the local row (see [mergeFrom]). No
+    // file swap, so it runs on the live handle rather than close-swap-reopen.
+    var translationStoreFile = cacheDir.joinFile("image_translation.db");
+    if (await translationStoreFile.exists()) {
+      report(ImportPhase.applying, 'Importing translations');
+      await TranslationStore().mergeFrom(translationStoreFile.path);
+    }
     });
+    // Per-comic translation preferences (enable switch / language lock /
+    // glossary / blocked terms). They live in implicitData, so they ride the
+    // backup as their own JSON rather than in appdata.json. Applied AFTER the
+    // implicitData.json block above so a foreign backup carrying both can't
+    // clobber these, and wholesale-replaced (newest backup wins, matching the
+    // agreed policy). The service caches these maps lazily, so drop its caches.
+    var translationPrefsFile = cacheDir.joinFile("image_translation_prefs.json");
+    if (await translationPrefsFile.exists()) {
+      try {
+        var prefs = jsonDecode(await translationPrefsFile.readAsString());
+        if (prefs is Map) {
+          for (final key in ImageTranslationService.syncedPrefKeys) {
+            if (prefs[key] is Map) {
+              appdata.implicitData[key] = prefs[key];
+            }
+          }
+          appdata.writeImplicitData();
+          ImageTranslationService.instance.reloadSyncedPrefs();
+        }
+      } catch (e, s) {
+        Log.warning('Import Data', 'Failed to import translation prefs: $e\n$s');
+      }
+    }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
     if (Directory(comicSourceDir).existsSync()) {
       report(ImportPhase.reloading);

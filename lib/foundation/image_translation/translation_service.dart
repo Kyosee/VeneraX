@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -8,6 +7,7 @@ import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_pipeline.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/io.dart';
@@ -67,7 +67,6 @@ class ImageTranslationService with ChangeNotifier {
   static final instance = ImageTranslationService._();
 
   static const _imageCacheDuration = 30 * 24 * 60 * 60 * 1000;
-  static const _textCacheDuration = 90 * 24 * 60 * 60 * 1000;
   static const _maxQueueLength = 16;
   static const _failureRetryDelay = Duration(minutes: 5);
   static const _idleReleaseDelay = Duration(seconds: 90);
@@ -145,6 +144,29 @@ class ImageTranslationService with ChangeNotifier {
     return LlmTranslator.isConfigured;
   }
 
+  /// The implicitData keys holding per-comic translation preferences: the
+  /// per-comic enable switch, the learned language locks, the glossary and the
+  /// blocked terms. These are serialized into the backup explicitly (they live
+  /// in implicitData, which is not part of appdata.json) and merged back on
+  /// import — see the export/import paths in utils/data.dart.
+  static const syncedPrefKeys = [
+    _enabledComicsKey,
+    _comicLangsKey,
+    _comicGlossaryKey,
+    _blockedTermsKey,
+  ];
+
+  /// Drops the lazy in-memory caches of the per-comic preference maps so the
+  /// next access re-reads implicitData. Called after an import replaces those
+  /// maps underneath us — without it the service would keep serving the
+  /// pre-import glossary / language locks / blocked terms.
+  void reloadSyncedPrefs() {
+    _comicLangs = null;
+    _glossaries = null;
+    _blockedTerms = null;
+    notifyListeners();
+  }
+
   /// Comics the user explicitly turned translation on for. This is a dedicated
   /// per-comic store — NOT the reader-settings channel, which falls back to a
   /// single global value when a comic has no per-comic override. Translation
@@ -211,21 +233,20 @@ class ImageTranslationService with ChangeNotifier {
     return '${chapterScopePrefix(sourceKey, cid, eid)}$imageKey';
   }
 
-  static String _textKeyOf(String cacheKey) => 'text:$cacheKey';
-
-  /// Removes both cache levels (rendered image + text result) for every page
-  /// under [scopePrefix], so the next view/pre-translate re-runs from scratch.
-  /// Also clears the in-memory "done/empty/failed" markers for those keys.
+  /// Removes the rendered-image cache AND the durable stored text for every
+  /// page under [scopePrefix], so the next view/pre-translate re-runs from
+  /// scratch. Also clears the in-memory "done/empty/failed" markers for those
+  /// keys. The store keys on the same prefix, so one call drops both levels.
   Future<int> invalidateScope(String scopePrefix) async {
     var removed = await CacheManager().deleteByPrefix(scopePrefix);
-    await CacheManager().deleteByPrefix('text:$scopePrefix');
+    TranslationStore().deleteByPrefix(scopePrefix);
     _completed.removeWhere((k) => k.startsWith(scopePrefix));
     _noContent.removeWhere((k) => k.startsWith(scopePrefix));
     _failures.removeWhere((k, _) => k.startsWith(scopePrefix));
     return removed;
   }
 
-  /// Re-translates a whole comic: drops every cached page (both levels) for
+  /// Re-translates a whole comic: drops every stored page + rendered image for
   /// the current language pair AND the comic's learned glossary, so the next
   /// read / pre-translate starts clean. [eid] limits it to one chapter, in
   /// which case the glossary is kept (other chapters still rely on it).
@@ -239,11 +260,12 @@ class ImageTranslationService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clears every translated page across all comics (both cache levels). The
-  /// learned per-comic language locks and glossaries are left intact.
+  /// Clears every translated page across all comics: the rendered-image cache
+  /// and the durable stored text both go. The learned per-comic language locks
+  /// and glossaries are left intact. Returns the rendered-image count removed.
   Future<int> clearAllTranslationCache() async {
     var removed = await CacheManager().deleteByPrefix('pageTranslation@');
-    await CacheManager().deleteByPrefix('text:pageTranslation@');
+    TranslationStore().clearAll();
     _completed.clear();
     _noContent.clear();
     _failures.clear();
@@ -305,7 +327,9 @@ class ImageTranslationService with ChangeNotifier {
       return _TranslateOutcome.alreadyCached;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
-    var regions = await _loadTextCache(cacheKey);
+    // The store is the durable source of truth: a hit (local, or merged from
+    // another device via WebDAV) skips OCR and the paid LLM request entirely.
+    var regions = TranslationStore().get(cacheKey);
     if (regions == null) {
       var analysis = await pipeline.analyzePage(
         imageBytes,
@@ -316,11 +340,7 @@ class ImageTranslationService with ChangeNotifier {
       _updateLanguageLock(comicKey, analysis.languageVotes);
       _mergeGlossary(comicKey, analysis.newGlossary);
       regions = analysis.regions;
-      await CacheManager().writeCache(
-        _textKeyOf(cacheKey),
-        utf8.encode(jsonEncode([for (var r in regions) r.toJson()])),
-        _textCacheDuration,
-      );
+      TranslationStore().put(cacheKey, regions);
     }
     if (shouldCancel?.call() ?? false) {
       throw const PipelineCanceled();
@@ -384,9 +404,9 @@ class ImageTranslationService with ChangeNotifier {
           settled[i] = true;
           continue;
         }
-        var cached = await _loadTextCache(p.cacheKey);
-        if (cached != null) {
-          regionsOf[i] = cached;
+        var stored = TranslationStore().get(p.cacheKey);
+        if (stored != null) {
+          regionsOf[i] = stored;
           continue;
         }
         pendingOcr[i] = await pipeline.ocrPage(
@@ -465,11 +485,7 @@ class ImageTranslationService with ChangeNotifier {
       var p = pages[i];
       try {
         if (freshOcr[i]) {
-          await CacheManager().writeCache(
-            _textKeyOf(p.cacheKey),
-            utf8.encode(jsonEncode([for (var r in regions) r.toJson()])),
-            _textCacheDuration,
-          );
+          TranslationStore().put(p.cacheKey, regions);
         }
         if (regions.isEmpty) {
           _noContent.add(p.cacheKey);
@@ -582,21 +598,6 @@ class ImageTranslationService with ChangeNotifier {
       } else {
         _pump();
       }
-    }
-  }
-
-  Future<List<TranslatedRegion>?> _loadTextCache(String cacheKey) async {
-    try {
-      var file = await CacheManager().findCache(_textKeyOf(cacheKey));
-      if (file == null) return null;
-      var data = jsonDecode(await file.readAsString());
-      if (data is! List) return null;
-      return [
-        for (var item in data)
-          TranslatedRegion.fromJson(Map<String, dynamic>.from(item)),
-      ];
-    } catch (_) {
-      return null;
     }
   }
 

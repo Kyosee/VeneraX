@@ -1020,9 +1020,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               callback: () => context.to(() => const TranslationModelsPage()),
             ),
             _CallbackSetting(
-              title: "Clear translation cache".tl,
+              title: "Clear translation results".tl,
               subtitle:
-                  "Removes all cached translated pages. Language and glossary learned per comic are kept."
+                  "Deletes all stored page translations and rendered images. Language and glossary learned per comic are kept."
                       .tl,
               actionTitle: "Clear".tl,
               callback: () async {
@@ -1030,7 +1030,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     .clearAllTranslationCache();
                 if (context.mounted) {
                   context.showMessage(
-                    message: "Translation cache cleared".tl,
+                    message: "Translation results cleared".tl,
                   );
                 }
                 Log.info('Image Translation',

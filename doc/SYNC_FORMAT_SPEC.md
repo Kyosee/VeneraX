@@ -62,6 +62,7 @@ updateRepoOwner, updateRepoName, updateUsePrivateRepo, updateRepoToken
 - 上述字段在导入时跳过，保留本机值
 - 用户可通过 `disableSyncFields` 自定义额外不同步字段（逗号分隔）
 - 新增设备特定字段时，必须同时加入 APP 和 Web 的 _disableSync 列表
+- 图片翻译的 LLM 端点 URL 与密钥（`imageTranslationLlmUrl` / `imageTranslationLlmKey`）会同步（用户选择跨设备共用一个 LLM 账户），随备份以明文保存；仅模型 id（`imageTranslationLlmModel`）为设备本地，在 _disableSync 中
 
 ### 3.2 implicitData 同步规则
 
@@ -70,9 +71,25 @@ updateRepoOwner, updateRepoName, updateUsePrivateRepo, updateRepoToken
 follow_update_task_history
 ```
 
-- 仅上述 key 参与跨设备同步
+- 仅上述 key 通过内嵌 `implicitData` 的外来/旧版备份参与合并（`syncImplicitDataKeys`）
 - `sync_logs`, `webdavAutoSync`, `webServerDbImportSha256` 等为设备特定数据，不同步
 - 新增需要同步的 implicitData key 时，必须加入 `syncImplicitDataKeys` 列表
+
+**注意 — 本 App 的导出不内嵌 implicitData:** `appdata.json`（`Appdata.toJson`）只含 settings + searchHistory，implicitData 单独存于 `implicitData.json` 且不打包。因此需要同步的 implicitData 数据必须像 `sourceTypeRegistry`（`source_type_map.json`）那样显式序列化进备份 zip 再在导入时读回，加入 `syncImplicitDataKeys` 对本 App 自己的备份是空操作。
+
+### 3.2.1 图片翻译数据同步规则
+
+**翻译结果文本 → `image_translation.db`（合并）:**
+- 独立数据库文件，表 `translated_page(cache_key, regions, time)`，`cache_key` 内嵌 `sourceLang>targetLang`/漫画/章节/图片
+- 随备份 zip 整体传输，导入时 **合并**（`INSERT OR IGNORE`）：两设备翻译了不同章节则各自保留，同一页冲突时保留本机行
+- 持久数据非缓存，不过期；仅用户手动「清除翻译结果」或按漫画/按章重新翻译时删除
+- 命中即嵌字：reader / 预翻译发现某页在库中已有译文，直接渲染，跳过 OCR 与 LLM 请求（0 token）
+- 渲染图仍在 `CacheManager`（可由 regions 重算，可被 LRU 清理），不进备份
+
+**每漫画翻译偏好 → `image_translation_prefs.json`（整体替换）:**
+- 序列化 implicitData 中的 `imageTranslationEnabledComics`（每漫画开关）、`imageTranslationComicLangs`（语言锁）、`imageTranslationComicGlossary`（术语表）、`imageTranslationBlockedTerms`（屏蔽词），即 `ImageTranslationService.syncedPrefKeys`
+- 导入时 **整体替换**（最新备份优先，与 searchHistory 同策略），并调用 `reloadSyncedPrefs()` 丢弃服务的懒加载缓存
+- 在 `implicitData.json` 恢复之后应用，避免外来备份同时携带两者时相互覆盖
 
 ### 3.3 searchHistory 同步规则
 

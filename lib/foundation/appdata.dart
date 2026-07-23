@@ -142,10 +142,11 @@ class Appdata with Init {
     // into night mode with no way out but toggling the switch. The follow-
     // system toggle and the color/intensity preferences still sync.
     "readerNightMode",
-    // The user's own LLM endpoint credentials are device-local secrets, same
-    // policy as the WebDAV account above.
-    "imageTranslationLlmUrl",
-    "imageTranslationLlmKey",
+    // The model id is device-local: different devices may point the same
+    // endpoint at different models, or run local gateways with their own
+    // model names. The endpoint URL and key DO sync (the user opted to share
+    // one LLM account across their devices) — note they ride the backup in
+    // plaintext, same as any other synced setting.
     "imageTranslationLlmModel",
   ];
 
