@@ -158,6 +158,62 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     );
   }
 
+  /// Runs a sample string through the full translate path so the user can
+  /// confirm the endpoint/key/model actually work — and return usable output —
+  /// without opening a comic to find out. Shows the returned translation on
+  /// success, or the error on failure.
+  void _testTranslation() async {
+    if (!LlmTranslator.isConfigured) {
+      context.showMessage(message: "Configure the LLM endpoint first".tl);
+      return;
+    }
+    var controller = showLoadingDialog(
+      context,
+      message: "Testing translation".tl,
+      allowCancel: false,
+    );
+    String? result;
+    String? error;
+    try {
+      var target =
+          appdata.settings['imageTranslationTarget'] as String? ?? 'zh';
+      var res = await LlmTranslator.translateBatch(
+        const ['こんにちは', 'ありがとう'],
+        target,
+      );
+      result = res.texts.where((t) => t.isNotEmpty).join(' / ');
+      if (result.isEmpty) {
+        error = "The model returned an empty response".tl;
+        result = null;
+      }
+    } catch (e) {
+      error = e.toString();
+    }
+    controller.close();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => ContentDialog(
+        title: error == null
+            ? "Translation succeeded".tl
+            : "Translation failed".tl,
+        content: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            error ?? "こんにちは / ありがとう →\n$result",
+            style: ts.s14,
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => context.pop(),
+            child: Text("OK".tl),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onShowChapterCommentsChanged() {
     // When showChapterComments is turned off, also turn off showChapterCommentsAtEnd
     bool? showChapterComments;
@@ -880,6 +936,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   : appdata.settings['imageTranslationLlmModel'],
               actionTitle: "Select".tl,
               callback: _chooseLlmModel,
+            ),
+            _CallbackSetting(
+              title: "Test translation".tl,
+              subtitle: "Check the endpoint with a sample line".tl,
+              actionTitle: "Test".tl,
+              callback: _testTranslation,
             ),
             SelectSetting(
               title: "Source language".tl,
