@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.1.12",
+          "buildVersion": "228",
+          "date": "2026-07-23",
+          "localizedDescription": "## What's Changed\n\n### Added\n- AI comic-page translation: while reading, page text can be translated and overlaid directly on the image, keeping the original artwork. Turned on per comic.\n- Pre-translate whole chapters ahead of time from a comic's menu, with a chapter picker and live progress; already-translated chapters are recognized across restarts.\n- Per-comic glossary: view and edit translated terms to keep names consistent across chapters, with a blocked-terms list for words you don't want translated.\n- Test translation button in settings to check your endpoint with a sample line before reading.\n- Choice of translation target language, now including Japanese, Korean, French, German, Spanish and Russian.\n- Downloadable on-device text-recognition models, organized by text detection and text recognition.\n- A help entry in AI translation settings that explains setup and usage in plain language.\n- WebDAV sync gains a \"sync local comic library\" toggle.\n- Progress bar while checking for follow-updates.\n\n### Changed\n- Translation results are now saved permanently and included in sync, so a page is only translated once.\n- Vertical text is now supported when overlaying translations on tall, narrow CJK bubbles.\n- Before pre-translating multiple chapters, an estimate of request volume is shown to avoid unexpected cost on paid endpoints.\n- Refined the translation prompt for a more natural, colloquial manga tone.\n- Minor icon visual tweak for a more comfortable look.\n\n### Fixed\n- Batch update check no longer misses comics with non-standard version numbers and wrongly reports no update.\n- Moving with one finger after zooming into an image no longer accidentally triggers swipe-to-favorite.\n- The reader top bar now reflects translating / failed status in real time.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.11...v2.1.12",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.1.12/venera-ios-2.1.12%2B228.ipa",
+          "size": 34891546,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.1.11",
           "buildVersion": "227",
           "date": "2026-07-19",
@@ -141,11 +150,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.1.11",
-      "versionDate": "2026-07-19",
-      "versionDescription": "## What's Changed\n\n### Added\n- Windows can now switch the app icon at runtime: the choice changes the window and taskbar icon while the app is running (the pinned and Start menu icon stays the built-in one) (#134)\n- Two more app-icon presets to choose from: a lettermark and an illustrated version\n\n### Changed\n- Sync-skip items are now a visual checklist grouped by category, so you no longer need to type field names by hand\n- In the sync config dialog, the sync mode, backup retention count, and sync proxy options moved under a collapsible header so the save button is no longer covered\n\n### Fixed\n- Fixed pressing the close (X) button while reading occasionally quitting the whole app (#137)\n- Fixed an unconfirmed upload causing old backup data to sync back and reading history to roll back (#133)\n- Fixed deleting a local comic leaving stale data behind, so a newly added comic could show the previous one's info (#135, #139)\n- Fixed the Android home-screen icon not switching, and made the in-app logo follow the chosen icon\n- Fixed some settings pages missing translations and a password field being hidden (#129)\n- Fixed \"Export All\" falsely reporting success when the target folder could not be written, now with a clear, actionable prompt (#130)\n- Fixed the undo button on the notification bar being hard to read on dark backgrounds (#136)\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.10...v2.1.11",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.1.11/venera-ios-2.1.11%2B227.ipa",
-      "size": 26957639
+      "version": "2.1.12",
+      "versionDate": "2026-07-23",
+      "versionDescription": "## What's Changed\n\n### Added\n- AI comic-page translation: while reading, page text can be translated and overlaid directly on the image, keeping the original artwork. Turned on per comic.\n- Pre-translate whole chapters ahead of time from a comic's menu, with a chapter picker and live progress; already-translated chapters are recognized across restarts.\n- Per-comic glossary: view and edit translated terms to keep names consistent across chapters, with a blocked-terms list for words you don't want translated.\n- Test translation button in settings to check your endpoint with a sample line before reading.\n- Choice of translation target language, now including Japanese, Korean, French, German, Spanish and Russian.\n- Downloadable on-device text-recognition models, organized by text detection and text recognition.\n- A help entry in AI translation settings that explains setup and usage in plain language.\n- WebDAV sync gains a \"sync local comic library\" toggle.\n- Progress bar while checking for follow-updates.\n\n### Changed\n- Translation results are now saved permanently and included in sync, so a page is only translated once.\n- Vertical text is now supported when overlaying translations on tall, narrow CJK bubbles.\n- Before pre-translating multiple chapters, an estimate of request volume is shown to avoid unexpected cost on paid endpoints.\n- Refined the translation prompt for a more natural, colloquial manga tone.\n- Minor icon visual tweak for a more comfortable look.\n\n### Fixed\n- Batch update check no longer misses comics with non-standard version numbers and wrongly reports no update.\n- Moving with one finger after zooming into an image no longer accidentally triggers swipe-to-favorite.\n- The reader top bar now reflects translating / failed status in real time.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.11...v2.1.12",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.1.12/venera-ios-2.1.12%2B228.ipa",
+      "size": 34891546
     }
   ],
   "news": []
