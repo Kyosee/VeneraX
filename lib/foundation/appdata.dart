@@ -120,6 +120,11 @@ class Appdata with Init {
     "disableSyncFields",
     "deviceId",
     "followUpdatesFolder",
+    // Whether this device participates in local-comic-library sync is a
+    // per-device choice, same policy as the image-pack toggle below: a
+    // low-memory device can opt out of receiving (and sending) the local
+    // manifest and just read/download online instead (#145).
+    "syncLocalComics",
     "syncLocalComicImages",
     // Launcher icon is a per-device choice: the alias enabled on this device's
     // system must not propagate to (or be overwritten by) another device.
@@ -340,6 +345,11 @@ class Settings with ChangeNotifier {
     'autoCleanHistoryDays': '0', // retention days; '0' keeps history forever
     'limitImageWidth': true,
     'webdav': [], // empty means not configured
+    // Whether the local comic library manifest (local.db) is included in
+    // WebDAV data sync. Device-local (see _disableSync). Off lets a device
+    // read/download comics online instead of receiving the whole manifest
+    // (#145). Default on to preserve prior behavior.
+    'syncLocalComics': true,
     'webdavUseProxy': true, // whether WebDAV sync goes through the app proxy
     // Per-platform backup retention on the server (#114). Synced (not in
     // _disableSync) on purpose: devices with different counts would prune

@@ -202,7 +202,7 @@ class _AppSettingsState extends State<AppSettings> {
               title: "Export App Data".tl,
               callback: () async {
                 var controller = showLoadingDialog(context);
-                var file = await exportAppData(false);
+                var file = await exportAppData(sync: false);
                 await saveFile(filename: "data.venera", file: file);
                 controller.close();
               },
@@ -1322,6 +1322,8 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
 
   bool useProxy = true;
 
+  bool syncLocalComics = true;
+
   @override
   void initState() {
     super.initState();
@@ -1331,6 +1333,7 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
       appdata.settings['webdavBackupRetention'],
     );
     useProxy = appdata.settings['webdavUseProxy'] != false;
+    syncLocalComics = appdata.settings['syncLocalComics'] != false;
   }
 
   String _syncModeLabel(WebdavSyncMode mode) => switch (mode) {
@@ -1366,6 +1369,14 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
     setState(() {
       useProxy = value;
       appdata.settings['webdavUseProxy'] = value;
+      appdata.saveData();
+    });
+  }
+
+  void onSyncLocalComicsChanged(bool value) {
+    setState(() {
+      syncLocalComics = value;
+      appdata.settings['syncLocalComics'] = value;
       appdata.saveData();
     });
   }
@@ -1412,6 +1423,18 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
               ];
               onBackupRetentionChanged(values[index]);
             },
+          ),
+        ),
+        ListTile(
+          title: Text("Sync Local Comics".tl),
+          subtitle: Text(
+            "Include this device's local comic library in sync. Turn off to read or download comics online instead of receiving the whole library from other devices."
+                .tl,
+            style: const TextStyle(fontSize: 12),
+          ),
+          trailing: Switch(
+            value: syncLocalComics,
+            onChanged: onSyncLocalComicsChanged,
           ),
         ),
         ListTile(

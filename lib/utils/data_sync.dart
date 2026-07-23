@@ -757,7 +757,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // and completion bumps the epoch and keeps the account open (#114).
         final pendingEpochAtExport = _pendingChangesEpoch;
         data = await exportAppData(
-          appdata.settings['disableSyncFields'].toString().isNotEmpty,
+          sync: appdata.settings['disableSyncFields'].toString().isNotEmpty,
+          includeLocalComics: _syncLocalComics(),
         );
 
         final fileSize = await data.length();
@@ -1057,7 +1058,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           // label equals ours, the internal gate returns, and the whole import
           // is skipped: the download logs success yet history/favorites/follow
           // marks never apply. Trusting the filename gate fixes it.
-          await applyBackup(() => importAppData(localFile, checkVersion: false));
+          await applyBackup(
+            () => importAppData(
+              localFile,
+              checkVersion: false,
+              restoreLocalComics: _syncLocalComics(),
+            ),
+          );
           if (!_hasCompletedInitialSync()) {
             _markInitialSyncCompleted();
           }
@@ -1216,7 +1223,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           await client.read2File(fileName, localFile.path);
           // Suppress the echo upload the manager re-inits would fire.
           await applyBackup(
-            () => importAppData(localFile, checkVersion: false),
+            () => importAppData(
+              localFile,
+              checkVersion: false,
+              restoreLocalComics: _syncLocalComics(),
+            ),
           );
         } finally {
           localFile.deleteIgnoreError();
@@ -1262,11 +1273,21 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
+  /// Whether this device participates in local-comic-library (local.db) sync.
+  /// Device-local (#145): a device with this off neither pushes its manifest
+  /// nor restores an incoming one, so other devices' local comics don't appear
+  /// here as download/import prompts — this device just reads/downloads online.
+  /// Defaults on to preserve prior behavior.
+  static bool _syncLocalComics() =>
+      appdata.settings['syncLocalComics'] != false;
+
   bool _shouldSyncImages() {
-    // Configuration is the only gate: in the deferred tiers image packs ride
-    // along with whatever settle/manual sync scheduled them — the moments the
-    // user already accepted as "sync now".
-    return appdata.settings['syncLocalComicImages'] == true && isConfigured;
+    // Image packs are keyed to the local-comic manifest (local.db): a device
+    // opted out of manifest sync (#145) has no entries to match packs against,
+    // so uploading/downloading them is pointless. Gate on it too.
+    return appdata.settings['syncLocalComicImages'] == true &&
+        _syncLocalComics() &&
+        isConfigured;
   }
 
   Timer? _imageSyncTimer;

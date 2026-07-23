@@ -267,7 +267,14 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
   }
 }
 
-Future<File> exportAppData([bool sync = true]) async {
+/// [includeLocalComics] controls whether the local comic library manifest
+/// (local.db) is bundled. WebDAV sync passes the device-local `syncLocalComics`
+/// setting so a device can opt out of pushing its manifest to the fleet (#145);
+/// manual file export always includes it.
+Future<File> exportAppData({
+  bool sync = true,
+  bool includeLocalComics = true,
+}) async {
   var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   var cacheFilePath = FilePath.join(App.cachePath, '$time.venera');
   var cacheFile = File(cacheFilePath);
@@ -341,7 +348,7 @@ Future<File> exportAppData([bool sync = true]) async {
     zipFile.addFile("appdata.json", appdata);
     zipFile.addFile("cookie.db", cookies);
     var localDbFile = FilePath.join(dataPath, "local.db");
-    if (File(localDbFile).existsSync()) {
+    if (includeLocalComics && File(localDbFile).existsSync()) {
       zipFile.addFile("local.db", localDbFile);
     }
     for (var file in Directory(
@@ -414,11 +421,16 @@ Future<void> _restoreWebdavConfigIfAbsent(Map<String, dynamic> data) async {
 /// extracted files out from under the other mid-apply.
 Future<void>? _importInProgress;
 
+/// [restoreLocalComics] controls whether a bundled `local.db` is restored.
+/// WebDAV download passes the device-local `syncLocalComics` setting so a
+/// device opted out of manifest sync ignores the local library even in older
+/// backups that still carry it (#145); manual file import always restores it.
 Future<void> importAppData(
   File file, {
   bool checkVersion = false,
   ImportProgressCallback? onProgress,
   bool Function()? shouldCancel,
+  bool restoreLocalComics = true,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -432,6 +444,7 @@ Future<void> importAppData(
       checkVersion: checkVersion,
       onProgress: onProgress,
       shouldCancel: shouldCancel,
+      restoreLocalComics: restoreLocalComics,
     );
   } finally {
     _importInProgress = null;
@@ -444,6 +457,7 @@ Future<void> _importAppDataLocked(
   bool checkVersion = false,
   ImportProgressCallback? onProgress,
   bool Function()? shouldCancel,
+  bool restoreLocalComics = true,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -579,7 +593,7 @@ Future<void> _importAppDataLocked(
       await App.readLater.restoreFrom(readLaterFile.path);
     }
     var localDbFile = cacheDir.joinFile("local.db");
-    if (await localDbFile.exists()) {
+    if (restoreLocalComics && await localDbFile.exists()) {
       report(ImportPhase.applying, 'Importing local library');
       await LocalManager().restoreFrom(localDbFile.path);
     }
