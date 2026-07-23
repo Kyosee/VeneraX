@@ -158,6 +158,63 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     );
   }
 
+  /// A plain-language explainer of what AI translation does, how to set it up,
+  /// and how to use it — so users don't have to guess from the field labels.
+  void _showTranslationHelp() {
+    Widget section(String title, String body) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: ts.bold.s14),
+          const SizedBox(height: 4),
+          Text(body, style: ts.s14),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => ContentDialog(
+        title: "AI Translation help".tl,
+        content: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              section(
+                "What it does".tl,
+                "Reads the text in comic pages and overlays a translation right on the image, keeping the original artwork. Text is found and recognized on your device; the recognized lines are then sent to an AI model to translate."
+                    .tl,
+              ),
+              section(
+                "One-time setup".tl,
+                "1. Fill in the LLM API URL, API Key, and Model — any OpenAI-compatible service works.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
+                    .tl,
+              ),
+              section(
+                "How to use".tl,
+                "Translation is turned on per comic, not globally, because it uses your API tokens. Open a comic, turn on \"Translate pages while reading\", and pages translate as you read. To translate ahead of time, use Pre-translate from the comic's menu."
+                    .tl,
+              ),
+              section(
+                "Good to know".tl,
+                "Results are saved, so a page is only translated once. Use Clear translation results to free up space. Source language can stay on Auto detect if you're unsure."
+                    .tl,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          Button.filled(
+            onPressed: context.pop,
+            child: Text("OK".tl),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Runs a sample string through the full translate path so the user can
   /// confirm the endpoint/key/model actually work — and return usable output —
   /// without opening a comic to find out. Shows the returned translation on
@@ -887,6 +944,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           icon: Icons.translate,
           title: "AI Translation (experimental)".tl,
           children: [
+            _CallbackSetting(
+              title: "How AI translation works".tl,
+              subtitle: "Setup and usage in plain language".tl,
+              actionTitle: "Help".tl,
+              callback: _showTranslationHelp,
+            ),
             // Translation is per-comic on purpose (it spends tokens): the
             // switch only appears when a specific comic is in context (opened
             // from the reader / detail page), and toggles that comic alone.
