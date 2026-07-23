@@ -1574,6 +1574,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
     required this.cid,
     required this.sourceKey,
     required this.comicType,
+    required this.title,
     required this.entries,
     required this.finishSelect,
   });
@@ -1581,6 +1582,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
   final String cid;
   final String sourceKey;
   final ComicType comicType;
+  final String title;
 
   /// Ordered list of chapter entries (eid, display title).
   final List<(String, String)> entries;
@@ -1609,6 +1611,37 @@ class _SelectPreTranslateChapterState
 
   void _onTaskUpdate() {
     if (mounted) setState(() {});
+  }
+
+  /// Opens the per-comic glossary editor from the pre-translate menu.
+  void _openGlossary() {
+    App.rootContext.to(
+      () => GlossaryEditorPage(
+        cid: widget.cid,
+        sourceKey: widget.sourceKey,
+        title: widget.title,
+      ),
+    );
+  }
+
+  /// Clears this comic's cached translations and learned glossary, then starts
+  /// fresh — the same "re-translate" action as the detail page, for when
+  /// cached results came out wrong.
+  void _reTranslate() {
+    showConfirmDialog(
+      context: context,
+      title: "Re-translate this comic?".tl,
+      content:
+          "This clears all cached translations and the learned glossary for this comic, then translates again."
+              .tl,
+      onConfirm: () async {
+        await ImageTranslationService.instance.retranslate(
+          widget.cid,
+          widget.sourceKey,
+        );
+        App.rootContext.showMessage(message: "Translation cache cleared".tl);
+      },
+    );
   }
 
   /// The trailing status widget for chapter [index]: nothing when idle, a
@@ -1713,6 +1746,22 @@ class _SelectPreTranslateChapterState
       appBar: Appbar(
         title: Text("Pre-translate".tl),
         backgroundColor: context.colorScheme.surfaceContainerLow,
+        actions: [
+          MenuButton(
+            entries: [
+              MenuEntry(
+                icon: Icons.menu_book_outlined,
+                text: "Glossary".tl,
+                onClick: _openGlossary,
+              ),
+              MenuEntry(
+                icon: Icons.refresh_rounded,
+                text: "Re-translate".tl,
+                onClick: _reTranslate,
+              ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

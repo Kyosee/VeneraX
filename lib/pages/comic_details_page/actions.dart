@@ -186,6 +186,7 @@ abstract mixin class _ComicPageActions {
         cid: comic.id,
         sourceKey: comic.sourceKey,
         comicType: comic.comicType,
+        title: comic.title,
         entries: entries,
         finishSelect: startJob,
       ),
