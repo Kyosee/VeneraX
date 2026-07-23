@@ -239,6 +239,21 @@ class _ReaderState extends State<Reader>
     super.initState();
   }
 
+  /// When on, the reader shows original (untranslated) images even though
+  /// translation is enabled — a temporary, session-only toggle so the reader
+  /// can check the source art without turning translation off in settings.
+  bool showOriginalPages = false;
+
+  void toggleShowOriginalPages() {
+    showOriginalPages = !showOriginalPages;
+    // The provider key embeds the translation flag, so switching produces new
+    // providers; clear the live image cache so the toggled variant is shown
+    // immediately instead of a stale cached frame.
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (mounted) setState(() {});
+  }
+
   /// A background page translation finished: rebuild so the affected page's
   /// provider identity changes and the translated image swaps in.
   void _onPageTranslated() {

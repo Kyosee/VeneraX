@@ -297,6 +297,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                     onPressed: downloadFromReader,
                   ),
                 ),
+              ...buildTranslationControls(),
               Tooltip(
                 message: "Settings".tl,
                 child: IconButton(
@@ -310,6 +311,103 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         ),
       ),
     );
+  }
+
+  /// Cache key of the currently visible page's translated variant, or null when
+  /// translation is not enabled for this comic or the page can't be resolved.
+  String? _currentTranslationKey() {
+    final reader = context.reader;
+    if (!ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
+      return null;
+    }
+    final images = reader.images;
+    if (images == null || images.isEmpty) return null;
+    var index = (reader.page - 1).clamp(0, images.length - 1);
+    return ImageTranslationService.cacheKeyFor(
+      images[index],
+      reader.type.comicSource?.key,
+      reader.cid,
+      reader.eid,
+    );
+  }
+
+  /// The top-bar translation affordances: a status badge (translating / failed
+  /// with retry) and a toggle to peek at the original art. Empty when
+  /// translation is off for this comic.
+  List<Widget> buildTranslationControls() {
+    final reader = context.reader;
+    if (!ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
+      return const [];
+    }
+    final service = ImageTranslationService.instance;
+    final cacheKey = _currentTranslationKey();
+    final widgets = <Widget>[];
+
+    // Show-original toggle: lets the reader compare against the source art
+    // without disabling translation in settings.
+    widgets.add(
+      Tooltip(
+        message: reader.showOriginalPages
+            ? "Show translated".tl
+            : "Show original".tl,
+        child: IconButton(
+          icon: Icon(
+            reader.showOriginalPages
+                ? Icons.translate
+                : Icons.image_outlined,
+          ),
+          onPressed: reader.toggleShowOriginalPages,
+        ),
+      ),
+    );
+
+    if (cacheKey != null && !reader.showOriginalPages) {
+      switch (service.statusOf(cacheKey)) {
+        case PageTranslationStatus.translating:
+          widgets.add(
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        case PageTranslationStatus.failed:
+          widgets.add(
+            Tooltip(
+              message: service.errorOf(cacheKey) ?? "Translation failed".tl,
+              child: IconButton(
+                icon: Icon(
+                  Icons.error_outline,
+                  color: context.colorScheme.error,
+                ),
+                onPressed: () => _retryTranslation(cacheKey),
+              ),
+            ),
+          );
+        case PageTranslationStatus.translated:
+        case PageTranslationStatus.noContent:
+        case PageTranslationStatus.idle:
+          break;
+      }
+    }
+    return widgets;
+  }
+
+  void _retryTranslation(String cacheKey) {
+    final service = ImageTranslationService.instance;
+    var error = service.errorOf(cacheKey);
+    service.clearFailure(cacheKey);
+    // Dropping the cached image entry makes the provider reload and re-schedule
+    // the page; the failure back-off was just cleared so it runs immediately.
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (mounted) setState(() {});
+    if (error != null) {
+      context.showMessage(message: error);
+    }
   }
 
   bool isLiked() {

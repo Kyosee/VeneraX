@@ -2124,7 +2124,8 @@ ImageProvider _createImageProviderFromKey(
       : reader.widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
   String? translationKey;
   var translated = false;
-  if (ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
+  if (!reader.showOriginalPages &&
+      ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
     translationKey = ImageTranslationService.cacheKeyFor(
       imageKey,
       reader.type.comicSource?.key,

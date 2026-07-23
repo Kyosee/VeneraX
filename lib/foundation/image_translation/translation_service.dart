@@ -12,6 +12,24 @@ import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/io.dart';
 
+/// Per-page translation state exposed to the reader UI for status feedback.
+enum PageTranslationStatus {
+  /// Not queued, not done — nothing to show.
+  idle,
+
+  /// Queued or actively being translated.
+  translating,
+
+  /// A translated page is cached and shown.
+  translated,
+
+  /// The page has no translatable text (shown as-is).
+  noContent,
+
+  /// Translation failed; the reader offers a retry.
+  failed,
+}
+
 /// Result of the shared translation core [_translateToCache].
 enum _TranslateOutcome {
   /// A rendered translated page was already in the cache.
@@ -59,6 +77,9 @@ class ImageTranslationService with ChangeNotifier {
   final _failures = <String, DateTime>{};
   final _completed = <String>{};
 
+  /// Last error message per failed page, for the reader's retry affordance.
+  final _errors = <String, String>{};
+
   /// Pages known (via the text cache) to contain nothing translatable.
   final _noContent = <String>{};
   PageTranslationPipeline? _pipeline;
@@ -70,6 +91,40 @@ class ImageTranslationService with ChangeNotifier {
   bool isTranslated(String cacheKey) => _completed.contains(cacheKey);
 
   void markTranslated(String cacheKey) => _completed.add(cacheKey);
+
+  /// Current per-page translation state, for the reader status badge.
+  PageTranslationStatus statusOf(String cacheKey) {
+    if (_completed.contains(cacheKey)) return PageTranslationStatus.translated;
+    if (_noContent.contains(cacheKey)) return PageTranslationStatus.noContent;
+    if (_active.any((t) => t.cacheKey == cacheKey)) {
+      return PageTranslationStatus.translating;
+    }
+    if (_failures.containsKey(cacheKey)) return PageTranslationStatus.failed;
+    if (_queue.any((t) => t.cacheKey == cacheKey)) {
+      return PageTranslationStatus.translating;
+    }
+    return PageTranslationStatus.idle;
+  }
+
+  /// Last failure message for [cacheKey], if the page failed to translate.
+  String? errorOf(String cacheKey) => _errors[cacheKey];
+
+  /// Clears the failure back-off for [cacheKey] so the reader can retry it
+  /// immediately instead of waiting out [_failureRetryDelay].
+  void clearFailure(String cacheKey) {
+    _failures.remove(cacheKey);
+    _errors.remove(cacheKey);
+  }
+
+  /// Trims an exception to a short, single-line message for display.
+  static String _briefError(Object e) {
+    var text = e.toString().replaceAll('\n', ' ').trim();
+    const prefix = 'Exception: ';
+    if (text.startsWith(prefix)) {
+      text = text.substring(prefix.length);
+    }
+    return text.length > 160 ? '${text.substring(0, 160)}…' : text;
+  }
 
   static String get sourceLang =>
       appdata.settings['imageTranslationSource'] as String? ?? 'auto';
@@ -325,6 +380,7 @@ class ImageTranslationService with ChangeNotifier {
         task.comicKey,
         task.imageBytes,
       );
+      _errors.remove(task.cacheKey);
       if (outcome != _TranslateOutcome.noContent) {
         _notifyDone(task);
       }
@@ -332,7 +388,11 @@ class ImageTranslationService with ChangeNotifier {
       // ignore
     } catch (e, s) {
       _failures[task.cacheKey] = DateTime.now();
+      _errors[task.cacheKey] = _briefError(e);
       Log.error('Image Translation', 'Failed to translate page: $e', s);
+      // Let the reader surface a failure badge instead of silently showing the
+      // untranslated page forever.
+      notifyListeners();
     } finally {
       _queue.remove(task);
       _active.remove(task);
