@@ -566,11 +566,28 @@ abstract mixin class _ComicPageActions {
         onClick: preTranslate,
       ),
       MenuEntry(
+        icon: Icons.menu_book_outlined,
+        text: "Glossary".tl,
+        onClick: openGlossary,
+      ),
+      MenuEntry(
         icon: Icons.refresh_rounded,
         text: "Re-translate".tl,
         onClick: reTranslate,
       ),
     ]);
+  }
+
+  /// Opens the per-comic glossary editor so the user can view or correct the
+  /// learned name translations that keep proper nouns consistent across pages.
+  void openGlossary() {
+    App.rootContext.to(
+      () => GlossaryEditorPage(
+        cid: comic.id,
+        sourceKey: comic.sourceKey,
+        title: comic.title,
+      ),
+    );
   }
 
   void showComments() {

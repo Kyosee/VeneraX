@@ -534,6 +534,50 @@ class ImageTranslationService with ChangeNotifier {
     return _allGlossaries[comicKey] ?? const {};
   }
 
+  /// The learned glossary of a comic ('cid@sourceKey'), as an unmodifiable copy
+  /// for the per-comic glossary editor.
+  Map<String, String> glossaryOf(String cid, String sourceKey) {
+    return Map.unmodifiable(_glossaryFor('$cid@$sourceKey'));
+  }
+
+  /// Adds or updates one glossary entry for a comic, correcting or seeding a
+  /// name translation by hand. Takes effect on the next page/chapter without a
+  /// re-translate. Returns false if the term is rejected (too long / URL /
+  /// sentence) or the cap is reached for a new key.
+  bool setGlossaryEntry(
+    String cid,
+    String sourceKey,
+    String source,
+    String translation,
+  ) {
+    source = source.trim();
+    translation = translation.trim();
+    if (!LlmTranslator.isValidGlossaryTerm(source, translation)) {
+      return false;
+    }
+    var comicKey = '$cid@$sourceKey';
+    var all = _allGlossaries;
+    var glossary = all.putIfAbsent(comicKey, () => <String, String>{});
+    if (!glossary.containsKey(source) && glossary.length >= _maxGlossaryEntries) {
+      return false;
+    }
+    glossary[source] = translation;
+    appdata.implicitData[_comicGlossaryKey] = all;
+    appdata.writeImplicitData();
+    notifyListeners();
+    return true;
+  }
+
+  /// Removes one glossary entry for a comic.
+  void removeGlossaryEntry(String cid, String sourceKey, String source) {
+    var comicKey = '$cid@$sourceKey';
+    var glossary = _allGlossaries[comicKey];
+    if (glossary == null || glossary.remove(source) == null) return;
+    appdata.implicitData[_comicGlossaryKey] = _allGlossaries;
+    appdata.writeImplicitData();
+    notifyListeners();
+  }
+
   void _mergeGlossary(String comicKey, Map<String, String> discovered) {
     if (discovered.isEmpty) return;
     var all = _allGlossaries;
