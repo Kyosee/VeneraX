@@ -200,11 +200,13 @@ class PreTranslationTaskManager with ChangeNotifier {
     String eid,
   ) {
     var comicKey = '$cid@$sourceKey';
-    // A running/paused job shows live progress for the chapter.
+    // A running/paused job owns the chapter: return it even before its page
+    // count is known (total == 0) so the picker can show a "waiting" state for
+    // queued-but-not-started chapters, not just active ones.
     for (var task in currentTasks) {
       if (task.comicKey != comicKey) continue;
       var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
-      if (chapter != null && chapter.total > 0) return chapter;
+      if (chapter != null) return chapter;
     }
     // Otherwise only report a finished chapter (all pages accounted for) so a
     // canceled/failed run does not masquerade as in-progress after restart.
@@ -218,6 +220,17 @@ class PreTranslationTaskManager with ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// Whether a chapter belongs to a currently running/paused job (so the picker
+  /// can distinguish "queued/among this run" from a finished-in-history one).
+  bool isChapterActive(String cid, String sourceKey, String eid) {
+    var comicKey = '$cid@$sourceKey';
+    for (var task in currentTasks) {
+      if (task.comicKey != comicKey) continue;
+      if (task.chapters.any((c) => c.eid == eid)) return true;
+    }
+    return false;
   }
 
   void cancel(String id) {

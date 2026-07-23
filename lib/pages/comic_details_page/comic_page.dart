@@ -1611,12 +1611,74 @@ class _SelectPreTranslateChapterState
     if (mounted) setState(() {});
   }
 
-  PreTranslationChapter? _chapterProgress(int index) {
+  /// The trailing status widget for chapter [index]: nothing when idle, a
+  /// "waiting" chip when queued but not started, a live progress bar while
+  /// translating, or a "translated" tick when done. Distinguishes an active
+  /// (running-job) chapter from one merely finished in history.
+  Widget? _buildChapterStatus(int index) {
     var eid = widget.entries[index].$1;
-    return PreTranslationTaskManager.instance.chapterProgressFor(
-      widget.cid,
-      widget.sourceKey,
-      eid,
+    var manager = PreTranslationTaskManager.instance;
+    var chapter = manager.chapterProgressFor(widget.cid, widget.sourceKey, eid);
+    if (chapter == null) return null;
+    var active = manager.isChapterActive(widget.cid, widget.sourceKey, eid);
+    var processed = chapter.done + chapter.failed;
+    var isCompleted = chapter.total > 0 && processed >= chapter.total;
+
+    if (isCompleted) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: context.colorScheme.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            "Translated".tl,
+            style: ts.s12.withColor(context.colorScheme.primary),
+          ),
+        ],
+      );
+    }
+
+    if (!active) return null;
+
+    // Active but nothing processed yet (page count unknown or not started):
+    // show a "waiting" state so the user knows it is queued.
+    if (chapter.total == 0 || processed == 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            "Waiting".tl,
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    }
+
+    var pct = (processed / chapter.total).clamp(0.0, 1.0);
+    return SizedBox(
+      width: 120,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${chapter.done}/${chapter.total}',
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 2),
+          LinearProgressIndicator(value: pct),
+        ],
+      ),
     );
   }
 
@@ -1660,54 +1722,8 @@ class _SelectPreTranslateChapterState
               padding: EdgeInsets.zero,
               itemCount: widget.entries.length,
               itemBuilder: (context, i) {
-                var chapter = _chapterProgress(i);
                 var title = widget.entries[i].$2;
-                Widget? progress;
-                if (chapter != null && chapter.total > 0) {
-                  var isCompleted = chapter.done + chapter.failed >= chapter.total;
-                  if (isCompleted) {
-                    progress = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 16,
-                          color: context.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          "Translated".tl,
-                          style: ts.s12.withColor(context.colorScheme.primary),
-                        ),
-                      ],
-                    );
-                  } else {
-                    var pct = ((chapter.done + chapter.failed) / chapter.total)
-                        .clamp(0.0, 1.0);
-                    progress = SizedBox(
-                      width: 120,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${chapter.done}/${chapter.total}',
-                            style: ts.s12.withColor(
-                              context.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          LinearProgressIndicator(value: pct),
-                        ],
-                      ),
-                    );
-                  }
-                } else if (chapter != null) {
-                  progress = SizedBox(
-                    width: 120,
-                    child: LinearProgressIndicator(),
-                  );
-                }
+                var progress = _buildChapterStatus(i);
                 return CheckboxListTile(
                   title: Row(
                     children: [
