@@ -284,6 +284,17 @@ class ImageTranslationService with ChangeNotifier {
     return await CacheManager().findCache(cacheKey) != null;
   }
 
+  /// How many pages of one chapter already have a stored text result — the
+  /// durable, WebDAV-synced source of truth (empty-result "no text" pages count
+  /// too). This is what lets a device show a chapter as already translated after
+  /// receiving another device's translations, without needing that device's
+  /// (non-synced) task records. Language-pair scoped, same as every cache key.
+  static int storedPageCount(String cid, String sourceKey, String eid) {
+    return TranslationStore().countByPrefix(
+      chapterScopePrefix(sourceKey, cid, eid),
+    );
+  }
+
   /// Renders a page purely from an already-stored text result — no OCR, no LLM,
   /// no models. This is what lets a device that received another device's
   /// translations over WebDAV show them even without any translation models

@@ -1674,7 +1674,38 @@ class _SelectPreTranslateChapterState
     var eid = widget.entries[index].$1;
     var manager = PreTranslationTaskManager.instance;
     var chapter = manager.chapterProgressFor(widget.cid, widget.sourceKey, eid);
-    if (chapter == null) return null;
+
+    // No task record for this chapter on THIS device — but its translations may
+    // have arrived from another device over WebDAV. Task records are per-device
+    // and deliberately not synced (#106), so fall back to the durable, synced
+    // translation store: any stored page means the chapter was translated
+    // somewhere. Show a "translated" tick with the page count so the user sees
+    // it needn't be re-run. Total page count is not stored, so this reports how
+    // many pages carry a result rather than a percentage.
+    if (chapter == null) {
+      var stored = ImageTranslationService.storedPageCount(
+        widget.cid,
+        widget.sourceKey,
+        eid,
+      );
+      if (stored <= 0) return null;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: context.colorScheme.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            "@count pages".tlParams({'count': stored}),
+            style: ts.s12.withColor(context.colorScheme.primary),
+          ),
+        ],
+      );
+    }
+
     var active = manager.isChapterActive(widget.cid, widget.sourceKey, eid);
     var processed = chapter.done + chapter.failed;
     var isCompleted = chapter.total > 0 && processed >= chapter.total;

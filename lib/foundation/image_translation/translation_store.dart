@@ -246,6 +246,32 @@ class TranslationStore {
     }
   }
 
+  /// How many stored pages have a key starting with [scopePrefix] — the same
+  /// comic/chapter scope prefixes [deleteByPrefix] uses. Lets the chapter picker
+  /// mark a chapter as translated straight from the durable store (which rides
+  /// the WebDAV/backup merge), independent of any device-local task record —
+  /// so a chapter translated on another device shows as done here too.
+  int countByPrefix(String scopePrefix) {
+    if (!isInitialized) return 0;
+    // Escape LIKE wildcards so a '%' or '_' inside a key can't widen the match;
+    // '\' is the explicit escape char below. Same rule as [deleteByPrefix].
+    var escaped = scopePrefix
+        .replaceAll('\\', '\\\\')
+        .replaceAll('%', '\\%')
+        .replaceAll('_', '\\_');
+    try {
+      var rows = _db.select(
+        "select count(*) from translated_page "
+        "where cache_key like ? escape '\\';",
+        ['$escaped%'],
+      );
+      return rows.first[0] as int;
+    } catch (e, s) {
+      Log.error("TranslationStore", "countByPrefix failed: $e", s);
+      return 0;
+    }
+  }
+
   void close() {
     if (!isInitialized) return;
     DatabaseGateway.instance.closeManaged(_dbPath);
