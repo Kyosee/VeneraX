@@ -39,7 +39,7 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
     return false;
   }
 
-  bool numericPrefix = true;
+  bool numericPrefix = false;
   bool confirmed = false;
   await showDialog(
     context: App.rootContext,
@@ -78,12 +78,20 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       RadioListTile<bool>(
-                        value: true,
-                        title: Text("Keep reading order (numeric prefix)".tl),
+                        value: false,
+                        title: Text("Keep original chapter titles".tl),
+                        subtitle: Text(
+                          "Folder names stay clean; order may differ from the app".tl,
+                          style: ts.s12,
+                        ),
                       ),
                       RadioListTile<bool>(
-                        value: false,
-                        title: Text("Chapter title only".tl),
+                        value: true,
+                        title: Text("Keep reading order (numeric prefix)".tl),
+                        subtitle: Text(
+                          "Prefixes chapters with numbers so order always matches the app".tl,
+                          style: ts.s12,
+                        ),
                       ),
                     ],
                   ),
