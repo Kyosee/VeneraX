@@ -100,6 +100,11 @@ dependencies:
   flutter_onnxruntime: ^1.8.3
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
+  # Self-controlled FFI shim over a pinned llama.cpp submodule, for on-device
+  # translation (packages/venera_llama). Preview builds iOS + macOS only; see
+  # its README for the submodule checkout that must precede `pod install`.
+  venera_llama:
+    path: packages/venera_llama
 
 dev_dependencies:
   flutter_test:

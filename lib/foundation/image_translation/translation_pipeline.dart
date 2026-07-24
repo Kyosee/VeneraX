@@ -2,8 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
+import 'package:venera/foundation/image_translation/translation_engine.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/image_translation/translation_worker.dart';
@@ -68,7 +68,7 @@ class PageTranslationPipeline {
     if (ocr.pending.isEmpty) {
       return PageAnalysis(ocr.ready, ocr.languageVotes, const {});
     }
-    var result = await LlmTranslator.translateBatch(
+    var result = await TranslationEngine.translateBatch(
       ocr.pending.map((b) => b.text).toList(),
       targetLang,
       glossary: glossary,

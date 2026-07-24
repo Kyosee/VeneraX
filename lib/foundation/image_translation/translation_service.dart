@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
+import 'package:venera/foundation/image_translation/translation_engine.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_pipeline.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
@@ -133,15 +134,15 @@ class ImageTranslationService with ChangeNotifier {
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
-  int get _maxConcurrent => 2;
+  int get _maxConcurrent => TranslationEngine.maxConcurrent;
 
-  /// Whether detection/OCR models AND the user's LLM endpoint are usable
-  /// right now.
+  /// Whether detection/OCR models AND the active translation engine (API
+  /// endpoint or on-device model) are usable right now.
   static bool get isReady {
     if (!TranslationModels.isReadyFor(sourceLang)) {
       return false;
     }
-    return LlmTranslator.isConfigured;
+    return TranslationEngine.isReady;
   }
 
   /// The implicitData keys holding per-comic translation preferences: the
@@ -492,7 +493,7 @@ class ImageTranslationService with ChangeNotifier {
     if (texts.isNotEmpty) {
       if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
       try {
-        var result = await LlmTranslator.translateBatch(
+        var result = await TranslationEngine.translateBatch(
           texts,
           targetLang,
           glossary: _glossaryFor(comicKey),
@@ -938,6 +939,9 @@ class ImageTranslationService with ChangeNotifier {
       var pipeline = _pipeline;
       _pipeline = null;
       unawaited(pipeline?.release());
+      // Also free the on-device model (~1GB) if the local engine holds one;
+      // a no-op for the API engine. Critical on memory-constrained devices.
+      TranslationEngine.releaseIfIdle();
     });
   }
 

@@ -148,6 +148,12 @@ class Appdata with Init {
     // one LLM account across their devices) — note they ride the backup in
     // plaintext, same as any other synced setting.
     "imageTranslationLlmModel",
+    // Engine choice and the on-device model are per-device: a phone may use
+    // the API engine while a desktop runs a local model, and which local GGUF
+    // fits depends on THIS device's memory. Syncing them would force one
+    // device's hardware choice onto another.
+    "imageTranslationEngine",
+    "imageTranslationLocalModel",
   ];
 
   /// Sync data from another device.
@@ -428,6 +434,12 @@ class Settings with ChangeNotifier {
     'imageTranslationTarget': 'zh', // zh, zh-TW, en
     'imageTranslationHfEndpoint':
         'https://huggingface.co', // model download endpoint (mirrorable)
+    // 翻译引擎：'api' = 用户自配的 OpenAI 兼容端点（默认）；'local' = 设备上
+    // 按需下载的本地 GGUF 模型（llama.cpp 推理，无需联网也不花 token）。
+    'imageTranslationEngine': 'api',
+    // 本地引擎选用的模型 id（见 local_llm/local_llm_models.dart）。设备本地，
+    // 不跨设备同步：不同设备内存不同，选的模型也不同。
+    'imageTranslationLocalModel': '',
     // 用户自己的 OpenAI 兼容端点；App 不预置任何站点或密钥。
     'imageTranslationLlmUrl': '',
     'imageTranslationLlmKey': '',

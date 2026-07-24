@@ -1,0 +1,38 @@
+name: venera_llama
+description: >
+  Thin, self-controlled FFI shim over llama.cpp for on-device comic
+  translation. Bundles llama.cpp as a pinned git submodule and exposes a tiny,
+  stable C surface (load / generate / free / last_error) so the Dart binding in
+  the main app never has to track llama.cpp's large C header.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+# FFI plugin: no Dart platform-interface classes and no method channels — the
+# app talks to the native shim directly through dart:ffi. Each platform entry
+# only tells the Flutter tool this package contributes native build rules.
+flutter:
+  plugin:
+    platforms:
+      ios:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      # Preview scope builds iOS + macOS first. Uncomment as each platform's
+      # native build is brought up and verified:
+      # android:
+      #   ffiPlugin: true
+      # linux:
+      #   ffiPlugin: true
+      # windows:
+      #   ffiPlugin: true
