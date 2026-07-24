@@ -433,6 +433,44 @@ class WebdavLibrary {
       return Res.error(e.toString());
     }
   }
+
+  // --- Migration (write) support ---------------------------------------------
+  // Browsing the library is read-only, but migrating local comics *into* it
+  // needs a few write primitives. Kept here so migration reuses this one WebDAV
+  // client (auth/proxy/timeout) instead of standing up a third one elsewhere.
+
+  /// The server-absolute root (trailing slash) that migration writes into.
+  static String get migrationRoot => rootPath;
+
+  /// Creates [remoteDir] and any missing parents. Idempotent.
+  Future<void> ensureRemoteDir(String remoteDir) async {
+    final client = _newClient();
+    await client.mkdirAll(_ensureDir(remoteDir));
+  }
+
+  /// Streams a local file to [remotePath]. Uses the long download-window
+  /// timeout since an image/cover upload is a real transfer, not a probe.
+  Future<void> uploadFile(
+    String localPath,
+    String remotePath, {
+    void Function(int count, int total)? onProgress,
+  }) async {
+    final client = _newClient(_downloadTimeout);
+    await client.writeFromFile(localPath, remotePath, onProgress: onProgress);
+  }
+
+  /// Number of named entries in [remoteDir], or -1 when it does not exist or
+  /// cannot be read. Lets migration skip a comic whose folder is already
+  /// populated on the server (resume safety when local task state was lost).
+  Future<int> remoteEntryCount(String remoteDir) async {
+    try {
+      final client = _newClient();
+      final files = await client.readDir(_ensureDir(remoteDir));
+      return files.where((f) => (f.name ?? '').isNotEmpty).length;
+    } catch (_) {
+      return -1;
+    }
+  }
 }
 
 /// A single browsable item: either a comic folder or an importable archive.

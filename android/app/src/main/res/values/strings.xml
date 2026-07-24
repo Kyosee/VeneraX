@@ -15,4 +15,5 @@
     <string name="background_title_export">Exporting comics</string>
     <string name="background_title_comic_import">Importing comics</string>
     <string name="background_title_sync">Syncing data</string>
+    <string name="background_title_webdav_migration">Migrating to WebDAV</string>
 </resources>

@@ -12,6 +12,7 @@ import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
+import 'package:venera/foundation/webdav_migration_tasks.dart';
 import 'package:venera/foundation/widget_utils.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -35,6 +36,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
   final comicSourceUpdateManager = ComicSourceUpdateTaskManager.instance;
   final importManager = ImportTaskManager.instance;
   final exportManager = ExportTaskManager.instance;
+  final webdavMigrationManager = WebdavMigrationTaskManager.instance;
   final dataSyncManager = DataSyncTaskManager.instance;
   final modelStore = TranslationModelStore.instance;
   final preTranslateManager = PreTranslationTaskManager.instance;
@@ -56,6 +58,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     comicSourceUpdateManager.addListener(update);
     importManager.addListener(update);
     exportManager.addListener(update);
+    webdavMigrationManager.addListener(update);
     dataSyncManager.addListener(update);
     modelStore.addListener(update);
     preTranslateManager.addListener(update);
@@ -71,6 +74,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     comicSourceUpdateManager.removeListener(update);
     importManager.removeListener(update);
     exportManager.removeListener(update);
+    webdavMigrationManager.removeListener(update);
     dataSyncManager.removeListener(update);
     modelStore.removeListener(update);
     preTranslateManager.removeListener(update);
@@ -92,6 +96,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         comicSourceUpdateManager.historyTasks.isNotEmpty ||
         importManager.historyTasks.isNotEmpty ||
         exportManager.historyTasks.isNotEmpty ||
+        webdavMigrationManager.historyTasks.isNotEmpty ||
         preTranslateManager.historyTasks.isNotEmpty;
   }
 
@@ -116,6 +121,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
               comicSourceUpdateManager.clearHistory();
               importManager.clearHistory();
               exportManager.clearHistory();
+              webdavMigrationManager.clearHistory();
               preTranslateManager.clearHistory();
               Navigator.pop(context);
             },
@@ -146,6 +152,8 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         importManager.removeTask(id);
       case 'export':
         exportManager.removeTask(id);
+      case 'webdav_migration':
+        webdavMigrationManager.removeTask(id);
       case 'pre_translate':
         preTranslateManager.removeTask(id);
     }
@@ -246,6 +254,9 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
       ),
       ...exportManager.currentTasks.map(
         (task) => buildExportTaskCard(task, expanded: false),
+      ),
+      ...webdavMigrationManager.currentTasks.map(
+        (task) => buildWebdavMigrationTaskCard(task, expanded: false),
       ),
       ...preTranslationManager.currentTasks.map(
         (task) => buildPreTranslateTaskCard(task, expanded: false),
@@ -353,6 +364,12 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         (task) => MapEntry(
           task.finishedAt ?? task.createdAt,
           buildExportTaskCard(task, expanded: false),
+        ),
+      ),
+      ...webdavMigrationManager.historyTasks.map(
+        (task) => MapEntry(
+          task.finishedAt ?? task.createdAt,
+          buildWebdavMigrationTaskCard(task, expanded: false),
         ),
       ),
       ...preTranslationManager.historyTasks.map(
@@ -468,6 +485,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         'comic_source_update' => Icons.update,
         'import' => Icons.cloud_download,
         'export' => Icons.save_alt,
+        'webdav_migration' => Icons.cloud_upload_outlined,
         'data_sync_upload' => Icons.cloud_upload,
         'data_sync_download' => Icons.cloud_download,
         'pre_translate' => Icons.translate,
@@ -491,6 +509,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           ? "Import Data".tl
           : "Import: @file".tlParams(params),
       'export' => "Export Comics".tl,
+      'webdav_migration' => "WebDAV Migration".tl,
       'data_sync_upload' => "WebDAV Upload".tl,
       'data_sync_download' => "WebDAV Download".tl,
       'pre_translate' => "Pre-translate: @title".tlParams(params),
@@ -1374,6 +1393,131 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     );
 
     return _wrapHistoryCard(card, 'export', task.id, task.isRunning);
+  }
+
+  Widget buildWebdavMigrationTaskCard(
+    WebdavMigrationTask task, {
+    required bool expanded,
+  }) {
+    var progressText = task.total == 0
+        ? "0%"
+        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    final card = Card(
+      elevation: 0,
+      color: context.colorScheme.surface,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        initiallyExpanded: expanded,
+        leading: _wrapIconWithRotation(
+          getTaskIcon('webdav_migration', task.isActive,
+              status: task.status.name),
+          task.isActive,
+          task.status.name,
+        ),
+        title: Text(
+          getTaskTitle('webdav_migration', {}),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: buildTaskSubtitle(
+          [
+            webdavMigrationStatusText(task),
+            "${task.done}/${task.total}",
+            progressText,
+          ],
+          task.createdAt,
+          task.finishedAt,
+        ),
+        trailing: task.isActive
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (task.isPaused)
+                    TextButton(
+                      onPressed: () => webdavMigrationManager.resume(task.id),
+                      child: Text("Resume".tl),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () => webdavMigrationManager.pause(task.id),
+                      child: Text("Pause".tl),
+                    ),
+                  TextButton(
+                    onPressed: () => webdavMigrationManager.cancel(task.id),
+                    child: Text("Cancel".tl),
+                  ),
+                ],
+              )
+            : null,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: _webdavMigrationBarValue(task),
+            ),
+          ),
+          const SizedBox(height: 8),
+          buildWebdavMigrationDetails(task),
+        ],
+      ),
+    );
+
+    return _wrapHistoryCard(
+        card, 'webdav_migration', task.id, task.isRunning);
+  }
+
+  /// Bar value: the current comic's byte-fraction while a comic is uploading,
+  /// else the per-comic ratio; indeterminate when running with nothing sized.
+  double? _webdavMigrationBarValue(WebdavMigrationTask task) {
+    if (task.isRunning && task.currentComicProgress != null) {
+      return task.currentComicProgress;
+    }
+    return task.isRunning && task.total == 0 ? null : task.progress;
+  }
+
+  String webdavMigrationStatusText(WebdavMigrationTask task) {
+    return switch (task.status) {
+      WebdavMigrationStatus.running => "Running".tl,
+      WebdavMigrationStatus.paused => "Paused".tl,
+      WebdavMigrationStatus.completed => "Completed".tl,
+      WebdavMigrationStatus.canceled => "Canceled".tl,
+      WebdavMigrationStatus.failed => "Failed".tl,
+    };
+  }
+
+  Widget buildWebdavMigrationDetails(WebdavMigrationTask task) {
+    return buildSourceBox(
+      title: "Details".tl,
+      children: [
+        Text(
+          "Total: @total  Migrated: @done  Failed: @failed".tlParams({
+            'total': task.total,
+            'done': task.done - task.failedCount < 0
+                ? 0
+                : task.done - task.failedCount,
+            'failed': task.failedCount,
+          }),
+          style: ts.s14,
+        ),
+        if (task.currentTitle != null && task.isRunning) ...[
+          const SizedBox(height: 2),
+          Text(
+            "Uploading: @title".tlParams({'title': task.currentTitle!}),
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        if (task.status == WebdavMigrationStatus.failed &&
+            task.error != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            (task.error ?? '').tl,
+            style: ts.s14.withColor(context.colorScheme.error),
+          ),
+        ],
+      ],
+    );
   }
 
   String exportStatusText(ExportTask task) {

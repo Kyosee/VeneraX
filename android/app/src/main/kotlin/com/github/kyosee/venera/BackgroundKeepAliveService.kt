@@ -181,6 +181,7 @@ class BackgroundKeepAliveService : Service() {
             TAG_EXPORT -> R.string.background_title_export
             TAG_COMIC_IMPORT -> R.string.background_title_comic_import
             TAG_SYNC -> R.string.background_title_sync
+            TAG_WEBDAV_MIGRATION -> R.string.background_title_webdav_migration
             else -> R.string.app_name
         }
         return getString(resId)
@@ -227,6 +228,8 @@ class BackgroundKeepAliveService : Service() {
         const val TAG_COMIC_IMPORT = "comic_import"
         const val TAG_SYNC = "sync"
         const val TAG_PRE_TRANSLATE = "pre_translate"
+        const val TAG_WEBDAV_MIGRATION = "webdav_migration"
+        const val TAG_WEBDAV_MIGRATION = "webdav_migration"
 
         // 点击通知时携带给 MainActivity 的 Flutter 路由。追更单独落到追更列表页，
         // 其余各类后台任务统一落到任务页。
@@ -240,6 +243,8 @@ class BackgroundKeepAliveService : Service() {
             TAG_COMIC_IMPORT -> BASE_NOTE_ID + 4
             TAG_SYNC -> BASE_NOTE_ID + 5
             TAG_PRE_TRANSLATE -> BASE_NOTE_ID + 6
+            TAG_WEBDAV_MIGRATION -> BASE_NOTE_ID + 7
+            TAG_WEBDAV_MIGRATION -> BASE_NOTE_ID + 7
             else -> BASE_NOTE_ID + (tag.hashCode() and 0x3F) + 8
         }
 

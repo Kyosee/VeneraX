@@ -6,6 +6,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/webdav_migration_tasks.dart';
+import 'package:venera/network/webdav_library.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
@@ -212,6 +214,12 @@ class _LocalComicsPageState extends State<LocalComicsPage>
           icon: Icons.archive_outlined,
           text: "Export .venera_comics".tl,
           onClick: () => _startVeneraExport(selectedItems.keys.toList()),
+        ),
+      if (selectedItems.isNotEmpty)
+        MenuEntry(
+          icon: Icons.cloud_upload_outlined,
+          text: "Migrate to WebDAV source".tl,
+          onClick: () => _startWebdavMigration(selectedItems.keys.toList()),
         ),
     ]);
   }
@@ -619,6 +627,123 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
     manager.addListener(listener);
     listener();
+  }
+
+  /// Migrates the selected comics into the configured WebDAV comic library,
+  /// re-laid-out so the WebDAV source can browse them (issue #149). Only
+  /// downloaded comics can be migrated (there are no local images otherwise),
+  /// so undownloaded selections are filtered out first.
+  void _startWebdavMigration(List<LocalComic> comics) async {
+    if (comics.isEmpty) return;
+    if (!WebdavLibrary.isConfigured) {
+      context.showMessage(
+        message: "WebDAV comic library is not configured".tl,
+      );
+      return;
+    }
+    var manager = WebdavMigrationTaskManager.instance;
+    if (manager.hasActiveTask) {
+      context.showMessage(
+        message: "A migration task is already running".tl,
+      );
+      return;
+    }
+    var eligible = comics
+        .where((c) => c.status == LocalComicStatus.downloaded)
+        .toList();
+    if (eligible.isEmpty) {
+      context.showMessage(
+        message: "No downloaded comics to migrate".tl,
+      );
+      return;
+    }
+    // Ask for the chapter-folder naming mode. The source orders chapters by
+    // folder name, so a numeric prefix guarantees the original reading order
+    // survives (at the cost of the prefix showing up in the chapter name);
+    // title-only keeps names clean but can reorder chapters whose titles don't
+    // sort naturally. The choice only affects multi-chapter comics.
+    bool numericPrefix = true;
+    bool confirmed = false;
+    await showDialog(
+      context: App.rootContext,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ContentDialog(
+              title: "Migrate to WebDAV source".tl,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      "Migrate @count comics to WebDAV source".tlParams({
+                        'count': eligible.length,
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      "Chapter folder naming".tl,
+                      style: ts.s14.withColor(
+                        context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  RadioGroup<bool>(
+                    groupValue: numericPrefix,
+                    onChanged: (v) =>
+                        setState(() => numericPrefix = v ?? numericPrefix),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RadioListTile<bool>(
+                          value: true,
+                          title: Text(
+                            "Keep reading order (numeric prefix)".tl,
+                          ),
+                        ),
+                        RadioListTile<bool>(
+                          value: false,
+                          title: Text("Chapter title only".tl),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () {
+                    confirmed = true;
+                    context.pop();
+                  },
+                  child: Text("Migrate".tl),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (!confirmed || !mounted) return;
+    var task = manager.start(eligible, numericPrefix: numericPrefix);
+    if (task == null) {
+      context.showMessage(
+        message: "A migration task is already running".tl,
+      );
+      return;
+    }
+    exitSelectMode();
+    context.showMessage(
+      message: "Migration started in background; see the Tasks page".tl,
+    );
   }
 
   Future<bool> deleteComics(List<LocalComic> comics) async {
