@@ -315,9 +315,12 @@ class WebdavMigrationTaskManager with ChangeNotifier {
   Future<void> _run(WebdavMigrationTask task) async {
     _refreshKeepAlive(task);
     String? lastError;
-    // Names already claimed on the server this run, so two same-titled comics
-    // land in distinct folders instead of overwriting.
-    final usedComicNames = <String>{};
+    // Folder name per comic, computed over the FULL list so the mapping is
+    // identical across runs. Deriving it from a running set as comics complete
+    // would break resume: an already-done same-titled comic is skipped and no
+    // longer occupies its name, so a later comic could be reassigned the done
+    // comic's folder and overwrite it (its de-dup suffix would shift).
+    final folderNames = _assignFolderNames(task.comics);
     try {
       if (!WebdavLibrary.isConfigured) {
         throw 'WebDAV comic library is not configured';
@@ -360,7 +363,9 @@ class WebdavMigrationTaskManager with ChangeNotifier {
 
         bool completed;
         try {
-          completed = await _migrateOne(task, comic, root, usedComicNames);
+          final folderName = folderNames[ref.key] ??
+              migrationUniqueFolderName(ref.title, <String>{});
+          completed = await _migrateOne(task, comic, root, folderName);
         } catch (e, s) {
           Log.error('WebDAV Migration', e.toString(), s);
           task.failedCount++;
@@ -423,9 +428,8 @@ class WebdavMigrationTaskManager with ChangeNotifier {
     WebdavMigrationTask task,
     LocalComic comic,
     String root,
-    Set<String> usedComicNames,
+    String folderName,
   ) async {
-    final folderName = migrationUniqueFolderName(comic.title, usedComicNames);
     final comicDir = '$root$folderName/';
 
     // Resume relies on [doneKeys], not on the remote folder state: a comic is
@@ -555,4 +559,19 @@ class WebdavMigrationTaskManager with ChangeNotifier {
 
   static String _stripScheme(String path) =>
       path.startsWith('file://') ? path.substring('file://'.length) : path;
+
+  /// Deterministically maps each comic (by [MigrationComicRef.key]) to its
+  /// remote folder name, de-duplicating same-titled comics in list order. Runs
+  /// over the full list regardless of done state so the assignment is identical
+  /// on every run — the guarantee a resume relies on (see [_run]).
+  static Map<String, String> _assignFolderNames(
+    List<MigrationComicRef> comics,
+  ) {
+    final used = <String>{};
+    final result = <String, String>{};
+    for (final ref in comics) {
+      result[ref.key] = migrationUniqueFolderName(ref.title, used);
+    }
+    return result;
+  }
 }
