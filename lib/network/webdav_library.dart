@@ -280,20 +280,46 @@ class WebdavLibrary {
       }
 
       final title = _dirTitle(dir);
-      Map<String, String>? chapters;
+      // `chapters` is either a flat {chapterPath: title} map or a grouped
+      // {groupName: {chapterPath: title}} map (for 卷/话/番外 tabs). Passed as-is
+      // to ComicDetails.fromJson, which builds ComicChapters.grouped from a
+      // nested map.
+      dynamic chapters;
       String coverUrl = '';
 
       if (subDirs.isNotEmpty) {
         subDirs.sort(
           (a, b) => _naturalCompare(a.name ?? '', b.name ?? ''),
         );
-        chapters = {
-          for (final d in subDirs)
-            _ensureDir(d.path ?? '$dir${d.name}'): d.name ?? '',
-        };
+        // Distinguish a grouped comic (comic/group/chapter/images) from a plain
+        // chaptered one (comic/chapter/images) by probing the first subfolder:
+        // if it holds only further subfolders (no images), this level is groups.
+        final groups = await _readGroupChapters(client, dir, subDirs);
+        String? firstChapterDir;
+        if (groups != null) {
+          chapters = groups;
+          // Cover fallback digs into the first chapter of the first non-empty
+          // group, since a group folder itself holds no images.
+          for (final g in groups.values) {
+            if (g.isNotEmpty) {
+              firstChapterDir = g.keys.first;
+              break;
+            }
+          }
+        } else {
+          chapters = {
+            for (final d in subDirs)
+              _ensureDir(d.path ?? '$dir${d.name}'): d.name ?? '',
+          };
+          firstChapterDir = _ensureDir(
+            subDirs.first.path ?? '$dir${subDirs.first.name}/',
+          );
+        }
         coverUrl = coverName != null
             ? _absoluteUrl('$dir$coverName')
-            : await _firstImageOf(client, subDirs.first);
+            : (firstChapterDir != null
+                ? await _firstImageOfPath(client, firstChapterDir)
+                : '');
       } else {
         // Single implicit chapter: images live directly in the comic folder.
         images.sort(_naturalCompare);
@@ -323,16 +349,109 @@ class WebdavLibrary {
     }
   }
 
-  Future<String> _firstImageOf(webdav.Client client, webdav.File dir) async {
+  /// Detects and reads a grouped-chapter layout (comic/group/chapter/images).
+  ///
+  /// A grouped comic (卷/话/番外 tabs) is migrated as an extra folder layer, so
+  /// the comic folder's subfolders are *groups*, each holding chapter folders.
+  /// A plain chaptered comic instead has chapter folders directly. They are
+  /// told apart by probing: a group folder contains only further subfolders
+  /// (no images), a chapter folder contains images.
+  ///
+  /// Returns a `{groupName: {chapterPath: chapterTitle}}` map when at least one
+  /// subfolder is a group, or null for the plain case (caller keeps the flat
+  /// layout). Mixed layouts are tolerated: any subfolder that directly holds
+  /// images is treated as a chapter and collected under a "默认" group, so
+  /// stray chapters aren't lost. [subDirs] must already be natural-sorted.
+  Future<Map<String, Map<String, String>>?> _readGroupChapters(
+    webdav.Client client,
+    String comicDir,
+    List<webdav.File> subDirs,
+  ) async {
+    // Probe only the FIRST subfolder to decide the layout: a chapter folder
+    // holds images, a group folder holds only further subfolders. A plain
+    // chaptered comic (the common case, possibly hundreds of chapters) is thus
+    // ruled out with a single extra request instead of one per chapter — the
+    // full per-subfolder scan below runs only once we know it's grouped.
+    final classified = await _classifySubDir(client, comicDir, subDirs.first);
+    if (!classified.isGroup) {
+      // First subfolder is a chapter → plain layout; caller keeps the flat map.
+      return null;
+    }
+
+    // Grouped: read each top-level subfolder and classify it. A subfolder that
+    // directly holds images is a stray chapter (mixed layout) collected under a
+    // "默认" tab so nothing is lost; the count equals the tab count, small.
+    final grouped = <String, Map<String, String>>{};
+    final defaultGroup = <String, String>{};
+    for (var i = 0; i < subDirs.length; i++) {
+      final d = subDirs[i];
+      final path = _ensureDir(d.path ?? '$comicDir${d.name}/');
+      // Reuse the probe for the first subfolder rather than reading it twice.
+      final c = i == 0 ? classified : await _classifySubDir(client, comicDir, d);
+      if (c.isGroup) {
+        final childDirs = c.childDirs
+          ..sort((a, b) => _naturalCompare(a.name ?? '', b.name ?? ''));
+        grouped[d.name ?? ''] = {
+          for (final ch in childDirs)
+            _ensureDir(ch.path ?? '$path${ch.name}/'): ch.name ?? '',
+        };
+      } else {
+        // A chapter folder sitting directly under the comic (stray chapter in a
+        // mixed layout, or an unreadable/empty subfolder).
+        defaultGroup[path] = d.name ?? '';
+      }
+    }
+    if (defaultGroup.isNotEmpty) {
+      // Fold stray direct chapters into a default tab so nothing is lost.
+      var name = '默认';
+      while (grouped.containsKey(name)) {
+        name = '$name ';
+      }
+      grouped[name] = defaultGroup;
+    }
+    return grouped;
+  }
+
+  /// Reads [d] and decides whether it is a group folder (only subfolders, no
+  /// images) or a chapter folder. On a read error it is reported as a
+  /// non-group (chapter) so the caller keeps it rather than dropping it.
+  Future<({bool isGroup, List<webdav.File> childDirs})> _classifySubDir(
+    webdav.Client client,
+    String comicDir,
+    webdav.File d,
+  ) async {
+    final path = _ensureDir(d.path ?? '$comicDir${d.name}/');
+    List<webdav.File> children;
     try {
-      final files = await client.readDir(_ensureDir(dir.path ?? ''));
+      children = await client.readDir(path);
+    } catch (_) {
+      return (isGroup: false, childDirs: const <webdav.File>[]);
+    }
+    final childDirs = <webdav.File>[];
+    var hasImage = false;
+    for (final c in children) {
+      final cn = c.name ?? '';
+      if (cn.isEmpty || cn.startsWith('.')) continue;
+      if (c.isDir == true) {
+        childDirs.add(c);
+      } else if (_isImage(cn)) {
+        hasImage = true;
+      }
+    }
+    return (isGroup: !hasImage && childDirs.isNotEmpty, childDirs: childDirs);
+  }
+
+  Future<String> _firstImageOfPath(webdav.Client client, String dir) async {
+    try {
+      final d = _ensureDir(dir);
+      final files = await client.readDir(d);
       final images = files
           .where((f) => f.isDir != true && _isImage(f.name ?? ''))
           .map((f) => f.name!)
           .toList()
         ..sort(_naturalCompare);
       if (images.isEmpty) return '';
-      return _absoluteUrl('${_ensureDir(dir.path ?? '')}${images.first}');
+      return _absoluteUrl('$d${images.first}');
     } catch (_) {
       return '';
     }

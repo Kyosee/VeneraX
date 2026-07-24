@@ -462,6 +462,61 @@ class WebdavMigrationTaskManager with ChangeNotifier {
           remote: '$comicDir${migrationImageName(i, images.length, migrationExtOf(local))}',
         ));
       }
+    } else if (comic.chapters!.isGrouped) {
+      // Grouped chapters (卷/话/番外 tabs): insert a group-folder layer so the
+      // layout becomes comic/group/chapter/images. The WebDAV source rebuilds
+      // the tabs by detecting this extra depth. Both group and chapter folders
+      // honour [numericPrefix] so their tab/reading order survives the source's
+      // name-based sort.
+      final chapters = comic.chapters!;
+      final groupNames = chapters.groups.toList();
+      final usedGroupNames = <String>{};
+      for (var gi = 0; gi < groupNames.length; gi++) {
+        final groupName = groupNames[gi];
+        final group = chapters.getGroup(groupName);
+        final groupIds = group.keys.toList();
+        // Skip a tab entirely when none of its chapters are downloaded, so no
+        // empty group folder is created remotely.
+        if (!groupIds.any((cid) => comic.downloadedChapters.contains(cid))) {
+          continue;
+        }
+        final groupFolder = migrationChapterFolderName(
+          groupName,
+          gi,
+          groupNames.length,
+          numericPrefix: task.numericPrefix,
+          used: usedGroupNames,
+        );
+        final groupDir = '$comicDir$groupFolder/';
+        await WebdavLibrary.instance.ensureRemoteDir(groupDir);
+        final usedChapterNames = <String>{};
+        // Only migrate downloaded chapters, preserving their reading order
+        // within the tab.
+        for (var ci = 0; ci < groupIds.length; ci++) {
+          final cid = groupIds[ci];
+          if (!comic.downloadedChapters.contains(cid)) continue;
+          final title = group[cid] ?? cid;
+          final folder = migrationChapterFolderName(
+            title,
+            ci,
+            groupIds.length,
+            numericPrefix: task.numericPrefix,
+            used: usedChapterNames,
+          );
+          final chapterDir = '$groupDir$folder/';
+          await WebdavLibrary.instance.ensureRemoteDir(chapterDir);
+          final images =
+              await LocalManager().getImages(comic.id, comic.comicType, cid);
+          for (var i = 0; i < images.length; i++) {
+            final local = _stripScheme(images[i]);
+            uploads.add((
+              local: local,
+              remote:
+                  '$chapterDir${migrationImageName(i, images.length, migrationExtOf(local))}',
+            ));
+          }
+        }
+      }
     } else {
       final chapters = comic.chapters!;
       final ids = chapters.ids.toList();
