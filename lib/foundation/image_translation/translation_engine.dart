@@ -1,5 +1,6 @@
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
+import 'package:venera/foundation/image_translation/local_llm/llama_ffi.dart';
 import 'package:venera/foundation/image_translation/local_llm/local_llm_models.dart';
 import 'package:venera/foundation/image_translation/local_llm/local_llm_worker.dart';
 import 'package:venera/foundation/image_translation/translation_prompt.dart';
@@ -33,6 +34,13 @@ abstract class TranslationEngine {
   static String? get _localModelId =>
       appdata.settings['imageTranslationLocalModel'] as String?;
 
+  /// Whether the on-device engine's native runtime (`venera_llama`) is present
+  /// in this build. It is only compiled where the plugin is registered, so on
+  /// platforms/builds without it the local engine can't run — the UI uses this
+  /// to hide or disable the option instead of letting a user pick it, download
+  /// gigabytes of model, and then hit a load failure at translate time.
+  static bool get isLocalRuntimeAvailable => LlamaFfi.isAvailable;
+
   /// Whether the active engine is fully configured and ready to translate.
   /// (Detection/OCR-model readiness is checked separately by the service; this
   /// covers only the translation back-end.)
@@ -41,7 +49,8 @@ abstract class TranslationEngine {
       case TranslationEngineKind.api:
         return LlmTranslator.isConfigured;
       case TranslationEngineKind.local:
-        return LocalLlmModels.active(_localModelId) != null;
+        return isLocalRuntimeAvailable &&
+            LocalLlmModels.active(_localModelId) != null;
     }
   }
 
@@ -71,6 +80,11 @@ abstract class TranslationEngine {
           glossary: glossary,
         );
       case TranslationEngineKind.local:
+        if (!isLocalRuntimeAvailable) {
+          throw Exception(
+            'On-device translation is not available on this platform',
+          );
+        }
         var model = LocalLlmModels.active(_localModelId);
         if (model == null) {
           throw Exception('No local translation model is installed');

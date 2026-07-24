@@ -19,6 +19,7 @@ import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/local_llm/local_llm_models.dart';
 import 'package:venera/foundation/image_translation/local_llm/local_llm_worker.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_engine.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/import_tasks.dart';

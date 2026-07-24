@@ -25,6 +25,30 @@ class LlamaFfi {
     return _instance ??= LlamaFfi._(_openLibrary());
   }
 
+  /// Cached result of the one-time native-library probe. `null` = not probed.
+  static bool? _available;
+
+  /// Whether the `venera_llama` native library can actually be loaded on this
+  /// build/platform. The shim is only compiled where the plugin is registered
+  /// (see packages/venera_llama), so on a build that omits it — or a platform
+  /// we haven't wired the native build for yet — loading fails. Probing here
+  /// (once, result cached) lets the engine degrade gracefully instead of
+  /// crashing the translate path with a raw `DynamicLibrary.open` exception.
+  ///
+  /// Only checks that the library loads and exposes our entry symbol; it does
+  /// not load a model.
+  static bool get isAvailable {
+    if (_available != null) return _available!;
+    try {
+      var lib = _openLibrary();
+      // Confirm it's really our shim, not just some library that opened.
+      var ok = lib.providesSymbol('venera_llama_backend_init');
+      return _available = ok;
+    } catch (_) {
+      return _available = false;
+    }
+  }
+
   static DynamicLibrary _openLibrary() {
     // The shim is statically linked into the app on iOS/macOS (part of the
     // Runner process); on Android/desktop it ships as a shared library named

@@ -275,7 +275,8 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   /// per-device choice; when 'local' the API endpoint rows are hidden and the
   /// on-device model rows shown instead.
   bool get _engineIsLocal =>
-      appdata.settings['imageTranslationEngine'] == 'local';
+      appdata.settings['imageTranslationEngine'] == 'local' &&
+      TranslationEngine.isLocalRuntimeAvailable;
 
   /// Subtitle for the on-device model row: the active model's name, or a
   /// prompt to download one.
@@ -1074,18 +1075,31 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
             // Which back-end does the actual translating: the user's online
             // API (default) or an on-device model. Per-device, not synced.
+            // The on-device option is only offered where its native runtime is
+            // built into the app (see TranslationEngine.isLocalRuntimeAvailable)
+            // — otherwise picking it would let the user download a model and
+            // then fail at translate time.
             SelectSetting(
               title: "Translation engine".tl,
               settingKey: "imageTranslationEngine",
               optionTranslation: {
                 "api": "Online API".tl,
-                "local": "On-device model".tl,
+                if (TranslationEngine.isLocalRuntimeAvailable)
+                  "local": "On-device model".tl,
               },
               onChanged: () {
                 setState(() {});
                 widget.onChanged?.call("imageTranslationEngine");
               },
             ),
+            if (!TranslationEngine.isLocalRuntimeAvailable)
+              ListTile(
+                title: Text("On-device model".tl),
+                subtitle: Text(
+                  "On-device translation isn't available in this build yet".tl,
+                ),
+                enabled: false,
+              ),
             if (!_engineIsLocal) ...[
               _CallbackSetting(
                 title: "LLM API URL".tl,
@@ -1129,26 +1143,29 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 callback: _testTranslation,
               ),
             ],
-            // On-device model management is shown for BOTH engines: a user can
-            // download and pick a model before switching the engine to it, so
-            // downloading and enabling stay decoupled (you don't have to run
-            // the local engine — with no model installed — just to fetch one).
-            _CallbackSetting(
-              title: "On-device model".tl,
-              subtitle: _localModelSubtitle(),
-              actionTitle: "Manage".tl,
-              callback: () async {
-                await context.to(() => const LocalLlmModelsPage());
-                if (mounted) setState(() {});
-              },
-            ),
-            if (_engineIsLocal)
+            // On-device model management is shown for BOTH engines (when the
+            // native runtime exists): a user can download and pick a model
+            // before switching the engine to it, so downloading and enabling
+            // stay decoupled (you don't have to run the local engine — with no
+            // model installed — just to fetch one).
+            if (TranslationEngine.isLocalRuntimeAvailable) ...[
               _CallbackSetting(
-                title: "Test translation".tl,
-                subtitle: "Run a sample line through the on-device model".tl,
-                actionTitle: "Test".tl,
-                callback: _testLocalTranslation,
+                title: "On-device model".tl,
+                subtitle: _localModelSubtitle(),
+                actionTitle: "Manage".tl,
+                callback: () async {
+                  await context.to(() => const LocalLlmModelsPage());
+                  if (mounted) setState(() {});
+                },
               ),
+              if (_engineIsLocal)
+                _CallbackSetting(
+                  title: "Test translation".tl,
+                  subtitle: "Run a sample line through the on-device model".tl,
+                  actionTitle: "Test".tl,
+                  callback: _testLocalTranslation,
+                ),
+            ],
             SelectSetting(
               title: "Source language".tl,
               settingKey: "imageTranslationSource",

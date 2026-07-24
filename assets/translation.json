@@ -1115,7 +1115,6 @@
     "AI Translation (experimental)": "AI 翻译（实验性）",
     "How AI translation works": "AI 翻译怎么用",
     "Setup and usage in plain language": "配置与使用说明",
-    "Help": "帮助",
     "AI Translation help": "AI 翻译帮助",
     "What it does": "它能做什么",
     "Reads the text in comic pages and overlays a translation right on the image, keeping the original artwork. Text is found and recognized on your device; the recognized lines are then sent to an AI model to translate.": "识别漫画页面中的文字，并把译文直接叠加到图片上，保留原画。文字的查找和识别都在本机完成，识别出的文本再交给 AI 模型翻译。",
@@ -1133,7 +1132,8 @@
     "This clears all translations and the learned glossary for this comic, then translates again.": "将清除该漫画的所有翻译及已学习的术语表，然后重新翻译。",
     "Select chapters to re-translate first": "请先勾选要重新翻译的章节",
     "Re-translate selected chapters?": "重新翻译所选章节？",
-    "This clears the translations of the @count selected chapters, then translates them again.": "将清除所选 @count 个章节的翻译，然后重新翻译。"
+    "This clears the translations of the @count selected chapters, then translates them again.": "将清除所选 @count 个章节的翻译，然后重新翻译。",
+    "On-device translation isn't available in this build yet": "此版本暂不支持设备端翻译"
   },
   "zh_TW": {
     "Models run entirely on your device. Larger models translate better but need more memory; the badge shows what your device can handle.": "模型完全在你的裝置上執行。更大的模型翻譯效果更好，但需要更多記憶體；徽章會顯示你的裝置能承受的程度。",
@@ -1506,7 +1506,7 @@
     "180 days": "180 天",
     "365 days": "365 天",
     "Select a directory which contains the comic directories.": "選擇一個包含漫畫資料夾的目錄",
-    "Help": "幫助",
+    "Help": "說明",
     "Export as cbz": "匯出為cbz",
     "Select an archive file (cbz, zip, 7z, cb7)": "選擇一個歸檔文件 (cbz, zip, 7z, cb7)",
     "An archive file": "一個歸檔文件",
@@ -2251,7 +2251,6 @@
     "AI Translation (experimental)": "AI 翻譯（實驗性）",
     "How AI translation works": "AI 翻譯怎麼用",
     "Setup and usage in plain language": "配置與使用說明",
-    "Help": "說明",
     "AI Translation help": "AI 翻譯說明",
     "What it does": "它能做什麼",
     "Reads the text in comic pages and overlays a translation right on the image, keeping the original artwork. Text is found and recognized on your device; the recognized lines are then sent to an AI model to translate.": "辨識漫畫頁面中的文字，並把譯文直接疊加到圖片上，保留原畫。文字的尋找與辨識都在本機完成，辨識出的文字再交給 AI 模型翻譯。",
@@ -2269,6 +2268,7 @@
     "This clears all translations and the learned glossary for this comic, then translates again.": "將清除該漫畫的所有翻譯及已學習的術語表，然後重新翻譯。",
     "Select chapters to re-translate first": "請先勾選要重新翻譯的章節",
     "Re-translate selected chapters?": "重新翻譯所選章節？",
-    "This clears the translations of the @count selected chapters, then translates them again.": "將清除所選 @count 個章節的翻譯，然後重新翻譯。"
+    "This clears the translations of the @count selected chapters, then translates them again.": "將清除所選 @count 個章節的翻譯，然後重新翻譯。",
+    "On-device translation isn't available in this build yet": "此版本暫不支援裝置端翻譯"
   }
 }
