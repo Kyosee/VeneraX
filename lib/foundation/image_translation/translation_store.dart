@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/common.dart';
-import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
@@ -61,7 +60,7 @@ class TranslationStore {
     if (!isInitialized) {
       throw StateError("TranslationStore is not initialized; cannot merge");
     }
-    var src = sqlite3.open(sourcePath, mode: OpenMode.readOnly);
+    var src = openRawDatabase(sourcePath, mode: OpenMode.readOnly);
     var merged = 0;
     try {
       var cols = src

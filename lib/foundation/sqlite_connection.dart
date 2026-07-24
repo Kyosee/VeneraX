@@ -28,10 +28,14 @@ Database openSqliteDatabase(String path) {
 }
 
 /// Raw, pragma-free connection. For short-lived access to NON-shared database
-/// files — entries extracted from a backup, imported archives — or for
-/// checkpoint/validity probes that the caller already serializes against
-/// restores. Never hold one across an await that can reach a restore window.
-Database openRawDatabase(String path) => sqlite3.open(path);
+/// files — entries extracted from a backup, imported archives, a foreign store
+/// merged in — or for checkpoint/validity probes that the caller already
+/// serializes against restores. Never hold one across an await that can reach a
+/// restore window. [mode] defaults to read/write; pass [OpenMode.readOnly] to
+/// probe a source file without modifying it (e.g. merging another device's
+/// store).
+Database openRawDatabase(String path, {OpenMode mode = OpenMode.readWrite}) =>
+    sqlite3.open(path, mode: mode);
 
 /// Single owner of database access ordering — and of connection lifetime —
 /// for this process.
