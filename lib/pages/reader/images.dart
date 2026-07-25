@@ -581,6 +581,10 @@ class _GalleryModeState extends State<_GalleryMode>
   bool turnPage(bool forward) => false; // gallery 用默认按页码翻页
 
   @override
+  bool jumpToChapter(int chapter, {bool toLastPage = false}) =>
+      false; // gallery keyed by chapter; uses the default remount path
+
+  @override
   bool get isImageZoomed {
     // 每页各自一个 PhotoViewController，取当前页的判断缩放；评论页等无控制器视为未缩放。
     final controller = photoViewControllers[reader.page];
@@ -1921,6 +1925,24 @@ class _ContinuousModeState extends State<_ContinuousMode>
     }
     // No adjacent image in the loaded window — let the caller try chapter nav.
     return false;
+  }
+
+  @override
+  bool jumpToChapter(int chapter, {bool toLastPage = false}) {
+    // Non-seamless is keyed by chapter and remounts via the caller's rebuild.
+    if (!seamlessChapterReading) return false;
+    // Scrollable only if the chapter is already loaded; else fall back to a
+    // remount+reload (return false) since scrolling can't reach an unloaded one.
+    final images = _continuousChapterImages[chapter];
+    if (images == null || images.isEmpty) return false;
+    final targetPage = toLastPage ? images.length : 1;
+    reader.chapter = chapter;
+    reader.page = targetPage;
+    context.readerScaffold.update();
+    final animate = reader.enablePageAnimation(reader.cid, reader.type);
+    _futurePosition = null;
+    _goToEntry(chapter, targetPage, animate: animate);
+    return true;
   }
 
   /// Scroll-axis extent of a laid-out entry, or null if not laid out.

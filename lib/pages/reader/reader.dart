@@ -335,8 +335,11 @@ class _ReaderState extends State<Reader>
               return _ReaderScaffold(
                 child: _ReaderGestureDetector(
                   child: _ReaderImages(
+                    // Seamless mode keeps a constant key so cross-chapter
+                    // scrolling doesn't remount. The nonce forces a one-off
+                    // remount when an explicit jump targets an unloaded chapter.
                     key: _isSeamlessContinuous
-                        ? const Key('seamless')
+                        ? Key('seamless_$chapterJumpNonce')
                         : Key(chapter.toString()),
                   ),
                 ),
@@ -685,6 +688,10 @@ abstract mixin class _ReaderLocation {
 
   int chapter = 1;
 
+  /// Bumped on explicit chapter jumps so the seamless reader (constant key) is
+  /// forced to remount when the target chapter isn't in its loaded window.
+  int chapterJumpNonce = 0;
+
   int get maxPage;
 
   /// Total pages including chapter comments page (for internal page control).
@@ -790,9 +797,16 @@ abstract mixin class _ReaderLocation {
 
   bool toChapter(int c, {bool toLastPage = false}) {
     if (_validateChapter(c) && !isLoading) {
+      // Seamless mode scrolls to the chapter in place when it's loaded; if it
+      // handles the jump we're done. Otherwise fall through to the remount path.
+      if (_imageViewController?.jumpToChapter(c, toLastPage: toLastPage) ==
+          true) {
+        return true;
+      }
       chapter = c;
       page = 1;
       _jumpToLastPageOnLoad = toLastPage;
+      chapterJumpNonce++;
       update();
       return true;
     }
@@ -903,6 +917,11 @@ abstract interface class _ImageViewController {
   /// flash). Returns true if handled; false lets the caller fall back to the
   /// page-number model (gallery, and non-seamless continuous at a boundary).
   bool turnPage(bool forward);
+
+  /// Explicit chapter jump (bottom-bar buttons / drawer). Seamless continuous
+  /// mode has a constant key and never remounts, so it scrolls to the target
+  /// itself here. Returns false to let keyed modes fall back to the remount path.
+  bool jumpToChapter(int chapter, {bool toLastPage = false});
 
   void handleDoubleTap(Offset location);
 
