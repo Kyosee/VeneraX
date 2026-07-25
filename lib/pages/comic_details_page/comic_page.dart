@@ -1577,6 +1577,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
     required this.comicType,
     required this.title,
     required this.entries,
+    this.groups,
     required this.finishSelect,
   });
 
@@ -1587,6 +1588,12 @@ class _SelectPreTranslateChapter extends StatefulWidget {
 
   /// Ordered list of chapter entries (eid, display title).
   final List<(String, String)> entries;
+
+  /// When the source groups chapters (e.g. comick's English/Latin editions),
+  /// each entry is (group name, flat indices into [entries]) so the picker can
+  /// show a tab per group. Null when the comic has no groups.
+  final List<(String, List<int>)>? groups;
+
   final void Function(List<int>) finishSelect;
 
   @override
@@ -1595,17 +1602,27 @@ class _SelectPreTranslateChapter extends StatefulWidget {
 }
 
 class _SelectPreTranslateChapterState
-    extends State<_SelectPreTranslateChapter> {
+    extends State<_SelectPreTranslateChapter>
+    with SingleTickerProviderStateMixin {
   List<int> selected = [];
+
+  TabController? _tabController;
 
   @override
   void initState() {
     super.initState();
+    if (widget.groups != null) {
+      _tabController = TabController(
+        length: widget.groups!.length,
+        vsync: this,
+      );
+    }
     PreTranslationTaskManager.instance.addListener(_onTaskUpdate);
   }
 
   @override
   void dispose() {
+    _tabController?.dispose();
     PreTranslationTaskManager.instance.removeListener(_onTaskUpdate);
     super.dispose();
   }
@@ -1794,6 +1811,68 @@ class _SelectPreTranslateChapterState
     );
   }
 
+  /// One checkbox row for the flat chapter index [i].
+  Widget _buildChapterTile(int i) {
+    var title = widget.entries[i].$2;
+    var progress = _buildChapterStatus(i);
+    return CheckboxListTile(
+      title: Row(
+        children: [
+          Expanded(child: Text(title)),
+          if (progress != null) ...[
+            const SizedBox(width: 8),
+            progress,
+          ],
+        ],
+      ),
+      value: selected.contains(i),
+      onChanged: (v) {
+        setState(() {
+          if (selected.contains(i)) {
+            selected.remove(i);
+          } else {
+            selected.add(i);
+          }
+        });
+      },
+    );
+  }
+
+  /// The chapter list. When the source groups chapters (e.g. comick's
+  /// English/Latin editions) it becomes a set of tabs, one per group, so the
+  /// user can find the edition they want instead of scrolling one merged list.
+  Widget _buildChapterList() {
+    final groups = widget.groups;
+    if (groups == null) {
+      return ListView.builder(
+        padding: EdgeInsets.zero,
+        itemCount: widget.entries.length,
+        itemBuilder: (context, i) => _buildChapterTile(i),
+      );
+    }
+    return Column(
+      children: [
+        AppTabBar(
+          controller: _tabController,
+          tabs: groups.map((g) => Tab(text: g.$1)).toList(),
+        ),
+        Expanded(
+          child: TabViewBody(
+            controller: _tabController,
+            children: [
+              for (var g in groups)
+                ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: g.$2.length,
+                  itemBuilder: (context, index) => _buildChapterTile(g.$2[index]),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1820,37 +1899,7 @@ class _SelectPreTranslateChapterState
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              itemCount: widget.entries.length,
-              itemBuilder: (context, i) {
-                var title = widget.entries[i].$2;
-                var progress = _buildChapterStatus(i);
-                return CheckboxListTile(
-                  title: Row(
-                    children: [
-                      Expanded(child: Text(title)),
-                      if (progress != null) ...[
-                        const SizedBox(width: 8),
-                        progress,
-                      ],
-                    ],
-                  ),
-                  value: selected.contains(i),
-                  onChanged: (v) {
-                    setState(() {
-                      if (selected.contains(i)) {
-                        selected.remove(i);
-                      } else {
-                        selected.add(i);
-                      }
-                    });
-                  },
-                );
-              },
-            ),
-          ),
+          Expanded(child: _buildChapterList()),
           Container(
             height: 50,
             decoration: BoxDecoration(

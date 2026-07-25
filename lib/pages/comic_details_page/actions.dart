@@ -145,9 +145,28 @@ abstract mixin class _ComicPageActions {
     }
     // Ordered (id, title) list of chapters; a chapter-less comic is one job.
     final entries = <(String, String)>[];
+    // When the source groups chapters (e.g. comick's English/Latin editions),
+    // keep the grouping so the picker can show tabs. Each group maps to the
+    // flat indices into [entries] it covers, preserving the same order
+    // allChapters merges them in.
+    List<(String, List<int>)>? groups;
     final chapters = comic.chapters;
     if (chapters == null) {
       entries.add(('0', comic.title));
+    } else if (chapters.isGrouped) {
+      groups = [];
+      var index = 1;
+      for (var groupName in chapters.groups) {
+        var indices = <int>[];
+        for (var entry in chapters.getGroup(groupName).entries) {
+          indices.add(entries.length);
+          entries.add(
+            (entry.key, entry.value.isEmpty ? 'E$index' : entry.value),
+          );
+          index++;
+        }
+        groups.add((groupName, indices));
+      }
     } else {
       var index = 1;
       for (var entry in chapters.allChapters.entries) {
@@ -197,6 +216,7 @@ abstract mixin class _ComicPageActions {
         comicType: comic.comicType,
         title: comic.title,
         entries: entries,
+        groups: groups,
         finishSelect: startJob,
       ),
     );
