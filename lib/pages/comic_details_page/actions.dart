@@ -177,14 +177,14 @@ abstract mixin class _ComicPageActions {
     }
 
     // A chapter-less comic has no picker to open, but pre-translation still
-    // spends one LLM request per page, so confirm before starting instead of
-    // kicking it off the moment the button is tapped.
+    // runs in the background and may spend paid requests, so confirm before
+    // starting instead of kicking it off the moment the button is tapped.
     if (chapters == null) {
       showConfirmDialog(
         context: App.rootContext,
         title: "Start pre-translation?".tl,
         content:
-            "Each page is roughly one LLM request; on a paid endpoint this may cost money."
+            "Pages are translated in the background. If your configured AI endpoint is paid this may cost money; the offline engine is free."
                 .tl,
         onConfirm: () => startJob([0]),
       );
