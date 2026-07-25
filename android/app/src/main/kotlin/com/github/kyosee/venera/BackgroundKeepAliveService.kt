@@ -170,7 +170,7 @@ class BackgroundKeepAliveService : Service() {
     /** 点击本类通知时应跳转到的 Flutter 路由；未知 tag 返回 null（回到应用即可）。 */
     private fun routeFor(tag: String): String? = when (tag) {
         TAG_FOLLOW_UPDATE -> ROUTE_FOLLOW_UPDATES
-        TAG_IMPORT, TAG_EXPORT, TAG_COMIC_IMPORT, TAG_SYNC, TAG_PRE_TRANSLATE -> ROUTE_TASKS
+        TAG_IMPORT, TAG_EXPORT, TAG_COMIC_IMPORT, TAG_SYNC, TAG_PRE_TRANSLATE, TAG_WEBDAV_MIGRATION -> ROUTE_TASKS
         else -> null
     }
 
@@ -229,7 +229,6 @@ class BackgroundKeepAliveService : Service() {
         const val TAG_SYNC = "sync"
         const val TAG_PRE_TRANSLATE = "pre_translate"
         const val TAG_WEBDAV_MIGRATION = "webdav_migration"
-        const val TAG_WEBDAV_MIGRATION = "webdav_migration"
 
         // 点击通知时携带给 MainActivity 的 Flutter 路由。追更单独落到追更列表页，
         // 其余各类后台任务统一落到任务页。
@@ -243,7 +242,6 @@ class BackgroundKeepAliveService : Service() {
             TAG_COMIC_IMPORT -> BASE_NOTE_ID + 4
             TAG_SYNC -> BASE_NOTE_ID + 5
             TAG_PRE_TRANSLATE -> BASE_NOTE_ID + 6
-            TAG_WEBDAV_MIGRATION -> BASE_NOTE_ID + 7
             TAG_WEBDAV_MIGRATION -> BASE_NOTE_ID + 7
             else -> BASE_NOTE_ID + (tag.hashCode() and 0x3F) + 8
         }
