@@ -47,6 +47,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
   bool isLoading = false;
 
   late String readFilterSelect;
+  late String downloadFilterSelect;
   late Set<String> sourceFilterSelect;
   late Set<String> tagFilterSelect;
   late Set<String> authorFilterSelect;
@@ -145,6 +146,15 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
           if (!authorFilterSelect.any((a) => comicAuthors.contains(a))) {
             return false;
           }
+        }
+      }
+      if (downloadFilterSelect != downloadFilterList[0]) {
+        final isDownloaded = LocalManager().isDownloaded(comic.id, comic.type);
+        if (downloadFilterSelect == "Downloaded" && !isDownloaded) {
+          return false;
+        }
+        if (downloadFilterSelect == "Not Downloaded" && isDownloaded) {
+          return false;
         }
       }
       var history = HistoryManager().find(
@@ -423,6 +433,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
     readFilterSelect =
         appdata.implicitData["local_favorites_read_filter"] ??
         readFilterList[0];
+    downloadFilterSelect =
+        appdata.implicitData["local_favorites_download_filter"] ??
+        downloadFilterList[0];
     sourceFilterSelect = parseSourceFilter(
       appdata.implicitData["local_favorites_source_filter"],
     );
@@ -558,6 +571,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                   icon: const Icon(Icons.filter_alt_outlined),
                   color:
                       readFilterSelect != readFilterList[0] ||
+                          downloadFilterSelect != downloadFilterList[0] ||
                           sourceFilterSelect.isNotEmpty ||
                           tagFilterSelect.isNotEmpty ||
                           authorFilterSelect.isNotEmpty
@@ -569,6 +583,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                       builder: (context) {
                         return _LocalFavoritesFilterDialog(
                           initReadFilterSelect: readFilterSelect,
+                          initDownloadFilterSelect: downloadFilterSelect,
                           initSourceFilterSelect: sourceFilterSelect,
                           initTagFilterSelect: tagFilterSelect,
                           initAuthorFilterSelect: authorFilterSelect,
@@ -581,6 +596,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                           updateConfig:
                               (
                                 readFilter,
+                                downloadFilter,
                                 sourceFilter,
                                 tagFilter,
                                 authorFilter,
@@ -589,6 +605,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                               ) {
                                 setState(() {
                                   readFilterSelect = readFilter;
+                                  downloadFilterSelect = downloadFilter;
                                   sourceFilterSelect = sourceFilter;
                                   tagFilterSelect = tagFilter;
                                   authorFilterSelect = authorFilter;
@@ -1718,6 +1735,7 @@ class _SelectUpdatePageNumState extends State<_SelectUpdatePageNum> {
 class _LocalFavoritesFilterDialog extends StatefulWidget {
   const _LocalFavoritesFilterDialog({
     required this.initReadFilterSelect,
+    required this.initDownloadFilterSelect,
     required this.initSourceFilterSelect,
     required this.initTagFilterSelect,
     required this.initAuthorFilterSelect,
@@ -1731,6 +1749,7 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
   });
 
   final String initReadFilterSelect;
+  final String initDownloadFilterSelect;
   final Set<String> initSourceFilterSelect;
   final Set<String> initTagFilterSelect;
   final Set<String> initAuthorFilterSelect;
@@ -1742,6 +1761,7 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
   final List<MapEntry<String, int>> authorFilterValues;
   final void Function(
     String readFilter,
+    String downloadFilter,
     Set<String> sourceFilter,
     Set<String> tagFilter,
     Set<String> authorFilter,
@@ -1757,9 +1777,12 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
 
 const readFilterList = ['All', 'UnCompleted', 'Completed'];
 
+const downloadFilterList = ['All', 'Downloaded', 'Not Downloaded'];
+
 class _LocalFavoritesFilterDialogState
     extends State<_LocalFavoritesFilterDialog> {
   late var readFilter = widget.initReadFilterSelect;
+  late var downloadFilter = widget.initDownloadFilterSelect;
   late var sourceFilter = {...widget.initSourceFilterSelect};
   late var tagFilter = {...widget.initTagFilterSelect};
   late var authorFilter = {...widget.initAuthorFilterSelect};
@@ -1967,6 +1990,20 @@ class _LocalFavoritesFilterDialogState
                 ),
               ),
               const Divider(height: 1),
+              ListTile(
+                title: Text("Filter download status".tl),
+                trailing: Select(
+                  current: downloadFilter.tl,
+                  values: downloadFilterList.map((e) => e.tl).toList(),
+                  minWidth: 64,
+                  onTap: (index) {
+                    setState(() {
+                      downloadFilter = downloadFilterList[index];
+                    });
+                  },
+                ),
+              ),
+              const Divider(height: 1),
               _buildSection(
                 title: "Filter comic source".tl,
                 expanded: sourceExpanded,
@@ -2059,6 +2096,7 @@ class _LocalFavoritesFilterDialogState
           onPressed: () {
             setState(() {
               readFilter = readFilterList[0];
+              downloadFilter = downloadFilterList[0];
               sourceFilter.clear();
               tagFilter.clear();
               authorFilter.clear();
@@ -2071,6 +2109,8 @@ class _LocalFavoritesFilterDialogState
         FilledButton(
           onPressed: () {
             appdata.implicitData["local_favorites_read_filter"] = readFilter;
+            appdata.implicitData["local_favorites_download_filter"] =
+                downloadFilter;
             appdata.implicitData["local_favorites_source_filter"] = sourceFilter
                 .toList();
             appdata.implicitData["local_favorites_tag_filter"] = tagFilter
@@ -2086,6 +2126,7 @@ class _LocalFavoritesFilterDialogState
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 widget.updateConfig(
                   readFilter,
+                  downloadFilter,
                   Set<String>.from(sourceFilter),
                   Set<String>.from(tagFilter),
                   Set<String>.from(authorFilter),
