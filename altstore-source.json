@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.0",
+          "buildVersion": "229",
+          "date": "2026-07-25",
+          "localizedDescription": "## What's Changed\n\n### Added\n- AI translation now lets you configure multiple LLM providers and switch between them\n- Migrate local comics to your WebDAV library, either the whole library or one comic at a time\n- Migration to WebDAV keeps grouped chapters (volumes / chapters / extras tabs)\n- Detail page three-dot menu now has an AI translation switch with pre-translate\n- Filter favorites by local download status (downloaded / not downloaded)\n- Pre-translate failed pages can now be retried automatically or manually\n- Confirmation prompt before pre-translating a comic that has no chapters\n- Tap a background task notification to jump straight to the matching page\n- New settings for OCR / image / translation concurrency\n\n### Changed\n- Faster pre-translation for long chapters\n- Migration dialog now keeps the original chapter titles by default, with a clearer explanation\n\n### Fixed\n- Prev / next chapter buttons at the bottom not working in seamless continuous reading\n- Comic images sometimes failing to load after a signed URL refresh\n- One failing page group no longer drags down pre-translation for the whole chapter\n- Same-name comic folders overwriting each other when resuming a migration\n- Detail page crashing for WebDAV library titles that contain a \"%\" character\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.12...v2.2.0",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.0/venera-ios-2.2.0%2B229.ipa",
+          "size": 34928350,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.1.12",
           "buildVersion": "228",
           "date": "2026-07-23",
@@ -150,11 +159,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.1.12",
-      "versionDate": "2026-07-23",
-      "versionDescription": "## What's Changed\n\n### Added\n- AI comic-page translation: while reading, page text can be translated and overlaid directly on the image, keeping the original artwork. Turned on per comic.\n- Pre-translate whole chapters ahead of time from a comic's menu, with a chapter picker and live progress; already-translated chapters are recognized across restarts.\n- Per-comic glossary: view and edit translated terms to keep names consistent across chapters, with a blocked-terms list for words you don't want translated.\n- Test translation button in settings to check your endpoint with a sample line before reading.\n- Choice of translation target language, now including Japanese, Korean, French, German, Spanish and Russian.\n- Downloadable on-device text-recognition models, organized by text detection and text recognition.\n- A help entry in AI translation settings that explains setup and usage in plain language.\n- WebDAV sync gains a \"sync local comic library\" toggle.\n- Progress bar while checking for follow-updates.\n\n### Changed\n- Translation results are now saved permanently and included in sync, so a page is only translated once.\n- Vertical text is now supported when overlaying translations on tall, narrow CJK bubbles.\n- Before pre-translating multiple chapters, an estimate of request volume is shown to avoid unexpected cost on paid endpoints.\n- Refined the translation prompt for a more natural, colloquial manga tone.\n- Minor icon visual tweak for a more comfortable look.\n\n### Fixed\n- Batch update check no longer misses comics with non-standard version numbers and wrongly reports no update.\n- Moving with one finger after zooming into an image no longer accidentally triggers swipe-to-favorite.\n- The reader top bar now reflects translating / failed status in real time.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.11...v2.1.12",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.1.12/venera-ios-2.1.12%2B228.ipa",
-      "size": 34891546
+      "version": "2.2.0",
+      "versionDate": "2026-07-25",
+      "versionDescription": "## What's Changed\n\n### Added\n- AI translation now lets you configure multiple LLM providers and switch between them\n- Migrate local comics to your WebDAV library, either the whole library or one comic at a time\n- Migration to WebDAV keeps grouped chapters (volumes / chapters / extras tabs)\n- Detail page three-dot menu now has an AI translation switch with pre-translate\n- Filter favorites by local download status (downloaded / not downloaded)\n- Pre-translate failed pages can now be retried automatically or manually\n- Confirmation prompt before pre-translating a comic that has no chapters\n- Tap a background task notification to jump straight to the matching page\n- New settings for OCR / image / translation concurrency\n\n### Changed\n- Faster pre-translation for long chapters\n- Migration dialog now keeps the original chapter titles by default, with a clearer explanation\n\n### Fixed\n- Prev / next chapter buttons at the bottom not working in seamless continuous reading\n- Comic images sometimes failing to load after a signed URL refresh\n- One failing page group no longer drags down pre-translation for the whole chapter\n- Same-name comic folders overwriting each other when resuming a migration\n- Detail page crashing for WebDAV library titles that contain a \"%\" character\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.1.12...v2.2.0",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.0/venera-ios-2.2.0%2B229.ipa",
+      "size": 34928350
     }
   ],
   "news": []
