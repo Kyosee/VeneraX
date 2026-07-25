@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
+import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/image_translation/worker_pool_selection.dart';
@@ -53,6 +54,31 @@ class _OcrPageRequest {
   /// 'auto' enables the vertical heuristic + fallback OCR chain.
   final String sourceLang;
   final WorkerModelPaths paths;
+  final int intraThreads;
+}
+
+/// Runs the ONNX inpaint model over one page. [maskRects] are the regions to
+/// erase; the worker builds the model mask from the same stroke detection the
+/// Dart path uses, so both modes erase the same pixels.
+class _InpaintRequest {
+  _InpaintRequest(
+    this.id,
+    this.pixels,
+    this.width,
+    this.height,
+    this.maskRects,
+    this.modelPath,
+    this.intraThreads,
+  );
+
+  final int id;
+  final TransferableTypedData pixels;
+  final int width;
+  final int height;
+
+  /// left,top,right,bottom quadruples, flattened.
+  final Int32List maskRects;
+  final String modelPath;
   final int intraThreads;
 }
 
@@ -111,6 +137,25 @@ class TranslationWorker {
       image,
       sourceLang: sourceLang,
       paths: paths,
+      intraThreads: intraThreads,
+    );
+  }
+
+  /// Runs the ONNX inpaint model over [image], erasing the text inside
+  /// [maskRects] (flattened left,top,right,bottom). Returns the reconstructed
+  /// RGBA pixels. Dispatched like [ocrPage] so it shares the worker pool.
+  Future<Uint8List> inpaintPage(
+    RgbaImage image, {
+    required Int32List maskRects,
+    required String modelPath,
+  }) {
+    var poolSize = _poolSize;
+    var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
+    var worker = _pickWorker(poolSize);
+    return worker.inpaintPage(
+      image,
+      maskRects: maskRects,
+      modelPath: modelPath,
       intraThreads: intraThreads,
     );
   }
@@ -224,6 +269,25 @@ class _IsolateWorker {
     );
   }
 
+  Future<Uint8List> inpaintPage(
+    RgbaImage image, {
+    required Int32List maskRects,
+    required String modelPath,
+    required int intraThreads,
+  }) {
+    return _request<Uint8List>(
+      (id) => _InpaintRequest(
+        id,
+        TransferableTypedData.fromList([image.pixels]),
+        image.width,
+        image.height,
+        maskRects,
+        modelPath,
+        intraThreads,
+      ),
+    );
+  }
+
   void release() {
     _sendPort?.send(const _ReleaseRequest());
   }
@@ -255,6 +319,13 @@ void _workerMain(SendPort mainPort) {
       try {
         var blocks = state.ocrPage(message);
         mainPort.send(_WorkerResponse(message.id, blocks, null));
+      } catch (e, s) {
+        mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
+      }
+    } else if (message is _InpaintRequest) {
+      try {
+        var pixels = state.inpaintPage(message);
+        mainPort.send(_WorkerResponse(message.id, pixels, null));
       } catch (e, s) {
         mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
       }
@@ -324,6 +395,152 @@ class _WorkerState {
       );
     }
     return blocks;
+  }
+
+  // -------------------------------------------------------------------------
+  // AI inpaint
+  // -------------------------------------------------------------------------
+
+  /// Erases the text inside each mask rect with the ONNX inpaint model and
+  /// returns the reconstructed page. The model runs on a fixed square tile per
+  /// region (padded around the rect), so a big page never becomes one giant
+  /// tensor; only the reconstructed rect is written back. The stroke mask comes
+  /// from the same [TextInpainter.computeMask] the Dart path uses.
+  Uint8List inpaintPage(_InpaintRequest req) {
+    _intraThreads = req.intraThreads;
+    var image = RgbaImage(
+      req.width,
+      req.height,
+      req.pixels.materialize().asUint8List(),
+    );
+    var session = _session(req.modelPath);
+    var rects = req.maskRects;
+    for (var i = 0; i + 3 < rects.length; i += 4) {
+      var rect = IntRect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3]);
+      var m = TextInpainter.computeMask(image, rect);
+      if (m == null) continue;
+      try {
+        _inpaintTile(image, session, m);
+      } catch (_) {
+        // A tile the model rejects (odd size, op unsupported) falls back to the
+        // Dart fill so the region is still erased, never left with raw text.
+        TextInpainter.eraseWithMask(image, m);
+      }
+    }
+    return image.pixels;
+  }
+
+  /// Runs the model over the square tile covering [m]'s window and blends the
+  /// masked pixels back. The tile is resized to the model's input side.
+  void _inpaintTile(RgbaImage image, OrtFfiSession session, TextMask m) {
+    const side = 256;
+    var tile = _resizeWindow(image, m.left, m.top, m.rw, m.rh, side, side);
+    var maskUp = _resizeMask(m.mask, m.rw, m.rh, side, side);
+
+    var imgTensor = Float32List(3 * side * side);
+    var maskTensor = Float32List(side * side);
+    var plane = side * side;
+    for (var p = 0; p < plane; p++) {
+      var masked = maskUp[p] == 1;
+      maskTensor[p] = masked ? 1.0 : 0.0;
+      for (var c = 0; c < 3; c++) {
+        // Feed the hole as mid-grey so the model does not key off the strokes.
+        var v = masked ? 127 : tile[p * 4 + c];
+        imgTensor[c * plane + p] = v / 127.5 - 1.0;
+      }
+    }
+
+    var out = session.run({
+      session.inputNames[0]: OrtInput.float32(imgTensor, const [1, 3, side, side]),
+      if (session.inputNames.length > 1)
+        session.inputNames[1]: OrtInput.float32(maskTensor, const [1, 1, side, side]),
+    }).values.first;
+
+    _blendTileBack(image, m, out.data, side);
+  }
+
+  /// Writes the model output (CHW, [-1,1] or [0,1]) back into the masked pixels,
+  /// resampling the tile back to the window and touching only masked cells.
+  void _blendTileBack(RgbaImage image, TextMask m, Float32List data, int side) {
+    var plane = side * side;
+    // Detect the model's output range: MI-GAN emits [-1,1], some emit [0,1].
+    var negative = false;
+    for (var i = 0; i < plane && i < 4096; i++) {
+      if (data[i] < -0.02) {
+        negative = true;
+        break;
+      }
+    }
+    int sample(int c, int sx, int sy) {
+      var p = sy * side + sx;
+      var v = data[c * plane + p];
+      var u = negative ? (v + 1.0) * 127.5 : v * 255.0;
+      return u.round().clamp(0, 255);
+    }
+
+    var pixels = image.pixels;
+    for (var y = 0; y < m.rh; y++) {
+      var sy = (y * side / m.rh).floor().clamp(0, side - 1);
+      for (var x = 0; x < m.rw; x++) {
+        if (m.mask[y * m.rw + x] == 0) continue;
+        var sx = (x * side / m.rw).floor().clamp(0, side - 1);
+        var di = ((m.top + y) * image.width + (m.left + x)) * 4;
+        pixels[di] = sample(0, sx, sy);
+        pixels[di + 1] = sample(1, sx, sy);
+        pixels[di + 2] = sample(2, sx, sy);
+      }
+    }
+  }
+
+  /// Bilinear resize of a window of [image] to [outW]x[outH] RGBA.
+  Uint8List _resizeWindow(
+    RgbaImage image,
+    int left,
+    int top,
+    int rw,
+    int rh,
+    int outW,
+    int outH,
+  ) {
+    var out = Uint8List(outW * outH * 4);
+    var pixels = image.pixels;
+    var imgW = image.width;
+    for (var y = 0; y < outH; y++) {
+      var fy = (y + 0.5) * rh / outH - 0.5;
+      var y0 = fy.floor().clamp(0, rh - 1);
+      var y1 = (y0 + 1).clamp(0, rh - 1);
+      var wy = fy - fy.floor();
+      for (var x = 0; x < outW; x++) {
+        var fx = (x + 0.5) * rw / outW - 0.5;
+        var x0 = fx.floor().clamp(0, rw - 1);
+        var x1 = (x0 + 1).clamp(0, rw - 1);
+        var wx = fx - fx.floor();
+        var oi = (y * outW + x) * 4;
+        for (var c = 0; c < 4; c++) {
+          var p00 = pixels[((top + y0) * imgW + left + x0) * 4 + c];
+          var p01 = pixels[((top + y0) * imgW + left + x1) * 4 + c];
+          var p10 = pixels[((top + y1) * imgW + left + x0) * 4 + c];
+          var p11 = pixels[((top + y1) * imgW + left + x1) * 4 + c];
+          var t = p00 + (p01 - p00) * wx;
+          var b = p10 + (p11 - p10) * wx;
+          out[oi + c] = (t + (b - t) * wy).round().clamp(0, 255);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Nearest-neighbour resize of the 0/1 stroke mask to the model tile size.
+  Uint8List _resizeMask(Uint8List mask, int rw, int rh, int outW, int outH) {
+    var out = Uint8List(outW * outH);
+    for (var y = 0; y < outH; y++) {
+      var sy = (y * rh / outH).floor().clamp(0, rh - 1);
+      for (var x = 0; x < outW; x++) {
+        var sx = (x * rw / outW).floor().clamp(0, rw - 1);
+        out[y * outW + x] = mask[sy * rw + sx];
+      }
+    }
+    return out;
   }
 
   /// OCR one block. In 'auto' mode a vertical block prefers the Japanese

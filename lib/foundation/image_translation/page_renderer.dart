@@ -5,30 +5,32 @@ import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
-/// Renders the translated page: the original image with each text region
-/// covered by a rounded patch in the sampled background color and the
-/// translated text laid out to fit inside it. Returns PNG bytes.
+/// Renders the translated page: draws [decoded] as the base, then lays each
+/// region's translated text over it. Returns PNG bytes.
+///
+/// In [InpaintMode.patch] the base is the untouched original and each region is
+/// covered with an opaque rounded plate in the sampled background colour (the
+/// legacy look). In [InpaintMode.smart]/[InpaintMode.ai] the caller has already
+/// erased the original lettering in [decoded.pixels], so the base is clean and
+/// each region only gets a backing plate where the placed text would otherwise
+/// be hard to read against the artwork.
 Future<Uint8List> renderTranslatedPage(
   Uint8List originalBytes,
   RgbaImage decoded,
-  List<TranslatedRegion> regions,
-) async {
-  // Decode again through the codec at the pipeline's working resolution so
-  // the drawn base matches the region coordinates.
-  var buffer = await ui.ImmutableBuffer.fromUint8List(originalBytes);
-  var descriptor = await ui.ImageDescriptor.encoded(buffer);
-  var codec = await descriptor.instantiateCodec(
-    targetWidth: decoded.width,
-    targetHeight: decoded.height,
-  );
-  var frame = await codec.getNextFrame();
-  var base = frame.image;
+  List<TranslatedRegion> regions, {
+  InpaintMode mode = InpaintMode.smart,
+}) async {
+  var base = await _baseImage(originalBytes, decoded, mode);
   try {
     var recorder = ui.PictureRecorder();
     var canvas = ui.Canvas(recorder);
     canvas.drawImage(base, ui.Offset.zero, ui.Paint());
     for (var region in regions) {
-      _drawRegion(canvas, region);
+      if (mode == InpaintMode.patch) {
+        _drawPatchRegion(canvas, region);
+      } else {
+        _drawErasedRegion(canvas, decoded, region);
+      }
     }
     var picture = recorder.endRecording();
     var rendered = await picture.toImage(decoded.width, decoded.height);
@@ -44,37 +46,66 @@ Future<Uint8List> renderTranslatedPage(
     }
   } finally {
     base.dispose();
-    codec.dispose();
-    descriptor.dispose();
-    buffer.dispose();
   }
 }
 
-void _drawRegion(ui.Canvas canvas, TranslatedRegion region) {
-  var rect = ui.Rect.fromLTRB(
-    region.rect.left.toDouble(),
-    region.rect.top.toDouble(),
-    region.rect.right.toDouble(),
-    region.rect.bottom.toDouble(),
+/// The base image to draw under the text. patch mode re-decodes the pristine
+/// original at the working resolution; the erase modes draw [decoded] itself,
+/// whose pixels were already cleaned by the inpainter.
+Future<ui.Image> _baseImage(
+  Uint8List originalBytes,
+  RgbaImage decoded,
+  InpaintMode mode,
+) async {
+  if (mode != InpaintMode.patch) {
+    var buffer = await ui.ImmutableBuffer.fromUint8List(decoded.pixels);
+    var descriptor = ui.ImageDescriptor.raw(
+      buffer,
+      width: decoded.width,
+      height: decoded.height,
+      pixelFormat: ui.PixelFormat.rgba8888,
+    );
+    var codec = await descriptor.instantiateCodec();
+    var frame = await codec.getNextFrame();
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+    return frame.image;
+  }
+  var buffer = await ui.ImmutableBuffer.fromUint8List(originalBytes);
+  var descriptor = await ui.ImageDescriptor.encoded(buffer);
+  var codec = await descriptor.instantiateCodec(
+    targetWidth: decoded.width,
+    targetHeight: decoded.height,
   );
+  var frame = await codec.getNextFrame();
+  codec.dispose();
+  descriptor.dispose();
+  buffer.dispose();
+  return frame.image;
+}
+
+ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
+  region.rect.left.toDouble(),
+  region.rect.top.toDouble(),
+  region.rect.right.toDouble(),
+  region.rect.bottom.toDouble(),
+);
+
+/// Legacy patch mode: opaque rounded plate + feathered halo, then the text.
+void _drawPatchRegion(ui.Canvas canvas, TranslatedRegion region) {
+  var rect = _rectOf(region);
   var background = ui.Color(region.backgroundColor);
 
-  // Coverage margin scales with the region so the original text — which
-  // routinely bleeds a few pixels past the detected box — is fully hidden
-  // instead of leaving edges/corners poking out. A fixed 2px was far too
-  // small for large bubbles.
+  // Coverage margin scales with the region so original text bleeding past the
+  // detected box is still hidden instead of leaving edges poking out.
   var minSide = math.min(rect.width, rect.height);
   var margin = math.max(3.0, minSide * 0.14);
   var core = rect.inflate(margin);
-
-  // Small corner radius: a large radius leaves the original text's square
-  // corners uncovered (the visible "漏边角"). Keep corners nearly square.
   var radius = ui.Radius.circular(math.min(margin, 4.0));
 
-  // Feathered halo first: a blurred patch in the sampled surrounding color
-  // blends the fill into the artwork, so a semi-transparent or textured
-  // bubble no longer gets a hard, pasted-on opaque rectangle. The opaque
-  // core drawn on top still guarantees the original text is covered.
+  // Feathered halo blends the fill into textured/translucent bubbles; the
+  // opaque core on top still guarantees the original text is covered.
   var sigma = math.max(1.5, margin * 0.6);
   canvas.drawRRect(
     ui.RRect.fromRectAndRadius(core.inflate(sigma * 0.5), radius),
@@ -87,25 +118,95 @@ void _drawRegion(ui.Canvas canvas, TranslatedRegion region) {
     ui.Paint()..color = background,
   );
 
-  // A tall, narrow bubble holding CJK text reads better set vertically
-  // (right-to-left columns), the way the original manga lettering runs;
-  // horizontal wrapping in such a box cramps every line to a few characters.
-  if (_prefersVertical(region.text, rect)) {
-    _drawVerticalText(
-      canvas,
-      region.text,
-      ui.Color(region.textColor),
-      rect,
+  _drawText(canvas, region, rect, ui.Color(region.textColor));
+}
+
+/// Erase mode: the base is already clean, so decide the text colour and whether
+/// a subtle backing plate is needed from the erased pixels under the region,
+/// then draw the text.
+void _drawErasedRegion(
+  ui.Canvas canvas,
+  RgbaImage decoded,
+  TranslatedRegion region,
+) {
+  var rect = _rectOf(region);
+  var stats = _regionStats(decoded, region.rect);
+  var textColor = stats.backgroundIsDark
+      ? const ui.Color(0xFFF5F5F5)
+      : const ui.Color(0xFF202020);
+
+  // A backing plate goes down only when the cleaned area is too busy or too
+  // close in luminance to the text to read against — a flat, uniform bubble
+  // gets nothing, so the artwork shows through.
+  if (stats.needsBacking) {
+    var plate = stats.backgroundIsDark
+        ? const ui.Color(0xC8101010)
+        : const ui.Color(0xC8FFFFFF);
+    var pad = math.max(2.0, math.min(rect.width, rect.height) * 0.06);
+    var padded = rect.inflate(pad);
+    var radius = ui.Radius.circular(math.min(padded.shortestSide * 0.5, 10.0));
+    canvas.drawRRect(
+      ui.RRect.fromRectAndRadius(padded, radius),
+      ui.Paint()..color = plate,
     );
-    return;
   }
 
-  var painter = _fitText(
-    region.text,
-    ui.Color(region.textColor),
-    rect.width - 4,
-    rect.height - 4,
-  );
+  _drawText(canvas, region, rect, textColor);
+}
+
+/// Luminance / busyness of the region on the (erased) base, deciding text
+/// colour and whether the placed text needs a backing plate.
+class _RegionStats {
+  _RegionStats(this.backgroundIsDark, this.needsBacking);
+  final bool backgroundIsDark;
+  final bool needsBacking;
+}
+
+_RegionStats _regionStats(RgbaImage image, IntRect rect) {
+  var w = image.width;
+  var left = rect.left.clamp(0, w - 1);
+  var top = rect.top.clamp(0, image.height - 1);
+  var right = rect.right.clamp(1, w);
+  var bottom = rect.bottom.clamp(1, image.height);
+  var pixels = image.pixels;
+
+  var sum = 0.0;
+  var sumSq = 0.0;
+  var count = 0;
+  // Sample on a stride grid — a full read is needless for a summary statistic.
+  var stepX = math.max(1, (right - left) ~/ 24);
+  var stepY = math.max(1, (bottom - top) ~/ 24);
+  for (var y = top; y < bottom; y += stepY) {
+    for (var x = left; x < right; x += stepX) {
+      var i = (y * w + x) * 4;
+      var l = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+      sum += l;
+      sumSq += l * l;
+      count++;
+    }
+  }
+  if (count == 0) return _RegionStats(false, false);
+  var mean = sum / count;
+  var variance = (sumSq / count) - (mean * mean);
+  var stdDev = variance <= 0 ? 0.0 : math.sqrt(variance);
+
+  // High spread means the cleaned area is textured/detailed (screentone,
+  // artwork) rather than a flat bubble — text would compete with it.
+  var needsBacking = stdDev > 34;
+  return _RegionStats(mean < 128, needsBacking);
+}
+
+void _drawText(
+  ui.Canvas canvas,
+  TranslatedRegion region,
+  ui.Rect rect,
+  ui.Color color,
+) {
+  if (_prefersVertical(region.text, rect)) {
+    _drawVerticalText(canvas, region.text, color, rect);
+    return;
+  }
+  var painter = _fitText(region.text, color, rect.width - 4, rect.height - 4);
   var offset = ui.Offset(
     rect.left + (rect.width - painter.width) / 2,
     rect.top + (rect.height - painter.height) / 2,
@@ -115,8 +216,7 @@ void _drawRegion(ui.Canvas canvas, TranslatedRegion region) {
 }
 
 /// Whether [text] should be laid out vertically inside [rect]: the region is
-/// clearly taller than wide and the text is dominated by CJK characters (the
-/// only scripts that read naturally in vertical columns).
+/// clearly taller than wide and the text is dominated by CJK characters.
 bool _prefersVertical(String text, ui.Rect rect) {
   if (rect.height < rect.width * 1.6) return false;
   var cjk = 0, total = 0;
@@ -134,9 +234,8 @@ bool _prefersVertical(String text, ui.Rect rect) {
   return cjk / total >= 0.7;
 }
 
-/// Draws [text] as vertical right-to-left columns fitted to [rect]. Punctuation
-/// keeps its glyph; the layout simply stacks one character per line down a
-/// column, wrapping to a new column to the left when the current one is full.
+/// Draws [text] as vertical right-to-left columns fitted to [rect], one
+/// character per cell, wrapping to a new column on the left when full.
 void _drawVerticalText(
   ui.Canvas canvas,
   String text,
@@ -169,8 +268,6 @@ void _drawVerticalText(
     return painter;
   }
 
-  // Shrink the glyph size until every column fits the height and the required
-  // column count fits the width.
   var upper = math.max(10.0, math.min(42.0, maxWidth * 0.9));
   const lower = 7.0;
   var size = upper;
@@ -197,7 +294,6 @@ void _drawVerticalText(
 
   var blockW = columns * cellW;
   var blockH = math.min(maxHeight, perColumn * cellH);
-  // Center the block; columns run right-to-left.
   var startRight = rect.left + (rect.width + blockW) / 2;
   var top = rect.top + (rect.height - blockH) / 2;
 
@@ -240,7 +336,6 @@ TextPainter _fitText(
     return painter;
   }
 
-  // Start from a size proportional to the region and shrink until it fits.
   var upper = math.max(10.0, math.min(42.0, maxHeight * 0.8));
   const lower = 7.0;
   var size = upper;

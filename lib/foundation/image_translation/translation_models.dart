@@ -132,7 +132,28 @@ abstract class TranslationModels {
     ],
   );
 
-  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo];
+  /// Optional lettering-removal model for the "AI erase" render mode (MI-GAN,
+  /// a mobile-optimised inpainter). Small and language independent. When absent
+  /// the erase modes fall back to the pure-Dart eraser, so this is never
+  /// required for translation itself — only for the sharpest background
+  /// reconstruction on busy artwork.
+  static const inpaint = ModelComponent(
+    id: 'inpaint',
+    approxSizeBytes: 28000000,
+    files: [
+      ModelFile('inpaint.onnx', [
+        '{hf}/Carve/migan-onnx/resolve/main/migan_pipeline_v2.onnx',
+      ]),
+    ],
+  );
+
+  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo, inpaint];
+
+  /// Path to the installed inpaint model, or null when it is not downloaded —
+  /// the "AI erase" mode then degrades to the pure-Dart eraser.
+  static String? inpaintModelPath() {
+    return inpaint.isInstalled ? inpaint.filePath('inpaint.onnx') : null;
+  }
 
   static ModelComponent? find(String id) {
     for (var c in all) {

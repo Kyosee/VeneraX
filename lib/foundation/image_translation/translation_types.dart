@@ -98,3 +98,39 @@ class TranslatedRegion {
 class PipelineCanceled implements Exception {
   const PipelineCanceled();
 }
+
+/// How the original lettering is removed before the translation is drawn.
+///
+/// The mode is part of the rendered-image cache key (a one-char token), so
+/// switching it re-renders from the already-stored text result without
+/// re-running OCR or the LLM, and switching back serves the earlier render.
+enum InpaintMode {
+  /// Legacy: cover each region with an opaque rounded patch in the sampled
+  /// background colour. Fast and universal, but a big bubble becomes a big
+  /// solid block and a textured/translucent bubble gets a pasted-on look.
+  patch('p'),
+
+  /// Pure-Dart erase: estimate the text strokes inside each region and fill
+  /// only those pixels from the surrounding non-text pixels, keeping the
+  /// bubble shape, screentone and gradients. A backing plate is added only
+  /// where the placed translation would be hard to read. Default.
+  smart('s'),
+
+  /// AI erase: an ONNX inpainting model reconstructs the region. Best on busy
+  /// backgrounds; needs a model download and more compute. Falls back to
+  /// [smart] when the model is not installed.
+  ai('a');
+
+  const InpaintMode(this.token);
+
+  /// One-character tag appended to the rendered-image cache key.
+  final String token;
+
+  static InpaintMode fromSettings(Object? value) {
+    return switch (value) {
+      'patch' => InpaintMode.patch,
+      'ai' => InpaintMode.ai,
+      _ => InpaintMode.smart,
+    };
+  }
+}
