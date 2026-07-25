@@ -107,6 +107,34 @@ void main() {
       // A 2px rect is below the working-window minimum.
       expect(() => TextInpainter.erase(img, [IntRect(4, 4, 6, 6)]), returnsNormally);
     });
+
+    test('drops isolated speck noise, keeps a real stroke', () {
+      // A light crop with one real stroke block plus a single stray dark pixel.
+      // The speck is below the noise floor and must not be erased/counted.
+      var img = _solid(60, 60, 245, 245, 245);
+      for (var y = 24; y < 36; y++) {
+        for (var x = 20; x < 40; x++) {
+          var i = (y * 60 + x) * 4;
+          img.pixels[i] = 20;
+          img.pixels[i + 1] = 20;
+          img.pixels[i + 2] = 20;
+        }
+      }
+      // A lone dark speck far from the stroke.
+      var si = (10 * 60 + 10) * 4;
+      img.pixels[si] = 20;
+      img.pixels[si + 1] = 20;
+      img.pixels[si + 2] = 20;
+
+      var m = TextInpainter.computeMask(img, IntRect(6, 6, 54, 54));
+      expect(m, isNotNull);
+      // The stroke centre survives filtering.
+      var cx = 30 - m!.left, cy = 30 - m.top;
+      expect(m.mask[cy * m.rw + cx], equals(1));
+      // The lone speck was dropped as noise.
+      var sx = 10 - m.left, sy = 10 - m.top;
+      expect(m.mask[sy * m.rw + sx], equals(0));
+    });
   });
 
   group('InpaintMode', () {

@@ -1005,36 +1005,172 @@ Float32List _cropNormalized(RgbaImage image, IntRect rect, int outW, int outH) {
   return tensor;
 }
 
-/// Samples the ring outside a rect: (backgroundColor, textColor).
+/// Estimates (backgroundColor, textColor) for a region by separating the two
+/// dominant colour classes inside it.
+///
+/// The block's pixels split into a background class (bubble fill, the larger
+/// share) and a text class (the strokes). An Otsu luminance threshold labels
+/// each pixel, then the mean colour of each class is taken — so the text colour
+/// is the *actual* ink (a coloured SFX, a grey caption) rather than a flat
+/// dark/light guess, and the background is the *actual* fill sampled from the
+/// non-stroke pixels rather than a ring outside the box that may fall on
+/// artwork. A ring sample still seeds the background when the split is
+/// degenerate (near-uniform crop), and the returned text colour is nudged to
+/// keep a minimum contrast against the background so it stays legible.
 (int, int) _sampleColors(RgbaImage image, IntRect rect) {
-  var ring = rect.inflated(6, 6, image.width, image.height);
-  var rs = <int>[], gs = <int>[], bs = <int>[];
-  void sample(int x, int y) {
-    var i = (y * image.width + x) * 4;
-    rs.add(image.pixels[i]);
-    gs.add(image.pixels[i + 1]);
-    bs.add(image.pixels[i + 2]);
+  var w = image.width;
+  var left = rect.left.clamp(0, w - 1);
+  var top = rect.top.clamp(0, image.height - 1);
+  var right = rect.right.clamp(1, w);
+  var bottom = rect.bottom.clamp(1, image.height);
+  var pixels = image.pixels;
+
+  // Stride so a big block stays cheap; small blocks read every pixel.
+  var stepX = math.max(1, (right - left) ~/ 48);
+  var stepY = math.max(1, (bottom - top) ~/ 48);
+
+  var lum = <int>[];
+  var pr = <int>[], pg = <int>[], pb = <int>[];
+  for (var y = top; y < bottom; y += stepY) {
+    for (var x = left; x < right; x += stepX) {
+      var i = (y * w + x) * 4;
+      var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+      pr.add(r);
+      pg.add(g);
+      pb.add(b);
+      lum.add((0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255));
+    }
   }
 
-  for (var x = ring.left; x < ring.right; x += 3) {
-    sample(x, ring.top);
-    sample(x, ring.bottom - 1);
-  }
-  for (var y = ring.top; y < ring.bottom; y += 3) {
-    sample(ring.left, y);
-    sample(ring.right - 1, y);
-  }
-  int median(List<int> values) {
-    if (values.isEmpty) return 255;
-    values.sort();
-    return values[values.length ~/ 2];
+  int ringMedianColor() {
+    var ring = rect.inflated(6, 6, w, image.height);
+    var rs = <int>[], gs = <int>[], bs = <int>[];
+    void s(int x, int y) {
+      var i = (y * w + x) * 4;
+      rs.add(pixels[i]);
+      gs.add(pixels[i + 1]);
+      bs.add(pixels[i + 2]);
+    }
+
+    for (var x = ring.left; x < ring.right; x += 3) {
+      s(x, ring.top);
+      s(x, ring.bottom - 1);
+    }
+    for (var y = ring.top; y < ring.bottom; y += 3) {
+      s(ring.left, y);
+      s(ring.right - 1, y);
+    }
+    int med(List<int> v) {
+      if (v.isEmpty) return 255;
+      v.sort();
+      return v[v.length ~/ 2];
+    }
+
+    return 0xFF000000 | (med(rs) << 16) | (med(gs) << 8) | med(bs);
   }
 
-  var r = median(rs), g = median(gs), b = median(bs);
-  var luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  var textColor = luminance < 128 ? 0xFFF5F5F5 : 0xFF202020;
-  var backgroundColor = 0xFF000000 | (r << 16) | (g << 8) | b;
-  return (backgroundColor, textColor);
+  if (lum.length < 8) {
+    var bg = ringMedianColor();
+    var bgLum = 0.299 * ((bg >> 16) & 0xFF) +
+        0.587 * ((bg >> 8) & 0xFF) +
+        0.114 * (bg & 0xFF);
+    return (bg, bgLum < 128 ? 0xFFF5F5F5 : 0xFF202020);
+  }
+
+  var threshold = _otsuOf(lum);
+  var loSumR = 0, loSumG = 0, loSumB = 0, loN = 0;
+  var hiSumR = 0, hiSumG = 0, hiSumB = 0, hiN = 0;
+  for (var i = 0; i < lum.length; i++) {
+    if (lum[i] <= threshold) {
+      loSumR += pr[i];
+      loSumG += pg[i];
+      loSumB += pb[i];
+      loN++;
+    } else {
+      hiSumR += pr[i];
+      hiSumG += pg[i];
+      hiSumB += pb[i];
+      hiN++;
+    }
+  }
+
+  // The background is the larger class; text is the smaller. A block that is
+  // almost entirely one class (no real strokes visible) falls back to the ring.
+  if (loN == 0 || hiN == 0) {
+    var bg = ringMedianColor();
+    var bgLum = 0.299 * ((bg >> 16) & 0xFF) +
+        0.587 * ((bg >> 8) & 0xFF) +
+        0.114 * (bg & 0xFF);
+    return (bg, bgLum < 128 ? 0xFFF5F5F5 : 0xFF202020);
+  }
+
+  int packMean(int sr, int sg, int sb, int n) =>
+      0xFF000000 |
+      ((sr ~/ n) << 16) |
+      ((sg ~/ n) << 8) |
+      (sb ~/ n);
+  var loColor = packMean(loSumR, loSumG, loSumB, loN);
+  var hiColor = packMean(hiSumR, hiSumG, hiSumB, hiN);
+
+  // Background = majority class, text = minority class.
+  int bgColor, textColor;
+  if (loN >= hiN) {
+    bgColor = loColor;
+    textColor = hiColor;
+  } else {
+    bgColor = hiColor;
+    textColor = loColor;
+  }
+
+  textColor = _ensureContrast(textColor, bgColor);
+  return (bgColor, textColor);
+}
+
+/// Otsu threshold over a luminance sample list (worker-side twin of the one in
+/// inpaint.dart, which takes a Uint8List).
+int _otsuOf(List<int> lum) {
+  var hist = Int32List(256);
+  for (var l in lum) {
+    hist[l]++;
+  }
+  var total = lum.length;
+  var sum = 0.0;
+  for (var t = 0; t < 256; t++) {
+    sum += t * hist[t];
+  }
+  var sumB = 0.0;
+  var wB = 0;
+  var maxVar = -1.0;
+  var threshold = 127;
+  for (var t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB == 0) continue;
+    var wF = total - wB;
+    if (wF == 0) break;
+    sumB += t * hist[t];
+    var mB = sumB / wB;
+    var mF = (sum - sumB) / wF;
+    var between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) {
+      maxVar = between;
+      threshold = t;
+    }
+  }
+  return threshold;
+}
+
+/// Nudges [text] away from [bg] when their luminance is too close, so the drawn
+/// text stays readable. Keeps [text]'s hue, only pushing it darker or lighter.
+int _ensureContrast(int text, int bg) {
+  double lumOf(int c) =>
+      0.299 * ((c >> 16) & 0xFF) +
+      0.587 * ((c >> 8) & 0xFF) +
+      0.114 * (c & 0xFF);
+  var tl = lumOf(text);
+  var bl = lumOf(bg);
+  if ((tl - bl).abs() >= 60) return text;
+  // Too close: fall back to a high-contrast neutral against the background.
+  return bl < 128 ? 0xFFF5F5F5 : 0xFF202020;
 }
 
 double _iou(IntRect a, IntRect b) {

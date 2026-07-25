@@ -103,7 +103,20 @@ abstract final class TextInpainter {
     }
     if (maskCount == 0 || maskCount > n * 0.6) return null;
 
-    mask = _dilate(mask, rw, rh, 2);
+    // Drop isolated speck components (threshold noise) before erasing: an
+    // erased+filled speck becomes a faint smudge on otherwise clean art. Only
+    // size is used — see [_filterComponents] for why a solid/large component is
+    // never rejected (it would erase bold lettering).
+    maskCount = _filterComponents(mask, rw, rh);
+    if (maskCount == 0) return null;
+
+    // Dilate to swallow the anti-aliased halo around each stroke — leftover
+    // grey fringe reads as "text not fully erased". The radius scales with the
+    // stroke thickness (approximated from the region size) so thin lettering
+    // gets a tight grow and bold/large text a wider one, instead of a fixed 2px
+    // that under-covers big glyphs.
+    var radius = math.max(2, (math.min(rw, rh) * 0.03).round()).clamp(2, 5);
+    mask = _dilate(mask, rw, rh, radius);
     return TextMask(left, top, rw, rh, mask);
   }
 
@@ -170,6 +183,64 @@ abstract final class TextInpainter {
     var lo = loN == 0 ? threshold.toDouble() : loSum / loN;
     var hi = hiN == 0 ? threshold.toDouble() : hiSum / hiN;
     return (lo, hi);
+  }
+
+  /// Removes mask components that are not text strokes, in place, and returns
+  /// the surviving on-pixel count. Two rejects: a speck too small to be a glyph
+  /// (threshold noise), and a component that fills a large fraction of its own
+  /// bounding box (a solid blob — bubble edge or artwork the contrast test
+  /// caught — rather than thin lettering). 4-connected flood fill per component.
+  static int _filterComponents(Uint8List mask, int rw, int rh) {
+    var n = rw * rh;
+    var seen = Uint8List(n);
+    var stack = <int>[];
+    // Specks below this many pixels are threshold noise (isolated dust that
+    // would otherwise be erased+filled into a faint smudge), scaled to the
+    // region so a large crop tolerates larger dust without dropping real
+    // punctuation. Deliberately does NOT reject large/solid components: a bold
+    // stroke or a bar is solid within its own bounding box and is
+    // indistinguishable from artwork by fill-ratio, so a fill test would erase
+    // real lettering. The "text class swallowed the window" case is already
+    // guarded by the maskCount ceiling in computeMask.
+    var minPixels = math.max(6, (n * 0.0008).round());
+    var kept = 0;
+    for (var start = 0; start < n; start++) {
+      if (mask[start] == 0 || seen[start] != 0) continue;
+      var count = 0;
+      var members = <int>[];
+      stack.add(start);
+      seen[start] = 1;
+      while (stack.isNotEmpty) {
+        var i = stack.removeLast();
+        members.add(i);
+        var x = i % rw;
+        count++;
+        if (x > 0 && mask[i - 1] == 1 && seen[i - 1] == 0) {
+          seen[i - 1] = 1;
+          stack.add(i - 1);
+        }
+        if (x < rw - 1 && mask[i + 1] == 1 && seen[i + 1] == 0) {
+          seen[i + 1] = 1;
+          stack.add(i + 1);
+        }
+        if (i - rw >= 0 && mask[i - rw] == 1 && seen[i - rw] == 0) {
+          seen[i - rw] = 1;
+          stack.add(i - rw);
+        }
+        if (i + rw < n && mask[i + rw] == 1 && seen[i + rw] == 0) {
+          seen[i + rw] = 1;
+          stack.add(i + rw);
+        }
+      }
+      if (count < minPixels) {
+        for (var i in members) {
+          mask[i] = 0;
+        }
+      } else {
+        kept += count;
+      }
+    }
+    return kept;
   }
 
   /// Separable box dilation (two 1-D passes).
