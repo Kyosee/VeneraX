@@ -289,6 +289,11 @@ class Appdata with Init {
     }
     _initSourceTypeRegistry();
     LlmProviderStore.migrateLegacyIfNeeded();
+    // The 'ai' erase mode was removed; coerce any persisted value back to the
+    // default so the settings dropdown doesn't show a blank (unmatched) option.
+    if (settings['imageTranslationInpaintMode'] == 'ai') {
+      settings['imageTranslationInpaintMode'] = 'smart';
+    }
   }
 }
 
@@ -448,10 +453,9 @@ class Settings with ChangeNotifier {
     // 翻译与预翻译共用同一按服务商分桶的限流器。
     'imageTranslationLlmConcurrency': 2,
     // 译文嵌字方式：patch=旧的纯色块盖字（保底、全平台）；smart=智能擦除，纯
-    // Dart 估文字笔画并用邻域填充抹掉原文，仅在需要时加描边/半透明底（默认）；
-    // ai=用可选下载的移动级 inpaint 模型擦除，未安装时自动降级到 smart。渲染图
-    // 缓存键会带此模式的标记，切换后自动从已存文本重渲，不重跑 OCR/翻译。
-    'imageTranslationInpaintMode': 'smart', // patch, smart, ai
+    // Dart 估文字笔画并用邻域填充抹掉原文，仅在需要时加描边/半透明底（默认）。
+    // 渲染图缓存键会带此模式的标记，切换后自动从已存文本重渲，不重跑 OCR/翻译。
+    'imageTranslationInpaintMode': 'smart', // patch, smart
   };
 
   operator [](String key) {

@@ -140,7 +140,6 @@ void main() {
   group('InpaintMode', () {
     test('fromSettings maps values and defaults to smart', () {
       expect(InpaintMode.fromSettings('patch'), InpaintMode.patch);
-      expect(InpaintMode.fromSettings('ai'), InpaintMode.ai);
       expect(InpaintMode.fromSettings('smart'), InpaintMode.smart);
       expect(InpaintMode.fromSettings(null), InpaintMode.smart);
       expect(InpaintMode.fromSettings('nonsense'), InpaintMode.smart);

@@ -44,6 +44,7 @@ class OcrBlock {
     required this.language,
     required this.backgroundColor,
     required this.textColor,
+    this.lineHeight = 0,
   });
 
   final IntRect rect;
@@ -56,6 +57,12 @@ class OcrBlock {
 
   final int backgroundColor;
   final int textColor;
+
+  /// Median height (px) of the original text lines in this block — the source
+  /// lettering's approximate font size. The renderer caps the translated glyph
+  /// size to this so a small original caption stays small instead of growing to
+  /// fill the whole detected box. 0 means unknown (fall back to box-based fit).
+  final int lineHeight;
 }
 
 /// A translated text block ready for rendering.
@@ -65,12 +72,18 @@ class TranslatedRegion {
     required this.text,
     required this.backgroundColor,
     required this.textColor,
+    this.lineHeight = 0,
   });
 
   final IntRect rect;
   final String text;
   final int backgroundColor;
   final int textColor;
+
+  /// Original lettering's approximate font size (px), carried from OCR so the
+  /// renderer can keep the translated glyphs close to the source size instead
+  /// of scaling them to fill the detected box. 0 = unknown (box-based fit).
+  final int lineHeight;
 
   /// Compact JSON for the text-level result cache: lets a page be re-rendered
   /// after the rendered image was evicted, without re-running OCR or paying
@@ -83,6 +96,7 @@ class TranslatedRegion {
     'text': text,
     'bg': backgroundColor,
     'fg': textColor,
+    if (lineHeight > 0) 'lh': lineHeight,
   };
 
   factory TranslatedRegion.fromJson(Map<String, dynamic> json) {
@@ -91,6 +105,7 @@ class TranslatedRegion {
       text: json['text'],
       backgroundColor: json['bg'],
       textColor: json['fg'],
+      lineHeight: json['lh'] ?? 0,
     );
   }
 }
@@ -114,12 +129,7 @@ enum InpaintMode {
   /// only those pixels from the surrounding non-text pixels, keeping the
   /// bubble shape, screentone and gradients. A backing plate is added only
   /// where the placed translation would be hard to read. Default.
-  smart('s'),
-
-  /// AI erase: an ONNX inpainting model reconstructs the region. Best on busy
-  /// backgrounds; needs a model download and more compute. Falls back to
-  /// [smart] when the model is not installed.
-  ai('a');
+  smart('s');
 
   const InpaintMode(this.token);
 
@@ -129,7 +139,6 @@ enum InpaintMode {
   static InpaintMode fromSettings(Object? value) {
     return switch (value) {
       'patch' => InpaintMode.patch,
-      'ai' => InpaintMode.ai,
       _ => InpaintMode.smart,
     };
   }

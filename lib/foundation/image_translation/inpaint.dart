@@ -101,6 +101,12 @@ abstract final class TextInpainter {
         maskCount++;
       }
     }
+    // Nothing found, or more than 60% of the window flagged: stroke detection
+    // is untrustworthy here (a stylized/low-contrast crop the Otsu split
+    // misread, or dense bold lettering / heavy screentone). Bail rather than
+    // erase — a solid fill over the whole box smears art titles and thick
+    // display lettering into a blur, so it's better to leave the original and
+    // draw the translation over it.
     if (maskCount == 0 || maskCount > n * 0.6) return null;
 
     // Drop isolated speck components (threshold noise) before erasing: an

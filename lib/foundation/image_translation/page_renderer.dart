@@ -10,7 +10,7 @@ import 'package:venera/foundation/image_translation/translation_types.dart';
 ///
 /// In [InpaintMode.patch] the base is the untouched original and each region is
 /// covered with an opaque rounded plate in the sampled background colour (the
-/// legacy look). In [InpaintMode.smart]/[InpaintMode.ai] the caller has already
+/// legacy look). In [InpaintMode.smart] the caller has already
 /// erased the original lettering in [decoded.pixels], so the base is clean and
 /// each region only gets a backing plate where the placed text would otherwise
 /// be hard to read against the artwork.
@@ -178,12 +178,14 @@ void _drawText(
   ui.Color? outline,
 }) {
   if (_prefersVertical(region.text, rect)) {
-    _drawVerticalText(canvas, region.text, color, rect, outline: outline);
+    _drawVerticalText(canvas, region.text, color, rect,
+        outline: outline, lineHeight: region.lineHeight);
     return;
   }
   var maxWidth = rect.width - 4;
   var maxHeight = rect.height - 4;
-  var size = _fitFontSize(region.text, maxWidth, maxHeight);
+  var size = _fitFontSize(region.text, maxWidth, maxHeight,
+      lineHeight: region.lineHeight);
   if (outline != null) {
     var strokePainter = _horizontalPainter(
       region.text,
@@ -276,6 +278,7 @@ void _drawVerticalText(
   ui.Color color,
   ui.Rect rect, {
   ui.Color? outline,
+  int lineHeight = 0,
 }) {
   var chars = text.runes
       .map((r) => String.fromCharCode(r))
@@ -295,7 +298,13 @@ void _drawVerticalText(
     return painter;
   }
 
-  var upper = math.max(10.0, math.min(42.0, maxWidth * 0.9));
+  // Cap by the original lettering size when known, so a small vertical caption
+  // stays small instead of growing to fill the column width.
+  var cap = 42.0;
+  if (lineHeight > 0) {
+    cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
+  }
+  var upper = math.max(10.0, math.min(cap, maxWidth * 0.9));
   const lower = 7.0;
   var size = upper;
   var chosen = lower;
@@ -351,8 +360,24 @@ void _drawVerticalText(
 }
 
 /// Largest font size whose wrapped horizontal layout fits [maxWidth]x[maxHeight].
-double _fitFontSize(String text, double maxWidth, double maxHeight) {
-  var upper = math.max(10.0, math.min(42.0, maxHeight * 0.8));
+///
+/// [lineHeight] is the original lettering's approximate size (px, 0 = unknown).
+/// When known it caps the glyph size so the translation stays close to the
+/// source scale — a small caption stays small instead of being blown up to fill
+/// the detected box. The detector's line box already spans the full line with
+/// leading and CJK glyphs fill the em, so the cap sits slightly *below* the box
+/// height (0.9x) to keep the translation from reading larger than the source.
+double _fitFontSize(
+  String text,
+  double maxWidth,
+  double maxHeight, {
+  int lineHeight = 0,
+}) {
+  var cap = 42.0;
+  if (lineHeight > 0) {
+    cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
+  }
+  var upper = math.max(10.0, math.min(cap, maxHeight * 0.8));
   const lower = 7.0;
   var size = upper;
   while (size > lower) {

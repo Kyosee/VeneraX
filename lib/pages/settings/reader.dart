@@ -947,11 +947,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               title: "Text removal".tl,
               settingKey: "imageTranslationInpaintMode",
               help:
-                  "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; AI erase is sharper on busy art but needs a model download; Color patch is the old opaque block."
+                  "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
                       .tl,
               optionTranslation: {
                 "smart": "Smart erase".tl,
-                "ai": "AI erase (needs model)".tl,
                 "patch": "Color patch".tl,
               },
               onChanged: () {

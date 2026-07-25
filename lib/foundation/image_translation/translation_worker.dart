@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
-import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/image_translation/worker_pool_selection.dart';
@@ -54,31 +53,6 @@ class _OcrPageRequest {
   /// 'auto' enables the vertical heuristic + fallback OCR chain.
   final String sourceLang;
   final WorkerModelPaths paths;
-  final int intraThreads;
-}
-
-/// Runs the ONNX inpaint model over one page. [maskRects] are the regions to
-/// erase; the worker builds the model mask from the same stroke detection the
-/// Dart path uses, so both modes erase the same pixels.
-class _InpaintRequest {
-  _InpaintRequest(
-    this.id,
-    this.pixels,
-    this.width,
-    this.height,
-    this.maskRects,
-    this.modelPath,
-    this.intraThreads,
-  );
-
-  final int id;
-  final TransferableTypedData pixels;
-  final int width;
-  final int height;
-
-  /// left,top,right,bottom quadruples, flattened.
-  final Int32List maskRects;
-  final String modelPath;
   final int intraThreads;
 }
 
@@ -137,25 +111,6 @@ class TranslationWorker {
       image,
       sourceLang: sourceLang,
       paths: paths,
-      intraThreads: intraThreads,
-    );
-  }
-
-  /// Runs the ONNX inpaint model over [image], erasing the text inside
-  /// [maskRects] (flattened left,top,right,bottom). Returns the reconstructed
-  /// RGBA pixels. Dispatched like [ocrPage] so it shares the worker pool.
-  Future<Uint8List> inpaintPage(
-    RgbaImage image, {
-    required Int32List maskRects,
-    required String modelPath,
-  }) {
-    var poolSize = _poolSize;
-    var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
-    var worker = _pickWorker(poolSize);
-    return worker.inpaintPage(
-      image,
-      maskRects: maskRects,
-      modelPath: modelPath,
       intraThreads: intraThreads,
     );
   }
@@ -269,25 +224,6 @@ class _IsolateWorker {
     );
   }
 
-  Future<Uint8List> inpaintPage(
-    RgbaImage image, {
-    required Int32List maskRects,
-    required String modelPath,
-    required int intraThreads,
-  }) {
-    return _request<Uint8List>(
-      (id) => _InpaintRequest(
-        id,
-        TransferableTypedData.fromList([image.pixels]),
-        image.width,
-        image.height,
-        maskRects,
-        modelPath,
-        intraThreads,
-      ),
-    );
-  }
-
   void release() {
     _sendPort?.send(const _ReleaseRequest());
   }
@@ -319,13 +255,6 @@ void _workerMain(SendPort mainPort) {
       try {
         var blocks = state.ocrPage(message);
         mainPort.send(_WorkerResponse(message.id, blocks, null));
-      } catch (e, s) {
-        mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
-      }
-    } else if (message is _InpaintRequest) {
-      try {
-        var pixels = state.inpaintPage(message);
-        mainPort.send(_WorkerResponse(message.id, pixels, null));
       } catch (e, s) {
         mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
       }
@@ -384,6 +313,11 @@ class _WorkerState {
       var (text, lang) = _recognizeBlock(image, cluster, bounds, req);
       text = text.trim();
       if (text.isEmpty) continue;
+      // Median line height across the cluster's line boxes ≈ the original
+      // glyph height, so the renderer can size the translation to match the
+      // source text instead of stretching it to fill the (often much taller)
+      // detected block box — a short line in a tall box otherwise ballooned.
+      var lineHeight = _medianLineHeight(cluster);
       blocks.add(
         OcrBlock(
           rect: bounds,
@@ -391,250 +325,19 @@ class _WorkerState {
           language: lang,
           backgroundColor: colors.$1,
           textColor: colors.$2,
+          lineHeight: lineHeight,
         ),
       );
     }
     return blocks;
   }
 
-  // -------------------------------------------------------------------------
-  // AI inpaint
-  // -------------------------------------------------------------------------
-
-  /// Erases the text inside every mask rect with the ONNX inpaint model and
-  /// returns the reconstructed page.
-  ///
-  /// One model run per page, not per region. Running LaMa once per bubble made
-  /// a text-heavy page fire 5-15 inferences (~0.5s each warm on desktop, several
-  /// times slower on mobile), which was the real source of the "AI erase is
-  /// slow" experience. Instead every region's stroke mask is composited into a
-  /// single page-level mask, and one square tile covering the *union* of all
-  /// masked regions is sent to the model once. Text is usually clustered, so the
-  /// union box is far smaller than the whole page and keeps good resolution;
-  /// only when text is scattered corner-to-corner does the tile approach the
-  /// full page. Cost is now a fixed single inference regardless of bubble count.
-  ///
-  /// Falls back to the pure-Dart fill for the whole page if the single run
-  /// throws (unsupported op, odd size), so text is never left showing through.
-  Uint8List inpaintPage(_InpaintRequest req) {
-    _intraThreads = req.intraThreads;
-    var image = RgbaImage(
-      req.width,
-      req.height,
-      req.pixels.materialize().asUint8List(),
-    );
-    var rects = req.maskRects;
-
-    // Build one page-level stroke mask + the union bounding box of every
-    // region's strokes, reusing the same [TextInpainter.computeMask] the Dart
-    // path uses so both modes erase the same pixels.
-    var pageMask = Uint8List(req.width * req.height);
-    var masks = <TextMask>[];
-    var uL = req.width, uT = req.height, uR = 0, uB = 0;
-    for (var i = 0; i + 3 < rects.length; i += 4) {
-      var rect = IntRect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3]);
-      var m = TextInpainter.computeMask(image, rect);
-      if (m == null) continue;
-      masks.add(m);
-      for (var y = 0; y < m.rh; y++) {
-        var pageRow = (m.top + y) * req.width;
-        var maskRow = y * m.rw;
-        for (var x = 0; x < m.rw; x++) {
-          if (m.mask[maskRow + x] == 0) continue;
-          pageMask[pageRow + m.left + x] = 1;
-          var px = m.left + x, py = m.top + y;
-          if (px < uL) uL = px;
-          if (px + 1 > uR) uR = px + 1;
-          if (py < uT) uT = py;
-          if (py + 1 > uB) uB = py + 1;
-        }
-      }
-    }
-    if (masks.isEmpty || uR <= uL || uB <= uT) {
-      return image.pixels;
-    }
-
-    // Resolution guard: the single square window is downscaled to 512 before
-    // the model sees it, so a large window means each glyph loses detail and
-    // LaMa reconstructs a blurry patch. Text is normally clustered, so the
-    // union box stays small; but a page with lettering scattered corner to
-    // corner blows the window up toward full-page and would erase to mush.
-    // Above ~2x downscale (window > 1024) the AI result is worse than the
-    // pure-Dart fill, so that page falls back to Dart smart erase instead —
-    // clustered pages get AI, scattered pages stay sharp.
-    const maxWindow = 1024;
-    var win = _unionWindow(image.width, image.height, uL, uT, uR, uB);
-    if (win > maxWindow) {
-      for (var m in masks) {
-        TextInpainter.eraseWithMask(image, m);
-      }
-      return image.pixels;
-    }
-
-    try {
-      _inpaintUnion(image, _session(req.modelPath), pageMask, uL, uT, uR, uB);
-    } catch (_) {
-      // The single run failed: erase every region with the Dart fill so the
-      // page is still clean rather than showing raw text.
-      for (var m in masks) {
-        TextInpainter.eraseWithMask(image, m);
-      }
-    }
-    return image.pixels;
-  }
-
-  /// The side of the square window [_inpaintUnion] would use for the union box
-  /// [uL,uT,uR,uB]. Shared with the resolution guard so both agree on the size.
-  int _unionWindow(int imgW, int imgH, int uL, int uT, int uR, int uB) {
-    var win = math.max(uR - uL, uB - uT);
-    win = (win * 1.15).round();
-    return math.min(win, math.min(imgW, imgH));
-  }
-
-  /// Runs LaMa once over the square tile covering the union box
-  /// [uL,uT,uR,uB] of all masked strokes, then blends the reconstructed masked
-  /// pixels back. A square window (the model input is 512x512) is centered on
-  /// the union box and clamped to the page so the aspect ratio is preserved and
-  /// no stroke sits on the tile edge.
-  void _inpaintUnion(
-    RgbaImage image,
-    OrtFfiSession session,
-    Uint8List pageMask,
-    int uL,
-    int uT,
-    int uR,
-    int uB,
-  ) {
-    const side = 512;
-    // Same square window the resolution guard sized, so both agree.
-    var win = _unionWindow(image.width, image.height, uL, uT, uR, uB);
-    var cx = (uL + uR) ~/ 2;
-    var cy = (uT + uB) ~/ 2;
-    var left = (cx - win ~/ 2).clamp(0, image.width - win);
-    var top = (cy - win ~/ 2).clamp(0, image.height - win);
-    var rw = win, rh = win;
-
-    var tile = _resizeWindow(image, left, top, rw, rh, side, side);
-    var maskUp = _resizeMaskWindow(pageMask, image.width, left, top, rw, rh,
-        side, side);
-
-    var imgTensor = Float32List(3 * side * side);
-    var maskTensor = Float32List(side * side);
-    var plane = side * side;
-    for (var p = 0; p < plane; p++) {
-      maskTensor[p] = maskUp[p] == 1 ? 1.0 : 0.0;
-      for (var c = 0; c < 3; c++) {
-        imgTensor[c * plane + p] = tile[p * 4 + c] / 255.0;
-      }
-    }
-
-    var out = session.run({
-      'image': OrtInput.float32(imgTensor, const [1, 3, side, side]),
-      'mask': OrtInput.float32(maskTensor, const [1, 1, side, side]),
-    }).values.first;
-
-    _blendWindowBack(image, pageMask, out.data, side, left, top, rw, rh);
-  }
-
-  /// Nearest-neighbour resize of a window of the page-sized 0/1 [pageMask] to
-  /// the model tile size. Mirrors [_resizeWindow]'s window sampling so mask and
-  /// image line up cell-for-cell.
-  Uint8List _resizeMaskWindow(
-    Uint8List pageMask,
-    int imgW,
-    int left,
-    int top,
-    int rw,
-    int rh,
-    int outW,
-    int outH,
-  ) {
-    var out = Uint8List(outW * outH);
-    for (var y = 0; y < outH; y++) {
-      var sy = (y * rh / outH).floor().clamp(0, rh - 1);
-      for (var x = 0; x < outW; x++) {
-        var sx = (x * rw / outW).floor().clamp(0, rw - 1);
-        out[y * outW + x] = pageMask[(top + sy) * imgW + (left + sx)];
-      }
-    }
-    return out;
-  }
-
-  /// Writes the model output (CHW) back into the window, touching only the
-  /// pixels flagged in [pageMask]. LaMa emits [0,255]; a model that emitted
-  /// [0,1] would collapse to black, so scale up if the tile never exceeds ~1.
-  void _blendWindowBack(
-    RgbaImage image,
-    Uint8List pageMask,
-    Float32List data,
-    int side,
-    int left,
-    int top,
-    int rw,
-    int rh,
-  ) {
-    var plane = side * side;
-    var maxVal = 0.0;
-    for (var i = 0; i < data.length; i++) {
-      if (data[i] > maxVal) maxVal = data[i];
-    }
-    var scale = maxVal <= 1.5 ? 255.0 : 1.0;
-    int sample(int c, int sx, int sy) {
-      var v = data[c * plane + sy * side + sx] * scale;
-      return v.round().clamp(0, 255);
-    }
-
-    var pixels = image.pixels;
-    var imgW = image.width;
-    for (var y = 0; y < rh; y++) {
-      var sy = (y * side / rh).floor().clamp(0, side - 1);
-      for (var x = 0; x < rw; x++) {
-        if (pageMask[(top + y) * imgW + (left + x)] == 0) continue;
-        var sx = (x * side / rw).floor().clamp(0, side - 1);
-        var di = ((top + y) * imgW + (left + x)) * 4;
-        pixels[di] = sample(0, sx, sy);
-        pixels[di + 1] = sample(1, sx, sy);
-        pixels[di + 2] = sample(2, sx, sy);
-      }
-    }
-  }
-
-  /// Bilinear resize of a window of [image] to [outW]x[outH] RGBA.
-  Uint8List _resizeWindow(
-    RgbaImage image,
-    int left,
-    int top,
-    int rw,
-    int rh,
-    int outW,
-    int outH,
-  ) {
-    var out = Uint8List(outW * outH * 4);
-    var pixels = image.pixels;
-    var imgW = image.width;
-    for (var y = 0; y < outH; y++) {
-      var fy = (y + 0.5) * rh / outH - 0.5;
-      var y0 = fy.floor().clamp(0, rh - 1);
-      var y1 = (y0 + 1).clamp(0, rh - 1);
-      var wy = fy - fy.floor();
-      for (var x = 0; x < outW; x++) {
-        var fx = (x + 0.5) * rw / outW - 0.5;
-        var x0 = fx.floor().clamp(0, rw - 1);
-        var x1 = (x0 + 1).clamp(0, rw - 1);
-        var wx = fx - fx.floor();
-        var oi = (y * outW + x) * 4;
-        for (var c = 0; c < 4; c++) {
-          var p00 = pixels[((top + y0) * imgW + left + x0) * 4 + c];
-          var p01 = pixels[((top + y0) * imgW + left + x1) * 4 + c];
-          var p10 = pixels[((top + y1) * imgW + left + x0) * 4 + c];
-          var p11 = pixels[((top + y1) * imgW + left + x1) * 4 + c];
-          var t = p00 + (p01 - p00) * wx;
-          var b = p10 + (p11 - p10) * wx;
-          out[oi + c] = (t + (b - t) * wy).round().clamp(0, 255);
-        }
-      }
-    }
-    return out;
+  /// Median height of a cluster's line boxes — an estimate of the original
+  /// glyph height, used to size the translation to the source text.
+  int _medianLineHeight(List<IntRect> lines) {
+    if (lines.isEmpty) return 0;
+    var heights = [for (var l in lines) l.height]..sort();
+    return heights[heights.length ~/ 2];
   }
 
   /// OCR one block. In 'auto' mode a vertical block prefers the Japanese
