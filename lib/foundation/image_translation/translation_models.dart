@@ -132,7 +132,29 @@ abstract class TranslationModels {
     ],
   );
 
-  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo];
+  /// Optional lettering-removal model for the "AI erase" render mode: LaMa
+  /// (big-lama) ported to ONNX. Language independent; large (~200MB) but only
+  /// downloaded on opt-in. When absent the erase modes fall back to the
+  /// pure-Dart eraser, so this is never required for translation itself — only
+  /// for the sharpest background reconstruction on busy artwork. Fixed 512x512
+  /// input; inputs 'image' + 'mask' ([0,1]), output is [0,255] RGB.
+  static const inpaint = ModelComponent(
+    id: 'inpaint',
+    approxSizeBytes: 208044816,
+    files: [
+      ModelFile('inpaint.onnx', [
+        '{hf}/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx',
+      ]),
+    ],
+  );
+
+  static const all = [detector, ocrJa, ocrZh, ocrEn, ocrKo, inpaint];
+
+  /// Path to the installed inpaint model, or null when it is not downloaded —
+  /// the "AI erase" mode then degrades to the pure-Dart eraser.
+  static String? inpaintModelPath() {
+    return inpaint.isInstalled ? inpaint.filePath('inpaint.onnx') : null;
+  }
 
   static ModelComponent? find(String id) {
     for (var c in all) {

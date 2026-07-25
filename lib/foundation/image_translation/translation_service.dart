@@ -84,15 +84,34 @@ class ImageTranslationService with ChangeNotifier {
   PageTranslationPipeline? _pipeline;
   Timer? _releaseTimer;
 
+  InpaintMode? _markersMode;
+
+  /// The done/failed markers key on the raw cacheKey but describe a rendered
+  /// image, which depends on the render mode. On a mode switch they no longer
+  /// match what is cached under the new mode's key, so drop them and let pages
+  /// re-probe. "No translatable text" is mode independent and kept.
+  void _syncMarkersToMode() {
+    var mode = renderMode;
+    if (_markersMode == mode) return;
+    _markersMode = mode;
+    _completed.clear();
+    _failures.clear();
+    _errors.clear();
+  }
+
   /// Whether a translated page is known to exist for [cacheKey]. Feeds the
   /// provider identity so a finished background translation produces a new
   /// provider and the visible image swaps in place.
-  bool isTranslated(String cacheKey) => _completed.contains(cacheKey);
+  bool isTranslated(String cacheKey) {
+    _syncMarkersToMode();
+    return _completed.contains(cacheKey);
+  }
 
   void markTranslated(String cacheKey) => _completed.add(cacheKey);
 
   /// Current per-page translation state, for the reader status badge.
   PageTranslationStatus statusOf(String cacheKey) {
+    _syncMarkersToMode();
     if (_completed.contains(cacheKey)) return PageTranslationStatus.translated;
     if (_noContent.contains(cacheKey)) return PageTranslationStatus.noContent;
     if (_active.any((t) => t.cacheKey == cacheKey)) {
@@ -130,6 +149,19 @@ class ImageTranslationService with ChangeNotifier {
 
   static String get targetLang =>
       appdata.settings['imageTranslationTarget'] as String? ?? 'zh';
+
+  /// Current text-removal / render mode.
+  static InpaintMode get renderMode =>
+      InpaintMode.fromSettings(appdata.settings['imageTranslationInpaintMode']);
+
+  /// Rendered-image cache key: the page's durable text [cacheKey] plus the
+  /// render-mode token. The rendered image depends on the mode, the stored text
+  /// does not — so switching modes serves a different image re-derived from the
+  /// same stored text, and switching back reuses the earlier render. The token
+  /// is a suffix, so the comic/chapter scope prefixes still match it for
+  /// deletion.
+  static String renderedKey(String cacheKey) =>
+      '$cacheKey#${renderMode.token}';
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
@@ -274,14 +306,14 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   Future<File?> findTranslated(String cacheKey) {
-    return CacheManager().findCache(cacheKey);
+    return CacheManager().findCache(renderedKey(cacheKey));
   }
 
   /// Whether a fully rendered translated page (not just the text result) is
   /// already cached. Used by the pre-translation task manager to skip pages
   /// that were done in an earlier run or read online.
   Future<bool> hasRenderedPage(String cacheKey) async {
-    return await CacheManager().findCache(cacheKey) != null;
+    return await CacheManager().findCache(renderedKey(cacheKey)) != null;
   }
 
   /// How many pages of one chapter already have a stored text result — the
@@ -310,7 +342,8 @@ class ImageTranslationService with ChangeNotifier {
     String cacheKey,
     Uint8List imageBytes,
   ) async {
-    var cached = await CacheManager().findCache(cacheKey);
+    var renderKey = renderedKey(cacheKey);
+    var cached = await CacheManager().findCache(renderKey);
     if (cached != null) {
       _completed.add(cacheKey);
       return await cached.readAsBytes();
@@ -326,8 +359,8 @@ class ImageTranslationService with ChangeNotifier {
       return null;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
-    var rendered = await pipeline.renderPage(imageBytes, regions);
-    await CacheManager().writeCache(cacheKey, rendered, _imageCacheDuration);
+    var rendered = await pipeline.renderPage(imageBytes, regions, mode: renderMode);
+    await CacheManager().writeCache(renderKey, rendered, _imageCacheDuration);
     _completed.add(cacheKey);
     return rendered;
   }
@@ -371,7 +404,8 @@ class ImageTranslationService with ChangeNotifier {
     Uint8List imageBytes, {
     bool Function()? shouldCancel,
   }) async {
-    if (await CacheManager().findCache(cacheKey) != null) {
+    var renderKey = renderedKey(cacheKey);
+    if (await CacheManager().findCache(renderKey) != null) {
       return _TranslateOutcome.alreadyCached;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
@@ -399,8 +433,8 @@ class ImageTranslationService with ChangeNotifier {
       _noContent.add(cacheKey);
       return _TranslateOutcome.noContent;
     }
-    var rendered = await pipeline.renderPage(imageBytes, regions);
-    await CacheManager().writeCache(cacheKey, rendered, _imageCacheDuration);
+    var rendered = await pipeline.renderPage(imageBytes, regions, mode: renderMode);
+    await CacheManager().writeCache(renderKey, rendered, _imageCacheDuration);
     return _TranslateOutcome.translated;
   }
 
@@ -446,7 +480,7 @@ class ImageTranslationService with ChangeNotifier {
       if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
       var p = pages[i];
       try {
-        if (await CacheManager().findCache(p.cacheKey) != null) {
+        if (await CacheManager().findCache(renderedKey(p.cacheKey)) != null) {
           _completed.add(p.cacheKey);
           success[i] = true;
           settled[i] = true;
@@ -540,9 +574,13 @@ class ImageTranslationService with ChangeNotifier {
           success[i] = true; // no translatable text still counts as handled
           continue;
         }
-        var rendered = await pipeline.renderPage(p.imageBytes, regions);
+        var rendered = await pipeline.renderPage(
+          p.imageBytes,
+          regions,
+          mode: renderMode,
+        );
         await CacheManager().writeCache(
-          p.cacheKey,
+          renderedKey(p.cacheKey),
           rendered,
           _imageCacheDuration,
         );
@@ -573,6 +611,7 @@ class ImageTranslationService with ChangeNotifier {
     Uint8List imageBytes,
     VoidCallback onTranslated,
   ) {
+    _syncMarkersToMode();
     if (_noContent.contains(cacheKey)) {
       return;
     }

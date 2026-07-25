@@ -5,40 +5,32 @@ import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
-/// Fraction of the detected region the text is laid out within. The region is
-/// the axis-aligned bounds of a round/oval bubble, so its corners sit outside
-/// the bubble; keeping the text inside this centered inset stops it spilling
-/// over the bubble edge onto the artwork.
-const _fillRatio = 0.82;
-
-/// Upper bound on the translated glyph size. The original English lettering is
-/// small; letting CJK text grow to fill a large bubble makes it overpower the
-/// panel and, once wrapped, spill past the bubble. A calm cap keeps it readable
-/// without dominating.
-const _maxFontSize = 30.0;
-
-/// Renders the translated page: draws the original image, covers each text
-/// region with a rounded patch in the sampled background colour, then lays the
-/// translated text inside it. Returns PNG bytes.
+/// Renders the translated page: draws [decoded] as the base, then lays each
+/// region's translated text over it. Returns PNG bytes.
+///
+/// In [InpaintMode.patch] the base is the untouched original and each region is
+/// covered with an opaque rounded plate in the sampled background colour (the
+/// legacy look). In [InpaintMode.smart]/[InpaintMode.ai] the caller has already
+/// erased the original lettering in [decoded.pixels], so the base is clean and
+/// each region only gets a backing plate where the placed text would otherwise
+/// be hard to read against the artwork.
 Future<Uint8List> renderTranslatedPage(
   Uint8List originalBytes,
   RgbaImage decoded,
-  List<TranslatedRegion> regions,
-) async {
-  var buffer = await ui.ImmutableBuffer.fromUint8List(originalBytes);
-  var descriptor = await ui.ImageDescriptor.encoded(buffer);
-  var codec = await descriptor.instantiateCodec(
-    targetWidth: decoded.width,
-    targetHeight: decoded.height,
-  );
-  var frame = await codec.getNextFrame();
-  var base = frame.image;
+  List<TranslatedRegion> regions, {
+  InpaintMode mode = InpaintMode.smart,
+}) async {
+  var base = await _baseImage(originalBytes, decoded, mode);
   try {
     var recorder = ui.PictureRecorder();
     var canvas = ui.Canvas(recorder);
     canvas.drawImage(base, ui.Offset.zero, ui.Paint());
     for (var region in regions) {
-      _drawRegion(canvas, region);
+      if (mode == InpaintMode.patch) {
+        _drawPatchRegion(canvas, region);
+      } else {
+        _drawErasedRegion(canvas, decoded, region);
+      }
     }
     var picture = recorder.endRecording();
     var rendered = await picture.toImage(decoded.width, decoded.height);
@@ -54,10 +46,43 @@ Future<Uint8List> renderTranslatedPage(
     }
   } finally {
     base.dispose();
+  }
+}
+
+/// The base image to draw under the text. patch mode re-decodes the pristine
+/// original at the working resolution; the erase modes draw [decoded] itself,
+/// whose pixels were already cleaned by the inpainter.
+Future<ui.Image> _baseImage(
+  Uint8List originalBytes,
+  RgbaImage decoded,
+  InpaintMode mode,
+) async {
+  if (mode != InpaintMode.patch) {
+    var buffer = await ui.ImmutableBuffer.fromUint8List(decoded.pixels);
+    var descriptor = ui.ImageDescriptor.raw(
+      buffer,
+      width: decoded.width,
+      height: decoded.height,
+      pixelFormat: ui.PixelFormat.rgba8888,
+    );
+    var codec = await descriptor.instantiateCodec();
+    var frame = await codec.getNextFrame();
     codec.dispose();
     descriptor.dispose();
     buffer.dispose();
+    return frame.image;
   }
+  var buffer = await ui.ImmutableBuffer.fromUint8List(originalBytes);
+  var descriptor = await ui.ImageDescriptor.encoded(buffer);
+  var codec = await descriptor.instantiateCodec(
+    targetWidth: decoded.width,
+    targetHeight: decoded.height,
+  );
+  var frame = await codec.getNextFrame();
+  codec.dispose();
+  descriptor.dispose();
+  buffer.dispose();
+  return frame.image;
 }
 
 ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
@@ -67,186 +92,160 @@ ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
   region.rect.bottom.toDouble(),
 );
 
-/// Covers the region with an opaque rounded plate (sampled background colour)
-/// sized to the text actually laid out, then draws the text. The plate hugs the
-/// text rather than filling the whole detected box, so it no longer stamps a
-/// large block over the panel; a feathered halo blends its edge into the art.
-void _drawRegion(ui.Canvas canvas, TranslatedRegion region) {
+/// Legacy patch mode: opaque rounded plate + feathered halo, then the text.
+void _drawPatchRegion(ui.Canvas canvas, TranslatedRegion region) {
   var rect = _rectOf(region);
   var background = ui.Color(region.backgroundColor);
-  var textColor = ui.Color(region.textColor);
 
-  var layout = _layoutText(region.text, rect);
+  // Coverage margin scales with the region so original text bleeding past the
+  // detected box is still hidden instead of leaving edges poking out.
+  var minSide = math.min(rect.width, rect.height);
+  var margin = math.max(3.0, minSide * 0.14);
+  var core = rect.inflate(margin);
+  var radius = ui.Radius.circular(math.min(margin, 4.0));
 
-  // Plate bounds: the laid-out text plus a small padding, clamped to the
-  // detected region so a short translation gets a small plate instead of one
-  // spanning the whole bubble box.
-  var pad = math.max(3.0, layout.fontSize * 0.35);
-  var plate = ui.Rect.fromCenter(
-    center: rect.center,
-    width: math.min(rect.width + pad, layout.width + pad * 2),
-    height: math.min(rect.height + pad, layout.height + pad * 2),
-  );
-  var radius = ui.Radius.circular(math.min(plate.shortestSide * 0.5, 12.0));
-
-  var sigma = math.max(1.5, pad * 0.6);
+  // Feathered halo blends the fill into textured/translucent bubbles; the
+  // opaque core on top still guarantees the original text is covered.
+  var sigma = math.max(1.5, margin * 0.6);
   canvas.drawRRect(
-    ui.RRect.fromRectAndRadius(plate.inflate(sigma * 0.5), radius),
+    ui.RRect.fromRectAndRadius(core.inflate(sigma * 0.5), radius),
     ui.Paint()
       ..color = background
       ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, sigma),
   );
   canvas.drawRRect(
-    ui.RRect.fromRectAndRadius(plate, radius),
+    ui.RRect.fromRectAndRadius(core, radius),
     ui.Paint()..color = background,
   );
 
-  layout.paint(canvas, rect.center, textColor);
+  _drawText(canvas, region, rect, ui.Color(region.textColor));
 }
 
-/// The result of fitting a region's text: a horizontal wrapped block or a
-/// vertical column block. Knows its own size (for the backing plate) and can
-/// paint itself centered on a point.
-abstract class _TextLayout {
-  double get width;
-  double get height;
-  double get fontSize;
-  void paint(ui.Canvas canvas, ui.Offset center, ui.Color color);
+/// Erase mode: the base is already clean, so the text only needs a contrast
+/// outline (never an opaque plate) to stay readable over minor screentone or
+/// gradient the erase left behind.
+void _drawErasedRegion(
+  ui.Canvas canvas,
+  RgbaImage decoded,
+  TranslatedRegion region,
+) {
+  var rect = _rectOf(region);
+  var backgroundIsDark = _regionIsDark(decoded, region.rect);
+  var textColor = backgroundIsDark
+      ? const ui.Color(0xFFF5F5F5)
+      : const ui.Color(0xFF202020);
+  // Outline in the opposite colour keeps the text legible without covering the
+  // art — this is what replaces the old opaque backing plate.
+  var outline = backgroundIsDark
+      ? const ui.Color(0xE6000000)
+      : const ui.Color(0xE6FFFFFF);
+  _drawText(canvas, region, rect, textColor, outline: outline);
 }
 
-_TextLayout _layoutText(String text, ui.Rect rect) {
-  var maxWidth = rect.width * _fillRatio;
-  var maxHeight = rect.height * _fillRatio;
-  if (_prefersVertical(text, rect)) {
-    return _VerticalLayout(text, maxWidth, maxHeight);
+/// Mean-luminance test of the region on the (erased) base, choosing the text
+/// colour. Sampled on a stride grid — a full read is needless for a summary.
+bool _regionIsDark(RgbaImage image, IntRect rect) {
+  var w = image.width;
+  var left = rect.left.clamp(0, w - 1);
+  var top = rect.top.clamp(0, image.height - 1);
+  var right = rect.right.clamp(1, w);
+  var bottom = rect.bottom.clamp(1, image.height);
+  var pixels = image.pixels;
+
+  var sum = 0.0;
+  var count = 0;
+  var stepX = math.max(1, (right - left) ~/ 24);
+  var stepY = math.max(1, (bottom - top) ~/ 24);
+  for (var y = top; y < bottom; y += stepY) {
+    for (var x = left; x < right; x += stepX) {
+      var i = (y * w + x) * 4;
+      sum += 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+      count++;
+    }
   }
-  return _HorizontalLayout(text, maxWidth, maxHeight);
+  if (count == 0) return false;
+  return sum / count < 128;
 }
 
-TextStyle _style(ui.Color color, double fontSize, double height) => TextStyle(
+/// Draws the region's text (horizontal wrap or vertical columns). [outline],
+/// when set, is painted as a stroke behind the fill so the text stays readable
+/// on a cleaned background without an opaque plate.
+void _drawText(
+  ui.Canvas canvas,
+  TranslatedRegion region,
+  ui.Rect rect,
+  ui.Color color, {
+  ui.Color? outline,
+}) {
+  if (_prefersVertical(region.text, rect)) {
+    _drawVerticalText(canvas, region.text, color, rect, outline: outline);
+    return;
+  }
+  var maxWidth = rect.width - 4;
+  var maxHeight = rect.height - 4;
+  var size = _fitFontSize(region.text, maxWidth, maxHeight);
+  if (outline != null) {
+    var strokePainter = _horizontalPainter(
+      region.text,
+      size,
+      _strokeStyle(outline, size),
+      maxWidth,
+    );
+    var strokeOffset = ui.Offset(
+      rect.left + (rect.width - strokePainter.width) / 2,
+      rect.top + (rect.height - strokePainter.height) / 2,
+    );
+    strokePainter.paint(canvas, strokeOffset);
+    strokePainter.dispose();
+  }
+  var painter = _horizontalPainter(
+    region.text,
+    size,
+    _fillStyle(color, size),
+    maxWidth,
+  );
+  var offset = ui.Offset(
+    rect.left + (rect.width - painter.width) / 2,
+    rect.top + (rect.height - painter.height) / 2,
+  );
+  painter.paint(canvas, offset);
+  painter.dispose();
+}
+
+/// Stroke width scales with the glyph so the outline reads at any size.
+double _strokeWidth(double fontSize) => math.max(1.5, fontSize * 0.14);
+
+TextStyle _fillStyle(ui.Color color, double fontSize) => TextStyle(
   color: color,
   fontSize: fontSize,
-  height: height,
+  height: 1.2,
   fontWeight: FontWeight.w500,
 );
 
-/// Horizontal wrapped text fitted to the inset area.
-class _HorizontalLayout implements _TextLayout {
-  _HorizontalLayout(this.text, this.maxWidth, this.maxHeight) {
-    fontSize = _fitFontSize(text, maxWidth, maxHeight);
-  }
+TextStyle _strokeStyle(ui.Color outline, double fontSize) => TextStyle(
+  fontSize: fontSize,
+  height: 1.2,
+  fontWeight: FontWeight.w500,
+  foreground: ui.Paint()
+    ..style = ui.PaintingStyle.stroke
+    ..strokeWidth = _strokeWidth(fontSize)
+    ..strokeJoin = ui.StrokeJoin.round
+    ..color = outline,
+);
 
-  final String text;
-  final double maxWidth;
-  final double maxHeight;
-  @override
-  late final double fontSize;
-
-  TextPainter _painter(ui.Color color) {
-    var painter = TextPainter(
-      text: TextSpan(text: text, style: _style(color, fontSize, 1.2)),
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout(maxWidth: math.max(8, maxWidth));
-    return painter;
-  }
-
-  @override
-  double get width {
-    var p = _painter(const ui.Color(0xFF000000));
-    var w = p.width;
-    p.dispose();
-    return w;
-  }
-
-  @override
-  double get height {
-    var p = _painter(const ui.Color(0xFF000000));
-    var h = p.height;
-    p.dispose();
-    return h;
-  }
-
-  @override
-  void paint(ui.Canvas canvas, ui.Offset center, ui.Color color) {
-    var painter = _painter(color);
-    painter.paint(
-      canvas,
-      ui.Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
-    );
-    painter.dispose();
-  }
-}
-
-/// Vertical right-to-left column text, one character per cell.
-class _VerticalLayout implements _TextLayout {
-  _VerticalLayout(String text, this.maxWidth, this.maxHeight)
-    : chars = text.runes
-          .map((r) => String.fromCharCode(r))
-          .where((c) => c.trim().isNotEmpty)
-          .toList() {
-    _fit();
-  }
-
-  final List<String> chars;
-  final double maxWidth;
-  final double maxHeight;
-  @override
-  late double fontSize;
-  late int _perColumn;
-  late int _columns;
-
-  void _fit() {
-    var upper = math.max(10.0, math.min(_maxFontSize, maxWidth * 0.9));
-    const lower = 7.0;
-    var size = upper;
-    var chosen = lower;
-    while (size >= lower) {
-      var cell = size * 1.15;
-      var perColumn = math.max(1, (maxHeight / cell).floor());
-      var columns = (chars.length / perColumn).ceil();
-      chosen = size;
-      if (columns * cell <= maxWidth) break;
-      size -= 1.5;
-    }
-    fontSize = chosen;
-    var cell = chosen * 1.15;
-    _perColumn = math.max(1, (maxHeight / cell).floor());
-    _columns = (chars.length / _perColumn).ceil();
-  }
-
-  @override
-  double get width => _columns * fontSize * 1.15;
-
-  @override
-  double get height => math.min(maxHeight, _perColumn * fontSize * 1.15);
-
-  @override
-  void paint(ui.Canvas canvas, ui.Offset center, ui.Color color) {
-    if (chars.isEmpty) return;
-    var cell = fontSize * 1.15;
-    var startRight = center.dx + width / 2;
-    var top = center.dy - height / 2;
-    var style = _style(color, fontSize, 1.0);
-
-    for (var col = 0; col < _columns; col++) {
-      var colCenterX = startRight - (col + 0.5) * cell;
-      for (var row = 0; row < _perColumn; row++) {
-        var index = col * _perColumn + row;
-        if (index >= chars.length) break;
-        var painter = TextPainter(
-          text: TextSpan(text: chars[index], style: style),
-          textDirection: TextDirection.ltr,
-        );
-        painter.layout();
-        var dx = colCenterX - painter.width / 2;
-        var dy = top + row * cell + (cell - painter.height) / 2;
-        painter.paint(canvas, ui.Offset(dx, dy));
-        painter.dispose();
-      }
-    }
-  }
+TextPainter _horizontalPainter(
+  String text,
+  double fontSize,
+  TextStyle style,
+  double maxWidth,
+) {
+  var painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textAlign: TextAlign.center,
+    textDirection: TextDirection.ltr,
+  );
+  painter.layout(maxWidth: math.max(8, maxWidth));
+  return painter;
 }
 
 /// Whether [text] should be laid out vertically inside [rect]: the region is
@@ -268,21 +267,99 @@ bool _prefersVertical(String text, ui.Rect rect) {
   return cjk / total >= 0.7;
 }
 
+/// Draws [text] as vertical right-to-left columns fitted to [rect], one
+/// character per cell, wrapping to a new column on the left when full. When
+/// [outline] is set each glyph is stroked behind its fill for legibility.
+void _drawVerticalText(
+  ui.Canvas canvas,
+  String text,
+  ui.Color color,
+  ui.Rect rect, {
+  ui.Color? outline,
+}) {
+  var chars = text.runes
+      .map((r) => String.fromCharCode(r))
+      .where((c) => c.trim().isNotEmpty)
+      .toList();
+  if (chars.isEmpty) return;
+
+  var maxWidth = rect.width - 4;
+  var maxHeight = rect.height - 4;
+
+  TextPainter glyph(String c, double fontSize, TextStyle style) {
+    var painter = TextPainter(
+      text: TextSpan(text: c, style: style),
+      textDirection: TextDirection.ltr,
+    );
+    painter.layout();
+    return painter;
+  }
+
+  var upper = math.max(10.0, math.min(42.0, maxWidth * 0.9));
+  const lower = 7.0;
+  var size = upper;
+  var chosen = lower;
+  var perColumn = 1;
+  var columns = chars.length;
+  while (size >= lower) {
+    var cell = size * 1.15;
+    perColumn = math.max(1, (maxHeight / cell).floor());
+    columns = (chars.length / perColumn).ceil();
+    if (columns * cell <= maxWidth) {
+      chosen = size;
+      break;
+    }
+    chosen = size;
+    size -= 1.5;
+  }
+
+  var cellH = chosen * 1.15;
+  var cellW = chosen * 1.15;
+  perColumn = math.max(1, (maxHeight / cellH).floor());
+  columns = (chars.length / perColumn).ceil();
+
+  var blockW = columns * cellW;
+  var blockH = math.min(maxHeight, perColumn * cellH);
+  var startRight = rect.left + (rect.width + blockW) / 2;
+  var top = rect.top + (rect.height - blockH) / 2;
+
+  var fillStyle = _fillStyle(color, chosen).copyWith(height: 1.0);
+  var strokeStyle =
+      outline == null ? null : _strokeStyle(outline, chosen).copyWith(height: 1.0);
+
+  for (var col = 0; col < columns; col++) {
+    var colCenterX = startRight - (col + 0.5) * cellW;
+    for (var row = 0; row < perColumn; row++) {
+      var index = col * perColumn + row;
+      if (index >= chars.length) break;
+      var dyBase = top + row * cellH;
+      if (strokeStyle != null) {
+        var sp = glyph(chars[index], chosen, strokeStyle);
+        sp.paint(
+          canvas,
+          ui.Offset(colCenterX - sp.width / 2, dyBase + (cellH - sp.height) / 2),
+        );
+        sp.dispose();
+      }
+      var painter = glyph(chars[index], chosen, fillStyle);
+      var dx = colCenterX - painter.width / 2;
+      var dy = dyBase + (cellH - painter.height) / 2;
+      painter.paint(canvas, ui.Offset(dx, dy));
+      painter.dispose();
+    }
+  }
+}
+
 /// Largest font size whose wrapped horizontal layout fits [maxWidth]x[maxHeight].
 double _fitFontSize(String text, double maxWidth, double maxHeight) {
-  var upper = math.max(10.0, math.min(_maxFontSize, maxHeight * 0.8));
+  var upper = math.max(10.0, math.min(42.0, maxHeight * 0.8));
   const lower = 7.0;
   var size = upper;
   while (size > lower) {
-    var painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: _style(const ui.Color(0xFF000000), size, 1.2),
-      ),
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout(maxWidth: math.max(8, maxWidth));
+    var painter = _horizontalPainter(text, size, _fillStyle(
+      const ui.Color(0xFF000000),
+      size,
+    ), maxWidth);
     var fits = painter.height <= maxHeight && painter.width <= maxWidth;
     painter.dispose();
     if (fits) return size;
