@@ -132,17 +132,18 @@ abstract class TranslationModels {
     ],
   );
 
-  /// Optional lettering-removal model for the "AI erase" render mode (MI-GAN,
-  /// a mobile-optimised inpainter). Small and language independent. When absent
-  /// the erase modes fall back to the pure-Dart eraser, so this is never
-  /// required for translation itself — only for the sharpest background
-  /// reconstruction on busy artwork.
+  /// Optional lettering-removal model for the "AI erase" render mode: LaMa
+  /// (big-lama) ported to ONNX. Language independent; large (~200MB) but only
+  /// downloaded on opt-in. When absent the erase modes fall back to the
+  /// pure-Dart eraser, so this is never required for translation itself — only
+  /// for the sharpest background reconstruction on busy artwork. Fixed 512x512
+  /// input; inputs 'image' + 'mask' ([0,1]), output is [0,255] RGB.
   static const inpaint = ModelComponent(
     id: 'inpaint',
-    approxSizeBytes: 28000000,
+    approxSizeBytes: 208044816,
     files: [
       ModelFile('inpaint.onnx', [
-        '{hf}/Carve/migan-onnx/resolve/main/migan_pipeline_v2.onnx',
+        '{hf}/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx',
       ]),
     ],
   );

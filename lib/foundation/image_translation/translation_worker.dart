@@ -430,10 +430,12 @@ class _WorkerState {
     return image.pixels;
   }
 
-  /// Runs the model over the square tile covering [m]'s window and blends the
-  /// masked pixels back. The tile is resized to the model's input side.
+  /// Runs LaMa over the square tile covering [m]'s window and blends the masked
+  /// pixels back. LaMa has a fixed 512x512 input, named tensors 'image' (RGB,
+  /// CHW, [0,1]) and 'mask' (1 = erase), and emits [0,255] RGB — the tile is
+  /// fed raw (not hole-filled), the model reconstructs the masked region.
   void _inpaintTile(RgbaImage image, OrtFfiSession session, TextMask m) {
-    const side = 256;
+    const side = 512;
     var tile = _resizeWindow(image, m.left, m.top, m.rw, m.rh, side, side);
     var maskUp = _resizeMask(m.mask, m.rw, m.rh, side, side);
 
@@ -441,41 +443,34 @@ class _WorkerState {
     var maskTensor = Float32List(side * side);
     var plane = side * side;
     for (var p = 0; p < plane; p++) {
-      var masked = maskUp[p] == 1;
-      maskTensor[p] = masked ? 1.0 : 0.0;
+      maskTensor[p] = maskUp[p] == 1 ? 1.0 : 0.0;
       for (var c = 0; c < 3; c++) {
-        // Feed the hole as mid-grey so the model does not key off the strokes.
-        var v = masked ? 127 : tile[p * 4 + c];
-        imgTensor[c * plane + p] = v / 127.5 - 1.0;
+        imgTensor[c * plane + p] = tile[p * 4 + c] / 255.0;
       }
     }
 
     var out = session.run({
-      session.inputNames[0]: OrtInput.float32(imgTensor, const [1, 3, side, side]),
-      if (session.inputNames.length > 1)
-        session.inputNames[1]: OrtInput.float32(maskTensor, const [1, 1, side, side]),
+      'image': OrtInput.float32(imgTensor, const [1, 3, side, side]),
+      'mask': OrtInput.float32(maskTensor, const [1, 1, side, side]),
     }).values.first;
 
     _blendTileBack(image, m, out.data, side);
   }
 
-  /// Writes the model output (CHW, [-1,1] or [0,1]) back into the masked pixels,
-  /// resampling the tile back to the window and touching only masked cells.
+  /// Writes the model output (CHW) back into the masked pixels, resampling the
+  /// tile to the window and touching only masked cells. LaMa emits [0,255]; a
+  /// model that emitted [0,1] would collapse to black, so scale up if the tile
+  /// never exceeds 1.
   void _blendTileBack(RgbaImage image, TextMask m, Float32List data, int side) {
     var plane = side * side;
-    // Detect the model's output range: MI-GAN emits [-1,1], some emit [0,1].
-    var negative = false;
-    for (var i = 0; i < plane && i < 4096; i++) {
-      if (data[i] < -0.02) {
-        negative = true;
-        break;
-      }
+    var maxVal = 0.0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i] > maxVal) maxVal = data[i];
     }
+    var scale = maxVal <= 1.5 ? 255.0 : 1.0;
     int sample(int c, int sx, int sy) {
-      var p = sy * side + sx;
-      var v = data[c * plane + p];
-      var u = negative ? (v + 1.0) * 127.5 : v * 255.0;
-      return u.round().clamp(0, 255);
+      var v = data[c * plane + sy * side + sx] * scale;
+      return v.round().clamp(0, 255);
     }
 
     var pixels = image.pixels;
