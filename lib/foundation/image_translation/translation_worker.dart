@@ -563,7 +563,6 @@ class _WorkerState {
       ];
     }
 
-    String bestText = '';
     for (var engine in engineOrder) {
       String text;
       if (engine == 'ja') {
@@ -577,11 +576,11 @@ class _WorkerState {
       if (_isPlausible(text)) {
         return (text, _detectLanguage(text, engine));
       }
-      if (text.length > bestText.length) {
-        bestText = text;
-      }
     }
-    return (bestText, _detectLanguage(bestText, engineOrder.firstOrNull ?? 'ja'));
+    // No engine produced plausible text: return empty so the block is dropped
+    // rather than emitting garbled OCR — that region then shows the original
+    // art untouched (no erase, no lettering) instead of a mistranslation.
+    return ('', 'unknown');
   }
 
   bool _isPlausible(String text) {

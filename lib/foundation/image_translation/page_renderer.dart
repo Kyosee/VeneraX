@@ -121,48 +121,30 @@ void _drawPatchRegion(ui.Canvas canvas, TranslatedRegion region) {
   _drawText(canvas, region, rect, ui.Color(region.textColor));
 }
 
-/// Erase mode: the base is already clean, so decide the text colour and whether
-/// a subtle backing plate is needed from the erased pixels under the region,
-/// then draw the text.
+/// Erase mode: the base is already clean, so the text only needs a contrast
+/// outline (never an opaque plate) to stay readable over minor screentone or
+/// gradient the erase left behind.
 void _drawErasedRegion(
   ui.Canvas canvas,
   RgbaImage decoded,
   TranslatedRegion region,
 ) {
   var rect = _rectOf(region);
-  var stats = _regionStats(decoded, region.rect);
-  var textColor = stats.backgroundIsDark
+  var backgroundIsDark = _regionIsDark(decoded, region.rect);
+  var textColor = backgroundIsDark
       ? const ui.Color(0xFFF5F5F5)
       : const ui.Color(0xFF202020);
-
-  // A backing plate goes down only when the cleaned area is too busy or too
-  // close in luminance to the text to read against — a flat, uniform bubble
-  // gets nothing, so the artwork shows through.
-  if (stats.needsBacking) {
-    var plate = stats.backgroundIsDark
-        ? const ui.Color(0xC8101010)
-        : const ui.Color(0xC8FFFFFF);
-    var pad = math.max(2.0, math.min(rect.width, rect.height) * 0.06);
-    var padded = rect.inflate(pad);
-    var radius = ui.Radius.circular(math.min(padded.shortestSide * 0.5, 10.0));
-    canvas.drawRRect(
-      ui.RRect.fromRectAndRadius(padded, radius),
-      ui.Paint()..color = plate,
-    );
-  }
-
-  _drawText(canvas, region, rect, textColor);
+  // Outline in the opposite colour keeps the text legible without covering the
+  // art — this is what replaces the old opaque backing plate.
+  var outline = backgroundIsDark
+      ? const ui.Color(0xE6000000)
+      : const ui.Color(0xE6FFFFFF);
+  _drawText(canvas, region, rect, textColor, outline: outline);
 }
 
-/// Luminance / busyness of the region on the (erased) base, deciding text
-/// colour and whether the placed text needs a backing plate.
-class _RegionStats {
-  _RegionStats(this.backgroundIsDark, this.needsBacking);
-  final bool backgroundIsDark;
-  final bool needsBacking;
-}
-
-_RegionStats _regionStats(RgbaImage image, IntRect rect) {
+/// Mean-luminance test of the region on the (erased) base, choosing the text
+/// colour. Sampled on a stride grid — a full read is needless for a summary.
+bool _regionIsDark(RgbaImage image, IntRect rect) {
   var w = image.width;
   var left = rect.left.clamp(0, w - 1);
   var top = rect.top.clamp(0, image.height - 1);
@@ -171,48 +153,99 @@ _RegionStats _regionStats(RgbaImage image, IntRect rect) {
   var pixels = image.pixels;
 
   var sum = 0.0;
-  var sumSq = 0.0;
   var count = 0;
-  // Sample on a stride grid — a full read is needless for a summary statistic.
   var stepX = math.max(1, (right - left) ~/ 24);
   var stepY = math.max(1, (bottom - top) ~/ 24);
   for (var y = top; y < bottom; y += stepY) {
     for (var x = left; x < right; x += stepX) {
       var i = (y * w + x) * 4;
-      var l = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
-      sum += l;
-      sumSq += l * l;
+      sum += 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
       count++;
     }
   }
-  if (count == 0) return _RegionStats(false, false);
-  var mean = sum / count;
-  var variance = (sumSq / count) - (mean * mean);
-  var stdDev = variance <= 0 ? 0.0 : math.sqrt(variance);
-
-  // High spread means the cleaned area is textured/detailed (screentone,
-  // artwork) rather than a flat bubble — text would compete with it.
-  var needsBacking = stdDev > 34;
-  return _RegionStats(mean < 128, needsBacking);
+  if (count == 0) return false;
+  return sum / count < 128;
 }
 
+/// Draws the region's text (horizontal wrap or vertical columns). [outline],
+/// when set, is painted as a stroke behind the fill so the text stays readable
+/// on a cleaned background without an opaque plate.
 void _drawText(
   ui.Canvas canvas,
   TranslatedRegion region,
   ui.Rect rect,
-  ui.Color color,
-) {
+  ui.Color color, {
+  ui.Color? outline,
+}) {
   if (_prefersVertical(region.text, rect)) {
-    _drawVerticalText(canvas, region.text, color, rect);
+    _drawVerticalText(canvas, region.text, color, rect, outline: outline);
     return;
   }
-  var painter = _fitText(region.text, color, rect.width - 4, rect.height - 4);
+  var maxWidth = rect.width - 4;
+  var maxHeight = rect.height - 4;
+  var size = _fitFontSize(region.text, maxWidth, maxHeight);
+  if (outline != null) {
+    var strokePainter = _horizontalPainter(
+      region.text,
+      size,
+      _strokeStyle(outline, size),
+      maxWidth,
+    );
+    var strokeOffset = ui.Offset(
+      rect.left + (rect.width - strokePainter.width) / 2,
+      rect.top + (rect.height - strokePainter.height) / 2,
+    );
+    strokePainter.paint(canvas, strokeOffset);
+    strokePainter.dispose();
+  }
+  var painter = _horizontalPainter(
+    region.text,
+    size,
+    _fillStyle(color, size),
+    maxWidth,
+  );
   var offset = ui.Offset(
     rect.left + (rect.width - painter.width) / 2,
     rect.top + (rect.height - painter.height) / 2,
   );
   painter.paint(canvas, offset);
   painter.dispose();
+}
+
+/// Stroke width scales with the glyph so the outline reads at any size.
+double _strokeWidth(double fontSize) => math.max(1.5, fontSize * 0.14);
+
+TextStyle _fillStyle(ui.Color color, double fontSize) => TextStyle(
+  color: color,
+  fontSize: fontSize,
+  height: 1.2,
+  fontWeight: FontWeight.w500,
+);
+
+TextStyle _strokeStyle(ui.Color outline, double fontSize) => TextStyle(
+  fontSize: fontSize,
+  height: 1.2,
+  fontWeight: FontWeight.w500,
+  foreground: ui.Paint()
+    ..style = ui.PaintingStyle.stroke
+    ..strokeWidth = _strokeWidth(fontSize)
+    ..strokeJoin = ui.StrokeJoin.round
+    ..color = outline,
+);
+
+TextPainter _horizontalPainter(
+  String text,
+  double fontSize,
+  TextStyle style,
+  double maxWidth,
+) {
+  var painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textAlign: TextAlign.center,
+    textDirection: TextDirection.ltr,
+  );
+  painter.layout(maxWidth: math.max(8, maxWidth));
+  return painter;
 }
 
 /// Whether [text] should be laid out vertically inside [rect]: the region is
@@ -235,13 +268,15 @@ bool _prefersVertical(String text, ui.Rect rect) {
 }
 
 /// Draws [text] as vertical right-to-left columns fitted to [rect], one
-/// character per cell, wrapping to a new column on the left when full.
+/// character per cell, wrapping to a new column on the left when full. When
+/// [outline] is set each glyph is stroked behind its fill for legibility.
 void _drawVerticalText(
   ui.Canvas canvas,
   String text,
   ui.Color color,
-  ui.Rect rect,
-) {
+  ui.Rect rect, {
+  ui.Color? outline,
+}) {
   var chars = text.runes
       .map((r) => String.fromCharCode(r))
       .where((c) => c.trim().isNotEmpty)
@@ -251,17 +286,9 @@ void _drawVerticalText(
   var maxWidth = rect.width - 4;
   var maxHeight = rect.height - 4;
 
-  TextPainter glyph(String c, double fontSize) {
+  TextPainter glyph(String c, double fontSize, TextStyle style) {
     var painter = TextPainter(
-      text: TextSpan(
-        text: c,
-        style: TextStyle(
-          color: color,
-          fontSize: fontSize,
-          height: 1.0,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+      text: TextSpan(text: c, style: style),
       textDirection: TextDirection.ltr,
     );
     painter.layout();
@@ -275,11 +302,10 @@ void _drawVerticalText(
   var perColumn = 1;
   var columns = chars.length;
   while (size >= lower) {
-    var cellH = size * 1.15;
-    var cellW = size * 1.15;
-    perColumn = math.max(1, (maxHeight / cellH).floor());
+    var cell = size * 1.15;
+    perColumn = math.max(1, (maxHeight / cell).floor());
     columns = (chars.length / perColumn).ceil();
-    if (columns * cellW <= maxWidth) {
+    if (columns * cell <= maxWidth) {
       chosen = size;
       break;
     }
@@ -297,55 +323,47 @@ void _drawVerticalText(
   var startRight = rect.left + (rect.width + blockW) / 2;
   var top = rect.top + (rect.height - blockH) / 2;
 
+  var fillStyle = _fillStyle(color, chosen).copyWith(height: 1.0);
+  var strokeStyle =
+      outline == null ? null : _strokeStyle(outline, chosen).copyWith(height: 1.0);
+
   for (var col = 0; col < columns; col++) {
     var colCenterX = startRight - (col + 0.5) * cellW;
     for (var row = 0; row < perColumn; row++) {
       var index = col * perColumn + row;
       if (index >= chars.length) break;
-      var painter = glyph(chars[index], chosen);
+      var dyBase = top + row * cellH;
+      if (strokeStyle != null) {
+        var sp = glyph(chars[index], chosen, strokeStyle);
+        sp.paint(
+          canvas,
+          ui.Offset(colCenterX - sp.width / 2, dyBase + (cellH - sp.height) / 2),
+        );
+        sp.dispose();
+      }
+      var painter = glyph(chars[index], chosen, fillStyle);
       var dx = colCenterX - painter.width / 2;
-      var dy = top + row * cellH + (cellH - painter.height) / 2;
+      var dy = dyBase + (cellH - painter.height) / 2;
       painter.paint(canvas, ui.Offset(dx, dy));
       painter.dispose();
     }
   }
 }
 
-/// Finds the largest font size whose wrapped layout fits the region.
-TextPainter _fitText(
-  String text,
-  ui.Color color,
-  double maxWidth,
-  double maxHeight,
-) {
-  TextPainter build(double fontSize) {
-    var painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color,
-          fontSize: fontSize,
-          height: 1.2,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout(maxWidth: math.max(8, maxWidth));
-    return painter;
-  }
-
+/// Largest font size whose wrapped horizontal layout fits [maxWidth]x[maxHeight].
+double _fitFontSize(String text, double maxWidth, double maxHeight) {
   var upper = math.max(10.0, math.min(42.0, maxHeight * 0.8));
   const lower = 7.0;
   var size = upper;
   while (size > lower) {
-    var painter = build(size);
-    if (painter.height <= maxHeight && painter.width <= maxWidth) {
-      return painter;
-    }
+    var painter = _horizontalPainter(text, size, _fillStyle(
+      const ui.Color(0xFF000000),
+      size,
+    ), maxWidth);
+    var fits = painter.height <= maxHeight && painter.width <= maxWidth;
     painter.dispose();
+    if (fits) return size;
     size -= 1.5;
   }
-  return build(lower);
+  return lower;
 }
