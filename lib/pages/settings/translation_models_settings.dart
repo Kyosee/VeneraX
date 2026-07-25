@@ -33,7 +33,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       'ocr_zh' => "Chinese / Latin OCR".tl,
       'ocr_en' => "English OCR".tl,
       'ocr_ko' => "Korean OCR".tl,
-      'inpaint' => "AI text removal".tl,
       _ => id,
     };
   }
@@ -77,11 +76,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
               _buildComponent(context, component, requiredIds).toSliver(),
           _buildSectionHeader(context, "Text recognition".tl).toSliver(),
           for (var component in TranslationModels.all)
-            if (component.id != 'text_detector' && component.id != 'inpaint')
-              _buildComponent(context, component, requiredIds).toSliver(),
-          _buildSectionHeader(context, "Text removal (optional)".tl).toSliver(),
-          for (var component in TranslationModels.all)
-            if (component.id == 'inpaint')
+            if (component.id != 'text_detector')
               _buildComponent(context, component, requiredIds).toSliver(),
           const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
         ],

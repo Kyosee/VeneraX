@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
@@ -144,56 +143,13 @@ class PageTranslationPipeline {
 
   /// Renders [regions] over the page. Split from [analyzePage] so a page
   /// whose rendered image was evicted can be rebuilt from the cached text
-  /// results alone. In the erase modes the original lettering is removed from
-  /// the decoded pixels first — pure-Dart for [InpaintMode.smart], the ONNX
-  /// model for [InpaintMode.ai] (falling back to Dart when it is unavailable) —
-  /// so the renderer draws over a clean background.
+  /// results alone.
   Future<Uint8List> renderPage(
     Uint8List imageBytes,
-    List<TranslatedRegion> regions, {
-    InpaintMode mode = InpaintMode.smart,
-  }) async {
-    var image = await _decode(imageBytes);
-    if (mode != InpaintMode.patch && regions.isNotEmpty) {
-      await _erase(image, regions, mode);
-    }
-    return await renderTranslatedPage(imageBytes, image, regions, mode: mode);
-  }
-
-  /// Removes the original lettering inside every region from [image.pixels].
-  /// The AI path runs the model in the worker; any failure (model missing, an
-  /// unsupported op) degrades to the pure-Dart erase so text is never left
-  /// showing through.
-  Future<void> _erase(
-    RgbaImage image,
     List<TranslatedRegion> regions,
-    InpaintMode mode,
   ) async {
-    var rects = [for (var r in regions) r.rect];
-    if (mode == InpaintMode.ai) {
-      var modelPath = TranslationModels.inpaintModelPath();
-      if (modelPath != null) {
-        try {
-          var flat = Int32List(rects.length * 4);
-          for (var i = 0; i < rects.length; i++) {
-            flat[i * 4] = rects[i].left;
-            flat[i * 4 + 1] = rects[i].top;
-            flat[i * 4 + 2] = rects[i].right;
-            flat[i * 4 + 3] = rects[i].bottom;
-          }
-          var pixels = await TranslationWorker.instance.inpaintPage(
-            image,
-            maskRects: flat,
-            modelPath: modelPath,
-          );
-          image.pixels.setAll(0, pixels);
-          return;
-        } catch (e, s) {
-          Log.warning('Image Translation', 'AI inpaint failed, using Dart: $e\n$s');
-        }
-      }
-    }
-    TextInpainter.erase(image, rects);
+    var image = await _decode(imageBytes);
+    return await renderTranslatedPage(imageBytes, image, regions);
   }
 
   TranslatedRegion _region(OcrBlock block, String text) {

@@ -447,11 +447,6 @@ class Settings with ChangeNotifier {
     // 预翻译 LLM 翻译请求的并发上限（clamp 1..4），叠加 AIMD 退避。阅读器内即时
     // 翻译与预翻译共用同一按服务商分桶的限流器。
     'imageTranslationLlmConcurrency': 2,
-    // 译文嵌字方式：patch=旧的纯色块盖字（保底、全平台）；smart=智能擦除，纯
-    // Dart 估文字笔画并用邻域填充抹掉原文，仅在需要时加描边/半透明底（默认）；
-    // ai=用可选下载的移动级 inpaint 模型擦除，未安装时自动降级到 smart。渲染图
-    // 缓存键会带此模式的标记，切换后自动从已存文本重渲，不重跑 OCR/翻译。
-    'imageTranslationInpaintMode': 'smart', // patch, smart, ai
   };
 
   operator [](String key) {
