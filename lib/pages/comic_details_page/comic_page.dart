@@ -121,6 +121,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   bool _networkFetching = false;
 
+  @override
+  bool get isDetailsLoading => _networkFetching;
+
   /// The backing local-library comic for this page, when there is one. Lets the
   /// cover load directly from disk for pure local imports (issue #38).
   LocalComic? _localComic;
@@ -1811,10 +1814,87 @@ class _SelectPreTranslateChapterState
     );
   }
 
+  /// Whether chapter [index] has translation content the user could delete or
+  /// re-run, and is NOT currently being translated. Any stored page (including
+  /// an empty "no text" result) counts as translated content — this catches
+  /// both fully translated and partially translated chapters, while excluding
+  /// an active chapter so a per-chapter action can't collide with a live job.
+  bool _chapterHasIdleTranslation(int index) {
+    var eid = widget.entries[index].$1;
+    var manager = PreTranslationTaskManager.instance;
+    if (manager.isChapterActive(widget.cid, widget.sourceKey, eid)) {
+      return false;
+    }
+    return ImageTranslationService.storedPageCount(
+          widget.cid,
+          widget.sourceKey,
+          eid,
+        ) >
+        0;
+  }
+
+  /// Clears just this chapter's stored text + rendered pages (the comic's
+  /// learned glossary is kept, other chapters still rely on it) and drops its
+  /// recorded pre-translation status so the "translated" marker goes away. No
+  /// new job is started — use "Re-translate" for that.
+  void _deleteChapterTranslation(int index) {
+    var eid = widget.entries[index].$1;
+    var title = widget.entries[index].$2;
+    showConfirmDialog(
+      context: context,
+      title: "Delete this chapter's translation?".tl,
+      content:
+          "This removes the stored translation and rendered pages of \"@title\". The original images are unaffected."
+              .tlParams({'title': title}),
+      onConfirm: () async {
+        await ImageTranslationService.instance.retranslate(
+          widget.cid,
+          widget.sourceKey,
+          eid: eid,
+        );
+        PreTranslationTaskManager.instance
+            .resetChapterStatus(widget.cid, widget.sourceKey, {eid});
+        if (mounted) {
+          setState(() {});
+          App.rootContext.showMessage(
+            message: "Translation results cleared".tl,
+          );
+        }
+      },
+    );
+  }
+
+  /// Clears this chapter's translation and immediately queues a fresh job for
+  /// just this chapter (the glossary is kept so it stays consistent with the
+  /// rest of the comic).
+  void _reTranslateChapter(int index) {
+    var eid = widget.entries[index].$1;
+    var title = widget.entries[index].$2;
+    showConfirmDialog(
+      context: context,
+      title: "Re-translate this chapter?".tl,
+      content:
+          "This clears the translation of \"@title\" and translates it again."
+              .tlParams({'title': title}),
+      onConfirm: () async {
+        await ImageTranslationService.instance.retranslate(
+          widget.cid,
+          widget.sourceKey,
+          eid: eid,
+        );
+        PreTranslationTaskManager.instance
+            .resetChapterStatus(widget.cid, widget.sourceKey, {eid});
+        widget.finishSelect([index]);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   /// One checkbox row for the flat chapter index [i].
   Widget _buildChapterTile(int i) {
     var title = widget.entries[i].$2;
     var progress = _buildChapterStatus(i);
+    var hasIdleTranslation = _chapterHasIdleTranslation(i);
     return CheckboxListTile(
       title: Row(
         children: [
@@ -1823,6 +1903,22 @@ class _SelectPreTranslateChapterState
             const SizedBox(width: 8),
             progress,
           ],
+          if (hasIdleTranslation)
+            MenuButton(
+              entries: [
+                MenuEntry(
+                  icon: Icons.refresh_rounded,
+                  text: "Re-translate".tl,
+                  onClick: () => _reTranslateChapter(i),
+                ),
+                MenuEntry(
+                  icon: Icons.delete_outline_rounded,
+                  text: "Delete translation".tl,
+                  color: context.colorScheme.error,
+                  onClick: () => _deleteChapterTranslation(i),
+                ),
+              ],
+            ),
         ],
       ),
       value: selected.contains(i),

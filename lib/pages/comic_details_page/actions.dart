@@ -9,6 +9,11 @@ abstract mixin class _ComicPageActions {
 
   History? get history;
 
+  /// Whether the network fetch that resolves the chapter list is still running.
+  /// A comic with chapters shows [ComicDetails.chapters] == null until this
+  /// completes, so pre-translate must wait rather than treat it as chapter-less.
+  bool get isDetailsLoading;
+
   bool isLiking = false;
 
   bool isLiked = false;
@@ -140,6 +145,16 @@ abstract mixin class _ComicPageActions {
     if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       App.rootContext.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
+      );
+      return;
+    }
+    // The chapter list arrives with the background network fetch; until it
+    // finishes, comic.chapters is null even for a comic that HAS chapters.
+    // Treating that as chapter-less would wrongly start a whole-comic job and
+    // skip the picker, so wait for the fetch instead.
+    if (isDetailsLoading && comic.chapters == null) {
+      App.rootContext.showMessage(
+        message: "Loading chapters, please wait".tl,
       );
       return;
     }

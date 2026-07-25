@@ -1069,7 +1069,13 @@
     "This clears all translations and the learned glossary for this comic, then translates again.": "将清除该漫画的所有翻译及已学习的术语表，然后重新翻译。",
     "Select chapters to re-translate first": "请先勾选要重新翻译的章节",
     "Re-translate selected chapters?": "重新翻译所选章节？",
-    "This clears the translations of the @count selected chapters, then translates them again.": "将清除所选 @count 个章节的翻译，然后重新翻译。"
+    "This clears the translations of the @count selected chapters, then translates them again.": "将清除所选 @count 个章节的翻译，然后重新翻译。",
+    "Loading chapters, please wait": "章节列表加载中，请稍候",
+    "Delete translation": "删除翻译",
+    "Delete this chapter's translation?": "删除该章节的翻译？",
+    "This removes the stored translation and rendered pages of \"@title\". The original images are unaffected.": "将删除「@title」已存的翻译和嵌字页面，原图不受影响。",
+    "Re-translate this chapter?": "重新翻译该章节？",
+    "This clears the translation of \"@title\" and translates it again.": "将清除「@title」的翻译，然后重新翻译。"
   },
   "zh_TW": {
     "LLM API URL": "LLM API 位址",
@@ -2141,6 +2147,12 @@
     "This clears all translations and the learned glossary for this comic, then translates again.": "將清除該漫畫的所有翻譯及已學習的術語表，然後重新翻譯。",
     "Select chapters to re-translate first": "請先勾選要重新翻譯的章節",
     "Re-translate selected chapters?": "重新翻譯所選章節？",
-    "This clears the translations of the @count selected chapters, then translates them again.": "將清除所選 @count 個章節的翻譯，然後重新翻譯。"
+    "This clears the translations of the @count selected chapters, then translates them again.": "將清除所選 @count 個章節的翻譯，然後重新翻譯。",
+    "Loading chapters, please wait": "正在載入章節，請稍候",
+    "Delete translation": "刪除翻譯",
+    "Delete this chapter's translation?": "刪除此章節的翻譯？",
+    "This removes the stored translation and rendered pages of \"@title\". The original images are unaffected.": "將移除「@title」已儲存的翻譯與嵌字頁面，原始圖片不受影響。",
+    "Re-translate this chapter?": "重新翻譯此章節？",
+    "This clears the translation of \"@title\" and translates it again.": "將清除「@title」的翻譯，然後重新翻譯。"
   }
 }
