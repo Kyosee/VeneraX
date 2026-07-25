@@ -84,15 +84,34 @@ class ImageTranslationService with ChangeNotifier {
   PageTranslationPipeline? _pipeline;
   Timer? _releaseTimer;
 
+  InpaintMode? _markersMode;
+
+  /// The done/failed markers key on the raw cacheKey but describe a rendered
+  /// image, which depends on the render mode. On a mode switch they no longer
+  /// match what is cached under the new mode's key, so drop them and let pages
+  /// re-probe. "No translatable text" is mode independent and kept.
+  void _syncMarkersToMode() {
+    var mode = renderMode;
+    if (_markersMode == mode) return;
+    _markersMode = mode;
+    _completed.clear();
+    _failures.clear();
+    _errors.clear();
+  }
+
   /// Whether a translated page is known to exist for [cacheKey]. Feeds the
   /// provider identity so a finished background translation produces a new
   /// provider and the visible image swaps in place.
-  bool isTranslated(String cacheKey) => _completed.contains(cacheKey);
+  bool isTranslated(String cacheKey) {
+    _syncMarkersToMode();
+    return _completed.contains(cacheKey);
+  }
 
   void markTranslated(String cacheKey) => _completed.add(cacheKey);
 
   /// Current per-page translation state, for the reader status badge.
   PageTranslationStatus statusOf(String cacheKey) {
+    _syncMarkersToMode();
     if (_completed.contains(cacheKey)) return PageTranslationStatus.translated;
     if (_noContent.contains(cacheKey)) return PageTranslationStatus.noContent;
     if (_active.any((t) => t.cacheKey == cacheKey)) {
@@ -592,6 +611,7 @@ class ImageTranslationService with ChangeNotifier {
     Uint8List imageBytes,
     VoidCallback onTranslated,
   ) {
+    _syncMarkersToMode();
     if (_noContent.contains(cacheKey)) {
       return;
     }
