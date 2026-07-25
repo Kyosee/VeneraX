@@ -483,7 +483,33 @@ abstract mixin class _ComicPageActions {
 
   void showMoreActions() {
     var context = App.rootContext;
+    final translationEnabled = ImageTranslationService.isEnabledForComic(
+      comic.id,
+      comic.sourceKey,
+    );
     showMenuX(context, Offset(context.width - 16, context.padding.top), [
+      // Per-comic AI translation switch. Toggling notifies the service, which
+      // the detail page listens to, so the pre-translate button appears/hides
+      // in sync (when the engine is also ready).
+      MenuEntry(
+        icon: Icons.translate_rounded,
+        text: translationEnabled
+            ? "Disable AI translation".tl
+            : "Enable AI translation".tl,
+        color: translationEnabled ? context.colorScheme.primary : null,
+        onClick: () {
+          ImageTranslationService.setEnabledForComic(
+            comic.id,
+            comic.sourceKey,
+            !translationEnabled,
+          );
+          context.showMessage(
+            message: translationEnabled
+                ? "AI translation disabled".tl
+                : "AI translation enabled".tl,
+          );
+        },
+      ),
       MenuEntry(
         icon: Icons.copy,
         text: "Copy Title".tl,
