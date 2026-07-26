@@ -25,6 +25,7 @@ class PreTranslationChapter {
     this.total = 0,
     this.done = 0,
     this.failed = 0,
+    this.canceled = false,
     Set<int>? failedPages,
   }) : failedPages = failedPages ?? <int>{};
 
@@ -37,6 +38,12 @@ class PreTranslationChapter {
   int total;
   int done;
   int failed;
+
+  /// Set when the user cancels just this chapter of a still-running job. The
+  /// worker loop skips a canceled chapter (both the forward pass and the retry
+  /// pass), so the rest of the job keeps going. Not persisted as "running": a
+  /// canceled chapter is simply left where it stopped and never resumed.
+  bool canceled;
 
   /// Indices (into the resolved page-key list) of the pages that failed this
   /// run, so a retry can re-run exactly those and leave the succeeded pages
@@ -54,6 +61,7 @@ class PreTranslationChapter {
     'total': total,
     'done': done,
     'failed': failed,
+    'canceled': canceled,
     'failedPages': failedPages.toList(),
   };
 
@@ -64,6 +72,7 @@ class PreTranslationChapter {
       total: json['total'] ?? 0,
       done: json['done'] ?? 0,
       failed: json['failed'] ?? 0,
+      canceled: json['canceled'] == true,
       failedPages: (json['failedPages'] as List? ?? [])
           .map((e) => e is int ? e : int.tryParse('$e'))
           .whereType<int>()
@@ -240,7 +249,10 @@ class PreTranslationTaskManager with ChangeNotifier {
     for (var task in currentTasks) {
       if (task.comicKey != comicKey) continue;
       var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
-      if (chapter != null) return chapter;
+      // A per-chapter cancel leaves the chapter in the running job but no longer
+      // being worked; fall through so the history/stored-text lookup can still
+      // surface a "translated" marker if some pages were done before the cancel.
+      if (chapter != null && !chapter.canceled) return chapter;
     }
     // Otherwise only report a finished chapter (all pages accounted for) so a
     // canceled/failed run does not masquerade as in-progress after restart.
@@ -262,7 +274,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     var comicKey = '$cid@$sourceKey';
     for (var task in currentTasks) {
       if (task.comicKey != comicKey) continue;
-      if (task.chapters.any((c) => c.eid == eid)) return true;
+      if (task.chapters.any((c) => c.eid == eid && !c.canceled)) return true;
     }
     return false;
   }
@@ -279,6 +291,32 @@ class PreTranslationTaskManager with ChangeNotifier {
     if (!_runningIds.contains(id)) {
       _canceledIds.remove(id);
     }
+    notifyListeners();
+  }
+
+  /// Cancels just one chapter of a still-running job, leaving the other
+  /// chapters to keep translating. The chapter is flagged [PreTranslationChapter.canceled]
+  /// so both the forward pass and the retry pass skip it; an in-flight chapter
+  /// stops at the next group boundary. If every remaining chapter is now
+  /// canceled (or already finished), the whole job is canceled so it doesn't
+  /// linger as "running" with nothing left to do.
+  void cancelChapter(String taskId, String eid) {
+    var task = currentTasks.where((t) => t.id == taskId).firstOrNull;
+    if (task == null) return;
+    var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
+    if (chapter == null || chapter.canceled) return;
+    chapter.canceled = true;
+    // If nothing is left to do, cancel the whole job. "Left to do" = a chapter
+    // that isn't canceled and isn't already fully processed.
+    var hasPending = task.chapters.any((c) {
+      if (c.canceled) return false;
+      return c.total <= 0 || (c.done + c.failed) < c.total;
+    });
+    if (!hasPending) {
+      cancel(taskId);
+      return;
+    }
+    _saveActive();
     notifyListeners();
   }
 
@@ -347,6 +385,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     try {
       for (var chapter in task.chapters) {
         if (_canceledIds.contains(task.id)) break;
+        if (chapter.canceled) continue;
         await _waitWhilePaused(task);
         if (_canceledIds.contains(task.id)) break;
         await _runChapter(task, chapter);
@@ -476,9 +515,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     while (next < ranges.length) {
-      if (_canceledIds.contains(task.id)) break;
+      if (_canceledIds.contains(task.id) || chapter.canceled) break;
       await _waitWhilePaused(task);
-      if (_canceledIds.contains(task.id)) break;
+      if (_canceledIds.contains(task.id) || chapter.canceled) break;
       launch(next++);
       if (active.length >= overlap) {
         await Future.any(active);
@@ -511,6 +550,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     var groupSize = _batchPages;
     for (var chapter in task.chapters) {
       if (_canceledIds.contains(task.id)) return;
+      if (chapter.canceled) continue;
       if (chapter.failed <= 0) continue;
 
       // Legacy task with failures but no recorded indices: reset the chapter so
@@ -875,6 +915,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         c.done = 0;
         c.failed = 0;
         c.total = 0;
+        c.canceled = false;
         c.failedPages.clear();
       }
     }
@@ -898,6 +939,7 @@ class PreTranslationTaskManager with ChangeNotifier {
           c.done = 0;
           c.failed = 0;
           c.total = 0;
+          c.canceled = false;
           c.failedPages.clear();
         }
       }
@@ -920,6 +962,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         c.done = 0;
         c.failed = 0;
         c.total = 0;
+        c.canceled = false;
         c.failedPages.clear();
       }
     }

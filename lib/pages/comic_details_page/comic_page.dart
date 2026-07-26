@@ -1890,10 +1890,66 @@ class _SelectPreTranslateChapterState
     );
   }
 
+  /// Cancels just this chapter's slice of a running pre-translation job,
+  /// leaving the rest of the job going. Only meaningful while the chapter is
+  /// active (queued or translating).
+  void _cancelChapter(int index) {
+    var eid = widget.entries[index].$1;
+    var manager = PreTranslationTaskManager.instance;
+    var task = manager.runningTaskFor(widget.cid, widget.sourceKey);
+    if (task == null) return;
+    manager.cancelChapter(task.id, eid);
+    if (mounted) {
+      setState(() {});
+      App.rootContext.showMessage(
+        message: "Chapter translation canceled".tl,
+      );
+    }
+  }
+
+  /// Clears every stored translation and rendered page of this whole comic
+  /// (the learned glossary too, matching the detail page's whole-comic
+  /// re-translate) without starting a new job. Reached from the picker's menu.
+  void _deleteComicTranslation() {
+    showConfirmDialog(
+      context: context,
+      title: "Delete all translations for this comic?".tl,
+      content:
+          "This removes every stored translation and rendered page of this comic. The original images are unaffected."
+              .tl,
+      onConfirm: () async {
+        // Stop any running job for this comic first, so it doesn't keep
+        // repopulating the cache we're about to clear.
+        var running = PreTranslationTaskManager.instance
+            .runningTaskFor(widget.cid, widget.sourceKey);
+        if (running != null) {
+          PreTranslationTaskManager.instance.cancel(running.id);
+        }
+        await ImageTranslationService.instance.retranslate(
+          widget.cid,
+          widget.sourceKey,
+        );
+        PreTranslationTaskManager.instance.resetComicStatus(
+          widget.cid,
+          widget.sourceKey,
+        );
+        if (mounted) {
+          setState(() {});
+          App.rootContext.showMessage(
+            message: "Translation results cleared".tl,
+          );
+        }
+      },
+    );
+  }
+
   /// One checkbox row for the flat chapter index [i].
   Widget _buildChapterTile(int i) {
     var title = widget.entries[i].$2;
+    var eid = widget.entries[i].$1;
     var progress = _buildChapterStatus(i);
+    var isActive = PreTranslationTaskManager.instance
+        .isChapterActive(widget.cid, widget.sourceKey, eid);
     var hasIdleTranslation = _chapterHasIdleTranslation(i);
     return CheckboxListTile(
       title: Row(
@@ -1903,7 +1959,15 @@ class _SelectPreTranslateChapterState
             const SizedBox(width: 8),
             progress,
           ],
-          if (hasIdleTranslation)
+          if (isActive)
+            IconButton(
+              icon: const Icon(Icons.close_rounded),
+              iconSize: 20,
+              tooltip: "Cancel translation".tl,
+              color: context.colorScheme.error,
+              onPressed: () => _cancelChapter(i),
+            )
+          else if (hasIdleTranslation)
             MenuButton(
               entries: [
                 MenuEntry(
@@ -1987,6 +2051,12 @@ class _SelectPreTranslateChapterState
                 icon: Icons.refresh_rounded,
                 text: "Re-translate selected".tl,
                 onClick: _reTranslate,
+              ),
+              MenuEntry(
+                icon: Icons.delete_outline_rounded,
+                text: "Delete all translations".tl,
+                color: context.colorScheme.error,
+                onClick: _deleteComicTranslation,
               ),
             ],
           ),

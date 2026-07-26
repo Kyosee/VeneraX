@@ -1082,7 +1082,12 @@
     "Delete this chapter's translation?": "删除该章节的翻译？",
     "This removes the stored translation and rendered pages of \"@title\". The original images are unaffected.": "将删除「@title」已存的翻译和嵌字页面，原图不受影响。",
     "Re-translate this chapter?": "重新翻译该章节？",
-    "This clears the translation of \"@title\" and translates it again.": "将清除「@title」的翻译，然后重新翻译。"
+    "This clears the translation of \"@title\" and translates it again.": "将清除「@title」的翻译，然后重新翻译。",
+    "Cancel translation": "取消翻译",
+    "Chapter translation canceled": "已取消该章节翻译",
+    "Delete all translations": "删除本漫画翻译",
+    "Delete all translations for this comic?": "删除本漫画的全部翻译？",
+    "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
     "LLM API URL": "LLM API 位址",
@@ -2167,6 +2172,11 @@
     "Delete this chapter's translation?": "刪除此章節的翻譯？",
     "This removes the stored translation and rendered pages of \"@title\". The original images are unaffected.": "將移除「@title」已儲存的翻譯與嵌字頁面，原始圖片不受影響。",
     "Re-translate this chapter?": "重新翻譯此章節？",
-    "This clears the translation of \"@title\" and translates it again.": "將清除「@title」的翻譯，然後重新翻譯。"
+    "This clears the translation of \"@title\" and translates it again.": "將清除「@title」的翻譯，然後重新翻譯。",
+    "Cancel translation": "取消翻譯",
+    "Chapter translation canceled": "已取消該章節的翻譯",
+    "Delete all translations for this comic?": "刪除這部漫畫的全部翻譯？",
+    "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "將移除這部漫畫已儲存的所有翻譯與嵌字頁面，原始圖片不受影響。",
+    "Delete all translations": "刪除本漫畫翻譯"
   }
 }
