@@ -127,6 +127,18 @@ class PopUpWidgetScaffold extends StatefulWidget {
 class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
   bool top = true;
 
+  /// Keeps the last row of content clear of the navigation bar / gesture area.
+  /// On wide screens the pop up is a centered card, so only a small gap is
+  /// needed; the system inset belongs to the page behind it.
+  double _bottomPadding(BuildContext context) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      // Keyboard is up: the spacer below already reserves room.
+      return 8;
+    }
+    var isCard = MediaQuery.sizeOf(context).width > 500;
+    return (isCard ? 0 : context.padding.bottom) + 8;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -192,7 +204,12 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
             child: MediaQuery.removePadding(
               removeTop: true,
               context: context,
-              child: Expanded(child: widget.body),
+              child: Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: _bottomPadding(context)),
+                  child: widget.body,
+                ),
+              ),
             ),
           ),
           SizedBox(

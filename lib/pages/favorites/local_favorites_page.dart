@@ -1311,7 +1311,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                 ? "All".tl
                 : (favPage.folder ?? "Unselected".tl),
             body: Padding(
-              padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
+              // The scaffold already clears the system inset; this is just
+              // extra breathing room under the confirm button.
+              padding: const EdgeInsets.only(bottom: 8),
               child: Container(
                 constraints: const BoxConstraints(
                   maxHeight: 700,
