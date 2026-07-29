@@ -1,5 +1,12 @@
 {
   "zh_CN": {
+    "Add WebDAV library": "添加 WebDAV 漫画库",
+    "Display name": "显示名称",
+    "@c libraries": "@c 个库",
+    "Delete library '@n'? Comics on the server are kept.": "删除库「@n」？服务器上的漫画不会被删除。",
+    "Manage libraries": "管理库",
+    "Target library": "目标库",
+    "Testing": "正在测试",
     "LLM API URL": "LLM API 地址",
     "LLM API Key": "LLM API 密钥",
     "LLM Model": "LLM 模型",
@@ -1090,6 +1097,13 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Add WebDAV library": "新增 WebDAV 漫畫庫",
+    "Display name": "顯示名稱",
+    "@c libraries": "@c 個庫",
+    "Delete library '@n'? Comics on the server are kept.": "刪除庫「@n」？伺服器上的漫畫不會被刪除。",
+    "Manage libraries": "管理庫",
+    "Target library": "目標庫",
+    "Testing": "正在測試",
     "LLM API URL": "LLM API 位址",
     "LLM API Key": "LLM API 金鑰",
     "LLM Model": "LLM 模型",

@@ -2,21 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/network/webdav_library.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
-import 'package:venera/pages/settings/settings_page.dart';
+import 'package:venera/pages/webdav_libraries_page.dart';
 import 'package:venera/utils/import_comic.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
-/// Browses the configured WebDAV comic library. Folders open as online comics
-/// (routed through [ComicPage] with the native `webdav_library` source key);
-/// archive files are offered for download-and-import through the existing
-/// comic importer.
+/// Browses one configured WebDAV comic library. Folders open as online comics
+/// (routed through [ComicPage] with that library's own source key); archive
+/// files are offered for download-and-import through the existing comic
+/// importer.
 class WebdavLibraryPage extends StatefulWidget {
-  const WebdavLibraryPage({super.key, this.dir});
+  const WebdavLibraryPage({super.key, required this.libraryId, this.dir});
 
-  /// Server-absolute directory to browse. Null browses the configured root.
+  /// Which configured library to browse. Held as an id rather than a snapshot so
+  /// an edit made from the settings shortcut is picked up on refresh.
+  final String libraryId;
+
+  /// Server-absolute directory to browse. Null browses the library root.
   final String? dir;
 
   @override
@@ -28,6 +33,8 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   String? error;
   List<WebdavEntry> entries = const [];
 
+  WebdavLibraryConfig? get _config => WebdavLibraryStore.find(widget.libraryId);
+
   @override
   void initState() {
     super.initState();
@@ -35,7 +42,9 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   }
 
   void _load() async {
-    if (!WebdavLibrary.isConfigured) {
+    final client = WebdavLibraryClient.forId(widget.libraryId);
+    if (client == null) {
+      // The library was deleted (possibly from the shortcut on this very page).
       setState(() {
         loading = false;
         error = null;
@@ -47,7 +56,7 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
       loading = true;
       error = null;
     });
-    final res = await WebdavLibrary.instance.listEntries(widget.dir);
+    final res = await client.listEntries(widget.dir);
     if (!mounted) return;
     setState(() {
       loading = false;
@@ -73,7 +82,7 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
           null,
           null,
           '',
-          WebdavLibrary.sourceKey,
+          _config?.sourceKey ?? WebdavLibraryStore.legacySourceKey,
           null,
           null,
         ),
@@ -85,13 +94,14 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final config = _config;
     return Scaffold(
       body: SmoothCustomScrollView(
         slivers: [
           SliverAppbar(
             title: Text(
               widget.dir == null
-                  ? "WebDAV Library".tl
+                  ? (config?.displayName ?? "WebDAV Library".tl)
                   : WebdavLibrary.titleOf(widget.dir!),
             ),
             actions: [
@@ -101,9 +111,11 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
                   child: IconButton(
                     icon: const Icon(Icons.settings_outlined),
                     onPressed: () async {
+                      final current = _config;
+                      if (current == null) return;
                       await showPopUpWidget(
                         context,
-                        const WebdavLibrarySetting(),
+                        WebdavLibraryEditor(config: current),
                       );
                       if (mounted) _load();
                     },
@@ -125,11 +137,13 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   }
 
   List<Widget> _buildBody() {
-    if (!WebdavLibrary.isConfigured) {
+    if (_config == null) {
       return [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: _NotConfigured(onConfigured: _load),
+          child: Center(
+            child: Text("WebDAV comic library is not configured".tl),
+          ),
         ),
       ];
     }
@@ -186,10 +200,12 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   }
 
   void _openComic(Comic comic, int heroID) {
+    final sourceKey = _config?.sourceKey;
+    if (sourceKey == null) return;
     context.to(
       () => ComicPage(
         id: comic.id,
-        sourceKey: WebdavLibrary.sourceKey,
+        sourceKey: sourceKey,
         title: comic.title,
         heroID: heroID,
       ),
@@ -197,6 +213,8 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   }
 
   void _importArchive(WebdavEntry entry) async {
+    final client = WebdavLibraryClient.forId(widget.libraryId);
+    if (client == null) return;
     final dir = await _tempDir();
     final savePath = FilePath.join(dir, entry.name);
     final controller = showLoadingDialog(
@@ -204,10 +222,7 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
       message: "Downloading".tl,
       allowCancel: false,
     );
-    final res = await WebdavLibrary.instance.downloadArchive(
-      entry.path,
-      savePath,
-    );
+    final res = await client.downloadArchive(entry.path, savePath);
     controller.close();
     if (!mounted) {
       // Left the page mid-download: still clean up the temp file.
@@ -249,38 +264,5 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
       await dir.create(recursive: true);
     }
     return d;
-  }
-}
-
-class _NotConfigured extends StatelessWidget {
-  const _NotConfigured({required this.onConfigured});
-
-  final VoidCallback onConfigured;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.cloud_off_outlined,
-            size: 48,
-            color: context.colorScheme.outline,
-          ),
-          const SizedBox(height: 16),
-          Text("WebDAV comic library is not configured".tl, style: ts.s16),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            icon: const Icon(Icons.settings_outlined),
-            label: Text("Configure".tl),
-            onPressed: () async {
-              await showPopUpWidget(context, const WebdavLibrarySetting());
-              onConfigured();
-            },
-          ),
-        ],
-      ),
-    );
   }
 }

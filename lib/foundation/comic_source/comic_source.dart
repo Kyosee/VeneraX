@@ -9,7 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
 import 'package:venera/foundation/comic_source/webdav_source.dart';
-import 'package:venera/network/webdav_library.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/res.dart';
@@ -44,12 +44,48 @@ class ComicSourceManager with ChangeNotifier, Init {
 
   final _recoverableParseWarnings = <String>{};
 
+  /// Keys of the sources this manager registered for WebDAV libraries. Tracked
+  /// exactly rather than matched by prefix so a re-registration can never
+  /// unregister a user's own script source that happens to be named like one.
+  final _webdavLibrarySourceKeys = <String>{};
+
   factory ComicSourceManager() => _instance ??= ComicSourceManager._create();
 
   List<ComicSource> all() => List.from(_sources);
 
   ComicSource? find(String key) =>
+      _findRegistered(key) ?? _adoptWebdavLibrary(key);
+
+  /// Plain lookup among the sources already registered. Used internally where
+  /// [find]'s self-healing must not kick in — notably the duplicate check in
+  /// [_addParsedSource], which would otherwise see the source that check is
+  /// about to add.
+  ComicSource? _findRegistered(String key) =>
       _sources.firstWhereOrNull((element) => element.key == key);
+
+  /// Registers a WebDAV comic library that exists in the configuration but has
+  /// no source yet, then returns it.
+  ///
+  /// Settings can be replaced wholesale behind our back — a sync download, a
+  /// backup restore, or a scanned config transfer can all introduce a library
+  /// without going through the manage screen that re-registers sources. Without
+  /// this, such a library would list and browse fine (those read the config
+  /// directly) but fail the moment a comic was opened, since the reader and the
+  /// image loader resolve everything through [find]. Healing it here covers
+  /// every one of those paths at the single point they all funnel through.
+  ///
+  /// Deliberately does not notify listeners: [find] is called during builds and
+  /// image loads, where a notification would be re-entrant.
+  ComicSource? _adoptWebdavLibrary(String key) {
+    if (!WebdavLibraryStore.isLibrarySourceKey(key)) return null;
+    final config = WebdavLibraryStore.findBySourceKey(key);
+    if (config == null) return null;
+    final source = buildWebdavComicSource(config);
+    _sources.add(source);
+    _webdavLibrarySourceKeys.add(key);
+    SourcePlatformResolver.registerLegacyIntSourceKey(key.hashCode, key);
+    return source;
+  }
 
   ComicSource? fromIntKey(int key) =>
       _sources.firstWhereOrNull((element) => element.key.hashCode == key) ??
@@ -63,11 +99,12 @@ class ComicSourceManager with ChangeNotifier, Init {
   Future<void> doInit() async {
     await JsEngine().ensureInit();
     ComicSourceLibraryManager.migrateIfNeeded();
-    // The built-in WebDAV library is a native (non-script) source, so it is
+    WebdavLibraryStore.migrateIfNeeded();
+    // WebDAV comic libraries are native (non-script) sources, so they are
     // registered directly rather than parsed from disk. Registered before the
-    // script scan (which may early-return when no scripts exist) so it is
+    // script scan (which may early-return when no scripts exist) so they are
     // always present.
-    _addParsedSource(buildWebdavComicSource(), WebdavLibrary.sourceKey);
+    _registerWebdavLibrarySources();
     final path = "${App.dataPath}/comic_source";
     if (!(await Directory(path).exists())) {
       await Directory(path).create(recursive: true);
@@ -95,8 +132,33 @@ class ComicSourceManager with ChangeNotifier, Init {
   Future reload() async {
     _sources.clear();
     _recoverableParseWarnings.clear();
+    _webdavLibrarySourceKeys.clear();
     JsEngine().runCode("ComicSource.sources = {};");
     await doInit();
+    notifyListeners();
+  }
+
+  /// Registers one native source per configured WebDAV comic library.
+  void _registerWebdavLibrarySources() {
+    for (final config in WebdavLibraryStore.effective()) {
+      if (_addParsedSource(buildWebdavComicSource(config), config.sourceKey)) {
+        _webdavLibrarySourceKeys.add(config.sourceKey);
+      }
+    }
+  }
+
+  /// Re-registers the WebDAV library sources after the user added, edited,
+  /// removed or reordered libraries.
+  ///
+  /// Only these sources are rebuilt — a full [reload] would re-parse every
+  /// script and reset the JS engine, dropping source login state for an edit
+  /// that has nothing to do with scripts. A library that was deleted loses its
+  /// source, which is intended: its comics are no longer reachable, and the
+  /// detail/reader pages already handle an unknown source key.
+  void refreshWebdavLibrarySources() {
+    _sources.removeWhere((e) => _webdavLibrarySourceKeys.contains(e.key));
+    _webdavLibrarySourceKeys.clear();
+    _registerWebdavLibrarySources();
     notifyListeners();
   }
 
@@ -113,7 +175,7 @@ class ComicSourceManager with ChangeNotifier, Init {
   }
 
   bool _addParsedSource(ComicSource source, String sourceName) {
-    if (find(source.key) != null) {
+    if (_findRegistered(source.key) != null) {
       _logRecoverableParseWarning(
         sourceName,
         ComicSourceParseException(
@@ -151,6 +213,7 @@ class ComicSourceManager with ChangeNotifier, Init {
 
   void remove(String key) {
     _sources.removeWhere((element) => element.key == key);
+    _webdavLibrarySourceKeys.remove(key);
     // Drop cached update state so a reinstalled source with the same key does
     // not inherit a stale version badge, download URL, or switch hint.
     _availableUpdates.remove(key);

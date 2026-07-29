@@ -13,7 +13,7 @@ import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
-import 'package:venera/network/webdav_library.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/webdav_library_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -1145,8 +1145,9 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
   }
 }
 
-/// Home card for the built-in WebDAV comic library. Hidden entirely until the
-/// library is configured, so users who don't use the feature never see it.
+/// Home card for the WebDAV comic libraries. Hidden entirely until at least one
+/// is configured, so users who don't use the feature never see it. With several
+/// configured (#171) each gets its own row so switching servers is one tap.
 class _WebdavLibrary extends StatefulWidget {
   const _WebdavLibrary({super.key});
 
@@ -1173,7 +1174,8 @@ class _WebdavLibraryState extends State<_WebdavLibrary> {
 
   @override
   Widget build(BuildContext context) {
-    if (!WebdavLibrary.isConfigured) {
+    final libraries = WebdavLibraryStore.visible();
+    if (libraries.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     return SliverToBoxAdapter(
@@ -1186,32 +1188,55 @@ class _WebdavLibraryState extends State<_WebdavLibrary> {
           ),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => const WebdavLibraryPage());
-          },
-          child: SizedBox(
-            height: 56,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'WebDAV Library'.tl,
-                    style: ts.s18,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            for (var i = 0; i < libraries.length; i++) ...[
+              if (i > 0)
+                Divider(
+                  height: 0.6,
+                  thickness: 0.6,
+                  color: context.colorScheme.outlineVariant.toOpacity(0.5),
                 ),
-                const SizedBox(width: 8),
-                const Icon(Icons.cloud_outlined),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_right),
-              ],
-            ),
-          ).paddingHorizontal(16),
+              _buildRow(
+                // A single library keeps the old, generic label; with several the
+                // row has to name the server it opens.
+                libraries.length == 1
+                    ? 'WebDAV Library'.tl
+                    : libraries[i].displayName,
+                libraries[i].id,
+              ),
+            ],
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRow(String title, String libraryId) {
+    return InkWell(
+      onTap: () {
+        context.to(() => WebdavLibraryPage(libraryId: libraryId));
+      },
+      child: SizedBox(
+        height: 56,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: ts.s18,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.cloud_outlined),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_right),
+          ],
+        ),
+      ).paddingHorizontal(16),
     );
   }
 }
@@ -1232,10 +1257,10 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
     });
   }
 
-  /// Script sources only — the built-in WebDAV library is hidden from the
-  /// Comic Source management surface, so it must not inflate the count either.
+  /// Script sources only — the built-in WebDAV libraries are hidden from the
+  /// Comic Source management surface, so they must not inflate the count either.
   static List<String> _scriptSourceNames() => ComicSource.all()
-      .where((e) => e.key != WebdavLibrary.sourceKey)
+      .where((e) => !WebdavLibraryStore.isLibrarySourceKey(e.key))
       .map((e) => e.name)
       .toList();
 

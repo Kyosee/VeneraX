@@ -10,9 +10,10 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
 import 'package:venera/foundation/comic_source_update_tasks.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cookie_jar.dart';
-import 'package:venera/network/webdav_library.dart';
+import 'package:venera/pages/webdav_libraries_page.dart';
 import 'package:venera/pages/webview.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
@@ -402,10 +403,12 @@ class _BodyState extends State<_Body> {
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
         buildCard(context),
-        // The built-in WebDAV library source has no script to edit/update/
-        // delete, so it never appears in this management list.
+        const _WebdavLibrariesCard(),
+        // The built-in WebDAV library sources have no script to edit/update/
+        // delete, so they never appear in this management list — they are managed
+        // through the card above instead.
         for (var source in ComicSource.all())
-          if (source.key != WebdavLibrary.sourceKey)
+          if (!WebdavLibraryStore.isLibrarySourceKey(source.key))
             _SliverComicSource(
               key: ValueKey(source.key),
               source: source,
@@ -998,6 +1001,127 @@ Future<bool> _installSourceFromUrl(String url, String originLibraryId) async {
     App.rootContext.showMessage(message: e.toString());
     Log.error("Add comic source", "$e\n$s");
     return false;
+  }
+}
+
+/// Compact card grouping the configured WebDAV comic libraries with the script
+/// sources, so both kinds of source are managed from one screen (#171). The
+/// libraries themselves are edited on [WebdavLibrariesPage]; this only lists and
+/// links to them.
+class _WebdavLibrariesCard extends StatefulWidget {
+  const _WebdavLibrariesCard();
+
+  @override
+  State<_WebdavLibrariesCard> createState() => _WebdavLibrariesCardState();
+}
+
+class _WebdavLibrariesCardState extends State<_WebdavLibrariesCard> {
+  @override
+  void initState() {
+    appdata.settings.addListener(_onChanged);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    appdata.settings.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _manage() {
+    // No refresh needed on return: every edit writes through settings, which
+    // notifies the listener above.
+    App.rootContext.to(() => const WebdavLibrariesPage());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final libraries = WebdavLibraryStore.effective();
+    return SliverToBoxAdapter(
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+          color: context.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: context.colorScheme.outlineVariant.toOpacity(0.5),
+            width: 0.6,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_outlined, color: context.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text("WebDAV Comic Library".tl, style: ts.s16),
+                ),
+                Text(
+                  "@c libraries".tlParams({"c": libraries.length}),
+                  style: ts.s12.copyWith(color: context.colorScheme.outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Browse comics on a WebDAV server without downloading them first."
+                  .tl,
+              style: ts.s12.copyWith(color: context.colorScheme.outline),
+            ),
+            if (libraries.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final lib in libraries)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: lib.enabled
+                            ? context.colorScheme.primaryContainer.toOpacity(
+                                0.5,
+                              )
+                            : context.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        lib.displayName,
+                        style: ts.s12.copyWith(
+                          color: lib.enabled
+                              ? null
+                              : context.colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.settings_outlined),
+                label: Text("Manage libraries".tl),
+                onPressed: _manage,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

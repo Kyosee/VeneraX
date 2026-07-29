@@ -1,22 +1,31 @@
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/network/webdav_library.dart';
-import 'package:venera/utils/translations.dart';
 
-/// Builds the native (Dart, non-JS) [ComicSource] that exposes the WebDAV
-/// comic library. It wires only the read-side hooks the library needs
+/// Builds the native (Dart, non-JS) [ComicSource] that exposes one configured
+/// WebDAV comic library. It wires only the read-side hooks the library needs
 /// (`loadComicInfo` / `loadComicPages` / image loading config); everything else
 /// is null, since there is no account, search, category or explore surface.
 ///
 /// Being a real [ComicSource] means the reader, cover loader, detail page,
 /// history and favourites all treat a WebDAV comic like any other network
-/// comic without a single change to those paths.
-ComicSource buildWebdavComicSource() {
-  final lib = WebdavLibrary.instance;
+/// comic without a single change to those paths. One source per configured
+/// address (#171) is what keeps two servers' reading state apart.
+///
+/// The client is resolved per call from the current configuration rather than
+/// captured here: the user can edit an address or password while the source
+/// stays registered, and a captured client would keep using the old
+/// credentials until the next restart.
+ComicSource buildWebdavComicSource(WebdavLibraryConfig config) {
+  final sourceKey = config.sourceKey;
+  WebdavLibraryClient client() =>
+      WebdavLibraryClient.forSourceKey(sourceKey) ??
+      WebdavLibraryClient(config);
   return ComicSource(
-    // Name kept generic and localizable; it only shows in a couple of places
-    // that we otherwise hide this source from.
-    "WebDAV Library".tl,
-    WebdavLibrary.sourceKey,
+    // The library's own name, so a comic badge/history row says which server it
+    // came from when several are configured.
+    config.displayName,
+    sourceKey,
     null, // account
     null, // categoryData
     null, // categoryComicsData
@@ -24,13 +33,13 @@ ComicSource buildWebdavComicSource() {
     const [], // explorePages
     null, // searchPageData
     null, // settings
-    (id) => lib.loadComicInfo(id),
+    (id) => client().loadComicInfo(id),
     null, // loadComicThumbnail
-    (id, ep) => lib.loadComicPages(id, ep),
+    (id, ep) => client().loadComicPages(id, ep),
     // Supplies the Basic-auth header for the direct image GET.
-    (imageKey, comicId, epId) async => lib.imageLoadingConfig(),
+    (imageKey, comicId, epId) async => client().imageLoadingConfig(),
     // Covers/thumbnails need the same auth header.
-    (imageKey) => lib.imageLoadingConfig(),
+    (imageKey) => client().imageLoadingConfig(),
     "", // filePath — none; this is a built-in source, not a script on disk
     "", // url
     "1.0.0", // version

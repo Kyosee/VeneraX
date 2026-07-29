@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/foundation/webdav_migration_tasks.dart';
-import 'package:venera/network/webdav_library.dart';
 import 'package:venera/utils/translations.dart';
 
 /// Shared entry point for starting a WebDAV migration of [comics], used by both
@@ -20,7 +20,8 @@ import 'package:venera/utils/translations.dart';
 Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
   final context = App.rootContext;
   if (comics.isEmpty) return false;
-  if (!WebdavLibrary.isConfigured) {
+  final libraries = WebdavLibraryStore.visible();
+  if (libraries.isEmpty) {
     context.showMessage(
       message: "WebDAV comic library is not configured".tl,
     );
@@ -41,6 +42,10 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
 
   bool numericPrefix = false;
   bool confirmed = false;
+  // Which library receives the upload. Pre-selects the first one; with several
+  // configured the user picks, since uploading into the wrong server would
+  // scatter a large transfer across the wrong collection.
+  var target = libraries.first;
   await showDialog(
     context: App.rootContext,
     builder: (context) {
@@ -60,6 +65,43 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
                     }),
                   ),
                 ),
+                if (libraries.length > 1) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("Target library".tl, style: ts.s14.bold),
+                    ),
+                  ),
+                  // Radio tiles rather than a dropdown: this dialog measures its
+                  // content with IntrinsicWidth, which a dropdown's expanding
+                  // form field does not sit well inside, and the naming choice
+                  // below already uses this pattern. The dialog body scrolls, so
+                  // a long list is fine.
+                  RadioGroup<String>(
+                    groupValue: target.id,
+                    onChanged: (v) {
+                      final picked = libraries
+                          .where((e) => e.id == v)
+                          .firstOrNull;
+                      if (picked != null) setState(() => target = picked);
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final lib in libraries)
+                          RadioListTile<String>(
+                            value: lib.id,
+                            title: Text(
+                              lib.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Align(
@@ -114,7 +156,11 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
   );
   if (!confirmed || !context.mounted) return false;
 
-  var task = manager.start(comics, numericPrefix: numericPrefix);
+  var task = manager.start(
+    comics,
+    numericPrefix: numericPrefix,
+    librarySourceKey: target.sourceKey,
+  );
   if (task == null) {
     context.showMessage(message: "A migration task is already running".tl);
     return false;
