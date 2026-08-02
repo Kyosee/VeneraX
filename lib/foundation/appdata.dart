@@ -318,6 +318,10 @@ class Settings with ChangeNotifier {
     'showHistoryStatusOnTile': false,
     'showReadLaterStatusOnTile': true,
     'blockedWords': [],
+    // Tag-only blocklist, separate from blockedWords so a word meant for titles
+    // can't silently hide whole tag families. Matched as a substring of a tag's
+    // value (namespace stripped) and of its translated form — see [blockedTagOf].
+    'blockedTags': [],
     'blockedCommentWords': [],
     'defaultSearchTarget': null,
     'autoPageTurningInterval': 5, // in seconds

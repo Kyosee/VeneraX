@@ -616,7 +616,23 @@ abstract mixin class _ComicPageActions {
             startWebdavMigrationFlow([_localDownloadedComic()!]);
           },
         ),
+      MenuEntry(
+        icon: Icons.block,
+        text: "Block".tl,
+        onClick: blockThisComic,
+      ),
     ]);
+  }
+
+  /// Block entry for the detail page. The list long-press menu has one too, but
+  /// a list item often carries no tags at all — here the full tag set is loaded,
+  /// so this is the only place a tag can reliably be picked off a comic.
+  void blockThisComic() {
+    showBlockDialog(
+      title: comic.title,
+      subtitle: comic.subTitle,
+      tags: comic.plainTags,
+    );
   }
 
   /// The on-disk [LocalComic] for this page's comic when its images are fully

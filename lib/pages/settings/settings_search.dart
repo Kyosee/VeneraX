@@ -51,6 +51,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Show read later status on comic tile", 0),
   _SettingsSearchEntry("Reverse default chapter order", 0),
   _SettingsSearchEntry("Keyword blocking", 0, keywords: ["block", "filter"]),
+  _SettingsSearchEntry("Tag blocking", 0, keywords: ["block", "filter", "tag"]),
   _SettingsSearchEntry("Comment keyword blocking", 0, keywords: ["block"]),
   _SettingsSearchEntry("Default Search Target", 0, keywords: ["search"]),
   _SettingsSearchEntry("Auto Language Filters", 0, keywords: ["language"]),

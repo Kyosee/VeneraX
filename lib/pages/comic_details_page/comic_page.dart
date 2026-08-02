@@ -130,6 +130,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   bool descriptionExpanded = false;
 
+  /// Set when the user chooses to view a comic that matched their tag blocklist,
+  /// so the notice doesn't come back while the page is open.
+  bool _blockOverridden = false;
+
   final ComicStateRepository _comicStateRepository =
       const ComicStateRepository();
 
@@ -291,6 +295,17 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   Widget buildContent(BuildContext context, ComicDetails data) {
+    // The comic grids can only filter on the tags a list item happens to carry,
+    // and most sources send none — tags arrive with the details request. This is
+    // the first point where the full tag set is known, so it is where a blocked
+    // tag actually takes effect.
+    if (!_blockOverridden) {
+      var blockedTag = blockedTagOf(data.plainTags);
+      if (blockedTag != null) {
+        return _buildBlockedGate(blockedTag);
+      }
+    }
+
     final horizontalInset = _comicDetailsPageInset(context);
 
     Widget inset(Widget sliver) {
@@ -335,6 +350,42 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             ), // Add additional padding for FAB
           ),
         ],
+      ),
+    );
+  }
+
+  /// Shown in place of the details when one of the comic's tags is on the
+  /// blocklist. It is a gate rather than a hard refusal: the user set the rule
+  /// and may still have opened the comic on purpose.
+  Widget _buildBlockedGate(String tag) {
+    return Scaffold(
+      appBar: Appbar(title: const Text("")),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.block,
+              size: 48,
+              color: context.colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text("Blocked comic".tl, style: ts.s18),
+            const SizedBox(height: 8),
+            Text(
+              "Matched blocked tag: @tag".tlParams({
+                "tag": tag.translateTagIfNeed,
+              }),
+              style: ts.s14.withColor(context.colorScheme.outline),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Button.outlined(
+              onPressed: () => setState(() => _blockOverridden = true),
+              child: Text("View anyway".tl),
+            ),
+          ],
+        ).paddingHorizontal(32),
       ),
     );
   }
