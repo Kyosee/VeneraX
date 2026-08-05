@@ -1537,6 +1537,11 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
   late var comics = LocalFavoritesManager().getFolderComics(widget.name);
   bool changed = false;
 
+  /// Set once the grid has been remounted to rebuild its position cache.
+  /// Remounting treats every tile as new, which would replay the fade-in, so
+  /// the fade is dropped from that point on.
+  bool positionsRebuilt = false;
+
   static int _floatToInt8(double x) {
     return (x * 255.0).round() & 0xff;
   }
@@ -1616,6 +1621,7 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
                   // off-screen items keep stale positions and later drags land
                   // on the wrong index. A new key rebuilds those positions.
                   reorderWidgetKey = UniqueKey();
+                  positionsRebuilt = true;
                 });
               },
             ),
@@ -1625,6 +1631,11 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
       body: ReorderableBuilder<FavoriteItem>(
         key: reorderWidgetKey,
         scrollController: _scrollController,
+        animationConfig: ReorderableAnimationConfig(
+          fadeInDuration: positionsRebuilt
+              ? Duration.zero
+              : const Duration(milliseconds: 500),
+        ),
         longPressDelay: App.isDesktop
             ? const Duration(milliseconds: 100)
             : const Duration(milliseconds: 500),

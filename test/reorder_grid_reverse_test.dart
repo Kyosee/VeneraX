@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_reorderable_grid_view/entities/reorderable_animation_config.dart';
 import 'package:flutter_reorderable_grid_view/widgets/reorderable_builder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,6 +30,7 @@ class _ReorderPageState extends State<_ReorderPage> {
   final _gridKey = GlobalKey();
   final _scrollController = ScrollController();
   var _builderKey = UniqueKey();
+  var _positionsRebuilt = false;
   late var items = [...widget.items];
 
   void reverse() {
@@ -36,6 +38,7 @@ class _ReorderPageState extends State<_ReorderPage> {
       items = items.reversed.toList();
       if (widget.remountAfterReverse) {
         _builderKey = UniqueKey();
+        _positionsRebuilt = true;
       }
     });
   }
@@ -65,6 +68,11 @@ class _ReorderPageState extends State<_ReorderPage> {
       body: ReorderableBuilder<String>(
         key: _builderKey,
         scrollController: _scrollController,
+        animationConfig: ReorderableAnimationConfig(
+          fadeInDuration: _positionsRebuilt
+              ? Duration.zero
+              : const Duration(milliseconds: 500),
+        ),
         longPressDelay: const Duration(milliseconds: 500),
         onReorder: (reorderFunc) {
           setState(() => items = reorderFunc(items));
@@ -144,8 +152,56 @@ Future<List<int>> _reverseThenDrag(
   return wrongRounds;
 }
 
+/// Lowest opacity the grid applies to any tile in the current frame.
+double _minTileOpacity(WidgetTester tester) {
+  var min = 1.0;
+  for (final element in tester.elementList(find.byType(FadeTransition))) {
+    final value = (element.widget as FadeTransition).opacity.value;
+    if (value < min) min = value;
+  }
+  return min;
+}
+
 void main() {
   setUp(() => TestWidgetsFlutterBinding.ensureInitialized());
+
+  testWidgets('reversing does not replay the fade-in', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final key = GlobalKey<_ReorderPageState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: _ReorderPage(
+          key: key,
+          items: List.generate(40, (i) => 'c$i'),
+          remountAfterReverse: true,
+        ),
+      ),
+    );
+
+    // Opening the page fades the tiles in, as it did before the fix.
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      _minTileOpacity(tester),
+      lessThan(1.0),
+      reason: 'entering the page should still fade tiles in',
+    );
+    await tester.pumpAndSettle();
+
+    // Remounting to rebuild the position cache marks every tile as new, which
+    // would otherwise fade the whole list back in from transparent.
+    key.currentState!.reverse();
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        _minTileOpacity(tester),
+        1.0,
+        reason: 'reversing should not fade tiles (frame $frame)',
+      );
+    }
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('drags keep working after the list is reversed', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
