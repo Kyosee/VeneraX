@@ -1611,6 +1611,11 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
                 setState(() {
                   comics = comics.reversed.toList();
                   changed = true;
+                  // Reversing moves every item at once. The grid caches each
+                  // item's position and only refreshes entries it rebuilds, so
+                  // off-screen items keep stale positions and later drags land
+                  // on the wrong index. A new key rebuilds those positions.
+                  reorderWidgetKey = UniqueKey();
                 });
               },
             ),
