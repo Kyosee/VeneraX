@@ -781,6 +781,16 @@ class PreTranslationTaskManager with ChangeNotifier {
     return res.data;
   }
 
+  /// Ceiling for fetching one page's bytes. Generous enough for a large page on
+  /// a slow connection, but finite so a stalled transfer fails the page instead
+  /// of holding an image-concurrency slot forever.
+  static const _pageFetchTimeout = Duration(minutes: 2);
+
+  /// Backstop for waiting on an image slot, not a congestion limit — queueing
+  /// behind other pages is normal. Set far above any legitimate wait so it only
+  /// fires when a slot was genuinely never released.
+  static const _slotWaitBackstop = Duration(minutes: 30);
+
   Future<Uint8List> _fetchPageBytes(
     PreTranslationTask task,
     String eid,
@@ -789,20 +799,37 @@ class PreTranslationTaskManager with ChangeNotifier {
     if (imageKey.startsWith('file://')) {
       return await File(imageKey.substring(7)).readAsBytes();
     }
-    await _ImageRateLimit.gate.acquire(task.sourceKey);
+    await _ImageRateLimit.gate.acquire(
+      task.sourceKey,
+      maxWait: _slotWaitBackstop,
+    );
     try {
       Uint8List? bytes;
-      await for (var event in ImageDownloader.loadComicImage(
+      // Bounded two ways, because the fetch holds an image-concurrency slot and
+      // an unbounded one would retire that slot for good (#176):
+      //   - stream.timeout catches a transfer that goes completely silent,
+      //   - the deadline catches one that trickles bytes forever without ending.
+      var deadline = DateTime.now().add(_pageFetchTimeout);
+      var stream = ImageDownloader.loadComicImage(
         imageKey,
         task.sourceKey,
         task.cid,
         eid,
         onRateLimited: (_) =>
             _ImageRateLimit.aimd.onRateLimited(task.sourceKey),
+      );
+      await for (var event in stream.timeout(
+        _pageFetchTimeout,
+        onTimeout: (sink) => sink.addError(
+          TimeoutException('Image fetch stalled', _pageFetchTimeout),
+        ),
       )) {
         if (event.imageBytes != null) {
           bytes = event.imageBytes;
           break;
+        }
+        if (DateTime.now().isAfter(deadline)) {
+          throw TimeoutException('Image fetch too slow', _pageFetchTimeout);
         }
       }
       if (bytes == null) {

@@ -125,22 +125,32 @@ class MyLogInterceptor implements Interceptor {
           "headers:\n$headersForLog\n"
           "data:\n${options.extra["maskDataInLog"] == true ? dataMask : options.data}",
     );
-    options.connectTimeout = const Duration(seconds: 15);
-    options.receiveTimeout = const Duration(seconds: 15);
-    options.sendTimeout = const Duration(seconds: 15);
+    // Defaults only: a caller that asked for its own bound keeps it. These used
+    // to be assigned unconditionally, which silently cut every long request
+    // down to 15s — an LLM translation request that needs 40s before its first
+    // token could never succeed no matter what the caller configured.
+    options.connectTimeout ??= const Duration(seconds: 15);
+    options.receiveTimeout ??= const Duration(seconds: 15);
+    options.sendTimeout ??= const Duration(seconds: 15);
     handler.next(options);
   }
 }
 
 class AppDio with DioMixin {
-  AppDio([BaseOptions? options]) : this.withInterceptors(options, null);
+  AppDio([BaseOptions? options, Duration? timeout])
+      : this.withInterceptors(options, null, timeout);
 
   AppDio.withInterceptors(
     BaseOptions? options,
-    List<Interceptor>? interceptors,
-  ) {
+    List<Interceptor>? interceptors, [
+    Duration? timeout,
+  ]) {
     this.options = options ?? BaseOptions();
-    httpClientAdapter = createAppHttpClientAdapter();
+    // [timeout] bounds the WHOLE request at the transport layer. dio's own
+    // receiveTimeout does not apply to the streaming rhttp responses this
+    // adapter returns, so a connected-but-stalled socket would otherwise hang
+    // the caller forever. Null keeps the unbounded default used by image reads.
+    httpClientAdapter = createAppHttpClientAdapter(timeout: timeout);
     this.interceptors.addAll(interceptors ?? _buildDefaultInterceptors());
   }
 

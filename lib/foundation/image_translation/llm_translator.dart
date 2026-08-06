@@ -196,6 +196,25 @@ abstract class LlmTranslator {
     return math.min(userMax, _aimd.limitFor(bucket));
   });
 
+  /// Hard ceiling for one translation request, transport level included.
+  ///
+  /// A slow model on a long batch legitimately needs a minute or two, so this is
+  /// generous — but it must exist. The request holds a [_gate] slot while in
+  /// flight, so an unbounded one does not just lose its own page: it permanently
+  /// removes a concurrency slot, and once every slot is held by a stalled request
+  /// no further page can start. Background pre-translation, which commits page
+  /// counts in strict order, then freezes at zero visible progress (#176).
+  static const requestTimeout = Duration(minutes: 3);
+
+  /// Wall-clock ceiling for one [translateBatch] call including all its retries.
+  /// Bounds the total time a single call can occupy a concurrency slot.
+  static const totalRetryBudget = Duration(minutes: 6);
+
+  /// How long a caller may wait for a free concurrency slot before giving up.
+  /// Deliberately much larger than [totalRetryBudget] so a normal queue never
+  /// trips it; it exists purely to break a slot that was never released.
+  static const _slotWaitBackstop = Duration(minutes: 30);
+
   static String get _rawUrl => (LlmProviderStore.active?.url ?? '').trim();
 
   static String get _apiKey => (LlmProviderStore.active?.key ?? '').trim();
@@ -252,15 +271,17 @@ abstract class LlmTranslator {
       throw Exception('LLM API URL not configured');
     }
     var baseUrl = baseUrlOf(rawUrl);
+    const probeTimeout = Duration(seconds: 30);
     var dio = AppDio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 30),
+        receiveTimeout: probeTimeout,
         headers: {
           if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey',
         },
         validateStatus: (status) => status != null && status < 500,
       ),
+      probeTimeout,
     );
     try {
       var response = await dio.get('$baseUrl/models');
@@ -358,18 +379,35 @@ abstract class LlmTranslator {
     var dio = AppDio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 20),
-        receiveTimeout: const Duration(seconds: 120),
+        receiveTimeout: requestTimeout,
         headers: {
           'Content-Type': 'application/json',
           if (_apiKey.isNotEmpty) 'Authorization': 'Bearer $_apiKey',
         },
         validateStatus: (status) => status != null && status < 500,
       ),
+      // Hard transport-level bound. Without it a stalled endpoint holds the
+      // request open forever; because the request is made while holding a slot
+      // of [_gate], two such requests starve every later page and background
+      // pre-translation stops reporting progress entirely (#176).
+      requestTimeout,
     );
     var bucket = LlmProviderStore.active?.id ?? 'default';
-    await _gate.acquire(bucket);
+    // Backstop for a leaked slot, NOT a congestion limit. Queueing behind other
+    // pages is normal and must be allowed to wait: with the limit backed off to
+    // 1, several queued callers each taking up to [totalRetryBudget] can add up,
+    // so this is set far above any legitimate wait. It only ever fires if a slot
+    // is never released at all, and then fails one page instead of silently
+    // freezing every page behind it forever.
+    await _gate.acquire(bucket, maxWait: _slotWaitBackstop);
     try {
       const maxAttempts = 6;
+      // Retries share one wall-clock budget. Per-attempt bounds alone are not
+      // enough: 6 attempts each allowed [requestTimeout] would let a dead
+      // endpoint hold a concurrency slot for the better part of an hour, which
+      // is the stall this fix is meant to remove. Whichever limit is hit first
+      // wins, and the page is reported failed so a later retry pass can redo it.
+      var giveUpAt = DateTime.now().add(totalRetryBudget);
       Object? lastError;
       for (var attempt = 0; attempt < maxAttempts; attempt++) {
         HttpErrorClass? cls;
@@ -426,7 +464,12 @@ abstract class LlmTranslator {
         if (cls == HttpErrorClass.rateLimited) {
           _aimd.onRateLimited(bucket);
         }
-        await Future.delayed(backoff(attempt, retryAfter: retryAfter));
+        var wait = backoff(attempt, retryAfter: retryAfter);
+        // Stop if the budget is already spent, or if sleeping would overrun it.
+        if (DateTime.now().add(wait).isAfter(giveUpAt)) {
+          break;
+        }
+        await Future.delayed(wait);
       }
       throw Exception('LLM translation failed: $lastError');
     } finally {

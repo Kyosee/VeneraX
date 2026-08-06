@@ -62,14 +62,34 @@ class ConcurrencyGate {
 
   int activeOf(String bucket) => _active[bucket] ?? 0;
 
-  Future<void> acquire(String bucket) {
+  int waitingOf(String bucket) => _waiters[bucket]?.length ?? 0;
+
+  /// Waits for a slot in [bucket].
+  ///
+  /// [maxWait] bounds the wait. Every holder is expected to bound its own work
+  /// and release in a `finally`, so a slot should always come free — but if a
+  /// holder ever fails to (a bug, or a platform call that never returns), an
+  /// unbounded wait here turns one stuck operation into a permanently frozen
+  /// queue with no error surfaced anywhere. Timing out throws [TimeoutException]
+  /// so the caller fails that item and keeps going.
+  Future<void> acquire(String bucket, {Duration? maxWait}) {
     if (activeOf(bucket) < limitOf(bucket)) {
       _active[bucket] = activeOf(bucket) + 1;
       return Future.value();
     }
     var completer = Completer<void>();
-    (_waiters[bucket] ??= <Completer<void>>[]).add(completer);
-    return completer.future;
+    var waiters = _waiters[bucket] ??= <Completer<void>>[];
+    waiters.add(completer);
+    if (maxWait == null) return completer.future;
+    // On timeout the waiter is dropped WITHOUT taking a slot, so a later
+    // release still hands its slot to a live waiter instead of a dead one.
+    return completer.future.timeout(
+      maxWait,
+      onTimeout: () {
+        waiters.remove(completer);
+        throw TimeoutException('Waited too long for a slot', maxWait);
+      },
+    );
   }
 
   void release(String bucket) {

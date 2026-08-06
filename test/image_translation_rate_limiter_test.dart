@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 
@@ -72,6 +74,52 @@ void main() {
       await Future.delayed(Duration.zero);
       expect(gate.activeOf('b'), 1); // 'b' not blocked by 'a'
       await b;
+    });
+
+    // A holder that never releases used to freeze every later acquirer forever
+    // with no error surfaced — the shape behind the stalled pre-translation
+    // queue in #176.
+    test('maxWait gives up instead of waiting forever', () async {
+      var gate = ConcurrencyGate((_) => 1);
+      await gate.acquire('a'); // held and never released
+      await expectLater(
+        gate.acquire('a', maxWait: const Duration(milliseconds: 20)),
+        throwsA(isA<TimeoutException>()),
+      );
+      // The abandoned waiter must not have taken the slot.
+      expect(gate.activeOf('a'), 1);
+      expect(gate.waitingOf('a'), 0);
+    });
+
+    test('a timed-out waiter does not consume a later release', () async {
+      var gate = ConcurrencyGate((_) => 1);
+      await gate.acquire('a');
+      var abandoned = gate.acquire(
+        'a',
+        maxWait: const Duration(milliseconds: 10),
+      );
+      await expectLater(abandoned, throwsA(isA<TimeoutException>()));
+      // A live waiter queued after the timeout still gets the freed slot.
+      var live = gate.acquire('a', maxWait: const Duration(seconds: 5));
+      var granted = false;
+      live.then((_) => granted = true);
+      gate.release('a');
+      await Future.delayed(Duration.zero);
+      expect(granted, true);
+      expect(gate.activeOf('a'), 1);
+    });
+
+    test('no maxWait keeps the original unbounded behavior', () async {
+      var gate = ConcurrencyGate((_) => 1);
+      await gate.acquire('a');
+      var pending = gate.acquire('a');
+      var done = false;
+      pending.then((_) => done = true);
+      await Future.delayed(const Duration(milliseconds: 30));
+      expect(done, false);
+      gate.release('a');
+      await pending;
+      expect(done, true);
     });
   });
 

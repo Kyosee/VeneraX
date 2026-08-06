@@ -38,11 +38,15 @@ class RhttpInitializationException implements Exception {
       'Cause: $cause';
 }
 
-HttpClientAdapter createAppHttpClientAdapter({bool enableProxy = true}) =>
-    createRHttpAdapter(enableProxy: enableProxy);
+HttpClientAdapter createAppHttpClientAdapter({
+  bool enableProxy = true,
+  Duration? timeout,
+}) => createRHttpAdapter(enableProxy: enableProxy, timeout: timeout);
 
-HttpClientAdapter createRHttpAdapter({bool enableProxy = true}) =>
-    RHttpAdapter(enableProxy: enableProxy);
+HttpClientAdapter createRHttpAdapter({
+  bool enableProxy = true,
+  Duration? timeout,
+}) => RHttpAdapter(enableProxy: enableProxy, timeout: timeout);
 
 HttpClientAdapter createIOAdapter({bool enableProxy = true}) =>
     _IOProxyAdapter(enableProxy: enableProxy);
