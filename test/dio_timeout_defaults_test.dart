@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
@@ -17,7 +16,7 @@ void main() {
 
   setUp(() {
     Log.clear();
-    appdata.settings['verboseNetworkLog'] = false;
+    Log.syncVerboseNetwork(false);
   });
 
   group('MyLogInterceptor request logging', () {
@@ -30,7 +29,7 @@ void main() {
     });
 
     test('logs requests when verbose network logging is on', () {
-      appdata.settings['verboseNetworkLog'] = true;
+      Log.syncVerboseNetwork(true);
       runOnRequest(RequestOptions(path: 'https://example.com/page1.jpg'));
       expect(Log.logs, hasLength(1));
       expect(Log.logs.first.content, contains('example.com/page1.jpg'));
@@ -43,7 +42,7 @@ void main() {
     });
 
     test('masks sensitive headers when logging is on', () {
-      appdata.settings['verboseNetworkLog'] = true;
+      Log.syncVerboseNetwork(true);
       runOnRequest(
         RequestOptions(
           path: 'https://example.com',
@@ -79,7 +78,7 @@ void main() {
     });
 
     test('logs successes when verbose network logging is on', () {
-      appdata.settings['verboseNetworkLog'] = true;
+      Log.syncVerboseNetwork(true);
       runOnResponse(200);
       expect(Log.logs, hasLength(1));
       expect(Log.logs.first.level, LogLevel.info);

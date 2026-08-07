@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/appdata.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
 
@@ -41,8 +40,15 @@ class Log {
   /// frame-rate cost. Failures are always logged regardless of this flag, so
   /// diagnosing a broken source does not need it. Users can turn it on from the
   /// logs page when they need a full trace for a bug report.
-  static bool get verboseNetwork =>
-      appdata.settings['verboseNetworkLog'] == true;
+  ///
+  /// Mirrored here from settings rather than read through `appdata`, which
+  /// imports this file — reaching back the other way would make the two
+  /// mutually dependent. [syncVerboseNetwork] keeps it in step.
+  static bool verboseNetwork = false;
+
+  /// Points [verboseNetwork] at the stored setting. Called on startup and
+  /// whenever the switch is toggled.
+  static void syncVerboseNetwork(bool value) => verboseNetwork = value;
 
   static void printWarning(String text) {
     debugPrint('\x1B[33m$text\x1B[0m');

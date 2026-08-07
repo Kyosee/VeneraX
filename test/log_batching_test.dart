@@ -44,4 +44,14 @@ void main() {
     // The default decides whether ordinary reading pays the logging cost.
     expect(Log.verboseNetwork, isFalse);
   });
+
+  test('syncVerboseNetwork drives the flag both ways', () {
+    // Log cannot read settings directly (appdata imports it), so the stored
+    // setting reaches it only through this call. If startup or the toggle ever
+    // stops making it, logging silently reverts to recording every request.
+    Log.syncVerboseNetwork(true);
+    expect(Log.verboseNetwork, isTrue);
+    Log.syncVerboseNetwork(false);
+    expect(Log.verboseNetwork, isFalse);
+  });
 }

@@ -535,6 +535,7 @@ class _LogsPageState extends State<LogsPage> {
                     onTap: () {
                       var enable = !Log.verboseNetwork;
                       appdata.settings['verboseNetworkLog'] = enable;
+                      Log.syncVerboseNetwork(enable);
                       appdata.saveData();
                       context.showMessage(
                         message: enable

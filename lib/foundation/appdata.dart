@@ -298,6 +298,9 @@ class Appdata with Init {
     if (settings['imageTranslationInpaintMode'] == 'ai') {
       settings['imageTranslationInpaintMode'] = 'smart';
     }
+    // Log cannot read settings directly (it is imported by this file), so push
+    // the restored value over to it.
+    Log.syncVerboseNetwork(settings['verboseNetworkLog'] == true);
   }
 }
 
