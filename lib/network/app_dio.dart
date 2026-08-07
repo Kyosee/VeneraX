@@ -79,6 +79,15 @@ class MyLogInterceptor implements Interceptor {
     Response<dynamic> response,
     ResponseInterceptorHandler handler,
   ) {
+    var isFailure = response.statusCode != null && response.statusCode! >= 400;
+    // Successful responses are only logged when the user asked for a verbose
+    // trace. Reading a comic issues a request per page, and formatting headers
+    // plus decoding bodies for every one of them is continuous work with no
+    // diagnostic value once things are known to work. Failures always log.
+    if (!isFailure && !Log.verboseNetwork) {
+      handler.next(response);
+      return;
+    }
     var headers = response.headers.map.map(
       (key, value) => MapEntry(
         key.toLowerCase(),
@@ -97,9 +106,7 @@ class MyLogInterceptor implements Interceptor {
       content = response.data.toString();
     }
     Log.addLog(
-      (response.statusCode != null && response.statusCode! < 400)
-          ? LogLevel.info
-          : LogLevel.error,
+      isFailure ? LogLevel.error : LogLevel.info,
       "Network",
       "Response ${response.realUri.toString()} ${response.statusCode}\n"
           "headers:\n$headers\n$content",
@@ -109,22 +116,31 @@ class MyLogInterceptor implements Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    const String headerMask = "********";
-    const String dataMask = "****** DATA_PROTECTED ******";
-    const sensitiveHeaders = {"authorization", "cookie", "proxy-authorization"};
-    var extraMaskedHeaders = options.extra["maskHeadersInLog"];
-    var headersForLog = options.headers.map((key, value) {
-      var shouldMask =
-          sensitiveHeaders.contains(key.toLowerCase()) ||
-          (extraMaskedHeaders is Iterable && extraMaskedHeaders.contains(key));
-      return MapEntry(key, shouldMask ? headerMask : value);
-    });
-    Log.info(
-      "Network",
-      "${options.method} ${options.uri}\n"
-          "headers:\n$headersForLog\n"
-          "data:\n${options.extra["maskDataInLog"] == true ? dataMask : options.data}",
-    );
+    // Only build the log line when a verbose trace was requested — the header
+    // masking below allocates a new map per request, which on a comic page
+    // means once per image. The timeout defaults after it always apply.
+    if (Log.verboseNetwork) {
+      const String headerMask = "********";
+      const String dataMask = "****** DATA_PROTECTED ******";
+      const sensitiveHeaders = {
+        "authorization",
+        "cookie",
+        "proxy-authorization",
+      };
+      var extraMaskedHeaders = options.extra["maskHeadersInLog"];
+      var headersForLog = options.headers.map((key, value) {
+        var shouldMask =
+            sensitiveHeaders.contains(key.toLowerCase()) ||
+            (extraMaskedHeaders is Iterable && extraMaskedHeaders.contains(key));
+        return MapEntry(key, shouldMask ? headerMask : value);
+      });
+      Log.info(
+        "Network",
+        "${options.method} ${options.uri}\n"
+            "headers:\n$headersForLog\n"
+            "data:\n${options.extra["maskDataInLog"] == true ? dataMask : options.data}",
+      );
+    }
     // Defaults only: a caller that asked for its own bound keeps it. These used
     // to be assigned unconditionally, which silently cut every long request
     // down to 15s — an LLM translation request that needs 40s before its first

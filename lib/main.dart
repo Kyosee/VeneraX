@@ -95,6 +95,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && App.isMobile) {
       DownloadKeepAlive.instance.onResume();
     }
+    // Logs are buffered and flushed on a timer to avoid a disk write per
+    // network request; push them out now, before the process can be suspended
+    // or killed with lines still in memory. Must stay above the early return
+    // below, which skips everything when app-lock is off.
+    if (state != AppLifecycleState.resumed) {
+      Log.flush();
+    }
     if (!App.isMobile || !appdata.settings['authorizationRequired']) {
       return;
     }

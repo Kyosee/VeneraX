@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
 
@@ -29,6 +32,17 @@ class Log {
   static bool ignoreLimitation = false;
 
   static bool isMuted = false;
+
+  /// Whether to record a log line for every successful network request.
+  ///
+  /// Off by default: reading a comic issues a request per page, and recording
+  /// two lines for each (with header formatting and a disk write) kept the CPU
+  /// and flash busy continuously — a steady battery drain with no visible
+  /// frame-rate cost. Failures are always logged regardless of this flag, so
+  /// diagnosing a broken source does not need it. Users can turn it on from the
+  /// logs page when they need a full trace for a bug report.
+  static bool get verboseNetwork =>
+      appdata.settings['verboseNetworkLog'] == true;
 
   static void printWarning(String text) {
     debugPrint('\x1B[33m$text\x1B[0m');
@@ -75,9 +89,7 @@ class Log {
     }
 
     _logs.add(newLog);
-    if(_file != null) {
-      _file!.write(newLog.toString());
-    }
+    _queueForDisk(newLog);
     if (_logs.length > maxLogNumber) {
       var res = _logs.remove(
           _logs.firstWhereOrNull((element) => element.level == LogLevel.info));
@@ -103,7 +115,61 @@ class Log {
     addLog(LogLevel.error, title, info);
   }
 
-  static void clear() => _logs.clear();
+  /// Pending lines not yet handed to the [IOSink].
+  ///
+  /// Writing each line as it is produced meant one small disk write per network
+  /// request, which keeps the storage controller from idling. Batching them and
+  /// flushing on a timer turns a stream of tiny writes into an occasional
+  /// larger one, at the cost of losing at most [_flushInterval] worth of lines
+  /// if the process is killed outright.
+  static final List<String> _pending = [];
+
+  static Timer? _flushTimer;
+
+  static const _flushInterval = Duration(seconds: 5);
+
+  /// Flush early once the buffer grows past this, so a burst of activity does
+  /// not sit in memory for the whole interval.
+  static const _maxPending = 64;
+
+  static void _queueForDisk(LogItem log) {
+    if (_file == null) return;
+    _pending.add(log.toString());
+    // Errors go out immediately: whatever follows may be a crash, and a report
+    // is worthless if the line explaining it never left memory. Batching only
+    // pays off for the high-volume info level anyway.
+    if (log.level == LogLevel.error || _pending.length >= _maxPending) {
+      flush();
+      return;
+    }
+    _flushTimer ??= Timer(_flushInterval, flush);
+  }
+
+  /// Writes buffered lines to disk. Safe to call at any time; a no-op when
+  /// there is nothing pending.
+  static void flush() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_pending.isEmpty || _file == null) return;
+    var batch = _pending.join();
+    _pending.clear();
+    try {
+      _file!.write(batch);
+    } catch (e) {
+      // A failed log write must never take the app down.
+      debugPrint('Failed to write logs: $e');
+    }
+  }
+
+  /// Clears the in-memory list shown on the logs page.
+  ///
+  /// Buffered lines are flushed rather than dropped: they were already recorded
+  /// before the user asked to clear the view, and the file is a separate record
+  /// this has never truncated.
+  static void clear() {
+    flush();
+    _logs.clear();
+  }
 
   @override
   String toString() {

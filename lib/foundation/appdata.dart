@@ -143,6 +143,10 @@ class Appdata with Init {
     // into night mode with no way out but toggling the switch. The follow-
     // system toggle and the color/intensity preferences still sync.
     "readerNightMode",
+    // Verbose network logging is a per-device diagnostic switch, turned on to
+    // capture a trace on the device that misbehaves. Syncing it would carry the
+    // battery cost to every other device.
+    "verboseNetworkLog",
   ];
 
   /// Sync data from another device.
@@ -378,6 +382,9 @@ class Settings with ChangeNotifier {
     'onClickFavorite': 'viewDetail', // viewDetail, read
     'enableDnsOverrides': false,
     'dnsOverrides': {},
+    // Off by default: logging every successful request costs a disk write per
+    // comic page, a steady battery drain. Failures are logged either way.
+    'verboseNetworkLog': false,
     'enableCustomImageProcessing': false,
     'customImageProcessing': defaultCustomImageProcessing,
     'sni': true,

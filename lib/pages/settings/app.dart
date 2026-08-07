@@ -527,8 +527,30 @@ class _LogsPageState extends State<LogsPage> {
                     },
                   ),
                   PopupMenuItem(
+                    child: Text(
+                      Log.verboseNetwork
+                          ? "Stop Logging All Requests".tl
+                          : "Log All Network Requests".tl,
+                    ),
+                    onTap: () {
+                      var enable = !Log.verboseNetwork;
+                      appdata.settings['verboseNetworkLog'] = enable;
+                      appdata.saveData();
+                      context.showMessage(
+                        message: enable
+                            ? "Recording every request. This uses more battery; turn it off when done."
+                                .tl
+                            : "Only failed requests are recorded now.".tl,
+                      );
+                    },
+                  ),
+                  PopupMenuItem(
                     child: Text("Export".tl),
-                    onTap: () => saveLog(Log().toString()),
+                    onTap: () {
+                      // Buffered lines would otherwise be missing from the file.
+                      Log.flush();
+                      saveLog(Log().toString());
+                    },
                   ),
                 ],
               );
