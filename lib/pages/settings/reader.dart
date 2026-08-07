@@ -49,6 +49,22 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         readerMode == 'galleryRightToLeft';
   }
 
+  /// The source language that applies in this page's scope: the comic's own when
+  /// opened for a specific comic with per-comic settings on, otherwise the
+  /// global one. Drives the "models ready" summary and the test-translation
+  /// target so both describe what this comic will actually use.
+  TranslationConfig _effectiveTranslationConfig() {
+    var comicId = widget.comicId;
+    if (comicId == null) {
+      return TranslationConfig.global;
+    }
+    return TranslationConfig.of(comicId, widget.comicSource);
+  }
+
+  String _effectiveSourceLang() => _effectiveTranslationConfig().sourceLang;
+
+  String _effectiveTargetLang() => _effectiveTranslationConfig().targetLang;
+
   /// Summary line for the LLM-providers entry: the active provider's name (or
   /// its URL when unnamed), how many others are configured, or "Not configured".
   String _activeProviderSubtitle() {
@@ -140,11 +156,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     String? result;
     String? error;
     try {
-      var target =
-          appdata.settings['imageTranslationTarget'] as String? ?? 'zh';
       var res = await LlmTranslator.translateBatch(
         const ['こんにちは', 'ありがとう'],
-        target,
+        _effectiveTargetLang(),
       );
       result = res.texts.where((t) => t.isNotEmpty).join(' / ');
       if (result.isEmpty) {
@@ -923,6 +937,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 setState(() {});
                 widget.onChanged?.call("imageTranslationSource");
               },
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource:
+                  isEnabledSpecificSettings ? widget.comicSource : null,
+              useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
               title: "Target language".tl,
@@ -942,6 +960,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 setState(() {});
                 widget.onChanged?.call("imageTranslationTarget");
               },
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource:
+                  isEnabledSpecificSettings ? widget.comicSource : null,
+              useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
               title: "Text removal".tl,
@@ -957,6 +979,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 setState(() {});
                 widget.onChanged?.call("imageTranslationInpaintMode");
               },
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource:
+                  isEnabledSpecificSettings ? widget.comicSource : null,
+              useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SliderSetting(
               title: "Pages per pre-translation request".tl,
@@ -991,14 +1017,13 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             ),
             _CallbackSetting(
               title: "Translation models".tl,
-              subtitle: TranslationModels.isReadyFor(
-                    appdata.settings['imageTranslationSource'] as String? ??
-                        'auto',
-                  )
+              subtitle: TranslationModels.isReadyFor(_effectiveSourceLang())
                   ? "Models ready".tl
                   : "Models not downloaded".tl,
               actionTitle: "Manage".tl,
-              callback: () => context.to(() => const TranslationModelsPage()),
+              callback: () => context.to(
+                () => TranslationModelsPage(sourceLang: _effectiveSourceLang()),
+              ),
             ),
             _CallbackSetting(
               title: "Clear translation results".tl,

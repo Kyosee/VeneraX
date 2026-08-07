@@ -1,6 +1,7 @@
 import 'dart:async' show Future;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
@@ -20,6 +21,7 @@ class ReaderImageProvider
     this.page, {
     this.enableResize = false,
     this.translationKey,
+    this.translationConfig,
     this.translated = false,
   });
 
@@ -38,6 +40,10 @@ class ReaderImageProvider
   /// of the original; otherwise the original is shown and a translation is
   /// scheduled in the background.
   final String? translationKey;
+
+  /// This comic's own language pair + text-removal mode. Non-null exactly when
+  /// [translationKey] is.
+  final TranslationConfig? translationConfig;
 
   /// Whether the translated page is already known to exist. Only used to
   /// change the provider identity so the reader can swap the image in place
@@ -81,21 +87,27 @@ class ReaderImageProvider
       throw "Error: Empty response body.";
     }
     if (translationKey != null) {
+      var config = translationConfig ?? TranslationConfig.of(cid, sourceKey);
       var translatedFile = await ImageTranslationService.instance
-          .findTranslated(translationKey!);
+          .findTranslated(translationKey!, config.mode);
       if (translatedFile != null) {
-        ImageTranslationService.instance.markTranslated(translationKey!);
+        ImageTranslationService.instance.markTranslated(
+          translationKey!,
+          config.mode,
+        );
         return await translatedFile.readAsBytes();
       }
-      if (ImageTranslationService.isReady) {
+      if (ImageTranslationService.isReadyForLang(config.sourceLang)) {
         // Models are usable: show the original for now and translate in the
         // background. When it lands the reader is notified, this provider's
         // cache entry is evicted and the next resolve picks up the translated
         // file above.
         ImageTranslationService.instance.schedule(
           translationKey!,
-          '$cid@$sourceKey',
+          cid,
+          sourceKey,
           imageBytes,
+          config,
           () {
             ImageTranslationService.evictImage(this);
           },
@@ -108,6 +120,7 @@ class ReaderImageProvider
         var rendered = await ImageTranslationService.instance.renderStoredPage(
           translationKey!,
           imageBytes,
+          config.mode,
         );
         if (rendered != null) {
           return rendered;

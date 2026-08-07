@@ -2160,9 +2160,10 @@ ImageProvider _createImageProviderFromKey(
       ? reader.eid
       : reader.widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
   String? translationKey;
+  TranslationConfig? translationConfig;
   var translated = false;
-  // Gate on the per-comic switch alone (which syncs over WebDAV), not on
-  // isReady: a device without translation models can still render a translated
+  // Gate on the per-comic switch alone (which syncs over WebDAV), not on model
+  // readiness: a device without translation models can still render a translated
   // page from a stored result that synced across (see renderStoredPage). When
   // models ARE present, missing pages get translated on demand as before.
   if (!reader.showOriginalPages &&
@@ -2176,7 +2177,14 @@ ImageProvider _createImageProviderFromKey(
       reader.cid,
       eid,
     );
-    translated = ImageTranslationService.instance.isTranslated(translationKey);
+    translationConfig = TranslationConfig.of(
+      reader.cid,
+      reader.type.comicSource?.key,
+    );
+    translated = ImageTranslationService.instance.isTranslated(
+      translationKey,
+      translationConfig.mode,
+    );
   }
   return ReaderImageProvider(
     imageKey,
@@ -2188,6 +2196,7 @@ ImageProvider _createImageProviderFromKey(
         .mode
         .isContinuous, // For continuous mode, we need to resize the image to improve performance
     translationKey: translationKey,
+    translationConfig: translationConfig,
     translated: translated,
   );
 }

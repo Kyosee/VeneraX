@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_pipeline.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
@@ -43,13 +44,28 @@ enum _TranslateOutcome {
 }
 
 class _TranslationTask {
-  _TranslationTask(this.cacheKey, this.comicKey, this.imageBytes);
+  _TranslationTask(
+    this.cacheKey,
+    this.cid,
+    this.sourceKey,
+    this.imageBytes,
+    this.config,
+  );
 
   final String cacheKey;
 
-  /// Identifies the comic ('cid@sourceKey') for the per-comic language lock.
-  final String comicKey;
+  final String cid;
+  final String? sourceKey;
+
+  /// Identifies the comic for the per-comic language lock and glossary.
+  String get comicKey => '$cid@$sourceKey';
+
   final Uint8List imageBytes;
+
+  /// The comic's own language pair + render mode, captured when queued so a
+  /// settings change mid-queue can't translate the page with another comic's
+  /// languages.
+  final TranslationConfig config;
   final listeners = <VoidCallback>[];
 }
 
@@ -73,51 +89,43 @@ class ImageTranslationService with ChangeNotifier {
 
   final _queue = <_TranslationTask>[];
   final _active = <_TranslationTask>{};
+
+  /// The done/failed markers describe a *rendered* image, so they key on the
+  /// rendered key (page key + render-mode token) rather than the raw page key.
+  /// Two comics reading with different text-removal modes therefore keep
+  /// independent markers, and a mode change addresses different entries instead
+  /// of needing the whole set cleared.
   final _failures = <String, DateTime>{};
   final _completed = <String>{};
 
   /// Last error message per failed page, for the reader's retry affordance.
   final _errors = <String, String>{};
 
-  /// Pages known (via the text cache) to contain nothing translatable.
+  /// Pages known (via the text cache) to contain nothing translatable. Mode
+  /// independent, so this one keys on the raw page key.
   final _noContent = <String>{};
   PageTranslationPipeline? _pipeline;
   Timer? _releaseTimer;
 
-  InpaintMode? _markersMode;
-
-  /// The done/failed markers key on the raw cacheKey but describe a rendered
-  /// image, which depends on the render mode. On a mode switch they no longer
-  /// match what is cached under the new mode's key, so drop them and let pages
-  /// re-probe. "No translatable text" is mode independent and kept.
-  void _syncMarkersToMode() {
-    var mode = renderMode;
-    if (_markersMode == mode) return;
-    _markersMode = mode;
-    _completed.clear();
-    _failures.clear();
-    _errors.clear();
+  /// Whether a translated page is known to exist for [cacheKey] under [mode].
+  /// Feeds the provider identity so a finished background translation produces
+  /// a new provider and the visible image swaps in place.
+  bool isTranslated(String cacheKey, InpaintMode mode) {
+    return _completed.contains(renderedKey(cacheKey, mode));
   }
 
-  /// Whether a translated page is known to exist for [cacheKey]. Feeds the
-  /// provider identity so a finished background translation produces a new
-  /// provider and the visible image swaps in place.
-  bool isTranslated(String cacheKey) {
-    _syncMarkersToMode();
-    return _completed.contains(cacheKey);
-  }
-
-  void markTranslated(String cacheKey) => _completed.add(cacheKey);
+  void markTranslated(String cacheKey, InpaintMode mode) =>
+      _completed.add(renderedKey(cacheKey, mode));
 
   /// Current per-page translation state, for the reader status badge.
-  PageTranslationStatus statusOf(String cacheKey) {
-    _syncMarkersToMode();
-    if (_completed.contains(cacheKey)) return PageTranslationStatus.translated;
+  PageTranslationStatus statusOf(String cacheKey, InpaintMode mode) {
+    var renderKey = renderedKey(cacheKey, mode);
+    if (_completed.contains(renderKey)) return PageTranslationStatus.translated;
     if (_noContent.contains(cacheKey)) return PageTranslationStatus.noContent;
     if (_active.any((t) => t.cacheKey == cacheKey)) {
       return PageTranslationStatus.translating;
     }
-    if (_failures.containsKey(cacheKey)) return PageTranslationStatus.failed;
+    if (_failures.containsKey(renderKey)) return PageTranslationStatus.failed;
     if (_queue.any((t) => t.cacheKey == cacheKey)) {
       return PageTranslationStatus.translating;
     }
@@ -125,13 +133,15 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   /// Last failure message for [cacheKey], if the page failed to translate.
-  String? errorOf(String cacheKey) => _errors[cacheKey];
+  String? errorOf(String cacheKey, InpaintMode mode) =>
+      _errors[renderedKey(cacheKey, mode)];
 
   /// Clears the failure back-off for [cacheKey] so the reader can retry it
   /// immediately instead of waiting out [_failureRetryDelay].
-  void clearFailure(String cacheKey) {
-    _failures.remove(cacheKey);
-    _errors.remove(cacheKey);
+  void clearFailure(String cacheKey, InpaintMode mode) {
+    var renderKey = renderedKey(cacheKey, mode);
+    _failures.remove(renderKey);
+    _errors.remove(renderKey);
   }
 
   /// Trims an exception to a short, single-line message for display.
@@ -144,36 +154,34 @@ class ImageTranslationService with ChangeNotifier {
     return text.length > 160 ? '${text.substring(0, 160)}…' : text;
   }
 
-  static String get sourceLang =>
-      appdata.settings['imageTranslationSource'] as String? ?? 'auto';
-
-  static String get targetLang =>
-      appdata.settings['imageTranslationTarget'] as String? ?? 'zh';
-
-  /// Current text-removal / render mode.
-  static InpaintMode get renderMode =>
-      InpaintMode.fromSettings(appdata.settings['imageTranslationInpaintMode']);
-
   /// Rendered-image cache key: the page's durable text [cacheKey] plus the
   /// render-mode token. The rendered image depends on the mode, the stored text
   /// does not — so switching modes serves a different image re-derived from the
   /// same stored text, and switching back reuses the earlier render. The token
   /// is a suffix, so the comic/chapter scope prefixes still match it for
   /// deletion.
-  static String renderedKey(String cacheKey) =>
-      '$cacheKey#${renderMode.token}';
+  static String renderedKey(String cacheKey, InpaintMode mode) =>
+      '$cacheKey#${mode.token}';
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
   int get _maxConcurrent => 2;
 
-  /// Whether detection/OCR models AND the user's LLM endpoint are usable
-  /// right now.
-  static bool get isReady {
+  /// Whether detection/OCR models AND the user's LLM endpoint are usable for
+  /// [sourceLang]. The source language is per-comic, so readiness is too: a
+  /// comic set to Korean needs the Korean model even if another comic reads fine
+  /// with Japanese.
+  static bool isReadyForLang(String sourceLang) {
     if (!TranslationModels.isReadyFor(sourceLang)) {
       return false;
     }
     return LlmTranslator.isConfigured;
+  }
+
+  /// Whether translation can run for one comic, using that comic's own source
+  /// language.
+  static bool isReadyForComic(String cid, String? sourceKey) {
+    return isReadyForLang(TranslationConfig.of(cid, sourceKey).sourceLang);
   }
 
   /// The implicitData keys holding per-comic translation preferences: the
@@ -231,20 +239,18 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   /// Whether translation should run for a comic right now (per-comic switch +
-  /// usable engine).
+  /// usable engine for that comic's language).
   static bool enabledFor(String cid, String sourceKey) {
-    return isEnabledForComic(cid, sourceKey) && isReady;
+    return isEnabledForComic(cid, sourceKey) && isReadyForComic(cid, sourceKey);
   }
 
-  static String get _cachePrefix =>
-      'pageTranslation@$sourceLang>$targetLang@';
-
-  /// Prefix covering every cached page of one comic, for the current language
-  /// pair. The comic/chapter identity comes BEFORE the per-image part so a
-  /// whole comic — or a single chapter — can be invalidated with one prefix
+  /// Prefix covering every cached page of one comic, for that comic's own
+  /// language pair. The comic/chapter identity comes BEFORE the per-image part
+  /// so a whole comic — or a single chapter — can be invalidated with one prefix
   /// delete (see [CacheManager.deleteByPrefix]).
   static String comicScopePrefix(String? sourceKey, String cid) {
-    return '$_cachePrefix$sourceKey@$cid@';
+    var prefix = TranslationConfig.of(cid, sourceKey).cachePrefix;
+    return '$prefix$sourceKey@$cid@';
   }
 
   /// Prefix covering every cached page of one chapter.
@@ -252,10 +258,10 @@ class ImageTranslationService with ChangeNotifier {
     return '${comicScopePrefix(sourceKey, cid)}$eid@';
   }
 
-  /// Cache key of the translated variant of one page. It embeds the
-  /// language pair so changing settings re-translates instead of serving
-  /// stale pages. Scope (source/comic/chapter) comes first, image key last,
-  /// so a comic or chapter forms a deletable key prefix.
+  /// Cache key of the translated variant of one page. It embeds the comic's
+  /// language pair so changing that comic's languages re-translates instead of
+  /// serving pages in the old language. Scope (source/comic/chapter) comes
+  /// first, image key last, so a comic or chapter forms a deletable key prefix.
   static String cacheKeyFor(
     String imageKey,
     String? sourceKey,
@@ -305,15 +311,15 @@ class ImageTranslationService with ChangeNotifier {
     return removed;
   }
 
-  Future<File?> findTranslated(String cacheKey) {
-    return CacheManager().findCache(renderedKey(cacheKey));
+  Future<File?> findTranslated(String cacheKey, InpaintMode mode) {
+    return CacheManager().findCache(renderedKey(cacheKey, mode));
   }
 
   /// Whether a fully rendered translated page (not just the text result) is
   /// already cached. Used by the pre-translation task manager to skip pages
   /// that were done in an earlier run or read online.
-  Future<bool> hasRenderedPage(String cacheKey) async {
-    return await CacheManager().findCache(renderedKey(cacheKey)) != null;
+  Future<bool> hasRenderedPage(String cacheKey, InpaintMode mode) async {
+    return await CacheManager().findCache(renderedKey(cacheKey, mode)) != null;
   }
 
   /// How many pages of one chapter already have a stored text result — the
@@ -341,11 +347,12 @@ class ImageTranslationService with ChangeNotifier {
   Future<Uint8List?> renderStoredPage(
     String cacheKey,
     Uint8List imageBytes,
+    InpaintMode mode,
   ) async {
-    var renderKey = renderedKey(cacheKey);
+    var renderKey = renderedKey(cacheKey, mode);
     var cached = await CacheManager().findCache(renderKey);
     if (cached != null) {
-      _completed.add(cacheKey);
+      _completed.add(renderKey);
       return await cached.readAsBytes();
     }
     var regions = TranslationStore().get(cacheKey);
@@ -359,9 +366,9 @@ class ImageTranslationService with ChangeNotifier {
       return null;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
-    var rendered = await pipeline.renderPage(imageBytes, regions, mode: renderMode);
+    var rendered = await pipeline.renderPage(imageBytes, regions, mode: mode);
     await CacheManager().writeCache(renderKey, rendered, _imageCacheDuration);
-    _completed.add(cacheKey);
+    _completed.add(renderKey);
     return rendered;
   }
 
@@ -376,19 +383,21 @@ class ImageTranslationService with ChangeNotifier {
   Future<bool> translateOne(
     String cacheKey,
     String comicKey,
-    Uint8List imageBytes, {
+    Uint8List imageBytes,
+    TranslationConfig config, {
     bool Function()? shouldCancel,
   }) async {
     var outcome = await _translateToCache(
       cacheKey,
       comicKey,
       imageBytes,
+      config,
       shouldCancel: shouldCancel,
     );
     if (outcome == _TranslateOutcome.noContent) {
       return false;
     }
-    _completed.add(cacheKey);
+    _completed.add(renderedKey(cacheKey, config.mode));
     return true;
   }
 
@@ -401,10 +410,11 @@ class ImageTranslationService with ChangeNotifier {
   Future<_TranslateOutcome> _translateToCache(
     String cacheKey,
     String comicKey,
-    Uint8List imageBytes, {
+    Uint8List imageBytes,
+    TranslationConfig config, {
     bool Function()? shouldCancel,
   }) async {
-    var renderKey = renderedKey(cacheKey);
+    var renderKey = renderedKey(cacheKey, config.mode);
     if (await CacheManager().findCache(renderKey) != null) {
       return _TranslateOutcome.alreadyCached;
     }
@@ -415,11 +425,11 @@ class ImageTranslationService with ChangeNotifier {
     if (regions == null) {
       var analysis = await pipeline.analyzePage(
         imageBytes,
-        sourceLang: _effectiveSourceFor(comicKey),
-        targetLang: targetLang,
+        sourceLang: _effectiveSourceFor(comicKey, config),
+        targetLang: config.targetLang,
         glossary: _glossaryFor(comicKey),
       );
-      _updateLanguageLock(comicKey, analysis.languageVotes);
+      _updateLanguageLock(comicKey, analysis.languageVotes, config);
       _mergeGlossary(comicKey, analysis.newGlossary);
       regions = analysis.regions;
       TranslationStore().put(cacheKey, regions);
@@ -433,7 +443,11 @@ class ImageTranslationService with ChangeNotifier {
       _noContent.add(cacheKey);
       return _TranslateOutcome.noContent;
     }
-    var rendered = await pipeline.renderPage(imageBytes, regions, mode: renderMode);
+    var rendered = await pipeline.renderPage(
+      imageBytes,
+      regions,
+      mode: config.mode,
+    );
     await CacheManager().writeCache(renderKey, rendered, _imageCacheDuration);
     return _TranslateOutcome.translated;
   }
@@ -455,13 +469,14 @@ class ImageTranslationService with ChangeNotifier {
   /// throws [PipelineCanceled] when [shouldCancel] fires between pages.
   Future<List<bool>> translatePageGroup(
     List<({String cacheKey, Uint8List imageBytes})> pages,
-    String comicKey, {
+    String comicKey,
+    TranslationConfig config, {
     bool Function()? shouldCancel,
   }) async {
     var success = List.filled(pages.length, false);
     if (pages.isEmpty) return success;
     var pipeline = _pipeline ??= PageTranslationPipeline();
-    var sourceLang = _effectiveSourceFor(comicKey);
+    var sourceLang = _effectiveSourceFor(comicKey, config);
 
     // Final regions per page once known; null = a fresh-OCR page still awaiting
     // the LLM (composed in stage 2) or a page that failed and is skipped.
@@ -480,8 +495,9 @@ class ImageTranslationService with ChangeNotifier {
       if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
       var p = pages[i];
       try {
-        if (await CacheManager().findCache(renderedKey(p.cacheKey)) != null) {
-          _completed.add(p.cacheKey);
+        var renderKey = renderedKey(p.cacheKey, config.mode);
+        if (await CacheManager().findCache(renderKey) != null) {
+          _completed.add(renderKey);
           success[i] = true;
           settled[i] = true;
           continue;
@@ -494,7 +510,7 @@ class ImageTranslationService with ChangeNotifier {
         pendingOcr[i] = await pipeline.ocrPage(
           p.imageBytes,
           sourceLang: sourceLang,
-          targetLang: targetLang,
+          targetLang: config.targetLang,
         );
         freshOcr[i] = true;
       } catch (e, s) {
@@ -510,7 +526,7 @@ class ImageTranslationService with ChangeNotifier {
     for (var po in pendingOcr) {
       po?.languageVotes.forEach((k, v) => votes[k] = (votes[k] ?? 0) + v);
     }
-    _updateLanguageLock(comicKey, votes);
+    _updateLanguageLock(comicKey, votes, config);
 
     var texts = <String>[];
     var sliceAt = List<int>.filled(pages.length, 0);
@@ -528,7 +544,7 @@ class ImageTranslationService with ChangeNotifier {
       try {
         var result = await LlmTranslator.translateBatch(
           texts,
-          targetLang,
+          config.targetLang,
           glossary: _glossaryFor(comicKey),
         );
         _mergeGlossary(comicKey, result.glossary);
@@ -577,14 +593,15 @@ class ImageTranslationService with ChangeNotifier {
         var rendered = await pipeline.renderPage(
           p.imageBytes,
           regions,
-          mode: renderMode,
+          mode: config.mode,
         );
+        var renderKey = renderedKey(p.cacheKey, config.mode);
         await CacheManager().writeCache(
-          renderedKey(p.cacheKey),
+          renderKey,
           rendered,
           _imageCacheDuration,
         );
-        _completed.add(p.cacheKey);
+        _completed.add(renderKey);
         success[i] = true;
       } catch (e, s) {
         Log.warning('Image Translation', 'Batch render failed: $e\n$s');
@@ -607,20 +624,22 @@ class ImageTranslationService with ChangeNotifier {
   /// notified — providers use it to evict their stale image cache entry.
   void schedule(
     String cacheKey,
-    String comicKey,
+    String cid,
+    String? sourceKey,
     Uint8List imageBytes,
+    TranslationConfig config,
     VoidCallback onTranslated,
   ) {
-    _syncMarkersToMode();
     if (_noContent.contains(cacheKey)) {
       return;
     }
-    var failedAt = _failures[cacheKey];
+    var renderKey = renderedKey(cacheKey, config.mode);
+    var failedAt = _failures[renderKey];
     if (failedAt != null) {
       if (DateTime.now().difference(failedAt) < _failureRetryDelay) {
         return;
       }
-      _failures.remove(cacheKey);
+      _failures.remove(renderKey);
     }
     var existing = _queue.where((t) => t.cacheKey == cacheKey).firstOrNull;
     if (existing != null) {
@@ -637,7 +656,7 @@ class ImageTranslationService with ChangeNotifier {
       _queue.remove(oldest);
     }
     _queue.add(
-      _TranslationTask(cacheKey, comicKey, imageBytes)
+      _TranslationTask(cacheKey, cid, sourceKey, imageBytes, config)
         ..listeners.add(onTranslated),
     );
     _releaseTimer?.cancel();
@@ -654,25 +673,31 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   Future<void> _process(_TranslationTask task) async {
+    var renderKey = renderedKey(task.cacheKey, task.config.mode);
     try {
-      // The settings may have changed while queued; skip stale entries.
-      if (!task.cacheKey.startsWith(_cachePrefix)) {
+      // The comic's translation settings may have changed while this page sat
+      // in the queue; its key then belongs to a superseded language pair, so
+      // drop it rather than paying for a translation nothing will read.
+      var current = TranslationConfig.of(task.cid, task.sourceKey);
+      if (!task.cacheKey.startsWith(current.cachePrefix) ||
+          current.mode != task.config.mode) {
         return;
       }
       var outcome = await _translateToCache(
         task.cacheKey,
         task.comicKey,
         task.imageBytes,
+        task.config,
       );
-      _errors.remove(task.cacheKey);
+      _errors.remove(renderKey);
       if (outcome != _TranslateOutcome.noContent) {
         _notifyDone(task);
       }
     } on PipelineCanceled {
       // ignore
     } catch (e, s) {
-      _failures[task.cacheKey] = DateTime.now();
-      _errors[task.cacheKey] = _briefError(e);
+      _failures[renderKey] = DateTime.now();
+      _errors[renderKey] = _briefError(e);
       Log.error('Image Translation', 'Failed to translate page: $e', s);
       // Let the reader surface a failure badge instead of silently showing the
       // untranslated page forever.
@@ -708,15 +733,19 @@ class ImageTranslationService with ChangeNotifier {
     return _comicLangs!;
   }
 
-  String _effectiveSourceFor(String comicKey) {
-    if (sourceLang != 'auto') {
-      return sourceLang;
+  String _effectiveSourceFor(String comicKey, TranslationConfig config) {
+    if (config.sourceLang != 'auto') {
+      return config.sourceLang;
     }
     return _langLocks[comicKey] ?? 'auto';
   }
 
-  void _updateLanguageLock(String comicKey, Map<String, int> votes) {
-    if (sourceLang != 'auto' || _langLocks.containsKey(comicKey)) {
+  void _updateLanguageLock(
+    String comicKey,
+    Map<String, int> votes,
+    TranslationConfig config,
+  ) {
+    if (config.sourceLang != 'auto' || _langLocks.containsKey(comicKey)) {
       return;
     }
     var total = votes.values.fold(0, (a, b) => a + b);

@@ -9,6 +9,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_translation/ordered_group_committer.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
@@ -112,6 +113,11 @@ class PreTranslationTask {
 
   String get comicKey => '$cid@$sourceKey';
 
+  /// This comic's own language pair + text-removal mode. Resolved live, exactly
+  /// like [ImageTranslationService.cacheKeyFor] does, so the config and the
+  /// cache keys a job writes to always describe the same generation.
+  TranslationConfig get config => TranslationConfig.of(cid, sourceKey);
+
   bool get isRunning => status == PreTranslationTaskStatus.running;
 
   int get total => chapters.fold(0, (sum, c) => sum + c.total);
@@ -200,7 +206,8 @@ class PreTranslationTaskManager with ChangeNotifier {
     required String title,
     required List<PreTranslationChapter> chapters,
   }) {
-    if (!ImageTranslationService.isReady || chapters.isEmpty) {
+    if (!ImageTranslationService.isReadyForComic(cid, sourceKey) ||
+        chapters.isEmpty) {
       return null;
     }
     var existing = currentTasks
@@ -615,7 +622,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         chapter.eid,
       );
       try {
-        if (await service.hasRenderedPage(cacheKey)) {
+        if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           _markRetrySuccess(chapter, i);
           continue;
         }
@@ -633,6 +640,7 @@ class PreTranslationTaskManager with ChangeNotifier {
             .map((p) => (cacheKey: p.cacheKey, imageBytes: p.imageBytes))
             .toList(),
         task.comicKey,
+        task.config,
         shouldCancel: () => _canceledIds.contains(task.id),
       );
       for (var j = 0; j < pending.length; j++) {
@@ -700,7 +708,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         chapter.eid,
       );
       try {
-        if (await service.hasRenderedPage(cacheKey)) {
+        if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           done++;
           continue;
         }
@@ -719,6 +727,7 @@ class PreTranslationTaskManager with ChangeNotifier {
               .map((p) => (cacheKey: p.cacheKey, imageBytes: p.imageBytes))
               .toList(),
           task.comicKey,
+          task.config,
           shouldCancel: () => _canceledIds.contains(task.id),
         );
         for (var j = 0; j < pending.length; j++) {

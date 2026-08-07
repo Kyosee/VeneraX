@@ -846,7 +846,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     text: (comic.commentCount ?? 'Comments'.tl).toString(),
                     onPressed: showComments,
                   ),
-                if (ImageTranslationService.isReady &&
+                if (ImageTranslationService.isReadyForComic(
+                      comic.id,
+                      comic.sourceKey,
+                    ) &&
                     ImageTranslationService.isEnabledForComic(
                       comic.id,
                       comic.sourceKey,

@@ -136,7 +136,7 @@ abstract mixin class _ComicPageActions {
   /// Queues selected chapters for background pre-translation so their pages are
   /// rendered and cached before the user opens the reader (no in-reader wait).
   void preTranslate() {
-    if (!ImageTranslationService.isReady) {
+    if (!ImageTranslationService.isReadyForComic(comic.id, comic.sourceKey)) {
       App.rootContext.showMessage(
         message: "Configure AI translation first".tl,
       );
@@ -261,7 +261,10 @@ abstract mixin class _ComicPageActions {
         App.rootContext.showMessage(message: "Translation results cleared".tl);
         // Offer to pre-translate again right away; the user can also just
         // reopen the reader, which translates on demand.
-        if (ImageTranslationService.isReady) {
+        if (ImageTranslationService.isReadyForComic(
+          comic.id,
+          comic.sourceKey,
+        )) {
           preTranslate();
         }
       },
@@ -650,7 +653,7 @@ abstract mixin class _ComicPageActions {
   /// for when cached translations came out wrong.
   void showTranslationMenu() {
     var context = App.rootContext;
-    if (!ImageTranslationService.isReady) {
+    if (!ImageTranslationService.isReadyForComic(comic.id, comic.sourceKey)) {
       context.showMessage(message: "Configure AI translation first".tl);
       return;
     }

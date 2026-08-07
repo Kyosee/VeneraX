@@ -332,9 +332,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     );
   }
 
-  /// Cache key of the currently visible page's translated variant, or null when
-  /// translation is not enabled for this comic or the page can't be resolved.
-  String? _currentTranslationKey() {
+  /// Cache key of the currently visible page's translated variant plus the
+  /// comic's own render mode, or null when translation is not enabled for this
+  /// comic or the page can't be resolved. The mode travels with the key because
+  /// the status/error markers are per rendered image, and the mode is a
+  /// per-comic setting.
+  ({String cacheKey, InpaintMode mode})? _currentTranslationTarget() {
     final reader = context.reader;
     if (!ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
       return null;
@@ -342,11 +345,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     final images = reader.images;
     if (images == null || images.isEmpty) return null;
     var index = (reader.page - 1).clamp(0, images.length - 1);
-    return ImageTranslationService.cacheKeyFor(
-      images[index],
-      reader.type.comicSource?.key,
-      reader.cid,
-      reader.eid,
+    return (
+      cacheKey: ImageTranslationService.cacheKeyFor(
+        images[index],
+        reader.type.comicSource?.key,
+        reader.cid,
+        reader.eid,
+      ),
+      mode: TranslationConfig.of(reader.cid, reader.type.sourceKey).mode,
     );
   }
 
@@ -359,7 +365,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       return const [];
     }
     final service = ImageTranslationService.instance;
-    final cacheKey = _currentTranslationKey();
+    final target = _currentTranslationTarget();
     final widgets = <Widget>[];
 
     // Show-original toggle: lets the reader compare against the source art
@@ -380,8 +386,8 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ),
     );
 
-    if (cacheKey != null && !reader.showOriginalPages) {
-      switch (service.statusOf(cacheKey)) {
+    if (target != null && !reader.showOriginalPages) {
+      switch (service.statusOf(target.cacheKey, target.mode)) {
         case PageTranslationStatus.translating:
           widgets.add(
             const Padding(
@@ -396,13 +402,16 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         case PageTranslationStatus.failed:
           widgets.add(
             Tooltip(
-              message: service.errorOf(cacheKey) ?? "Translation failed".tl,
+              message:
+                  service.errorOf(target.cacheKey, target.mode) ??
+                  "Translation failed".tl,
               child: IconButton(
                 icon: Icon(
                   Icons.error_outline,
                   color: context.colorScheme.error,
                 ),
-                onPressed: () => _retryTranslation(cacheKey),
+                onPressed: () =>
+                    _retryTranslation(target.cacheKey, target.mode),
               ),
             ),
           );
@@ -415,10 +424,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return widgets;
   }
 
-  void _retryTranslation(String cacheKey) {
+  void _retryTranslation(String cacheKey, InpaintMode mode) {
     final service = ImageTranslationService.instance;
-    var error = service.errorOf(cacheKey);
-    service.clearFailure(cacheKey);
+    var error = service.errorOf(cacheKey, mode);
+    service.clearFailure(cacheKey, mode);
     // Dropping the cached image entry makes the provider reload and re-schedule
     // the page; the failure back-off was just cleared so it runs immediately.
     PaintingBinding.instance.imageCache.clear();
@@ -995,6 +1004,17 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           if (key == "showChapterComments" ||
               key == "showChapterCommentsAtEnd") {
             update();
+          }
+          // Changing this comic's language pair or text-removal mode addresses a
+          // different translation cache generation, but the image providers are
+          // keyed on the page identity alone — without dropping them the reader
+          // would keep showing the render made with the previous settings.
+          if (key == "imageTranslationSource" ||
+              key == "imageTranslationTarget" ||
+              key == "imageTranslationInpaintMode" ||
+              key == "enableImageTranslation") {
+            PaintingBinding.instance.imageCache.clear();
+            PaintingBinding.instance.imageCache.clearLiveImages();
           }
           context.reader.update();
         },

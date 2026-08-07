@@ -3,7 +3,12 @@ part of 'settings_page.dart';
 /// Management page for offline translation model files: download (with
 /// progress and mirror fallback), delete, and choice of download endpoint.
 class TranslationModelsPage extends StatefulWidget {
-  const TranslationModelsPage({super.key});
+  const TranslationModelsPage({super.key, this.sourceLang});
+
+  /// Source language whose OCR models are marked "required", or null to use the
+  /// global setting. Passed by the reader's per-comic settings so the page marks
+  /// the models that comic actually needs, not the ones the global default does.
+  final String? sourceLang;
 
   @override
   State<TranslationModelsPage> createState() => _TranslationModelsPageState();
@@ -50,7 +55,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
   @override
   Widget build(BuildContext context) {
     var requiredIds = TranslationModels.requiredFor(
-      appdata.settings['imageTranslationSource'] as String? ?? 'auto',
+      widget.sourceLang ?? TranslationConfig.global.sourceLang,
     ).map((c) => c.id).toSet();
     return Scaffold(
       body: SmoothCustomScrollView(
