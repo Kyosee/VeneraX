@@ -1,5 +1,6 @@
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
@@ -749,6 +750,11 @@ class ComicStateRepository {
   String? _sourceNameFor(String sourceKey) {
     if (sourceKey == 'local') {
       return 'Local';
+    }
+    // A collection's members may come from several sources, so naming one of
+    // them (or the collection's own synthetic source) would be misleading.
+    if (ComicCollectionStore.isCollectionSourceKey(sourceKey)) {
+      return null;
     }
     return ComicSource.find(sourceKey)?.name;
   }

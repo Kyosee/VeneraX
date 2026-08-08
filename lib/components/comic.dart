@@ -120,6 +120,14 @@ class ComicTile extends StatelessWidget {
           addFavorite([comic]);
         },
       ),
+      // A collection cannot hold another collection, so the entry is hidden
+      // rather than shown and refused.
+      if (!ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+        MenuEntry(
+          icon: Icons.library_books_outlined,
+          text: 'Add to collection'.tl,
+          onClick: () => showAddToCollectionDialog(context, [comic]),
+        ),
       MenuEntry(
         icon: ReadLaterManager().isExist(comic.id, ComicType.fromKey(comic.sourceKey))
             ? Icons.bookmark_remove_outlined
@@ -1880,8 +1888,9 @@ class ComicListState extends State<ComicList> {
     );
   }
 
-  /// Left-swipe pane that quick-favorites a single comic. Mobile only (the grid
-  /// swipe gesture is gated to mobile in SliverGridComics).
+  /// Left-swipe pane that quick-favorites a single comic, or files it into a
+  /// collection. Mobile only (the grid swipe gesture is gated to mobile in
+  /// SliverGridComics).
   SwipePanes _favoriteSwipePanes(Comic comic) {
     return (
       start: null,
@@ -1894,6 +1903,15 @@ class ComicListState extends State<ComicList> {
             backgroundColor: context.colorScheme.primaryContainer,
             foregroundColor: context.colorScheme.onPrimaryContainer,
           ),
+          // Hidden for a collection: it cannot be nested in another one.
+          if (!ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+            SwipeAction(
+              icon: Icons.library_books_outlined,
+              label: "Add to collection".tl,
+              onPressed: () => showAddToCollectionDialog(context, [comic]),
+              backgroundColor: context.colorScheme.secondaryContainer,
+              foregroundColor: context.colorScheme.onSecondaryContainer,
+            ),
         ],
       ),
     );
@@ -1941,6 +1959,18 @@ class ComicListState extends State<ComicList> {
               ? null
               : () {
                   addFavorite(_selected.keys.toList());
+                  _exitSelect();
+                },
+        ),
+        // The batch path is the main way a collection gets built: pick the
+        // three volumes of one story, then file them together in one step.
+        IconButton(
+          icon: const Icon(Icons.library_books_outlined),
+          tooltip: "Add to collection".tl,
+          onPressed: _selected.isEmpty
+              ? null
+              : () {
+                  showAddToCollectionDialog(context, _selected.keys.toList());
                   _exitSelect();
                 },
         ),

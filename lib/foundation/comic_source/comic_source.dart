@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
 import 'package:venera/foundation/comic_source/webdav_source.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
@@ -49,12 +51,17 @@ class ComicSourceManager with ChangeNotifier, Init {
   /// unregister a user's own script source that happens to be named like one.
   final _webdavLibrarySourceKeys = <String>{};
 
+  /// Keys of the sources this manager registered for comic collections. Same
+  /// rationale as [_webdavLibrarySourceKeys]: tracked exactly so refreshing them
+  /// can never unregister an unrelated source.
+  final _collectionSourceKeys = <String>{};
+
   factory ComicSourceManager() => _instance ??= ComicSourceManager._create();
 
   List<ComicSource> all() => List.from(_sources);
 
   ComicSource? find(String key) =>
-      _findRegistered(key) ?? _adoptWebdavLibrary(key);
+      _findRegistered(key) ?? _adoptWebdavLibrary(key) ?? _adoptCollection(key);
 
   /// Plain lookup among the sources already registered. Used internally where
   /// [find]'s self-healing must not kick in — notably the duplicate check in
@@ -87,6 +94,22 @@ class ComicSourceManager with ChangeNotifier, Init {
     return source;
   }
 
+  /// Registers a comic collection that exists in the configuration but has no
+  /// source yet, then returns it. Same self-healing role as
+  /// [_adoptWebdavLibrary]: a sync download or backup restore can introduce a
+  /// collection without passing through the screen that registers sources, and
+  /// every read path (reader, image loader, history) resolves through [find].
+  ComicSource? _adoptCollection(String key) {
+    if (!ComicCollectionStore.isCollectionSourceKey(key)) return null;
+    final collection = ComicCollectionStore.findBySourceKey(key);
+    if (collection == null) return null;
+    final source = buildComicCollectionSource(collection);
+    _sources.add(source);
+    _collectionSourceKeys.add(key);
+    SourcePlatformResolver.registerLegacyIntSourceKey(key.hashCode, key);
+    return source;
+  }
+
   ComicSource? fromIntKey(int key) =>
       _sources.firstWhereOrNull((element) => element.key.hashCode == key) ??
       switch (SourcePlatformResolver.sourceKeyFromLegacyInt(key)) {
@@ -105,6 +128,9 @@ class ComicSourceManager with ChangeNotifier, Init {
     // script scan (which may early-return when no scripts exist) so they are
     // always present.
     _registerWebdavLibrarySources();
+    // Same for user-assembled collections: native sources, registered before
+    // the script scan so they exist even when no scripts are installed.
+    _registerCollectionSources();
     final path = "${App.dataPath}/comic_source";
     if (!(await Directory(path).exists())) {
       await Directory(path).create(recursive: true);
@@ -133,6 +159,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     _sources.clear();
     _recoverableParseWarnings.clear();
     _webdavLibrarySourceKeys.clear();
+    _collectionSourceKeys.clear();
     JsEngine().runCode("ComicSource.sources = {};");
     await doInit();
     notifyListeners();
@@ -159,6 +186,32 @@ class ComicSourceManager with ChangeNotifier, Init {
     _sources.removeWhere((e) => _webdavLibrarySourceKeys.contains(e.key));
     _webdavLibrarySourceKeys.clear();
     _registerWebdavLibrarySources();
+    notifyListeners();
+  }
+
+  /// Registers one native source per comic collection.
+  void _registerCollectionSources() {
+    for (final collection in ComicCollectionStore.all()) {
+      if (_addParsedSource(
+        buildComicCollectionSource(collection),
+        collection.sourceKey,
+      )) {
+        _collectionSourceKeys.add(collection.sourceKey);
+      }
+    }
+  }
+
+  /// Re-registers the collection sources after the user created, edited or
+  /// deleted a collection. Same narrow-rebuild rationale as
+  /// [refreshWebdavLibrarySources].
+  ///
+  /// Must be called after any change to a collection's members or display mode:
+  /// the built source captures the configuration, so a stale one would keep
+  /// serving the previous chapter layout.
+  void refreshCollectionSources() {
+    _sources.removeWhere((e) => _collectionSourceKeys.contains(e.key));
+    _collectionSourceKeys.clear();
+    _registerCollectionSources();
     notifyListeners();
   }
 

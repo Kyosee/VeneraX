@@ -4,6 +4,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/battery_optimization.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -14,6 +15,7 @@ import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
+import 'package:venera/pages/comic_collections_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/webdav_library_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -89,6 +91,7 @@ class _HomePageState extends State<HomePage> {
       'comicSource' => const _ComicSourceWidget(key: ValueKey('comicSource')),
       'imageFavorites' => const ImageFavorites(key: ValueKey('imageFavorites')),
       'webdavLibrary' => const _WebdavLibrary(key: ValueKey('webdavLibrary')),
+      'collections' => const _Collections(key: ValueKey('collections')),
       _ => const SliverToBoxAdapter(child: SizedBox.shrink()),
     };
   }
@@ -1241,6 +1244,134 @@ class _WebdavLibraryState extends State<_WebdavLibrary> {
   }
 }
 
+/// Home entry for comic collections: one row per collection that opens it as a
+/// comic, plus a row into the manage screen.
+///
+/// Hidden entirely when the user has no collections, so the feature costs
+/// nothing on the home page until it is used.
+class _Collections extends StatefulWidget {
+  const _Collections({super.key});
+
+  @override
+  State<_Collections> createState() => _CollectionsState();
+}
+
+class _CollectionsState extends State<_Collections> {
+  @override
+  void initState() {
+    appdata.settings.addListener(_onSettingsChanged);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    appdata.settings.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final collections = ComicCollectionStore.all();
+    if (collections.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    // Long lists stay on the manage page; the home card shows the first few and
+    // offers a way through to the rest.
+    const maxRows = 4;
+    final shown = collections.take(maxRows).toList();
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 0.6,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () => context.to(() => const ComicCollectionsPage()),
+              child: SizedBox(
+                height: 56,
+                child: Row(
+                  children: [
+                    Expanded(child: Text('Collections'.tl, style: ts.s18)),
+                    const SizedBox(width: 8),
+                    Text(
+                      collections.length.toString(),
+                      style: ts.s14.copyWith(
+                        color: context.colorScheme.outline,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_right),
+                  ],
+                ),
+              ).paddingHorizontal(16),
+            ),
+            for (final c in shown) ...[
+              Divider(
+                height: 0.6,
+                thickness: 0.6,
+                color: context.colorScheme.outlineVariant.toOpacity(0.5),
+              ),
+              _buildRow(c),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRow(ComicCollection collection) {
+    return InkWell(
+      onTap: () {
+        App.mainNavigatorKey?.currentContext?.to(
+          () => ComicPage(
+            id: collection.id,
+            sourceKey: collection.sourceKey,
+            cover: collection.displayCover,
+            title: collection.displayName,
+          ),
+        );
+      },
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Icon(
+              Icons.library_books_outlined,
+              size: 18,
+              color: context.colorScheme.outline,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                collection.displayName,
+                style: ts.s14,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              "@n comics".tlParams({'n': collection.members.length}),
+              style: ts.s12.copyWith(color: context.colorScheme.outline),
+            ),
+          ],
+        ),
+      ).paddingHorizontal(16),
+    );
+  }
+}
+
 class _ComicSourceWidget extends StatefulWidget {
   const _ComicSourceWidget({super.key});
 
@@ -1257,10 +1388,15 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
     });
   }
 
-  /// Script sources only — the built-in WebDAV libraries are hidden from the
-  /// Comic Source management surface, so they must not inflate the count either.
+  /// Script sources only — the built-in WebDAV libraries and collections are
+  /// hidden from the Comic Source management surface, so they must not inflate
+  /// the count either.
   static List<String> _scriptSourceNames() => ComicSource.all()
-      .where((e) => !WebdavLibraryStore.isLibrarySourceKey(e.key))
+      .where(
+        (e) =>
+            !WebdavLibraryStore.isLibrarySourceKey(e.key) &&
+            !ComicCollectionStore.isCollectionSourceKey(e.key),
+      )
       .map((e) => e.name)
       .toList();
 

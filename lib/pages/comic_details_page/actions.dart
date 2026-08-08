@@ -581,6 +581,39 @@ abstract mixin class _ComicPageActions {
             launchUrlString(comic.url!);
           },
         ),
+      // A collection offers its own editor here; anything else can be filed
+      // into one. The two are mutually exclusive since collections cannot nest.
+      if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+        MenuEntry(
+          icon: Icons.library_books_outlined,
+          text: "Edit collection".tl,
+          onClick: () {
+            context.to(() => ComicCollectionEditPage(collectionId: comic.id));
+          },
+        )
+      else
+        MenuEntry(
+          icon: Icons.library_books_outlined,
+          text: "Add to collection".tl,
+          onClick: () {
+            showAddToCollectionDialog(
+              context,
+              [
+                Comic(
+                  comic.title,
+                  comic.cover,
+                  comic.id,
+                  comic.subTitle,
+                  comic.plainTags,
+                  comic.description ?? '',
+                  comic.sourceKey,
+                  comic.maxPage,
+                  null,
+                ),
+              ],
+            );
+          },
+        ),
       MenuEntry(
         icon: Icons.hub_outlined,
         text: "Related Sources".tl,

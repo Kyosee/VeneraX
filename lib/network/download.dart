@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
@@ -252,6 +254,19 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   int get _maxConcurrentTasks =>
       (appdata.settings["downloadThreads"] as num).toInt();
 
+  /// Resolves a chapter's page list for downloading.
+  ///
+  /// A collection serves already-downloaded chapters as `file://` paths so the
+  /// reader can use them offline, but this path feeds the URLs straight to the
+  /// HTTP client. Asking the collection for the download variant makes it skip
+  /// that shortcut and return real network URLs.
+  Future<Res<List<String>>> _loadPagesForDownload(String? ep) {
+    if (ComicCollectionStore.isCollectionSourceKey(source.key)) {
+      return loadCollectionPages(comicId, ep, forDownload: true);
+    }
+    return source.loadComicPages!(comicId, ep);
+  }
+
   void _scheduleTasks() {
     if (!_isRunning) return;
     var images = _images![_images!.keys.elementAt(_chapter)]!;
@@ -461,7 +476,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         _message = "Fetching image list...".tl;
         notifyListeners();
         var res = await _runWithRetry(() async {
-          var r = await source.loadComicPages!(comicId, null);
+          var r = await _loadPagesForDownload(null);
           if (r.error) {
             throw r.errorMessage!;
           } else {
@@ -510,7 +525,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           }
           prefetchStartTimes[key] = DateTime.now();
           prefetchFutures[key] = _runWithRetry(() async {
-            var r = await source.loadComicPages!(comicId, key);
+            var r = await _loadPagesForDownload(key);
             if (r.error) {
               throw r.errorMessage!;
             } else {
@@ -540,7 +555,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
           var startTime = prefetchStartTimes.remove(key) ?? DateTime.now();
           var future = prefetchFutures.remove(key) ?? _runWithRetry(() async {
-            var r = await source.loadComicPages!(comicId, key);
+            var r = await _loadPagesForDownload(key);
             if (r.error) {
               throw r.errorMessage!;
             } else {
