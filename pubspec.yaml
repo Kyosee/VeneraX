@@ -2,7 +2,7 @@ name: venera
 description: "A comic app."
 publish_to: 'none'
 
-version: 2.2.0+229
+version: 2.2.1+230
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
