@@ -200,6 +200,33 @@ void main() {
     });
   });
 
+  group('local cover references', () {
+    test('a picked cover persists only its file name', () {
+      // The configuration travels through sync and backups, and the data
+      // directory differs per device (and moves between iOS app versions), so
+      // an absolute path stored here would resolve to nothing on the other side.
+      final ref = ComicCollectionStore.localCoverRef('abc_123.jpg');
+      expect(ref, 'collection://abc_123.jpg');
+      // Only the scheme's own slashes may appear — no directory component.
+      final payload = ref.substring('collection://'.length);
+      expect(payload, 'abc_123.jpg');
+      expect(payload.contains('/'), isFalse, reason: 'must carry no path');
+      expect(payload.contains(r'\'), isFalse, reason: 'must carry no path');
+    });
+
+    test('passes through anything that is not a local reference', () {
+      const url = 'https://example.com/c.jpg';
+      expect(ComicCollectionStore.resolveCover(url), url);
+      const member = 'file:///already/absolute.jpg';
+      expect(ComicCollectionStore.resolveCover(member), member);
+      expect(ComicCollectionStore.resolveCover(''), '');
+    });
+
+    test('an empty local reference resolves to nothing, not to the directory', () {
+      expect(ComicCollectionStore.resolveCover('collection://'), '');
+    });
+  });
+
   group('cover resolution', () {
     test('reports the borrowing member so its auth headers can be used', () {
       final c = ComicCollection.fromJson({

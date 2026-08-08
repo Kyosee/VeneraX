@@ -79,6 +79,7 @@ class _MemberLoad {
     this.tags = const {},
     this.description = '',
     this.subtitle = '',
+    this.title = '',
   });
 
   final CollectionMember member;
@@ -98,6 +99,20 @@ class _MemberLoad {
   /// off [member]: the member objects here predate this load's cache write, so
   /// theirs would still be empty the first time a collection opens.
   final String subtitle;
+
+  /// The member's own title, carried for the same reason as [subtitle].
+  final String title;
+
+  /// The label to show for this member — a user-set display name wins, then the
+  /// title this load just fetched, then whatever was cached, and only then the
+  /// raw comic id. Without the freshly-fetched title, a collection opened for
+  /// the first time labelled its tabs with comic ids.
+  String get label {
+    final own = member.displayName.trim();
+    if (own.isNotEmpty) return own;
+    if (title.trim().isNotEmpty) return title.trim();
+    return member.label;
+  }
 
   /// The member's own update time, when it reports one. The collection surfaces
   /// the latest across its members so follow-updates notices a new chapter in
@@ -152,6 +167,7 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
           tags: localTags,
           description: local.description,
           subtitle: local.subtitle,
+          title: local.title,
         );
       }
       return _MemberLoad(
@@ -163,6 +179,7 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
         tags: localTags,
         description: local.description,
         subtitle: local.subtitle,
+        title: local.title,
       );
     }
 
@@ -191,6 +208,7 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
         tags: tags,
         description: description,
         subtitle: details.subTitle ?? '',
+        title: details.title,
       );
     }
     return _MemberLoad(
@@ -202,6 +220,7 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
       tags: tags,
       description: description,
       subtitle: details.subTitle ?? '',
+      title: details.title,
     );
   } catch (e, s) {
     Log.error('ComicCollection', e, s);
@@ -262,7 +281,7 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
   if (collection.displayMode == CollectionDisplayMode.tabs) {
     final grouped = <String, Map<String, String>>{};
     for (final load in loads) {
-      var name = load.member.label;
+      var name = load.label;
       // Two members may share a title; group keys must stay distinct or one
       // tab would swallow the other's chapters.
       while (grouped.containsKey(name)) {
@@ -274,7 +293,7 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
                 sourceKey: load.member.sourceKey,
                 comicId: load.member.comicId,
                 chapterId: '',
-              ): '[$unavailable] ${load.member.label}',
+              ): '[$unavailable] ${load.label}',
             }
           : load.chapters;
     }
@@ -287,7 +306,7 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
           sourceKey: load.member.sourceKey,
           comicId: load.member.comicId,
           chapterId: '',
-        )] = '[$unavailable] ${load.member.label}';
+        )] = '[$unavailable] ${load.label}';
         continue;
       }
       flat.addAll(load.chapters);

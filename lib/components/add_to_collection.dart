@@ -90,10 +90,26 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
           comicId: c.id,
           cachedTitle: c.title,
           cachedSubtitle: c.subtitle ?? '',
-          cachedCover: c.cover,
+          cachedCover: _coverOf(c),
         ),
       )
       .toList();
+
+  /// The member's cover in a form the image loaders accept.
+  ///
+  /// A local comic's `cover` is a bare file name relative to its own directory
+  /// ("cover.jpg"), which would be treated as a URL if the collection borrowed
+  /// it. Resolving it here means the collection can show it right away, before
+  /// the first detail load rewrites the cache.
+  String _coverOf(Comic c) {
+    final type = ComicType.fromKey(c.sourceKey);
+    if (type == ComicType.local) {
+      final local = LocalManager().find(c.id, ComicType.local);
+      if (local != null) return 'file://${local.coverFile.path}';
+      return '';
+    }
+    return c.cover;
+  }
 
   /// Removes the member comics from every local favorite folder holding them.
   void _unfavoriteMembers() {
@@ -146,7 +162,12 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
         FavoriteItem(
           id: fresh.id,
           name: fresh.displayName,
-          coverPath: fresh.displayCover,
+          // Stored raw, not resolved: a resolved local-file cover is an absolute
+          // path on THIS device, and favourites travel through sync. The tile
+          // re-reads the collection's cover anyway, so this is only a fallback.
+          coverPath: fresh.customCover.trim().isNotEmpty
+              ? fresh.customCover
+              : fresh.displayCover,
           author: '',
           type: ComicType.fromKey(fresh.sourceKey),
           tags: const [],

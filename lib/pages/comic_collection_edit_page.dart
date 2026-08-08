@@ -171,26 +171,28 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
     final file = await selectFile(ext: ['jpg', 'jpeg', 'png', 'webp', 'gif']);
     if (file == null) return;
     try {
-      final dir = Directory(FilePath.join(App.dataPath, 'collection_covers'));
+      final dir = Directory(
+        FilePath.join(App.dataPath, ComicCollectionStore.coverDirName),
+      );
       await dir.create(recursive: true);
       final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
       // Named per collection and replaced in place, so re-picking doesn't leave
       // the previous file behind. The timestamp busts the image cache, which
       // keys on the path.
-      final target = FilePath.join(
-        dir.path,
-        '${c.id}_${DateTime.now().millisecondsSinceEpoch}.$ext',
-      );
+      final name = '${c.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final target = FilePath.join(dir.path, name);
       await file.saveTo(target);
       // Drop any earlier cover of this collection now the new one is written.
       for (final e in dir.listSync()) {
-        if (e is File &&
-            e.path != target &&
-            e.name.startsWith('${c.id}_')) {
+        if (e is File && e.path != target && e.name.startsWith('${c.id}_')) {
           e.deleteIgnoreError();
         }
       }
-      ComicCollectionStore.update(c.id, customCover: 'file://$target');
+      // Only the file name is persisted — see localCoverRef.
+      ComicCollectionStore.update(
+        c.id,
+        customCover: ComicCollectionStore.localCoverRef(name),
+      );
       _applyChange();
     } catch (e, s) {
       Log.error('ComicCollection', e, s);

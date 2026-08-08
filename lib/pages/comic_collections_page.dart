@@ -6,7 +6,9 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_collection_edit_page.dart';
+import 'package:venera/utils/io.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -23,6 +25,23 @@ void deleteComicCollection(ComicCollection collection) {
     LocalFavoritesManager().deleteComicWithId(folder, collection.id, type);
   }
   HistoryManager().remove(collection.id, type);
+  // A cover picked from a file lives in our own data directory, so deleting the
+  // collection has to take it along or it stays there for good.
+  try {
+    final dir = Directory(
+      FilePath.join(App.dataPath, ComicCollectionStore.coverDirName),
+    );
+    if (dir.existsSync()) {
+      for (final e in dir.listSync()) {
+        if (e is File && e.name.startsWith('${collection.id}_')) {
+          e.deleteIgnoreError();
+        }
+      }
+    }
+  } catch (e) {
+    // A leftover cover file is not worth failing the delete over.
+    Log.error('ComicCollection', 'Cover cleanup failed: $e');
+  }
   ComicCollectionStore.remove(collection.id);
 }
 

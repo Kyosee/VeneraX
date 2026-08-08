@@ -1,7 +1,9 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/utils/io.dart';
 
 /// How a collection lays out the chapters of its members.
 enum CollectionDisplayMode {
@@ -119,7 +121,7 @@ class ComicCollection {
 
   String get displayCover {
     final c = customCover.trim();
-    if (c.isNotEmpty) return c;
+    if (c.isNotEmpty) return ComicCollectionStore.resolveCover(c);
     for (final m in members) {
       if (m.cachedCover.trim().isNotEmpty) return m.cachedCover.trim();
     }
@@ -210,6 +212,29 @@ abstract class ComicCollectionStore {
   static const settingsKey = 'comicCollections';
 
   static const sourceKeyPrefix = 'comic_collection_';
+
+  /// Directory (under the app's data path) holding covers picked from a file.
+  static const coverDirName = 'collection_covers';
+
+  /// Marker for a cover stored in [coverDirName]. Only the file name is
+  /// persisted, never an absolute path: the configuration travels through sync
+  /// and backups, and the data directory differs per device (and moves between
+  /// iOS app versions), so a stored absolute path would resolve to nothing.
+  static const localCoverScheme = 'collection://';
+
+  /// Builds the value to persist for a cover file named [fileName].
+  static String localCoverRef(String fileName) =>
+      '$localCoverScheme$fileName';
+
+  /// Turns a persisted cover value into something the image loaders accept.
+  /// Anything that isn't a [localCoverScheme] marker is passed through, so
+  /// borrowed member covers and plain URLs are unaffected.
+  static String resolveCover(String stored) {
+    if (!stored.startsWith(localCoverScheme)) return stored;
+    final name = stored.substring(localCoverScheme.length);
+    if (name.isEmpty) return '';
+    return 'file://${FilePath.join(App.dataPath, coverDirName, name)}';
+  }
 
   /// Whether [key] belongs to a collection. Used to hide these built-in sources
   /// from source management, to suppress the source badge on a collection (its
