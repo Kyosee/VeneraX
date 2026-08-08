@@ -39,7 +39,8 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 - [x] Multiple library management
 - [x] WebDAV comic library (experimental)
 - [x] App lock adds PIN, password and pattern unlock
-- [x] AI page translation while reading (experimental): bring-your-own LLM endpoint, on-demand recognition models, whole-chapter pre-translation
+- [x] AI page translation while reading (experimental): requires your own LLM provider details; on-demand recognition models, whole-chapter pre-translation, text removal
+- [x] Custom collections: read comics published as separate volumes or parts as one, across sources
 
 ## Quick Start
 
