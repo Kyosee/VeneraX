@@ -203,10 +203,13 @@ abstract class ComicCollectionStore {
   static bool isCollectionSourceKey(String? key) =>
       key != null && key.startsWith(sourceKeyPrefix);
 
+  /// Always returns a fresh, mutable list: callers add, remove and reorder in
+  /// place before writing back, so handing out a const literal for the
+  /// not-yet-configured case would throw on the first edit.
   static List<ComicCollection> all() {
-    final raw = appdata.settings[settingsKey];
-    if (raw is! List) return const [];
     final result = <ComicCollection>[];
+    final raw = appdata.settings[settingsKey];
+    if (raw is! List) return result;
     final seenIds = <String>{};
     final seenKeys = <String>{};
     for (final e in raw) {

@@ -94,6 +94,19 @@ void main() {
       expect(c.members, isEmpty);
     });
 
+    test('hands out a mutable member list even when empty', () {
+      // The store edits members in place before writing back; a const literal
+      // here threw "Cannot add to an unmodifiable list" on the first edit.
+      final c = ComicCollection.fromJson({'id': 'x'});
+      expect(
+        () => c.members.add(
+          CollectionMember(sourceKey: 's', comicId: '1'),
+        ),
+        returnsNormally,
+      );
+      expect(() => c.members.removeAt(0), returnsNormally);
+    });
+
     test('round-trips through json', () {
       final original = ComicCollection.fromJson({
         'id': 'x',
