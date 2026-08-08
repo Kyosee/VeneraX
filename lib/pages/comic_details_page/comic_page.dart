@@ -70,12 +70,25 @@ double _comicDetailsPageInset(BuildContext context) {
 /// base" (issue #38). Such covers load straight from the comic's own files —
 /// the same way the local library grid does. Downloaded comics keep a
 /// resolvable network source, so they continue using the cached/network path.
+/// A collection's cover always comes from its configuration, never from the
+/// cover the caller navigated with: that one was frozen when the tile was built
+/// (or when the comic was favourited), so changing the custom cover — or
+/// reordering members, which changes whose cover is borrowed — left the detail
+/// page showing a different image than the list it was opened from.
 ImageProvider comicDetailCoverProvider({
   required String sourceKey,
   required String id,
   required String cover,
   required LocalComic? localComic,
 }) {
+  if (ComicCollectionStore.isCollectionSourceKey(sourceKey)) {
+    final current = ComicCollectionStore.find(id)?.displayCover;
+    return CachedImageProvider(
+      current?.isNotEmpty == true ? current! : cover,
+      sourceKey: sourceKey,
+      cid: id,
+    );
+  }
   if (localComic != null && localComic.comicType == ComicType.local) {
     return LocalComicImageProvider(localComic);
   }

@@ -537,9 +537,13 @@ class ComicTile extends StatelessWidget {
                   tileHistory,
                 ),
               ),
+              // Top-RIGHT: the tile's outer Stack overlays the favourite /
+              // read-later / history badges at the top-left, which would cover
+              // this marker on exactly the collections most likely to be
+              // favourited.
               if (_isCollection)
                 Positioned(
-                  left: 3,
+                  right: 3,
                   top: 3,
                   child: _buildCollectionMarker(context),
                 ),
@@ -639,9 +643,11 @@ class ComicTile extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(child: image),
+                    // Top-right for the same reason as detailed mode: the outer
+                    // Stack's status badges own the top-left corner.
                     if (_isCollection)
                       Positioned(
-                        left: 4,
+                        right: 4,
                         top: 4,
                         child: _buildCollectionMarker(
                           context,

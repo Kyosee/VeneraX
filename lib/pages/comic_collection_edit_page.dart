@@ -7,7 +7,9 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
 /// Edits one collection: its name, cover, how its chapters are laid out, and
@@ -71,20 +73,131 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
     );
   }
 
+  /// Cover picker: use one of the member comics' covers, pick an image file, or
+  /// go back to the default.
+  ///
+  /// Typing a URL was the only option before, which is not something anyone can
+  /// reasonably do — the covers the user actually wants are already on screen.
   void _setCover() {
     final c = collection;
     if (c == null) return;
-    showInputDialog(
+    showDialog(
       context: context,
-      title: "Cover image URL".tl,
-      initialValue: c.customCover,
-      hintText: "Leave empty to use the first comic's cover".tl,
-      onConfirm: (value) {
-        ComicCollectionStore.update(c.id, customCover: value);
-        _applyChange();
-        return null;
+      builder: (dialogContext) {
+        final width = (context.width - 64).clamp(280.0, 420.0);
+        final height = (context.height * 0.5).clamp(240.0, 460.0);
+        return ContentDialog(
+          title: "Cover".tl,
+          content: SizedBox(
+            width: width,
+            height: height,
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                if (c.customCover.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.restart_alt),
+                    title: Text("Use the first comic's cover".tl),
+                    onTap: () {
+                      dialogContext.pop();
+                      ComicCollectionStore.update(c.id, customCover: '');
+                      _applyChange();
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.image_outlined),
+                  title: Text("Choose an image file".tl),
+                  onTap: () {
+                    dialogContext.pop();
+                    _pickCoverFile();
+                  },
+                ),
+                if (c.members.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      "Use a comic's cover".tl,
+                      style: ts.s12.copyWith(
+                        color: context.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                  for (final m in c.members)
+                    ListTile(
+                      leading: SizedBox(
+                        width: 32,
+                        height: 44,
+                        child: _buildMemberCover(
+                          m,
+                          ComicType.fromKey(m.sourceKey),
+                        ),
+                      ),
+                      title: Text(
+                        m.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      enabled: m.cachedCover.trim().isNotEmpty,
+                      subtitle: m.cachedCover.trim().isEmpty
+                          ? Text("Open it once to load its cover".tl,
+                              style: ts.s12)
+                          : null,
+                      onTap: m.cachedCover.trim().isEmpty
+                          ? null
+                          : () {
+                              dialogContext.pop();
+                              ComicCollectionStore.update(
+                                c.id,
+                                customCover: m.cachedCover,
+                              );
+                              _applyChange();
+                            },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
       },
     );
+  }
+
+  /// Copies the chosen image into the app's data directory, so the cover
+  /// survives the original file being moved or deleted.
+  void _pickCoverFile() async {
+    final c = collection;
+    if (c == null) return;
+    final file = await selectFile(ext: ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+    if (file == null) return;
+    try {
+      final dir = Directory(FilePath.join(App.dataPath, 'collection_covers'));
+      await dir.create(recursive: true);
+      final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
+      // Named per collection and replaced in place, so re-picking doesn't leave
+      // the previous file behind. The timestamp busts the image cache, which
+      // keys on the path.
+      final target = FilePath.join(
+        dir.path,
+        '${c.id}_${DateTime.now().millisecondsSinceEpoch}.$ext',
+      );
+      await file.saveTo(target);
+      // Drop any earlier cover of this collection now the new one is written.
+      for (final e in dir.listSync()) {
+        if (e is File &&
+            e.path != target &&
+            e.name.startsWith('${c.id}_')) {
+          e.deleteIgnoreError();
+        }
+      }
+      ComicCollectionStore.update(c.id, customCover: 'file://$target');
+      _applyChange();
+    } catch (e, s) {
+      Log.error('ComicCollection', e, s);
+      if (mounted) {
+        context.showMessage(message: "Failed to set the cover".tl);
+      }
+    }
   }
 
   void _setDisplayMode(CollectionDisplayMode mode) {
@@ -204,11 +317,16 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
           subtitle: Text(
             c.customCover.trim().isEmpty
                 ? "Using the first comic's cover".tl
-                : c.customCover,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+                : "Custom".tl,
           ),
-          trailing: const Icon(Icons.edit),
+          // A thumbnail of what is actually in use: the path itself told the
+          // user nothing, and this is the only way to see the result without
+          // leaving the page.
+          trailing: SizedBox(
+            width: 32,
+            height: 44,
+            child: _buildCoverPreview(c),
+          ),
           onTap: _setCover,
         ),
         const Divider(height: 1),
@@ -382,6 +500,33 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
       child: Image(image: provider, fit: BoxFit.cover),
+    );
+  }
+
+  /// Thumbnail of the cover currently in effect, custom or borrowed.
+  Widget _buildCoverPreview(ComicCollection c) {
+    final cover = c.displayCover;
+    final placeholder = Container(
+      decoration: BoxDecoration(
+        color: context.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(
+        Icons.image_outlined,
+        size: 16,
+        color: context.colorScheme.outline,
+      ),
+    );
+    if (cover.isEmpty) return placeholder;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image(
+        // Loaded through the collection's own source so a borrowed cover picks
+        // up the owning member's auth headers.
+        image: CachedImageProvider(cover, sourceKey: c.sourceKey, cid: c.id),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => placeholder,
+      ),
     );
   }
 

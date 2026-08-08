@@ -1,5 +1,10 @@
 {
   "zh_CN": {
+    "Use the first comic's cover": "使用第一部漫画的封面",
+    "Choose an image file": "选择图片文件",
+    "Use a comic's cover": "使用某部漫画的封面",
+    "Open it once to load its cover": "打开一次即可获取封面",
+    "Failed to set the cover": "设置封面失败",
     "Collection": "合集",
     "Target": "目标",
     "Add collection to": "把合集加入",
@@ -1153,6 +1158,11 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Use the first comic's cover": "使用第一部漫畫的封面",
+    "Choose an image file": "選擇圖片檔案",
+    "Use a comic's cover": "使用某部漫畫的封面",
+    "Open it once to load its cover": "開啟一次即可取得封面",
+    "Failed to set the cover": "設定封面失敗",
     "Collection": "合集",
     "Target": "目標",
     "Add collection to": "把合集加入",
