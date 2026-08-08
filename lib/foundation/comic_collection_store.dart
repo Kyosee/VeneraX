@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
 
 /// How a collection lays out the chapters of its members.
@@ -185,6 +186,13 @@ class ComicCollection {
   }
 }
 
+/// Change notifier for the collection list. A thin subclass because
+/// [ChangeNotifier.notifyListeners] is protected and the store is not itself a
+/// notifier (it holds no state — everything is read back from settings).
+class _CollectionChanges extends ChangeNotifier {
+  void ping() => notifyListeners();
+}
+
 /// Reads and writes the user's comic collections.
 ///
 /// State lives in settings so it rides along with data sync and backups. Read
@@ -192,6 +200,13 @@ class ComicCollection {
 /// replaces the whole settings map underneath us, and a cache would keep
 /// serving the configuration the user just replaced.
 abstract class ComicCollectionStore {
+  /// Fires whenever a collection is created, edited or removed.
+  ///
+  /// Settings already notify on write, but the surfaces that show comics don't
+  /// listen to settings — a tile needs to know when a member's cached cover or
+  /// title landed so it can stop showing a blank cover.
+  static final changes = _CollectionChanges();
+
   static const settingsKey = 'comicCollections';
 
   static const sourceKeyPrefix = 'comic_collection_';
@@ -407,5 +422,14 @@ abstract class ComicCollectionStore {
   static void _write(List<ComicCollection> list) {
     appdata.settings[settingsKey] = list.map((e) => e.toJson()).toList();
     appdata.saveData();
+    notifyChanged();
+  }
+
+  /// Announces a change to the collection list. Public so the callers that
+  /// rebuild sources after an edit can also refresh what's on screen.
+  static void notifyChanged() {
+    // Deferred: writes happen during a detail load, which can be mid-build, and
+    // notifying listeners then would rebuild during layout.
+    Future.microtask(changes.ping);
   }
 }

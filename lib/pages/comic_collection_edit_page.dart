@@ -32,9 +32,17 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
   void initState() {
     super.initState();
     _reload();
+    ComicCollectionStore.changes.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    ComicCollectionStore.changes.removeListener(_reload);
+    super.dispose();
   }
 
   void _reload() {
+    if (!mounted) return;
     setState(() {
       collection = ComicCollectionStore.find(widget.collectionId);
     });

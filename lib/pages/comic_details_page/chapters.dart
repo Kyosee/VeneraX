@@ -511,7 +511,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   /// so skipping the refresh would keep serving the old one.
   void _applyCollectionEdit() {
     ComicSourceManager().refreshCollectionSources();
-    state.retryLoadDetails();
+    state.reloadDetails();
   }
 
   /// 0-based flat index of the first chapter in the current group.
@@ -587,6 +587,12 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   @override
   void didUpdateWidget(covariant _GroupedComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The chapter map is re-read on every rebuild, not just captured on first
+    // mount: renaming or reordering a collection's members reloads the detail
+    // in place, and a captured map would keep showing the previous tab names
+    // and order until the page was left and re-entered.
+    chapters = state.comic.chapters!;
+    _syncTabController();
     if (!selectMode) {
       setState(() {
         _history = widget.history;

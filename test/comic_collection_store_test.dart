@@ -200,6 +200,38 @@ void main() {
     });
   });
 
+  group('cover resolution', () {
+    test('reports the borrowing member so its auth headers can be used', () {
+      final c = ComicCollection.fromJson({
+        'id': 'x',
+        'members': [
+          {'sourceKey': 'webdav_library_a', 'comicId': '1'},
+          {
+            'sourceKey': 'webdav_library_b',
+            'comicId': '2',
+            'cachedCover': 'http://b/c.jpg',
+          },
+        ],
+      });
+      expect(c.displayCover, 'http://b/c.jpg');
+      expect(c.coverOwner?.sourceKey, 'webdav_library_b');
+    });
+
+    test('is empty while no member has ever loaded', () {
+      // This is the state a collection is in when it gets favourited before
+      // being opened; the tile warms it rather than showing a blank forever.
+      final c = ComicCollection.fromJson({
+        'id': 'x',
+        'members': [
+          {'sourceKey': 's', 'comicId': '1'},
+        ],
+      });
+      expect(c.displayCover, '');
+      expect(c.coverOwner, isNull);
+      expect(c.members, isNotEmpty);
+    });
+  });
+
   group('collectionUpdateSortKey', () {
     test('orders single-digit months and days correctly', () {
       // The collection reports the latest member update time so follow-updates

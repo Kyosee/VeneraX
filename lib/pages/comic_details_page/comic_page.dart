@@ -268,6 +268,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   }
 
   @override
+  void reloadDetails() {
+    if (!mounted) return;
+    // _networkFetching guards retryLoadDetails, so clear it first: an edit can
+    // land while a fetch is still in flight, and that fetch would return the
+    // pre-edit layout.
+    _networkFetching = false;
+    retryLoadDetails();
+  }
+
+  @override
   ComicDetails get comic => data!;
 
   void onScroll() {

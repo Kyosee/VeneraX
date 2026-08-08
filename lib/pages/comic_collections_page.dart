@@ -3,9 +3,28 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/pages/comic_collection_edit_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/translations.dart';
+
+/// Deletes a collection and the traces it leaves behind.
+///
+/// Removing only the configuration would leave its favourite row and reading
+/// history pointing at a source that no longer resolves — the row would still
+/// render but open to an error, with no way to clear it from the favourites
+/// screen (its "delete" acts on the comic, which is exactly what's gone).
+/// Member comics and their own history are untouched.
+void deleteComicCollection(ComicCollection collection) {
+  final type = ComicType.fromKey(collection.sourceKey);
+  for (final folder in LocalFavoritesManager().find(collection.id, type)) {
+    LocalFavoritesManager().deleteComicWithId(folder, collection.id, type);
+  }
+  HistoryManager().remove(collection.id, type);
+  ComicCollectionStore.remove(collection.id);
+}
 
 /// Lists the user's comic collections: open one as a comic, edit its members,
 /// reorder or delete it.
@@ -27,9 +46,19 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage> {
   void initState() {
     super.initState();
     _reload();
+    // Picks up edits made elsewhere (the detail page's tab menu, a member cache
+    // filled by a background load, a sync download).
+    ComicCollectionStore.changes.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    ComicCollectionStore.changes.removeListener(_reload);
+    super.dispose();
   }
 
   void _reload() {
+    if (!mounted) return;
     setState(() {
       collections = ComicCollectionStore.all();
     });
@@ -89,7 +118,7 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage> {
           }),
       btnColor: context.colorScheme.error,
       onConfirm: () {
-        ComicCollectionStore.remove(collection.id);
+        deleteComicCollection(collection);
         _applyChange();
       },
     );

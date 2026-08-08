@@ -3,9 +3,19 @@ part of 'comic_page.dart';
 abstract mixin class _ComicPageActions {
   void update();
 
+  /// Re-runs the detail fetch. Needed after an edit that changes what the
+  /// source will return (currently: editing the collection this comic is), where
+  /// a plain [update] would rebuild from the stale data still in hand.
+  void reloadDetails();
+
   ComicDetails get comic;
 
   ComicSource? get comicSource => ComicSource.find(comic.sourceKey);
+
+  /// Whether this page is showing a user-assembled collection rather than a
+  /// comic from a real source. Gates the actions that assume an upstream source.
+  bool get _isCollection =>
+      ComicCollectionStore.isCollectionSourceKey(comic.sourceKey);
 
   History? get history;
 
@@ -583,12 +593,18 @@ abstract mixin class _ComicPageActions {
         ),
       // A collection offers its own editor here; anything else can be filed
       // into one. The two are mutually exclusive since collections cannot nest.
-      if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+      if (_isCollection)
         MenuEntry(
           icon: Icons.library_books_outlined,
           text: "Edit collection".tl,
           onClick: () {
-            context.to(() => ComicCollectionEditPage(collectionId: comic.id));
+            final id = comic.id;
+            context
+                .to(() => ComicCollectionEditPage(collectionId: id))
+                // The editor writes straight to the store, so returning is the
+                // signal to re-read: name, cover, layout and member order all
+                // change what the source hands back.
+                .then((_) => reloadDetails());
           },
         )
       else
@@ -614,33 +630,38 @@ abstract mixin class _ComicPageActions {
             );
           },
         ),
-      MenuEntry(
-        icon: Icons.hub_outlined,
-        text: "Related Sources".tl,
-        onClick: () {
-          showRelatedSourcesDialog(
-            context,
-            Comic(
-              comic.title,
-              comic.cover,
-              comic.id,
-              comic.subTitle,
-              comic.plainTags,
-              comic.description ?? '',
-              comic.sourceKey,
-              comic.maxPage,
-              null,
-            ),
-          );
-        },
-      ),
-      MenuEntry(
-        icon: Icons.move_up_outlined,
-        text: "Migrate Source".tl,
-        onClick: () {
-          showSourceMigrationDialog(context, _toFavoriteItem());
-        },
-      ),
+      // Not offered for a collection: it has no upstream source to link to or
+      // migrate from, and migrating would rebind it to a search hit, discarding
+      // the grouping. Its members remain individually migratable.
+      if (!_isCollection)
+        MenuEntry(
+          icon: Icons.hub_outlined,
+          text: "Related Sources".tl,
+          onClick: () {
+            showRelatedSourcesDialog(
+              context,
+              Comic(
+                comic.title,
+                comic.cover,
+                comic.id,
+                comic.subTitle,
+                comic.plainTags,
+                comic.description ?? '',
+                comic.sourceKey,
+                comic.maxPage,
+                null,
+              ),
+            );
+          },
+        ),
+      if (!_isCollection)
+        MenuEntry(
+          icon: Icons.move_up_outlined,
+          text: "Migrate Source".tl,
+          onClick: () {
+            showSourceMigrationDialog(context, _toFavoriteItem());
+          },
+        ),
       // Only offered for a comic whose images are actually on disk: migration
       // uploads the local pages, so a not-yet-downloaded online comic has
       // nothing to send. The multi-select list page has the batch entry.
