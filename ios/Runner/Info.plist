@@ -57,7 +57,8 @@
   <string>Ensure that the operation is being performed by the user themselves.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.books</string>
-	<!-- Alternate launcher icons (switched at runtime via flutter_dynamic_icon_plus).
+	<!-- Alternate launcher icons, switched at runtime from AppDelegate's
+	     venera/method_channel handler ("setLauncherIcon").
 	     Keys (IconOrig / IconFlat) are the names passed to setAlternateIconName;
 	     CFBundleIconFiles point to the loose PNG base names (AltIcon*@2x/@3x.png),
 	     which must live outside Assets.xcassets. The primary icon stays in the

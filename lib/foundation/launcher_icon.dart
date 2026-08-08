@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_dynamic_icon_plus/flutter_dynamic_icon_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
@@ -122,14 +121,14 @@ abstract final class LauncherIconService {
   /// Returns true on success. Each platform takes a different path:
   ///
   /// - **Android** switches the enabled `activity-alias` immediately via our own
-  ///   native channel (`DONT_KILL_APP`). We deliberately bypass
-  ///   `flutter_dynamic_icon_plus` here: its Android path only writes the target
-  ///   to prefs and defers the real switch to a Service's `onTaskRemoved` /
-  ///   `onDestroy`, which never runs when the user force-stops the app — so the
-  ///   icon would never change (issue #127). All aliases target the same
-  ///   MainActivity, so an in-place switch is safe and effective at once.
-  /// - **iOS** goes through the plugin, matching an Info.plist alternate-icon key
-  ///   (null = primary); the system shows its own "icon changed" alert.
+  ///   native channel (`DONT_KILL_APP`). All aliases target the same
+  ///   MainActivity, so an in-place switch is safe and effective at once. An
+  ///   earlier third-party plugin only wrote the target to prefs and deferred
+  ///   the real switch to a Service's `onTaskRemoved` / `onDestroy`, which never
+  ///   runs when the user force-stops the app — the icon never changed (#127).
+  /// - **iOS** calls `setAlternateIconName` over the same native channel,
+  ///   matching an Info.plist `CFBundleAlternateIcons` key (null = primary); the
+  ///   system shows its own "icon changed" alert.
   /// - **Windows** pushes the preset's bundled `.ico` to the live window via
   ///   `window_manager.setIcon` (WM_SETICON) and to the tray, if wired. This
   ///   does not touch the .exe's embedded icon and does not persist across
@@ -152,13 +151,20 @@ abstract final class LauncherIconService {
         // Keep the tray icon (if the tray is active) in step with the window.
         await onWindowsIconChanged?.call(preset.windowsIcoAsset);
       } else {
-        if (!await FlutterDynamicIconPlus.supportsAlternateIcons) {
+        if (await _channel.invokeMethod<bool>('supportsAlternateIcons') !=
+            true) {
           Log.warning('LauncherIcon', 'Alternate icons not supported on device');
           return false;
         }
-        await FlutterDynamicIconPlus.setAlternateIconName(
-          iconName: preset._iosIconName,
+        final ok = await _channel.invokeMethod<bool>(
+          'setLauncherIcon',
+          // Null alias restores the primary icon.
+          {'alias': preset._iosIconName},
         );
+        if (ok != true) {
+          Log.warning('LauncherIcon', 'Native icon switch returned $ok');
+          return false;
+        }
       }
 
       appdata.settings['appLauncherIcon'] = preset.id;
