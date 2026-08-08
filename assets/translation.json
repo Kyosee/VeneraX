@@ -1,5 +1,14 @@
 {
   "zh_CN": {
+    "Collection": "合集",
+    "Target": "目标",
+    "Add collection to": "把合集加入",
+    "Don't add": "不加入",
+    "No favorite folders yet": "还没有收藏夹",
+    "Un-favorite the added comics": "取消所选漫画的收藏",
+    "Removes them from favorites, keeping only the collection.": "把它们从收藏中移除，只保留合集。",
+    "Move left": "左移",
+    "Move right": "右移",
     "This comic is already stored on this device": "这部漫画已存在本机",
     "Add to collection": "加入合集",
     "A collection cannot be added to another collection": "合集不能加入另一个合集",
@@ -1144,6 +1153,15 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Collection": "合集",
+    "Target": "目標",
+    "Add collection to": "把合集加入",
+    "Don't add": "不加入",
+    "No favorite folders yet": "還沒有收藏夾",
+    "Un-favorite the added comics": "取消所選漫畫的收藏",
+    "Removes them from favorites, keeping only the collection.": "把它們從收藏中移除，只保留合集。",
+    "Move left": "左移",
+    "Move right": "右移",
     "This comic is already stored on this device": "這部漫畫已存在本機",
     "Add to collection": "加入合集",
     "A collection cannot be added to another collection": "合集不能加入另一個合集",

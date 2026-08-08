@@ -436,6 +436,84 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   @override
   set history(History? value) => _history = value;
 
+  /// The collection this comic is, or null for an ordinary grouped comic. When
+  /// set, each tab corresponds to one member, so tabs become editable.
+  String? get _collectionId =>
+      ComicCollectionStore.isCollectionSourceKey(state.comic.sourceKey)
+      ? state.comic.id
+      : null;
+
+  /// Long-press / right-click actions for a collection's tab: rename the member
+  /// or move it, since tab order is chapter order.
+  void _showTabActions(int tabIndex) {
+    final id = _collectionId;
+    if (id == null) return;
+    final collection = ComicCollectionStore.find(id);
+    final member = collection?.members.elementAtOrNull(tabIndex);
+    if (collection == null || member == null) return;
+    final count = collection.members.length;
+
+    showMenuX(context, Offset(context.width / 2, context.padding.top + 120), [
+      MenuEntry(
+        icon: Icons.label_outline,
+        text: "Display name".tl,
+        onClick: () {
+          showInputDialog(
+            context: App.rootContext,
+            title: "Display name".tl,
+            initialValue: member.displayName,
+            hintText: "Leave empty to use the comic's title".tl,
+            onConfirm: (value) {
+              member.displayName = value;
+              ComicCollectionStore.update(id, members: collection.members);
+              _applyCollectionEdit();
+              return null;
+            },
+          );
+        },
+      ),
+      if (tabIndex > 0)
+        MenuEntry(
+          icon: Icons.arrow_back,
+          text: "Move left".tl,
+          onClick: () {
+            ComicCollectionStore.reorderMember(id, tabIndex, tabIndex - 1);
+            _applyCollectionEdit();
+          },
+        ),
+      if (tabIndex < count - 1)
+        MenuEntry(
+          icon: Icons.arrow_forward,
+          text: "Move right".tl,
+          onClick: () {
+            ComicCollectionStore.reorderMember(id, tabIndex, tabIndex + 1);
+            _applyCollectionEdit();
+          },
+        ),
+      MenuEntry(
+        icon: Icons.remove_circle_outline,
+        text: "Remove from collection".tl,
+        color: context.colorScheme.error,
+        onClick: () {
+          ComicCollectionStore.removeMember(
+            id,
+            member.sourceKey,
+            member.comicId,
+          );
+          _applyCollectionEdit();
+        },
+      ),
+    ]);
+  }
+
+  /// Rebuilds the collection's source and reloads the detail, so the new tab
+  /// name or order shows immediately. The source captures the chapter layout,
+  /// so skipping the refresh would keep serving the old one.
+  void _applyCollectionEdit() {
+    ComicSourceManager().refreshCollectionSources();
+    state.retryLoadDetails();
+  }
+
   /// 0-based flat index of the first chapter in the current group.
   int get _groupOffset {
     var offset = 0;
@@ -600,7 +678,20 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
               child: AppTabBar(
                 withUnderLine: false,
                 controller: tabController,
-                tabs: chapters.groups.map((e) => Tab(text: e)).toList(),
+                tabs: [
+                  for (var i = 0; i < chapters.groups.length; i++)
+                    Tab(
+                      child: _collectionId == null
+                          ? Text(chapters.groups.elementAt(i))
+                          // For a collection each tab IS a member comic, so the
+                          // tab is where renaming and reordering it belongs.
+                          : GestureDetector(
+                              onLongPress: () => _showTabActions(i),
+                              onSecondaryTapDown: (_) => _showTabActions(i),
+                              child: Text(chapters.groups.elementAt(i)),
+                            ),
+                    ),
+                ],
               ),
             ),
             SliverPadding(padding: const EdgeInsets.only(top: 8)),

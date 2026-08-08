@@ -52,6 +52,18 @@ class ComicTile extends StatelessWidget {
   static final _chapterProgressLoads =
       <String, Future<ComicChapterProgressInfo>>{};
 
+  /// Badge text for the tile. A collection gets its own label instead of a
+  /// source name (its members may come from several sources), so it is
+  /// recognisable in a list without opening it. An explicit [badge] from the
+  /// host still wins.
+  String? get _effectiveBadge {
+    if (badge != null) return badge;
+    if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey)) {
+      return 'Collection'.tl;
+    }
+    return null;
+  }
+
   void _onTap() {
     if (onTap != null) {
       onTap!();
@@ -400,7 +412,7 @@ class ComicTile extends StatelessWidget {
         final coverWidth = height * 0.68;
         final displayInfo = const ComicStateRepository().displayInfoFor(
           comic,
-          badge: badge,
+          badge: _effectiveBadge,
         );
 
         Widget image = Container(
@@ -529,6 +541,28 @@ class ComicTile extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(child: image),
+                    // Brief mode shows no text badge, so a collection is marked
+                    // on the cover itself — otherwise it is indistinguishable
+                    // from an ordinary comic in this layout.
+                    if (ComicCollectionStore.isCollectionSourceKey(
+                      comic.sourceKey,
+                    ))
+                      Positioned(
+                        left: 4,
+                        top: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.toOpacity(0.55),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            Icons.library_books_outlined,
+                            size: constraints.maxWidth < 80 ? 10 : 13,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     Align(
                       alignment: Alignment.bottomRight,
                       child: (() {

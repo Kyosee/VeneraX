@@ -814,6 +814,23 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                         );
                       },
                     ),
+                  // Building a collection out of the volumes sitting in one
+                  // folder is the main way this feature gets used. Hidden when
+                  // the selection contains a collection, since collections
+                  // cannot nest.
+                  if (!selectedItems.keys.any(
+                    (e) =>
+                        ComicCollectionStore.isCollectionSourceKey(e.sourceKey),
+                  ))
+                    MenuEntry(
+                      icon: Icons.library_books_outlined,
+                      text: "Add to collection".tl,
+                      onClick: () {
+                        final comics = selectedItems.keys.toList();
+                        exitSelectMode();
+                        showAddToCollectionDialog(context, comics);
+                      },
+                    ),
                   MenuEntry(
                     icon: Icons.download,
                     text: "Download".tl,

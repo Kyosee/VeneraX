@@ -753,6 +753,8 @@ class ComicStateRepository {
     }
     // A collection's members may come from several sources, so naming one of
     // them (or the collection's own synthetic source) would be misleading.
+    // The tile badges it as a collection instead — done in the UI layer, which
+    // is where translation lives.
     if (ComicCollectionStore.isCollectionSourceKey(sourceKey)) {
       return null;
     }

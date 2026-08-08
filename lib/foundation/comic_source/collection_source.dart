@@ -6,6 +6,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
 /// Builds the native (Dart, non-JS) [ComicSource] that presents one user-made
@@ -75,12 +76,28 @@ class _MemberLoad {
     this.chapters = const {},
     this.failed = false,
     this.updateTime,
+    this.tags = const {},
+    this.description = '',
+    this.subtitle = '',
   });
 
   final CollectionMember member;
 
   /// The member's chapters, already keyed by collection chapter id.
   final Map<String, String> chapters;
+
+  /// The member's tag map (author, artist, genre, ...). The collection borrows
+  /// the first available member's, so its detail page and card carry the same
+  /// author and tags as the story it groups.
+  final Map<String, List<String>> tags;
+
+  /// The member's own description, borrowed on the same terms as [tags].
+  final String description;
+
+  /// The member's author line. Carried through the load rather than read back
+  /// off [member]: the member objects here predate this load's cache write, so
+  /// theirs would still be empty the first time a collection opens.
+  final String subtitle;
 
   /// The member's own update time, when it reports one. The collection surfaces
   /// the latest across its members so follow-updates notices a new chapter in
@@ -120,13 +137,33 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
         // be treated as a URL when the collection borrows this as its cover.
         cover: 'file://${local.coverFile.path}',
       );
+      // A local comic keeps its tags as a plain list; the detail model wants a
+      // namespaced map, and "tags" is the namespace the app already shows those
+      // under elsewhere.
+      final localTags = <String, List<String>>{
+        if (local.subtitle.trim().isNotEmpty) 'author': [local.subtitle.trim()],
+        if (local.tags.isNotEmpty) 'tags': List.of(local.tags),
+      };
       final chapters = local.chapters;
       if (chapters == null) {
-        return _MemberLoad(m, chapters: {chapterId(''): m.label});
+        return _MemberLoad(
+          m,
+          chapters: {chapterId(''): m.label},
+          tags: localTags,
+          description: local.description,
+          subtitle: local.subtitle,
+        );
       }
-      return _MemberLoad(m, chapters: {
-        for (final e in chapters.allChapters.entries) chapterId(e.key): e.value,
-      });
+      return _MemberLoad(
+        m,
+        chapters: {
+          for (final e in chapters.allChapters.entries)
+            chapterId(e.key): e.value,
+        },
+        tags: localTags,
+        description: local.description,
+        subtitle: local.subtitle,
+      );
     }
 
     final source = ComicSource.find(m.sourceKey);
@@ -143,12 +180,17 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
       cover: details.cover,
     );
     final updateTime = details.findUpdateTime();
+    final tags = details.tags;
+    final description = details.description ?? '';
     final chapters = details.chapters;
     if (chapters == null) {
       return _MemberLoad(
         m,
         chapters: {chapterId(''): m.label},
         updateTime: updateTime,
+        tags: tags,
+        description: description,
+        subtitle: details.subTitle ?? '',
       );
     }
     return _MemberLoad(
@@ -157,6 +199,9 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
         for (final e in chapters.allChapters.entries) chapterId(e.key): e.value,
       },
       updateTime: updateTime,
+      tags: tags,
+      description: description,
+      subtitle: details.subTitle ?? '',
     );
   } catch (e, s) {
     Log.error('ComicCollection', e, s);
@@ -255,6 +300,15 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
   final fresh = ComicCollectionStore.find(collectionId) ?? collection;
   final failedCount = loads.where((e) => e.failed).length;
 
+  // Author, tags and description are borrowed from the first member that loaded
+  // — the collection is the same work, so repeating its metadata is what the
+  // user expects on the card and the detail page. First available rather than
+  // merged across members: merging would pile up near-duplicate tags and, for
+  // author, could imply a co-authorship that doesn't exist.
+  final infoSource = loads.firstWhereOrNull(
+    (e) => !e.failed && (e.tags.isNotEmpty || e.description.isNotEmpty),
+  );
+
   // The latest member update time becomes the collection's, so follow-updates
   // reacts to a new chapter in any member. Compared as strings: findUpdateTime
   // has already validated them into `YYYY-M-D`, and the padded form sorts
@@ -269,20 +323,35 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
     }
   }
 
+  // A failure note has to be visible, so it goes above the borrowed
+  // description rather than replacing it.
+  final notice = failedCount == 0
+      ? ''
+      : '@n of the comics in this collection could not be loaded'.tlParams({
+          'n': failedCount,
+        });
+  final borrowed = infoSource?.description ?? '';
+  final description = notice.isEmpty
+      ? borrowed
+      : (borrowed.isEmpty ? notice : '$notice\n\n$borrowed');
+
+  // The author line under the title, from the first member that reports one.
+  final subtitle = loads
+      .firstWhereOrNull((e) => !e.failed && e.subtitle.trim().isNotEmpty)
+      ?.subtitle
+      .trim();
+
   return Res(
     ComicDetails.fromJson({
       'title': fresh.displayName,
       'cover': fresh.displayCover,
       'comicId': collectionId,
       'sourceKey': fresh.sourceKey,
-      'tags': <String, List<String>>{},
+      'subtitle': subtitle,
+      'tags': infoSource?.tags ?? <String, List<String>>{},
       'chapters': chapters,
       'updateTime': latestUpdate,
-      'description': failedCount == 0
-          ? ''
-          : '@n of the comics in this collection could not be loaded'.tlParams({
-              'n': failedCount,
-            }),
+      'description': description,
     }),
   );
 }
