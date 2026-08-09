@@ -599,7 +599,10 @@ abstract mixin class _ComicPageActions {
           text: "Edit collection".tl,
           onClick: () {
             final id = comic.id;
-            context
+            // Main navigator, not the root one this menu is positioned against:
+            // the editor pushes comic pages, and those must land above it (#185).
+            final host = App.mainNavigatorKey?.currentContext ?? context;
+            host
                 .to(() => ComicCollectionEditPage(collectionId: id))
                 // The editor writes straight to the store, so returning is the
                 // signal to re-read: name, cover, layout and member order all

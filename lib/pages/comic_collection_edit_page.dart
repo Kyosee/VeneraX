@@ -233,8 +233,11 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
     _applyChange();
   }
 
+  /// Pushed on this page's own navigator. A hard-coded main-navigator target
+  /// opened the comic page below this one whenever the editor itself sat on the
+  /// root navigator, which looked like a dead tap (#185).
   void _openMember(CollectionMember member) {
-    App.mainNavigatorKey?.currentContext?.to(
+    context.to(
       () => ComicPage(
         id: member.comicId,
         sourceKey: member.sourceKey,
@@ -249,7 +252,7 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
   void _preview() {
     final c = collection;
     if (c == null) return;
-    App.mainNavigatorKey?.currentContext?.to(
+    context.to(
       () => ComicPage(
         id: c.id,
         sourceKey: c.sourceKey,
