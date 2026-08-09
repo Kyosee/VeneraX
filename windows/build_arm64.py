@@ -23,7 +23,7 @@ if os.path.exists("build/app-windows.zip"):
 
 version = str.split(str.split(content, 'version: ')[1], '+')[0]
 
-subprocess.run(["tar", "-a", "-c", "-f", f"build/windows/Venera-{version}-windows-arm64.zip", "-C", release_dir, "*"]
+subprocess.run(["tar", "-a", "-c", "-f", f"build/windows/VeneraX-{version}-windows-arm64.zip", "-C", release_dir, "*"]
                , shell=True, check=True)
 
 issPath = "windows/build_arm64.iss"

@@ -61,15 +61,18 @@ jobs:
         run: |
           mkdir -p dist
           mkdir -p dist/dmg_contents
-          cp -R build/macos/Build/Products/Release/venera.app dist/dmg_contents/
+          # Rename only the bundle directory: CFBundleExecutable still points at
+          # the `venera` binary inside, and the signature covers the contents,
+          # not the enclosing folder name.
+          cp -R build/macos/Build/Products/Release/venera.app dist/dmg_contents/VeneraX.app
           ln -s /Applications dist/dmg_contents/Applications
-          hdiutil create -volname "venera" -srcfolder dist/dmg_contents -ov -format UDZO "dist/venera.dmg"
+          hdiutil create -volname "VeneraX" -srcfolder dist/dmg_contents -ov -format UDZO "dist/VeneraX.dmg"
 
       - name: Add version to filename
         run: |
           APP_VERSION=$(grep "version:" pubspec.yaml | cut -d':' -f2 | tr -d ' ')
           mkdir -p result
-          mv dist/venera.dmg result/venera-$APP_VERSION.dmg
+          mv dist/VeneraX.dmg result/VeneraX-$APP_VERSION.dmg
 
       # Step 4: Attach and upload artifacts (optional)
       - name: Upload DMG
@@ -94,12 +97,12 @@ jobs:
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
           cd build/ios/iphoneos/
-          zip -r venera-ios.ipa Payload
+          zip -r VeneraX-ios.ipa Payload
       - name: Add version to filename
         run: |
           APP_VERSION=$(grep "version:" pubspec.yaml | cut -d':' -f2 | tr -d ' ')
           mkdir -p result
-          mv build/ios/iphoneos/venera-ios.ipa result/venera-ios-$APP_VERSION.ipa
+          mv build/ios/iphoneos/VeneraX-ios.ipa result/VeneraX-ios-$APP_VERSION.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: ios_build
@@ -176,7 +179,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows_build
-          path: build/windows/Venera-*
+          path: build/windows/VeneraX-*
   Build_Linux:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' }}
@@ -198,6 +201,23 @@ jobs:
           sudo rm -rf build/linux/arch/pkg
           sudo rm -rf build/linux/arch/src
           sudo rm -rf build/linux/arch/PKGBUILD
+      # Release files carry the app name; the dpkg/pacman package name stays
+      # `venera` so existing installs keep upgrading in place.
+      - name: Rename Linux packages
+        run: |
+          set -euo pipefail
+          for f in build/linux/x64/release/debian/venera_*.deb; do
+            [ -e "$f" ] || continue
+            n="$(basename "$f")"; n="${n#venera_}"
+            mv "$f" "$(dirname "$f")/VeneraX-${n//_/-}"
+          done
+          # The arch package is produced inside Docker via a bind mount, so it
+          # is root-owned (same reason the cleanup above needs sudo).
+          for f in build/linux/arch/venera-*.pkg.tar.zst; do
+            [ -e "$f" ] || continue
+            n="$(basename "$f")"
+            sudo mv "$f" "$(dirname "$f")/VeneraX-${n#venera-}"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: deb_build
@@ -224,6 +244,14 @@ jobs:
         run: |
           dart run patch/font.dart
       - run: python3 debian/build.py arm64
+      - name: Rename Linux packages
+        run: |
+          set -euo pipefail
+          for f in build/linux/x64/release/debian/venera_*.deb; do
+            [ -e "$f" ] || continue
+            n="$(basename "$f")"; n="${n#venera_}"
+            mv "$f" "$(dirname "$f")/VeneraX-${n//_/-}"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: deb_arm64_build

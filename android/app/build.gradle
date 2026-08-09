@@ -119,13 +119,13 @@ android {
             def abi = output.getFilter(com.android.build.OutputFile.ABI)
             if (variant.buildType.name == "release") {
                 if (abi != null) {
-                    outputFileName = "venera-${variant.versionName}-${abi}.apk"
+                    outputFileName = "VeneraX-${variant.versionName}-${abi}.apk"
                     def abiVersionCode = project.ext.abiCodes.get(abi)
                     if (abiVersionCode != null) {
                         versionCodeOverride = variant.versionCode * 10 + abiVersionCode
                     }
                 } else {
-                    outputFileName = "venera-${variant.versionName}.apk"
+                    outputFileName = "VeneraX-${variant.versionName}.apk"
                     versionCodeOverride = variant.versionCode * 10
                 }
             } else if (variant.buildType.name == "debug") {
