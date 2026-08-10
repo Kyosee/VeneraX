@@ -97,6 +97,7 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
     final config = _config;
     return Scaffold(
       body: SmoothCustomScrollView(
+        scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           SliverAppbar(
             title: Text(

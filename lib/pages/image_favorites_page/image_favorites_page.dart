@@ -269,6 +269,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
 
     var scrollWidget = SmoothCustomScrollView(
       controller: scrollController,
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         if (!searchMode && !multiSelectMode)
           SliverAppbar(
@@ -355,17 +356,14 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
                 },
               ),
             ),
-            title: TextField(
+            title: AppSearchField(
               autofocus: true,
+              height: AppSearchField.toolbarHeight,
               controller: controller,
-              decoration: InputDecoration(
-                hintText: "Search".tl,
-                border: InputBorder.none,
-              ),
               onChanged: (v) {
                 updateImageFavorites();
               },
-            ),
+            ).paddingRight(8),
           ),
         switch (viewMode) {
           ImageFavoritesViewMode.imageGrid => _buildGridSliver(),
@@ -388,18 +386,9 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
         SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
-    Widget body = Scrollbar(
-      controller: scrollController,
-      thickness: App.isDesktop ? 8 : 12,
-      radius: const Radius.circular(8),
-      interactive: true,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: context.width > changePoint
-            ? scrollWidget.paddingHorizontal(8)
-            : scrollWidget,
-      ),
-    );
+    Widget body = context.width > changePoint
+        ? scrollWidget.paddingHorizontal(8)
+        : scrollWidget;
     return PopScope(
       canPop: !multiSelectMode && !searchMode,
       onPopInvokedWithResult: (didPop, result) {

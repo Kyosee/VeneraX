@@ -53,6 +53,7 @@ part 'message.dart';
 part 'navigation_bar.dart';
 part 'pop_up_widget.dart';
 part 'scroll.dart';
+part 'search_field.dart';
 part 'select.dart';
 part 'selection.dart';
 part 'side_bar.dart';

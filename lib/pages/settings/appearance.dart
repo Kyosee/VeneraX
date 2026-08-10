@@ -11,6 +11,7 @@ class _AppearanceSettingsState extends State<AppearanceSettings> {
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("Appearance".tl)),
         SelectSetting(

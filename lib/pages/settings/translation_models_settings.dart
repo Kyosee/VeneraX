@@ -59,6 +59,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     ).map((c) => c.id).toSet();
     return Scaffold(
       body: SmoothCustomScrollView(
+        scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           SliverAppbar(title: Text("Translation models".tl)),
           SelectSetting(

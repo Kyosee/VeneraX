@@ -166,7 +166,10 @@ class _HomePageState extends State<HomePage> {
 
     Widget widget = GestureDetector(
       onLongPress: editMode ? null : _enterEditMode,
-      child: SmoothCustomScrollView(slivers: slivers),
+      child: SmoothCustomScrollView(
+        scrollbarTopPadding: context.padding.top,
+        slivers: slivers,
+      ),
     );
     return context.width > changePoint ? widget.paddingHorizontal(8) : widget;
   }
@@ -286,7 +289,7 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double height = App.isMobile ? 52 : 46;
+    final double height = AppSearchField.defaultHeight;
     return SliverToBoxAdapter(
       child: Container(
         height: height,
@@ -295,24 +298,11 @@ class _SearchBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Material(
-                color: context.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(32),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(32),
-                  onTap: () {
-                    context.to(() => const SearchPage());
-                  },
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 16),
-                      const Icon(Icons.search),
-                      const SizedBox(width: 8),
-                      Text('Search'.tl, style: ts.s16),
-                      const Spacer(),
-                    ],
-                  ),
-                ),
+              child: AppSearchField(
+                height: height,
+                onTap: () {
+                  context.to(() => const SearchPage());
+                },
               ),
             ),
             _SyncButton(height: height),

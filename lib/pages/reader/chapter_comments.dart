@@ -800,34 +800,35 @@ class _EmbeddedChapterCommentsPageState
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final crossAxisCount = isLandscape ? 2 : 1;
 
-    return Scrollbar(
+    return AppScrollBar(
       controller: scrollController,
-      thumbVisibility: true,
-      thickness: 8,
-      child: MasonryGridView.count(
-        controller: scrollController,
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 0,
-        crossAxisSpacing: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: _comments!.length + 1,
-        itemBuilder: (context, index) {
-          if (index == _comments!.length) {
-            if (_page < (maxPage ?? _page + 1)) {
-              loadMore();
-              return const ListLoadingIndicator();
-            } else {
-              return const SizedBox();
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: MasonryGridView.count(
+          controller: scrollController,
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 0,
+          crossAxisSpacing: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          itemCount: _comments!.length + 1,
+          itemBuilder: (context, index) {
+            if (index == _comments!.length) {
+              if (_page < (maxPage ?? _page + 1)) {
+                loadMore();
+                return const ListLoadingIndicator();
+              } else {
+                return const SizedBox();
+              }
             }
-          }
-          return _ChapterCommentTile(
-            comment: _comments![index],
-            source: widget.source,
-            comicId: widget.comicId,
-            epId: widget.epId,
-            showAvatar: showAvatar,
-          );
-        },
+            return _ChapterCommentTile(
+              comment: _comments![index],
+              source: widget.source,
+              comicId: widget.comicId,
+              epId: widget.epId,
+              showAvatar: showAvatar,
+            );
+          },
+        ),
       ),
     );
   }

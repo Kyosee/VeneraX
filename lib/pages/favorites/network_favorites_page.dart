@@ -304,7 +304,6 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
       final keys = folders!.keys.toList();
 
       return SmoothCustomScrollView(
-        scrollbar: true,
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           sliverAppBar,

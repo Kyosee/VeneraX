@@ -454,7 +454,6 @@ class _HistoryPageState extends State<HistoryPage>
       },
       child: Scaffold(
         body: SmoothCustomScrollView(
-          scrollbar: true,
           scrollbarTopPadding: context.padding.top + 56,
           slivers: [
             SliverAppbar(
@@ -480,30 +479,9 @@ class _HistoryPageState extends State<HistoryPage>
             ),
             if (!multiSelectMode)
               SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: context.colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: TextField(
-                    decoration: InputDecoration(
-                      icon: const Icon(Icons.search),
-                      hintText: "Search".tl,
-                      border: InputBorder.none,
-                      suffixIcon: keyword.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                setState(() {
-                                  keyword = "";
-                                  searchTextController.clear();
-                                });
-                              },
-                            ),
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: AppSearchField(
                     controller: searchTextController,
                     onChanged: (value) {
                       setState(() {

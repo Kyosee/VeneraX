@@ -36,6 +36,7 @@ class _ChaptersViewState extends State<_ChaptersView> {
     return Scaffold(
       body: SmoothCustomScrollView(
         controller: _scrollController,
+        scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           SliverAppbar(
             style: AppbarStyle.shadow,

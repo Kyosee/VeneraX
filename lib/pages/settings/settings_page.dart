@@ -215,25 +215,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget buildSearchField() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: TextField(
+      child: AppSearchField(
         controller: _searchController,
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: "Search settings".tl,
-          prefixIcon: const Icon(Icons.search, size: 20),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = "");
-                  },
-                ),
-          border: const OutlineInputBorder(),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        ),
+        hintText: "Search settings".tl,
         onChanged: (v) => setState(() => _searchQuery = v),
       ),
     );

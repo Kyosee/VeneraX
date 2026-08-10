@@ -530,7 +530,6 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
 
     Widget body = SmoothCustomScrollView(
       controller: scrollController,
-      scrollbar: true,
       scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         if (!searchMode && !multiSelectMode)
@@ -908,18 +907,15 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                 },
               ),
             ),
-            title: TextField(
+            title: AppSearchField(
               autofocus: true,
-              decoration: InputDecoration(
-                hintText: "Search".tl,
-                border: UnderlineInputBorder(),
-              ),
+              height: AppSearchField.toolbarHeight,
               onChanged: (v) {
                 keyword = v;
                 searchHasUpper = keyword.contains(RegExp(r'[A-Z]'));
                 updateSearchResult();
               },
-            ).paddingBottom(8).paddingRight(8),
+            ).paddingRight(8),
           ),
         if (isLoading)
           SliverToBoxAdapter(

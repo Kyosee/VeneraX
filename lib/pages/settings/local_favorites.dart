@@ -11,6 +11,7 @@ class _LocalFavoritesSettingsState extends State<LocalFavoritesSettings> {
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("Local Favorites".tl)),
         _SwitchSetting(

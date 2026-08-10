@@ -355,11 +355,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           : null,
       body: SmoothCustomScrollView(
         controller: scrollController,
-        // Draggable fast-scroll thumb (#91): comic detail pages can be long —
-        // some sources show a full preview here — so reuse the same scrollbar
-        // the list pages have. The SliverAppbar scrolls with the content, so
-        // inset the thumb by the top bar height to clear it.
-        scrollbar: true,
+        // The SliverAppbar scrolls with the content, so inset the thumb by the
+        // top bar height to clear it.
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           ...buildTitle(horizontalInset),

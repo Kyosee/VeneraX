@@ -223,7 +223,10 @@ class _SearchPageState extends State<SearchPage> {
       return buildEmpty();
     }
     return Scaffold(
-      body: SmoothCustomScrollView(slivers: buildSlivers().toList()),
+      body: SmoothCustomScrollView(
+        scrollbarTopPadding: context.padding.top + 56,
+        slivers: buildSlivers().toList(),
+      ),
     );
   }
 

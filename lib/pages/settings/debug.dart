@@ -21,6 +21,7 @@ class DebugPageState extends State<DebugPage> {
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("Debug".tl)),
         _CallbackSetting(

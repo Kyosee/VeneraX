@@ -241,6 +241,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         appdata.settings.isDeviceSpecificSettingsEnabled();
 
     return SmoothCustomScrollView(
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("Reading".tl)),
         if (comicId != null && sourceKey != null)

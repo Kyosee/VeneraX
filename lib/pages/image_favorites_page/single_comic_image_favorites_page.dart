@@ -123,6 +123,7 @@ class _SingleComicImageFavoritesPageState
     var items = images;
     var scrollWidget = SmoothCustomScrollView(
       controller: scrollController,
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         if (!multiSelectMode)
           SliverAppbar(
@@ -188,18 +189,9 @@ class _SingleComicImageFavoritesPageState
         SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
-    Widget body = Scrollbar(
-      controller: scrollController,
-      thickness: App.isDesktop ? 8 : 12,
-      radius: const Radius.circular(8),
-      interactive: true,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: context.width > changePoint
-            ? scrollWidget.paddingHorizontal(8)
-            : scrollWidget,
-      ),
-    );
+    Widget body = context.width > changePoint
+        ? scrollWidget.paddingHorizontal(8)
+        : scrollWidget;
     return PopScope(
       canPop: !multiSelectMode,
       onPopInvokedWithResult: (didPop, result) {

@@ -11,6 +11,7 @@ class _NetworkSettingsState extends State<NetworkSettings> {
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
+      scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("Network".tl)),
         _PopupWindowSetting(

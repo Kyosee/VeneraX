@@ -61,7 +61,6 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
-      scrollbar: true,
       scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverSearchBar(controller: controller),

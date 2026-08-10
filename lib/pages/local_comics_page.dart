@@ -295,7 +295,6 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
     var body = Scaffold(
       body: SmoothCustomScrollView(
-        scrollbar: true,
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           if (!searchMode)
@@ -343,17 +342,14 @@ class _LocalComicsPageState extends State<LocalComicsPage>
               ),
               title: multiSelectMode
                   ? Text(selectedItems.length.toString())
-                  : TextField(
+                  : AppSearchField(
                       autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: "Search".tl,
-                        border: InputBorder.none,
-                      ),
+                      height: AppSearchField.toolbarHeight,
                       onChanged: (v) {
                         keyword = v;
                         update();
                       },
-                    ),
+                    ).paddingRight(8),
               actions: multiSelectMode ? selectActions : null,
             ),
           if (!searchMode && !multiSelectMode)

@@ -62,6 +62,7 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
     var activeId = LlmProviderStore.activeId;
     return Scaffold(
       body: SmoothCustomScrollView(
+        scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           SliverAppbar(
             title: Text("LLM providers".tl),

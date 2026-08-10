@@ -5,7 +5,7 @@ class SmoothCustomScrollView extends StatelessWidget {
     super.key,
     required this.slivers,
     this.controller,
-    this.scrollbar = false,
+    this.scrollbar = true,
     this.scrollbarTopPadding = 0,
   });
 
@@ -13,9 +13,9 @@ class SmoothCustomScrollView extends StatelessWidget {
 
   final List<Widget> slivers;
 
-  /// When true, overlays a draggable [AppScrollBar] on the right edge for fast
-  /// jumping through long lists. It auto-hides when the content fits, so it is
-  /// safe to enable on any vertically-scrolling list.
+  /// Overlays a draggable [AppScrollBar] on the right edge for fast jumping
+  /// through long lists. It auto-hides when the content fits, so every
+  /// vertically-scrolling page keeps the same thumb by default.
   final bool scrollbar;
 
   /// Top inset for the scrollbar thumb so it clears a top app bar. Only used
@@ -411,6 +411,10 @@ class _AppScrollBarState extends State<AppScrollBar> {
                       child: Listener(
                         behavior: HitTestBehavior.translucent,
                         onPointerDown: (event) {
+                          // A faded-out thumb still hit-tests, so without this
+                          // it would fight page gestures (reorder handles,
+                          // swipe actions) for drags near the right edge.
+                          if (!_isVisible) return;
                           _dragGestureRecognizer.addPointer(event);
                         },
                         child: SizedBox(
