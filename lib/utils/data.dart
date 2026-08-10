@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
@@ -348,6 +349,7 @@ Future<File> exportAppData({
   }
   await Isolate.run(() {
     var zipFile = ZipFile.open(cacheFilePath);
+    var coverDirName = ComicCollectionStore.coverDirName;
     var historyFile = FilePath.join(dataPath, "history.db");
     var localFavoriteFile = FilePath.join(dataPath, "local_favorite.db");
     var domainFile = DomainDatabase.databasePathFor(dataPath);
@@ -389,6 +391,17 @@ Future<File> exportAppData({
     ).listSync()) {
       if (file is File) {
         zipFile.addFile("comic_source/${file.name}", file.path);
+      }
+    }
+    // Covers a user picked for a collection live as files in our data
+    // directory; the collection config only stores the file name. Without the
+    // files the config restores on another device pointing at nothing.
+    var coverDir = Directory(FilePath.join(dataPath, coverDirName));
+    if (coverDir.existsSync()) {
+      for (var file in coverDir.listSync()) {
+        if (file is File) {
+          zipFile.addFile("$coverDirName/${file.name}", file.path);
+        }
       }
     }
     zipFile.close();
@@ -661,6 +674,45 @@ Future<void> _importAppDataLocked(
         }
       } catch (e, s) {
         Log.warning('Import Data', 'Failed to import translation prefs: $e\n$s');
+      }
+    }
+    // Cover images picked for a collection. The collection config in
+    // appdata.json only names the file, so the files have to be laid down for
+    // it to resolve here.
+    var incomingCoverDir = Directory(
+      FilePath.join(cacheDirPath, ComicCollectionStore.coverDirName),
+    );
+    if (incomingCoverDir.existsSync()) {
+      try {
+        final target = Directory(
+          FilePath.join(App.dataPath, ComicCollectionStore.coverDirName),
+        );
+        await target.create(recursive: true);
+        for (var file in incomingCoverDir.listSync()) {
+          if (file is File) {
+            await file.copy(FilePath.join(target.path, file.name));
+          }
+        }
+        // The settings just applied replaced the collection list wholesale, so
+        // any cover file no longer named by one is dead weight. Without this,
+        // every cover the user ever re-picked on another device would pile up
+        // here for good, one file per change.
+        final referenced = <String>{};
+        for (final c in ComicCollectionStore.all()) {
+          final cover = c.customCover.trim();
+          if (cover.startsWith(ComicCollectionStore.localCoverScheme)) {
+            referenced.add(
+              cover.substring(ComicCollectionStore.localCoverScheme.length),
+            );
+          }
+        }
+        for (var file in target.listSync()) {
+          if (file is File && !referenced.contains(file.name)) {
+            file.deleteIgnoreError();
+          }
+        }
+      } catch (e, s) {
+        Log.warning('Import Data', 'Failed to import collection covers: $e\n$s');
       }
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
