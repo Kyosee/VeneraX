@@ -117,6 +117,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   // --- 2: Appearance ---
   _SettingsSearchEntry("Theme Mode", 2, keywords: ["dark", "light"]),
   _SettingsSearchEntry("Theme Color", 2, keywords: ["accent", "color"]),
+  _SettingsSearchEntry(
+    "Predictive Back Animation",
+    2,
+    keywords: ["back", "gesture", "animation"],
+    visible: () => App.isAndroid,
+  ),
   _SettingsSearchEntry("Home Page Layout", 2, keywords: ["home", "layout"]),
   _SettingsSearchEntry("Image Favorites Tabs", 2, keywords: ["tabs"]),
 

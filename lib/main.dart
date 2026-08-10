@@ -230,6 +230,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         shape: Border(),
         collapsedShape: Border(),
       ),
+      // Covers the routes that aren't AppPageRoute (they read the same setting
+      // themselves) so the back gesture behaves the same everywhere (#194).
+      pageTransitionsTheme:
+          App.isAndroid && appdata.settings['enablePredictiveBack'] == false
+          ? const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+              },
+            )
+          : null,
     );
   }
 

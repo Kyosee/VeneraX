@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 
 const double _kBackGestureWidth = 20.0;
 const int _kMaxDroppedSwipePageForwardAnimationTime = 800;
@@ -180,7 +181,14 @@ mixin _AppRouteTransitionMixin<T> on PageRoute<T> {
   ) {
     PageTransitionsBuilder builder;
     if (App.isAndroid) {
-      builder = PredictiveBackPageTransitionsBuilder();
+      // #194: some systems force the back gesture on with no animation of
+      // their own, so a page that tracks the drag looks out of place. Off keeps
+      // the same fade the predictive builder already uses for non-gesture pops,
+      // leaving no observer to claim the gesture — the framework then falls
+      // back to a plain pop on release.
+      builder = appdata.settings['enablePredictiveBack'] == false
+          ? const FadeForwardsPageTransitionsBuilder()
+          : const PredictiveBackPageTransitionsBuilder();
     } else {
       builder = SlidePageTransitionBuilder();
     }

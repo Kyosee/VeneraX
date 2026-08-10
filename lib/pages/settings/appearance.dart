@@ -42,6 +42,17 @@ class _AppearanceSettingsState extends State<AppearanceSettings> {
             App.forceRebuild();
           },
         ).toSliver(),
+        // Android only: some systems force the back gesture on without
+        // providing any animation of their own (#194).
+        if (App.isAndroid)
+          _SwitchSetting(
+            title: "Predictive Back Animation".tl,
+            subtitle: "Page follows the back gesture as you drag".tl,
+            settingKey: "enablePredictiveBack",
+            onChanged: () {
+              App.forceRebuild();
+            },
+          ).toSliver(),
         ListTile(
           title: Text("Home Page Layout".tl),
           subtitle: Text("Reorder or hide home sections".tl),

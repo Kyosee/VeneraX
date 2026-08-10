@@ -147,6 +147,10 @@ class Appdata with Init {
     // capture a trace on the device that misbehaves. Syncing it would carry the
     // battery cost to every other device.
     "verboseNetworkLog",
+    // Whether page transitions follow the back gesture depends on what the
+    // device's own system animations look like, so it stays with the device
+    // (#194) rather than travelling from one phone to a tablet or desktop.
+    "enablePredictiveBack",
   ];
 
   /// Sync data from another device.
@@ -346,6 +350,10 @@ class Settings with ChangeNotifier {
     'tapZoneLeft': 'none',
     'tapZoneRight': 'none',
     'enablePageAnimation': true,
+    // Android only (#194). Off swaps the page transition to the plain fade so
+    // the page stops tracking the system back gesture, matching devices whose
+    // own system ships no predictive-back animation.
+    'enablePredictiveBack': true,
     'language': 'system', // system, zh-CN, zh-TW, en-US
     'cacheSize': 2048, // in MB
     'downloadThreads': 5,
