@@ -42,6 +42,10 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 - [x] AI page translation while reading (experimental): requires your own LLM provider details; on-demand recognition models, whole-chapter pre-translation, text removal
 - [x] Custom collections: read comics published as separate volumes or parts as one, across sources
 
+## Guide
+
+Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.
+
 ## Quick Start
 
 ### Native App

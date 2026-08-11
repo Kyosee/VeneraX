@@ -84,6 +84,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
 
   /// A plain-language explainer of what AI translation does, how to set it up,
   /// and how to use it — so users don't have to guess from the field labels.
+  /// The short version stays here; the full walkthrough lives in the guide.
   void _showTranslationHelp() {
     Widget section(String title, String body) {
       return Column(
@@ -130,6 +131,13 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           ),
         ),
         actions: [
+          Button.text(
+            onPressed: () {
+              context.pop();
+              GuidePage.open(App.rootContext, anchor: GuideAnchor.translation);
+            },
+            child: Text("Full guide".tl),
+          ),
           Button.filled(
             onPressed: context.pop,
             child: Text("OK".tl),

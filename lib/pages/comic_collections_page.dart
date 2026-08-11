@@ -8,6 +8,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_collection_edit_page.dart';
+import 'package:venera/pages/guide_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/translations.dart';
@@ -150,6 +151,14 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage> {
         title: Text("Collections".tl),
         actions: [
           Tooltip(
+            message: "Guide".tl,
+            child: IconButton(
+              icon: const Icon(Icons.help_outline),
+              onPressed: () =>
+                  GuidePage.open(context, anchor: GuideAnchor.collections),
+            ),
+          ),
+          Tooltip(
             message: "New collection".tl,
             child: IconButton(icon: const Icon(Icons.add), onPressed: _create),
           ),
@@ -286,6 +295,12 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage> {
               onPressed: _create,
               icon: const Icon(Icons.add),
               label: Text("New collection".tl),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () =>
+                  GuidePage.open(context, anchor: GuideAnchor.collections),
+              child: Text("Guide".tl),
             ),
           ],
         ),

@@ -186,6 +186,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ["update", "version"],
   ),
   _SettingsSearchEntry("Check for updates on startup", 6, keywords: ["update"]),
+  _SettingsSearchEntry(
+    "Guide",
+    6,
+    keywords: ["guide", "help", "manual", "how to", "usage"],
+  ),
   _SettingsSearchEntry("Repository", 6, keywords: ["github", "source"]),
   _SettingsSearchEntry("User Agreement & Disclaimer", 6),
 

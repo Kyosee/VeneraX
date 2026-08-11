@@ -142,6 +142,9 @@ flutter:
     - assets/new_logo3.ico
     - assets/user_logo.ico
     - assets/venera_original.ico
+    # User guide, authored once and read both here and on the repo page.
+    - doc/guide.zh.md
+    - doc/guide.en.md
   shaders:
     - shaders/image_enhance.frag
 # fonts:

@@ -64,6 +64,12 @@ class _AboutSettingsState extends State<AboutSettings> {
           settingKey: "checkUpdateOnStart",
         ).toSliver(),
         ListTile(
+          title: Text("Guide".tl),
+          subtitle: Text("How to use the main features".tl),
+          trailing: const Icon(Icons.menu_book_outlined),
+          onTap: () => GuidePage.open(context),
+        ).toSliver(),
+        ListTile(
           title: Text("Repository".tl),
           subtitle: const Text("$_repoOwner/$_repoName"),
           trailing: const Icon(Icons.open_in_new),
