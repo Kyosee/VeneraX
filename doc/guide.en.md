@@ -1,132 +1,168 @@
 # VeneraX Guide
 
-Where things are and how to tap them. If you can't find a setting, open Settings and use the search box at the top.
+This document covers the setup steps and controls for each feature. If a setting is hard to find, use the search box at the top of the settings page.
 
-## AI Translation {#ai-translation}
+## Contents
 
-Reads the text on a page and draws the translation onto the image, keeping the artwork. **Finding and recognizing the text happens on your device; the recognized lines are sent to an AI service you configure yourself.** The app ships no account and no credits — it uses yours.
+- [AI Translation](#ai-translation)
+  - [Setup](#setup)
+  - [Enabling](#enabling)
+  - [Controls while reading](#controls-while-reading)
+  - [Adjusting results](#adjusting-results)
+  - [Performance and usage](#performance-and-usage)
+  - [Things to know](#things-to-know)
+- [Collections](#collections)
+  - [Creating](#creating)
+  - [Chapter layout](#chapter-layout)
+  - [Editing](#editing)
+  - [Limitations](#limitations)
+- [Non-obvious controls](#non-obvious-controls)
 
-### One-time setup
+<!--anchor:ai-translation-->
+## AI Translation
+
+Recognizes the text on a page and draws the translation onto the image, leaving the artwork intact.
+
+Detection and recognition run on the device; the recognized text is sent to an AI service you configure yourself. The app includes no account and no credits.
+
+<!--anchor:translation-setup-->
+### Setup
 
 1. Settings → Reading → expand "AI Translation (experimental)".
-2. Tap "LLM providers" → add one with its API URL, API Key and Model. Any OpenAI-compatible service works. Add several and switch anytime.
-3. Tap "Test translation". A returned translation means it works; an error tells you what to fix.
-4. Tap "Translation models" → download. The text detector (~5 MB) is always required; then one recognition model for the comic's language:
-   - Japanese (vertical manga text) ~460 MB
-   - Chinese / Latin ~11 MB
-   - English ~9 MB
-   - Korean ~8 MB
+2. "LLM providers" → add one with its API URL, API Key and Model. Any OpenAI-compatible service works; add several and switch at any time.
+3. "Test translation" → a returned translation confirms the configuration works.
+4. "Translation models" → download. The text detector (~5 MB) is required; add one recognition model for the comic's language:
 
-Models come from HuggingFace. If that is unreachable, switch "Model download source" to hf-mirror.com.
+| Language | Size |
+| --- | --- |
+| Japanese (incl. vertical text) | ~460 MB |
+| Chinese / Latin | ~11 MB |
+| English | ~9 MB |
+| Korean | ~8 MB |
 
-With "Source language" left on "Auto detect", the detector plus any one recognition model is enough — the app works out what language each comic is in.
+With "Source language" set to "Auto detect", the detector plus any one recognition model is sufficient; the app determines each comic's language itself.
 
-### Start translating
+<!--anchor:translation-enable-->
+### Enabling
 
-Translation is enabled **per comic**, not globally, because it spends your credits.
+Translation is enabled per comic, with no global switch, because it spends your own credits. Two entry points:
 
-- On a comic's detail page, open the more menu (top right) → "Enable AI translation".
-- Or in the reader → Settings → "Translate pages while reading".
+- Comic detail page → more menu (top right) → "Enable AI translation".
+- Reader → Settings → "Translate pages while reading".
 
-From then on each page is translated as you reach it, showing the original until it's done.
+Pages are then translated as they are reached, showing the original until each finishes. To translate in advance, use the "Pre-translate" button on the detail page; work runs in the background and progress appears on the Tasks page.
 
-To translate ahead: the detail page gains a "Pre-translate" button. Tap it, pick chapters, and the work runs in the background — progress is on the Tasks page.
+<!--anchor:translation-reading-->
+### Controls while reading
 
-### While reading
+- Image icon in the top bar: switch between the translation and the original for comparison, without changing the translation settings.
+- Progress ring in the top bar: this page is being translated.
+- Red warning icon in the top bar: this page failed; tap to see why and retry.
 
-- Image icon in the top bar: switch between "Show original" and "Show translated" to compare, without turning the feature off.
-- Spinner in the top bar: this page is being translated.
-- Red exclamation mark: this page failed. Tap it to see why and retry.
+<!--anchor:translation-adjust-->
+### Adjusting results
 
-### When the result is wrong
+Long-press the "Pre-translate" button on the detail page to open:
 
-- **Long-press the "Pre-translate" button** on the detail page:
-  - "Glossary": view and correct the names and proper nouns learned for this comic. Later pages follow your corrections.
-  - "Re-translate": clear this comic's translations and glossary, then translate again.
-- To redo only a few chapters: select them in the chapter picker and use "Re-translate selected".
-- If the lettering looks badly covered, change "Text removal". "Smart erase" (default) reconstructs the bubble's background and screentone; "Color patch" pastes a solid block — faster, cruder.
+- **Glossary**: review and correct the names and proper nouns learned for this comic. Later translations follow the corrections.
+- **Re-translate**: clear this comic's translations and glossary, then translate again.
 
-### Saving credits and speeding up
+Other options:
 
-Translated pages are stored, so a page is translated once and re-reading costs nothing. "Clear translation results" frees the space and keeps the language and glossary learned per comic.
+- To redo only some chapters: select them in the chapter picker and use "Re-translate selected".
+- If the translation is poorly masked: adjust "Text removal". "Smart erase" (default) reconstructs the bubble's background and screentone; "Color patch" covers the area with a solid block — faster, with harder edges.
 
-If it is slow, or your provider rate-limits you, adjust:
+<!--anchor:translation-performance-->
+### Performance and usage
 
-- "Pages per pre-translation request": how many pages go into one request. More pages means fewer requests but slower turnaround, and too many can exceed the model's context.
-- "Translation request concurrency": how many requests run at once. Lower it if you get rate-limited.
-- "OCR parallelism": local recognition threads, 0 means auto. Lower it if the device heats up or stutters.
-- "Image download concurrency".
+Translations are stored, so each page is translated once and re-reading issues no further requests. "Clear translation results" frees the space and keeps the language and glossary learned per comic.
 
-### Notes
+If throughput is poor or the provider returns rate-limit errors, adjust:
 
-- This is marked experimental: recognition and translation can both get things wrong, especially long text and unusual layouts.
+| Setting | Effect |
+| --- | --- |
+| Pages per pre-translation request | Pages per request. More reduces the request count but increases per-request latency; too many can exceed the model's context |
+| Translation request concurrency | Requests in flight at once. Lower it when rate-limited |
+| OCR parallelism | Local recognition threads, 0 for automatic. Lower it if the device heats up or stutters |
+| Image download concurrency | Images downloaded at once |
+
+<!--anchor:translation-limits-->
+### Things to know
+
+- Marked experimental: recognition and translation can both fail, most visibly on long text and unusual layouts.
 - The Japanese model is large because vertical manga text currently has only one reliable recognition option.
-- Inference is CPU-only, so pre-translating on a phone heats it up and drains the battery. Run it while charging.
+- Inference is CPU-only, so pre-translating on mobile causes noticeable heat and battery drain. Run it while charging.
 
-## Collections {#collections}
+<!--anchor:collections-->
+## Collections
 
-Read several comics that are really one story as a single comic: volumes, parts, seasons. A collection has one cover, one chapter list, one reading position — and one favorite/follow entry. **Members can come from different sources, mixed freely.**
+Combines comics published separately — volumes, parts, seasons — into one comic for reading. A collection has one cover, one chapter list and one reading position, and a single favorite/follow entry. Members may come from different sources.
 
-The original comics stay where they are; the collection is just another way in.
+The original comics are unchanged; the collection is an additional entry point.
 
-### Create one
+<!--anchor:collection-create-->
+### Creating
 
-The easiest route is in bulk:
+In bulk:
 
-1. In any list, enter multi-select (long-press a comic) and tick the comics that belong together.
-2. Tap the collection icon in the toolbar → "Add to collection".
-3. Choose "New collection" as the target and enter a name (leave empty to use the first comic's title).
-4. Pick a chapter layout (below) and confirm.
+1. Long-press a comic in any list to enter multi-select, then select the parts of one work.
+2. Collection icon in the toolbar → "Add to collection".
+3. Choose "New collection" as the target and enter a name (empty uses the first comic's title).
+4. Choose a chapter layout and confirm.
 
-One at a time also works: long-press a comic → "Add to collection", or swipe its row, or use the more menu on its detail page.
+Individually: long-press a comic → "Add to collection", swipe its row, or use the more menu on its detail page.
 
-Two extra options when adding: file the new collection into a favorite folder, and "Un-favorite the added comics" so only the collection is left in your favorites instead of every part.
+Two options are offered when adding: file the new collection into a favorite folder, and "Un-favorite the added comics" so only the collection remains in favorites.
 
-### Two chapter layouts
+<!--anchor:collection-layout-->
+### Chapter layout
 
-- **Merged chapters**: every member's chapters in one list. Use it when each comic is a single instalment or volume.
-- **Chapter tabs**: one tab per comic, each with its own chapters. Use it when each comic has many chapters of its own.
+- **Merged chapters**: all members' chapters in one list. Use when each comic is a single instalment or volume.
+- **Chapter tabs**: one tab per comic, each managing its own chapters. Use when each comic has multiple chapters of its own.
 
-You can switch anytime — read progress and downloaded chapters survive the change.
+Either can be changed at any time; read progress and downloaded chapters are unaffected.
 
-### Adjust a collection
+<!--anchor:collection-edit-->
+### Editing
 
-Collections live in the "Collections" card on the home page (hidden while you have none). To move or hide that card: Settings → Appearance → Home layout.
+Collections appear in the "Collections" card on the home page, hidden while none exist. To move or hide it: Settings → Appearance → Home layout.
 
 From the collections page, menu → "Edit":
 
-- **Collection name**: empty means the first comic's title.
-- **Cover**: the first comic's cover, an image file, or any member's cover. A member showing "Open it once to load its cover" hasn't had its cover cached yet — open that comic once.
+- **Collection name**: empty uses the first comic's title.
+- **Cover**: the first comic's cover, an image file, or any member's cover. A member showing "Open it once to load its cover" has no cached cover yet; open that comic once.
 - **Chapter layout**.
-- **Order**: drag the handle on the right. **Member order is chapter order**, so this is the fix for a source that lists part 3 before part 1.
-- **Members**: the menu on each row renames it inside the collection ("Display name"), opens it on its own ("Details"), or takes it out ("Remove from collection").
+- **Order**: drag the handle on the right. Member order is chapter order, which corrects a source that lists the parts out of sequence.
+- **Members**: each member's menu renames it within the collection, opens it on its own, or removes it from the collection.
 
-On a collection's detail page in "Chapter tabs" layout, **long-press a tab** (right-click on desktop) to rename, move or remove that member without going back to the editor.
+On a collection's detail page using "Chapter tabs", long-press a tab (right-click on desktop) to rename, reorder or remove that member without opening the editor.
 
-### Notes
+<!--anchor:collection-limits-->
+### Limitations
 
-- A collection cannot be put inside another collection.
-- Deleting a collection keeps the comics; it only removes the collection and its favorite/history entries.
-- A member shown in red as "Unavailable" means its source isn't installed or its local files are gone. Remove it or restore the source.
+- Collections cannot be nested.
+- Deleting a collection keeps its comics, removing only the collection and its favorite and history entries.
+- A member shown in red as "Unavailable" has an uninstalled source or missing local files; remove it or restore the source.
 - A collection's update time is the newest among its members.
-- Collection settings and custom covers travel with backup and sync.
+- Collection settings and custom covers are included in backup and sync.
 
-## Hidden gestures {#gestures}
+<!--anchor:gestures-->
+## Non-obvious controls
 
-These have no visible button but are worth knowing. Long-press on touch; most also respond to right-click on desktop.
+These have no corresponding button. Long-press on mobile; most also respond to right-click on desktop.
 
 Lists and favorites:
 
 - Long-press a comic: open its action menu (add to collection, favorite, read later, and so on).
-- Swipe a row sideways: quick actions.
-- Long-press to enter multi-select, then act on many at once.
-- Long-press empty space on the home page: rearrange or hide the home sections.
+- Swipe a list row: quick actions.
+- Long-press to enter multi-select, then act in bulk.
+- Long-press empty space on the home page: rearrange or hide home sections.
 
 Comic detail page:
 
 - Long-press the cover: save the cover image.
 - Long-press "Favorite": skip the folder panel and file it into the default folder.
-- Long-press "Pre-translate": open the translation menu (pre-translate / glossary / re-translate).
+- Long-press "Pre-translate": open the translation menu (pre-translate, glossary, re-translate).
 - Long-press the title or a tag: copy the text.
 - Long-press a chapter: enter chapter multi-select for bulk mark-as-read, download or re-translate.
 - Long-press a chapter tab (collections only): rename, reorder or remove that member.

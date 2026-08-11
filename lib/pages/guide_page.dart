@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/components/components.dart';
@@ -37,10 +38,25 @@ class _GuidePageState extends State<GuidePage> {
   /// Keys of the anchored headings, so [_jumpToAnchor] can bring one on screen.
   final _anchorKeys = <String, GlobalKey>{};
 
+  /// Keys of every heading by its text, so a contents entry can scroll to it.
+  final _headingKeys = <String, GlobalKey>{};
+
+  /// One recognizer per contents entry, kept for the page's lifetime: a
+  /// recognizer built inline would leak on every rebuild.
+  final _linkRecognizers = <String, TapGestureRecognizer>{};
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (var recognizer in _linkRecognizers.values) {
+      recognizer.dispose();
+    }
+    super.dispose();
   }
 
   /// Chinese locales read the Chinese guide; everything else falls back to
@@ -63,6 +79,12 @@ class _GuidePageState extends State<GuidePage> {
           if (id != null) {
             _anchorKeys[id] = GlobalKey();
           }
+          if (_isHeading(block)) {
+            // Shared with the anchor key when a heading has both, so one
+            // element never carries two GlobalKeys.
+            _headingKeys[_localize(block.text)] =
+                id == null ? GlobalKey() : _anchorKeys[id]!;
+          }
         }
       });
       _jumpToAnchor();
@@ -72,19 +94,29 @@ class _GuidePageState extends State<GuidePage> {
     }
   }
 
+  static bool _isHeading(GuideBlock block) {
+    return block.type == GuideBlockType.heading1 ||
+        block.type == GuideBlockType.heading2 ||
+        block.type == GuideBlockType.heading3;
+  }
+
   void _jumpToAnchor() {
     var id = widget.anchor?.id;
     if (id == null) return;
     // After the first layout the target has a render object to scroll to.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      var context = _anchorKeys[id]?.currentContext;
-      if (context == null) return;
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 300),
-        alignment: 0.05,
-      );
+      _scrollTo(_anchorKeys[id]);
     });
+  }
+
+  void _scrollTo(GlobalKey? key) {
+    var target = key?.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 300),
+      alignment: 0.05,
+    );
   }
 
   @override
@@ -136,7 +168,34 @@ class _GuidePageState extends State<GuidePage> {
       ),
       GuideBlockType.bullet => _buildListItem(block, "•"),
       GuideBlockType.numbered => _buildListItem(block, "${block.number}."),
+      GuideBlockType.tableRow => _buildTableRow(block),
     };
+  }
+
+  /// A table row renders as term over description: the guides use tables only
+  /// as two-column lists, and a real grid would not fit a phone's width.
+  Widget _buildTableRow(GuideBlock block) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 3, 16, 3),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildRichText(block.spans, ts.bold.s14),
+          if (block.trailingSpans.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            _buildRichText(
+              block.trailingSpans,
+              ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildHeading(
@@ -203,20 +262,42 @@ class _GuidePageState extends State<GuidePage> {
       TextSpan(
         children: [
           for (var span in spans)
-            TextSpan(
-              text: _localize(span.text),
-              style: switch (span.style) {
-                GuideSpanStyle.plain => base,
-                GuideSpanStyle.bold => base.bold,
-                GuideSpanStyle.code => base.copyWith(
-                  fontFamily: 'monospace',
-                  backgroundColor: context.colorScheme.surfaceContainerHighest,
-                ),
-              },
-            ),
+            if (span.isLink)
+              _buildLinkSpan(span, base)
+            else
+              TextSpan(
+                text: _localize(span.text),
+                style: switch (span.style) {
+                  GuideSpanStyle.bold => base.bold,
+                  GuideSpanStyle.code => base.copyWith(
+                    fontFamily: 'monospace',
+                    backgroundColor: context.colorScheme.surfaceContainerHighest,
+                  ),
+                  _ => base,
+                },
+              ),
         ],
       ),
       style: base.copyWith(height: 1.55),
+    );
+  }
+
+  InlineSpan _buildLinkSpan(GuideSpan span, TextStyle base) {
+    var label = _localize(span.text);
+    var target = _headingKeys[label];
+    // An entry pointing at a heading that no longer exists stays readable as
+    // plain text instead of becoming a dead tap.
+    if (target == null) {
+      return TextSpan(text: label, style: base);
+    }
+    var recognizer = _linkRecognizers.putIfAbsent(
+      label,
+      () => TapGestureRecognizer()..onTap = () => _scrollTo(target),
+    );
+    return TextSpan(
+      text: label,
+      style: base.copyWith(color: context.colorScheme.primary),
+      recognizer: recognizer,
     );
   }
 

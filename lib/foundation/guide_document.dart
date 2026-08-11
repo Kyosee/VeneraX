@@ -8,11 +8,25 @@
 /// reader as plain text.
 library;
 
-/// A section of the guide that a feature screen can link into. [id] must match
-/// the `{#id}` tag on that section's heading in every guide file.
+/// A section of the guide that a feature screen can link into.
+///
+/// [id] must match an `<!--anchor:id-->` marker in every guide file; a test
+/// enforces that the set of markers and this enum agree exactly, so a renamed
+/// heading or a dropped marker fails the build rather than silently becoming a
+/// jump that goes nowhere.
 enum GuideAnchor {
   translation('ai-translation'),
+  translationSetup('translation-setup'),
+  translationEnable('translation-enable'),
+  translationReading('translation-reading'),
+  translationAdjust('translation-adjust'),
+  translationPerformance('translation-performance'),
+  translationLimits('translation-limits'),
   collections('collections'),
+  collectionCreate('collection-create'),
+  collectionLayout('collection-layout'),
+  collectionEdit('collection-edit'),
+  collectionLimits('collection-limits'),
   gestures('gestures');
 
   const GuideAnchor(this.id);
@@ -20,15 +34,34 @@ enum GuideAnchor {
   final String id;
 }
 
-enum GuideBlockType { heading1, heading2, heading3, paragraph, bullet, numbered }
+enum GuideBlockType {
+  heading1,
+  heading2,
+  heading3,
+  paragraph,
+  bullet,
+  numbered,
 
-enum GuideSpanStyle { plain, bold, code }
+  /// A `key | value` row. The guides use tables only as two-column term/effect
+  /// lists, so they render as definition rows rather than a real grid.
+  tableRow,
+}
+
+enum GuideSpanStyle { plain, bold, code, link }
 
 class GuideSpan {
   const GuideSpan(this.text, this.style);
 
   final String text;
   final GuideSpanStyle style;
+
+  /// A contents entry links to the heading whose text equals [text].
+  ///
+  /// The link target in the markdown is GitHub's own generated heading slug,
+  /// which differs per language and is not what this parser tracks. Matching on
+  /// the visible text instead keeps one authored contents list working both on
+  /// the repository page and here.
+  bool get isLink => style == GuideSpanStyle.link;
 }
 
 class GuideBlock {
@@ -38,12 +71,17 @@ class GuideBlock {
     this.anchor,
     this.indent = 0,
     this.number = 0,
+    this.trailingSpans = const [],
   });
 
   final GuideBlockType type;
+
+  /// The block's content; for [GuideBlockType.tableRow] this is the first
+  /// column.
   final List<GuideSpan> spans;
 
-  /// `{#id}` tag stripped off the heading, used as a scroll target.
+  /// Anchor declared by the preceding `<!--anchor:id-->` marker, used as a
+  /// scroll target.
   final String? anchor;
 
   /// Nesting depth of a list item, in list levels.
@@ -52,19 +90,39 @@ class GuideBlock {
   /// Display number of a [GuideBlockType.numbered] item.
   final int number;
 
+  /// Second column of a [GuideBlockType.tableRow]; empty for every other type.
+  final List<GuideSpan> trailingSpans;
+
   /// The block's text with styling dropped, for tests and search.
   String get text => spans.map((s) => s.text).join();
+
+  /// The second column's text with styling dropped.
+  String get trailingText => trailingSpans.map((s) => s.text).join();
 }
 
-final _anchorPattern = RegExp(r'\s*\{#([a-z0-9-]+)\}\s*$');
+/// Anchors are declared as HTML comments rather than the `{#id}` heading
+/// suffix: GitHub does not support that syntax and would render the braces as
+/// literal text, while a comment stays invisible there and still gives this
+/// parser a stable target that survives rewording a heading.
+final _anchorPattern = RegExp(r'^<!--\s*anchor:\s*([a-z0-9-]+)\s*-->$');
 final _numberedPattern = RegExp(r'^(\d+)\.\s+');
-final _inlinePattern = RegExp(r'\*\*(.+?)\*\*|`(.+?)`');
+final _inlinePattern = RegExp(r'\*\*(.+?)\*\*|`(.+?)`|\[([^\]]+)\]\(#[^)]*\)');
+final _tableDividerPattern = RegExp(r'^\|[\s|:-]+\|$');
 
 /// Parses the guide's markdown subset: ATX headings with an optional
 /// `{#anchor}`, `-` bullets (nested by two-space indent), `1.` numbered items
 /// and paragraphs, with `**bold**` and `` `code` `` inline.
 List<GuideBlock> parseGuideMarkdown(String markdown) {
   var blocks = <GuideBlock>[];
+  // Set by an anchor comment and consumed by the next block, so the marker sits
+  // on its own line above the heading it names.
+  String? pendingAnchor;
+
+  void add(GuideBlock block) {
+    blocks.add(block);
+    pendingAnchor = null;
+  }
+
   for (var raw in markdown.replaceAll('\r\n', '\n').split('\n')) {
     var indent = 0;
     var line = raw;
@@ -76,34 +134,64 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
     line = line.trim();
     if (line.isEmpty) continue;
 
+    var anchorMatch = _anchorPattern.firstMatch(line);
+    if (anchorMatch != null) {
+      pendingAnchor = anchorMatch.group(1);
+      continue;
+    }
+    // Any other HTML comment is markup for the repository page only.
+    if (line.startsWith('<!--')) continue;
+
     if (line.startsWith('#')) {
       var level = 0;
       while (level < line.length && line[level] == '#') {
         level++;
       }
-      var text = line.substring(level).trim();
-      String? anchor;
-      var match = _anchorPattern.firstMatch(text);
-      if (match != null) {
-        anchor = match.group(1);
-        text = text.substring(0, match.start).trim();
-      }
-      blocks.add(
+      add(
         GuideBlock(
           type: switch (level) {
             1 => GuideBlockType.heading1,
             2 => GuideBlockType.heading2,
             _ => GuideBlockType.heading3,
           },
-          spans: parseGuideInline(text),
-          anchor: anchor,
+          spans: parseGuideInline(line.substring(level).trim()),
+          anchor: pendingAnchor,
         ),
       );
       continue;
     }
 
+    // Tables: the header separator carries no content, and the header row is
+    // dropped too — a two-column term/effect list reads fine without it.
+    if (line.startsWith('|')) {
+      if (_tableDividerPattern.hasMatch(line)) {
+        // Retroactively drop the header row this separator belongs to.
+        if (blocks.isNotEmpty && blocks.last.type == GuideBlockType.tableRow) {
+          blocks.removeLast();
+        }
+        continue;
+      }
+      var cells = line
+          .split('|')
+          .map((c) => c.trim())
+          .toList();
+      // A leading and trailing '|' produce empty outer entries.
+      if (cells.isNotEmpty && cells.first.isEmpty) cells.removeAt(0);
+      if (cells.isNotEmpty && cells.last.isEmpty) cells.removeLast();
+      if (cells.isNotEmpty) {
+        add(
+          GuideBlock(
+            type: GuideBlockType.tableRow,
+            spans: parseGuideInline(cells.first),
+            trailingSpans: parseGuideInline(cells.skip(1).join(' · ')),
+          ),
+        );
+        continue;
+      }
+    }
+
     if (line.startsWith('- ')) {
-      blocks.add(
+      add(
         GuideBlock(
           type: GuideBlockType.bullet,
           spans: parseGuideInline(line.substring(2).trim()),
@@ -115,7 +203,7 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
 
     var numbered = _numberedPattern.firstMatch(line);
     if (numbered != null) {
-      blocks.add(
+      add(
         GuideBlock(
           type: GuideBlockType.numbered,
           spans: parseGuideInline(line.substring(numbered.end).trim()),
@@ -126,7 +214,7 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
       continue;
     }
 
-    blocks.add(
+    add(
       GuideBlock(
         type: GuideBlockType.paragraph,
         spans: parseGuideInline(line),
@@ -146,10 +234,13 @@ List<GuideSpan> parseGuideInline(String text) {
       );
     }
     var bold = match.group(1);
+    var code = match.group(2);
     if (bold != null) {
       spans.add(GuideSpan(bold, GuideSpanStyle.bold));
+    } else if (code != null) {
+      spans.add(GuideSpan(code, GuideSpanStyle.code));
     } else {
-      spans.add(GuideSpan(match.group(2)!, GuideSpanStyle.code));
+      spans.add(GuideSpan(match.group(3)!, GuideSpanStyle.link));
     }
     cursor = match.end;
   }
