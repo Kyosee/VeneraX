@@ -992,11 +992,12 @@ bool _compatibleTextLines(IntRect a, IntRect b) {
         math.min(a.width, b.width) * 0.25;
     var shortFragments =
         a.width <= thicknessA * 12 && b.width <= thicknessB * 12;
-    var sameLine = shortFragments &&
+    var sameLine =
+        shortFragments &&
         _axisOverlap(a.top, a.bottom, b.top, b.bottom) >=
             math.min(a.height, b.height) * 0.6 &&
         _axisGap(a.left, a.right, b.left, b.right) <=
-            math.max(thicknessA, thicknessB) * 0.5;
+            _sameLineGap(thicknessA, thicknessB);
     return stacked || sameLine;
   }
   if (direction < 0) {
@@ -1005,11 +1006,12 @@ bool _compatibleTextLines(IntRect a, IntRect b) {
         math.min(a.height, b.height) * 0.25;
     var shortFragments =
         a.height <= thicknessA * 12 && b.height <= thicknessB * 12;
-    var sameColumn = shortFragments &&
+    var sameColumn =
+        shortFragments &&
         _axisOverlap(a.left, a.right, b.left, b.right) >=
             math.min(a.width, b.width) * 0.6 &&
         _axisGap(a.top, a.bottom, b.top, b.bottom) <=
-            math.max(thicknessA, thicknessB) * 0.5;
+            _sameLineGap(thicknessA, thicknessB);
     return adjacentColumns || sameColumn;
   }
   return true;
@@ -1056,6 +1058,12 @@ int _axisOverlap(int startA, int endA, int startB, int endB) =>
 
 int _axisGap(int startA, int endA, int startB, int endB) =>
     math.max(0, math.max(startA, startB) - math.min(endA, endB));
+
+/// Largest run-direction gap two fragments of one line may have. Word spacing
+/// and detector splits routinely leave most of a glyph height between pieces,
+/// so this sits close to the line thickness rather than well below it.
+double _sameLineGap(int thicknessA, int thicknessB) =>
+    math.max(thicknessA, thicknessB) * 0.8;
 
 IntRect _boundsOf(List<IntRect> boxes) {
   var result = IntRect(

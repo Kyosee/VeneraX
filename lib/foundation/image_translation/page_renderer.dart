@@ -236,6 +236,15 @@ void _drawText(
 /// Stroke width scales with the glyph so the outline reads at any size.
 double _strokeWidth(double fontSize) => math.max(1.5, fontSize * 0.14);
 
+/// Hard floor for the shrink-to-fit search. Nothing below this is legible, and
+/// without it a box the text can never fit into makes the search unbounded.
+const _minGlyphSize = 4.0;
+
+/// Narrowest width [_horizontalPainter] will lay out at. The fit test must use
+/// this, not the caller's box: `TextPainter.width` reports the layout
+/// constraint, so comparing against a narrower value is never satisfiable.
+const _minLayoutWidth = 8.0;
+
 TextStyle _fillStyle(ui.Color color, double fontSize) => TextStyle(
   color: color,
   fontSize: fontSize,
@@ -265,7 +274,7 @@ TextPainter _horizontalPainter(
     textAlign: TextAlign.center,
     textDirection: TextDirection.ltr,
   );
-  painter.layout(maxWidth: math.max(8, maxWidth));
+  painter.layout(maxWidth: math.max(_minLayoutWidth, maxWidth));
   return painter;
 }
 
@@ -325,15 +334,15 @@ void _drawVerticalText(
   }
   var upper = math.max(10.0, math.min(cap, maxWidth * 0.9));
   var size = upper;
-  var chosen = upper;
+  var chosen = _minGlyphSize;
   var perColumn = 1;
   var columns = chars.length;
   while (true) {
     var cell = size * 1.15;
     perColumn = math.max(1, (maxHeight / cell).floor());
     columns = (chars.length / perColumn).ceil();
-    if (columns * cell <= maxWidth) {
-      chosen = size;
+    if (columns * cell <= maxWidth || size <= _minGlyphSize) {
+      chosen = math.max(_minGlyphSize, size);
       break;
     }
     size *= 0.8;
@@ -399,17 +408,19 @@ double _fitFontSize(
     cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
   }
   var upper = math.max(10.0, math.min(cap, maxHeight * 0.8));
+  var layoutWidth = math.max(_minLayoutWidth, maxWidth);
   var size = upper;
-  while (true) {
+  while (size > _minGlyphSize) {
     var painter = _horizontalPainter(
       text,
       size,
       _fillStyle(const ui.Color(0xFF000000), size),
       maxWidth,
     );
-    var fits = painter.height <= maxHeight && painter.width <= maxWidth;
+    var fits = painter.height <= maxHeight && painter.width <= layoutWidth;
     painter.dispose();
     if (fits) return size;
     size *= 0.8;
   }
+  return _minGlyphSize;
 }
