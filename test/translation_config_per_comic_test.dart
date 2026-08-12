@@ -121,6 +121,13 @@ void main() {
     expect(b, startsWith('pageTranslation@'));
   });
 
+  test('the cache prefix uses the per-line erase generation', () {
+    expect(
+      TranslationConfig.global.cachePrefix,
+      startsWith('pageTranslation@2@'),
+    );
+  });
+
   test('local comics resolve without a source key', () {
     expect(TranslationConfig.of(cidA, null).sourceLang, 'auto');
     appdata.settings.setEnabledComicSpecificSettings(cidA, 'local', true);

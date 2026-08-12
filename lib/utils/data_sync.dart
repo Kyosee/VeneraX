@@ -757,7 +757,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // and completion bumps the epoch and keeps the account open (#114).
         final pendingEpochAtExport = _pendingChangesEpoch;
         data = await exportAppData(
-          sync: appdata.settings['disableSyncFields'].toString().isNotEmpty,
+          sync: true,
           includeLocalComics: _syncLocalComics(),
         );
 

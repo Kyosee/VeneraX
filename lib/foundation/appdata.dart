@@ -36,20 +36,18 @@ class Appdata with Init {
       );
 
       var disableSyncFields = json["settings"]["disableSyncFields"] as String;
-      if (disableSyncFields.isNotEmpty) {
-        var json4sync = jsonDecode(data);
-        List<String> customDisableSync = splitField(disableSyncFields);
-        for (var field in customDisableSync) {
-          json4sync["settings"].remove(field);
-        }
-        var data4sync = jsonEncode(json4sync);
-        futures.add(
-          writeStringAtomic(
-            FilePath.join(App.dataPath, 'syncdata.json'),
-            data4sync,
-          ),
-        );
+      var json4sync = jsonDecode(data);
+      var disabledFields = syncDisabledFields(splitField(disableSyncFields));
+      for (var field in disabledFields) {
+        json4sync["settings"].remove(field);
       }
+      var data4sync = jsonEncode(json4sync);
+      futures.add(
+        writeStringAtomic(
+          FilePath.join(App.dataPath, 'syncdata.json'),
+          data4sync,
+        ),
+      );
 
       await Future.wait(futures);
     } finally {
@@ -151,7 +149,20 @@ class Appdata with Init {
     // device's own system animations look like, so it stays with the device
     // (#194) rather than travelling from one phone to a tablet or desktop.
     "enablePredictiveBack",
+    // Throughput presets and their raw values are device-local. A desktop's
+    // custom concurrency must never replace a phone's memory-safe tuning.
+    "imageTranslationPerformancePreset",
+    "imageTranslationPreBatchPages",
+    "imageTranslationOcrWorkers",
+    "imageTranslationImageConcurrency",
+    "imageTranslationLlmConcurrency",
   ];
+
+  @visibleForTesting
+  static Set<String> syncDisabledFields(Iterable<String> customFields) => {
+    ..._disableSync,
+    ...customFields,
+  };
 
   /// Sync data from another device.
   ///
@@ -170,7 +181,7 @@ class Appdata with Init {
       int localDataVersion = _asVersion(this.settings['dataVersion']);
 
       for (var key in settings.keys) {
-        if (!_disableSync.contains(key) && !customDisableSync.contains(key)) {
+        if (!syncDisabledFields(customDisableSync).contains(key)) {
           this.settings[key] = settings[key];
         }
       }
@@ -476,7 +487,7 @@ class Settings with ChangeNotifier {
     'imageTranslationProviders': <dynamic>[],
     'imageTranslationActiveProviderId': '',
     // 新手性能档位；非 custom 时由设置页按当前设备写入下方四个兼容参数。
-    // 保存档位名，避免桌面并发上限原样同步到手机。
+    // 档位与数值均为设备本地设置，不进入跨设备同步。
     'imageTranslationPerformancePreset': 'balanced',
     // 预翻译时把多少页的气泡合并成一次 LLM 请求。1=逐页（默认）；更大值让模型
     // 一次看到更多上下文，译名/语气更连贯并减少请求数，代价是首批结果更晚出、

@@ -47,6 +47,7 @@ class TranslationStore {
     _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute(_createTableSql);
     _migrateSchema();
+    removeLegacyCacheRows(_db);
     isInitialized = true;
   }
 
@@ -83,6 +84,7 @@ class TranslationStore {
           ]);
           merged++;
         }
+        removeLegacyCacheRows(_db);
         _db.execute("COMMIT;");
       } catch (e) {
         _db.execute("ROLLBACK;");
@@ -106,6 +108,19 @@ class TranslationStore {
 
   /// Columns a foreign database must have for [mergeFrom] to read it.
   static const _requiredColumns = ["cache_key", "regions", "time"];
+
+  /// Generation 1 used broad erase bounds and cannot be rendered safely after
+  /// the per-line-mask upgrade. Those rows are unreachable by generation-2
+  /// lookups, so discard them on startup and after a backup merge.
+  @visibleForTesting
+  static void removeLegacyCacheRows(CommonDatabase db) {
+    db.execute(
+      "delete from translated_page "
+      "where cache_key like 'pageTranslation@%' "
+      "and substr(cache_key, length('pageTranslation@') + 1, 1) "
+      "not glob '[0-9]';",
+    );
+  }
 
   static const Map<String, String> _expectedColumns = {
     "cache_key": "text",

@@ -405,7 +405,7 @@ class _WorkerState {
     );
     var boxes = _detectBoxes(image, req.paths);
     if (boxes.isEmpty) return const [];
-    var clusters = _clusterBoxes(boxes, image.width, image.height);
+    var clusters = clusterOcrBoxes(boxes, image.width, image.height);
     clusters.sort((a, b) => _boundsOf(a).top.compareTo(_boundsOf(b).top));
     const maxBlocks = 32;
     if (clusters.length > maxBlocks) {
@@ -422,6 +422,13 @@ class _WorkerState {
         image.width,
         image.height,
       );
+      // DBNet already expands each component in post-processing. Keep the
+      // individual line boxes tight; the inpainter adds its own tiny glyph
+      // guard and must not reach into artwork between lines.
+      var eraseLines = [
+        for (var line in cluster)
+          line.inflated(0, 0, image.width, image.height),
+      ];
       var bounds = detectedBounds.inflated(4, 4, image.width, image.height);
       if (bounds.width < 8 || bounds.height < 8) continue;
       var colors = _sampleColors(image, bounds);
@@ -453,6 +460,7 @@ class _WorkerState {
         OcrBlock(
           rect: bounds,
           eraseRect: eraseBounds,
+          eraseRects: eraseLines,
           text: text,
           language: lang,
           backgroundColor: colors.$1,
@@ -876,8 +884,21 @@ List<IntRect> _detPostprocess(
   return boxes;
 }
 
-List<List<IntRect>> _clusterBoxes(List<IntRect> boxes, int width, int height) {
+/// Groups detector line boxes into OCR blocks without joining incompatible
+/// neighbouring captions or speech bubbles.
+List<List<IntRect>> clusterOcrBoxes(
+  List<IntRect> boxes,
+  int width,
+  int height,
+) {
   var parents = List<int>.generate(boxes.length, (i) => i);
+  var minThickness = [for (var box in boxes) math.min(box.width, box.height)];
+  var maxThickness = [...minThickness];
+  var hasHorizontal = [for (var box in boxes) _lineDirection(box) > 0];
+  var hasVertical = [for (var box in boxes) _lineDirection(box) < 0];
+  var members = [
+    for (var i = 0; i < boxes.length; i++) <int>[i],
+  ];
   int find(int i) {
     while (parents[i] != i) {
       parents[i] = parents[parents[i]];
@@ -902,8 +923,38 @@ List<List<IntRect>> _clusterBoxes(List<IntRect> boxes, int width, int height) {
   ];
   for (var i = 0; i < boxes.length; i++) {
     for (var j = i + 1; j < boxes.length; j++) {
-      if (inflated[i].intersects(inflated[j])) {
-        parents[find(i)] = find(j);
+      if (inflated[i].intersects(inflated[j]) &&
+          _compatibleTextLines(boxes[i], boxes[j])) {
+        var rootI = find(i);
+        var rootJ = find(j);
+        if (rootI == rootJ) continue;
+        var mergedHorizontal = hasHorizontal[rootI] || hasHorizontal[rootJ];
+        var mergedVertical = hasVertical[rootI] || hasVertical[rootJ];
+        var mergedMin = math.min(minThickness[rootI], minThickness[rootJ]);
+        var mergedMax = math.max(maxThickness[rootI], maxThickness[rootJ]);
+        if ((mergedHorizontal && mergedVertical) ||
+            mergedMax > math.max(1, mergedMin) * 2.2) {
+          continue;
+        }
+        var direction = mergedHorizontal
+            ? 1
+            : mergedVertical
+            ? -1
+            : 0;
+        if (!_compatibleTextGroups(
+          members[rootI],
+          members[rootJ],
+          boxes,
+          direction,
+        )) {
+          continue;
+        }
+        parents[rootJ] = rootI;
+        members[rootI].addAll(members[rootJ]);
+        minThickness[rootI] = mergedMin;
+        maxThickness[rootI] = mergedMax;
+        hasHorizontal[rootI] = mergedHorizontal;
+        hasVertical[rootI] = mergedVertical;
       }
     }
   }
@@ -913,6 +964,98 @@ List<List<IntRect>> _clusterBoxes(List<IntRect> boxes, int width, int height) {
   }
   return groups.values.toList();
 }
+
+int _lineDirection(IntRect box) {
+  if (box.width >= box.height * 1.25) return 1;
+  if (box.height >= box.width * 1.25) return -1;
+  return 0;
+}
+
+bool _compatibleTextLines(IntRect a, IntRect b) {
+  var directionA = _lineDirection(a);
+  var directionB = _lineDirection(b);
+  if (directionA != 0 && directionB != 0 && directionA != directionB) {
+    return false;
+  }
+
+  var thicknessA = math.min(a.width, a.height);
+  var thicknessB = math.min(b.width, b.height);
+  if (math.max(thicknessA, thicknessB) >
+      math.max(1, math.min(thicknessA, thicknessB)) * 2.2) {
+    return false;
+  }
+
+  var direction = directionA != 0 ? directionA : directionB;
+  if (direction > 0) {
+    var stacked =
+        _axisOverlap(a.left, a.right, b.left, b.right) >=
+        math.min(a.width, b.width) * 0.25;
+    var shortFragments =
+        a.width <= thicknessA * 12 && b.width <= thicknessB * 12;
+    var sameLine = shortFragments &&
+        _axisOverlap(a.top, a.bottom, b.top, b.bottom) >=
+            math.min(a.height, b.height) * 0.6 &&
+        _axisGap(a.left, a.right, b.left, b.right) <=
+            math.max(thicknessA, thicknessB) * 0.5;
+    return stacked || sameLine;
+  }
+  if (direction < 0) {
+    var adjacentColumns =
+        _axisOverlap(a.top, a.bottom, b.top, b.bottom) >=
+        math.min(a.height, b.height) * 0.25;
+    var shortFragments =
+        a.height <= thicknessA * 12 && b.height <= thicknessB * 12;
+    var sameColumn = shortFragments &&
+        _axisOverlap(a.left, a.right, b.left, b.right) >=
+            math.min(a.width, b.width) * 0.6 &&
+        _axisGap(a.top, a.bottom, b.top, b.bottom) <=
+            math.max(thicknessA, thicknessB) * 0.5;
+    return adjacentColumns || sameColumn;
+  }
+  return true;
+}
+
+bool _compatibleTextGroups(
+  List<int> groupA,
+  List<int> groupB,
+  List<IntRect> boxes,
+  int direction,
+) {
+  for (var indexA in groupA) {
+    for (var indexB in groupB) {
+      var a = boxes[indexA];
+      var b = boxes[indexB];
+      if (direction > 0) {
+        var sameLine =
+            _axisOverlap(a.top, a.bottom, b.top, b.bottom) >=
+            math.min(a.height, b.height) * 0.6;
+        if (!sameLine &&
+            _axisOverlap(a.left, a.right, b.left, b.right) <
+                math.min(a.width, b.width) * 0.25) {
+          return false;
+        }
+      } else if (direction < 0) {
+        var sameColumn =
+            _axisOverlap(a.left, a.right, b.left, b.right) >=
+            math.min(a.width, b.width) * 0.6;
+        if (!sameColumn &&
+            _axisOverlap(a.top, a.bottom, b.top, b.bottom) <
+                math.min(a.height, b.height) * 0.25) {
+          return false;
+        }
+      } else if (!_compatibleTextLines(a, b)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+int _axisOverlap(int startA, int endA, int startB, int endB) =>
+    math.max(0, math.min(endA, endB) - math.max(startA, startB));
+
+int _axisGap(int startA, int endA, int startB, int endB) =>
+    math.max(0, math.max(startA, startB) - math.min(endA, endB));
 
 IntRect _boundsOf(List<IntRect> boxes) {
   var result = IntRect(

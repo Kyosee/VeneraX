@@ -177,41 +177,60 @@ void _drawText(
   ui.Color color, {
   ui.Color? outline,
 }) {
-  if (_prefersVertical(region.text, rect)) {
-    _drawVerticalText(canvas, region.text, color, rect,
-        outline: outline, lineHeight: region.lineHeight);
+  if (rect.width <= 4 || rect.height <= 4 || region.text.trim().isEmpty) {
     return;
   }
-  var maxWidth = rect.width - 4;
-  var maxHeight = rect.height - 4;
-  var size = _fitFontSize(region.text, maxWidth, maxHeight,
-      lineHeight: region.lineHeight);
-  if (outline != null) {
-    var strokePainter = _horizontalPainter(
+  canvas.save();
+  canvas.clipRect(rect);
+  try {
+    if (_prefersVertical(region.text, rect)) {
+      _drawVerticalText(
+        canvas,
+        region.text,
+        color,
+        rect,
+        outline: outline,
+        lineHeight: region.lineHeight,
+      );
+      return;
+    }
+    var maxWidth = rect.width - 4;
+    var maxHeight = rect.height - 4;
+    var size = _fitFontSize(
+      region.text,
+      maxWidth,
+      maxHeight,
+      lineHeight: region.lineHeight,
+    );
+    if (outline != null) {
+      var strokePainter = _horizontalPainter(
+        region.text,
+        size,
+        _strokeStyle(outline, size),
+        maxWidth,
+      );
+      var strokeOffset = ui.Offset(
+        rect.left + (rect.width - strokePainter.width) / 2,
+        rect.top + (rect.height - strokePainter.height) / 2,
+      );
+      strokePainter.paint(canvas, strokeOffset);
+      strokePainter.dispose();
+    }
+    var painter = _horizontalPainter(
       region.text,
       size,
-      _strokeStyle(outline, size),
+      _fillStyle(color, size),
       maxWidth,
     );
-    var strokeOffset = ui.Offset(
-      rect.left + (rect.width - strokePainter.width) / 2,
-      rect.top + (rect.height - strokePainter.height) / 2,
+    var offset = ui.Offset(
+      rect.left + (rect.width - painter.width) / 2,
+      rect.top + (rect.height - painter.height) / 2,
     );
-    strokePainter.paint(canvas, strokeOffset);
-    strokePainter.dispose();
+    painter.paint(canvas, offset);
+    painter.dispose();
+  } finally {
+    canvas.restore();
   }
-  var painter = _horizontalPainter(
-    region.text,
-    size,
-    _fillStyle(color, size),
-    maxWidth,
-  );
-  var offset = ui.Offset(
-    rect.left + (rect.width - painter.width) / 2,
-    rect.top + (rect.height - painter.height) / 2,
-  );
-  painter.paint(canvas, offset);
-  painter.dispose();
 }
 
 /// Stroke width scales with the glyph so the outline reads at any size.
@@ -305,12 +324,11 @@ void _drawVerticalText(
     cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
   }
   var upper = math.max(10.0, math.min(cap, maxWidth * 0.9));
-  const lower = 7.0;
   var size = upper;
-  var chosen = lower;
+  var chosen = upper;
   var perColumn = 1;
   var columns = chars.length;
-  while (size >= lower) {
+  while (true) {
     var cell = size * 1.15;
     perColumn = math.max(1, (maxHeight / cell).floor());
     columns = (chars.length / perColumn).ceil();
@@ -318,8 +336,7 @@ void _drawVerticalText(
       chosen = size;
       break;
     }
-    chosen = size;
-    size -= 1.5;
+    size *= 0.8;
   }
 
   var cellH = chosen * 1.15;
@@ -333,8 +350,9 @@ void _drawVerticalText(
   var top = rect.top + (rect.height - blockH) / 2;
 
   var fillStyle = _fillStyle(color, chosen).copyWith(height: 1.0);
-  var strokeStyle =
-      outline == null ? null : _strokeStyle(outline, chosen).copyWith(height: 1.0);
+  var strokeStyle = outline == null
+      ? null
+      : _strokeStyle(outline, chosen).copyWith(height: 1.0);
 
   for (var col = 0; col < columns; col++) {
     var colCenterX = startRight - (col + 0.5) * cellW;
@@ -346,7 +364,10 @@ void _drawVerticalText(
         var sp = glyph(chars[index], chosen, strokeStyle);
         sp.paint(
           canvas,
-          ui.Offset(colCenterX - sp.width / 2, dyBase + (cellH - sp.height) / 2),
+          ui.Offset(
+            colCenterX - sp.width / 2,
+            dyBase + (cellH - sp.height) / 2,
+          ),
         );
         sp.dispose();
       }
@@ -378,17 +399,17 @@ double _fitFontSize(
     cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
   }
   var upper = math.max(10.0, math.min(cap, maxHeight * 0.8));
-  const lower = 7.0;
   var size = upper;
-  while (size > lower) {
-    var painter = _horizontalPainter(text, size, _fillStyle(
-      const ui.Color(0xFF000000),
+  while (true) {
+    var painter = _horizontalPainter(
+      text,
       size,
-    ), maxWidth);
+      _fillStyle(const ui.Color(0xFF000000), size),
+      maxWidth,
+    );
     var fits = painter.height <= maxHeight && painter.width <= maxWidth;
     painter.dispose();
     if (fits) return size;
-    size -= 1.5;
+    size *= 0.8;
   }
-  return lower;
 }

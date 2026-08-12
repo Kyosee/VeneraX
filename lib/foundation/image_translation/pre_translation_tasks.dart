@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -10,6 +11,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_translation/ordered_group_committer.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
+import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
@@ -478,7 +480,12 @@ class PreTranslationTaskManager with ChangeNotifier {
     // committer starts at group 0 = the first range processed here (counts for
     // pages before startIndex are already in chapter.done/failed).
     var committer = OrderedGroupCommitter(0);
-    var overlap = _pipelineConcurrency;
+    var overlap = pipelineConcurrencyFor(
+      TranslationPerformanceConfig.effective,
+      isMobile: App.isMobile,
+      sourceLang: task.config.sourceLang,
+      hasJapaneseModel: TranslationModels.workerPaths().jaEncoder != null,
+    );
     var next = 0;
     // Self-removing set: each launched future removes itself on completion, so
     // after `await Future.any(active)` the finished group is already gone and
@@ -539,8 +546,18 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// How many pre-translation groups may be in flight at once. Bounded by the
   /// LLM concurrency setting (the pipeline's scarcest shared resource); the
   /// per-source image gate and OCR worker pool further shape actual parallelism.
-  int get _pipelineConcurrency {
-    return TranslationPerformanceConfig.effective.llmConcurrency.clamp(1, 4);
+  @visibleForTesting
+  static int pipelineConcurrencyFor(
+    TranslationPerformanceValues performance, {
+    required bool isMobile,
+    required String sourceLang,
+    required bool hasJapaneseModel,
+  }) {
+    if (isMobile &&
+        (sourceLang == 'ja' || (sourceLang == 'auto' && hasJapaneseModel))) {
+      return 1;
+    }
+    return performance.llmConcurrency.clamp(1, 4);
   }
 
   /// Re-runs only the pages that failed, across every chapter that has any.

@@ -188,6 +188,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
         context,
         message: "Loading".tl,
         allowCancel: false,
+        barrierDismissible: false,
       );
       List<String>? models;
       try {

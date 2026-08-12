@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
+import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 
 void main() {
   test('unknown and old settings default to balanced', () {
@@ -80,5 +81,55 @@ void main() {
     expect(values.ocrWorkers, 2);
     expect(values.imageConcurrency, 3);
     expect(values.llmConcurrency, 3);
+  });
+
+  test('mobile Japanese pipeline keeps one group in flight', () {
+    var performance = TranslationPerformanceConfig.valuesFor(
+      TranslationPerformancePreset.fast,
+      isDesktop: false,
+    );
+    expect(
+      PreTranslationTaskManager.pipelineConcurrencyFor(
+        performance,
+        isMobile: true,
+        sourceLang: 'ja',
+        hasJapaneseModel: true,
+      ),
+      1,
+    );
+    expect(
+      PreTranslationTaskManager.pipelineConcurrencyFor(
+        performance,
+        isMobile: true,
+        sourceLang: 'auto',
+        hasJapaneseModel: true,
+      ),
+      1,
+    );
+  });
+
+  test('desktop pipeline follows LLM concurrency', () {
+    var performance = TranslationPerformanceConfig.valuesFor(
+      TranslationPerformancePreset.fast,
+      isDesktop: true,
+    );
+    expect(
+      PreTranslationTaskManager.pipelineConcurrencyFor(
+        performance,
+        isMobile: false,
+        sourceLang: 'ja',
+        hasJapaneseModel: true,
+      ),
+      performance.llmConcurrency,
+    );
+  });
+
+  test('performance tuning is excluded from cross-device sync', () {
+    var disabled = Appdata.syncDisabledFields(const []);
+    expect(disabled, contains(TranslationPerformanceConfig.settingKey));
+    expect(disabled, contains('imageTranslationPreBatchPages'));
+    expect(disabled, contains('imageTranslationOcrWorkers'));
+    expect(disabled, contains('imageTranslationImageConcurrency'));
+    expect(disabled, contains('imageTranslationLlmConcurrency'));
   });
 }

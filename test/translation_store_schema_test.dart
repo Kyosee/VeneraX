@@ -91,6 +91,49 @@ void main() {
     });
   });
 
+  group('TranslationStore.removeLegacyCacheRows', () {
+    late CommonDatabase db;
+
+    setUp(() {
+      db = sqlite3.open(':memory:');
+      db.execute('''
+        create table translated_page (
+          cache_key text primary key,
+          regions text,
+          time int
+        );
+      ''');
+    });
+
+    tearDown(() => db.dispose());
+
+    test('removes generation 1 and keeps generation 2', () {
+      for (var key in [
+        'pageTranslation@ja>zh@src@cid@ch@1',
+        'pageTranslation@2@ja>zh@src@cid@ch@1',
+        'pageTranslation@3@ja>zh@src@cid@ch@1',
+        'other@row',
+      ]) {
+        db.execute(
+          "insert into translated_page values (?, '[]', 0);",
+          [key],
+        );
+      }
+
+      TranslationStore.removeLegacyCacheRows(db);
+
+      var keys = db
+          .select('select cache_key from translated_page order by cache_key;')
+          .map((row) => row['cache_key'])
+          .toList();
+      expect(keys, [
+        'other@row',
+        'pageTranslation@2@ja>zh@src@cid@ch@1',
+        'pageTranslation@3@ja>zh@src@cid@ch@1',
+      ]);
+    });
+  });
+
   // Mirrors TranslationStore.countByPrefix against a raw in-memory db (the
   // store itself needs DatabaseGateway + IO). Guards the two properties the
   // chapter-picker "already translated" fallback relies on: a chapter prefix

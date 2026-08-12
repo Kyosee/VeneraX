@@ -130,6 +130,20 @@ void main() {
       expect(_lum(img, 12, 30), lessThan(60));
     });
 
+    test('erases dense lettering next to a page edge', () {
+      var img = _solid(40, 20, 245, 245, 245);
+      for (var y = 1; y < 17; y++) {
+        for (var x = 1; x < 39; x++) {
+          var i = (y * 40 + x) * 4;
+          img.pixels[i] = img.pixels[i + 1] = img.pixels[i + 2] = 20;
+        }
+      }
+
+      TextInpainter.erase(img, [IntRect(0, 0, 40, 20)]);
+
+      expect(_lum(img, 20, 10), greaterThan(200));
+    });
+
     test('skips tiny regions without error', () {
       var img = _solid(10, 10, 255, 255, 255);
       // A 2px rect is below the working-window minimum.
@@ -221,6 +235,63 @@ void main() {
       var restored = TranslatedRegion.fromJson(region.toJson());
       expect(restored.eraseRect.left, 4);
       expect(restored.eraseRect.bottom, 36);
+    });
+
+    test('round-trips per-line erase rectangles', () {
+      var region = TranslatedRegion(
+        rect: IntRect(1, 2, 60, 80),
+        eraseRect: IntRect(4, 5, 56, 76),
+        eraseRects: [IntRect(4, 5, 40, 20), IntRect(8, 28, 56, 44)],
+        text: 'translated',
+        backgroundColor: 0xFFFFFFFF,
+        textColor: 0xFF000000,
+      );
+
+      var restored = TranslatedRegion.fromJson(region.toJson());
+
+      expect(restored.eraseRects, hasLength(2));
+      expect(restored.eraseRects.first.left, 4);
+      expect(restored.eraseRects.last.bottom, 44);
+    });
+
+    test('old tighter entries expose one erase rectangle', () {
+      var region = TranslatedRegion.fromJson({
+        'l': 1,
+        't': 2,
+        'r': 60,
+        'b': 80,
+        'el': 4,
+        'et': 5,
+        'er': 56,
+        'eb': 76,
+        'text': 'translated',
+        'bg': 0xFFFFFFFF,
+        'fg': 0xFF000000,
+      });
+
+      expect(region.eraseRects, hasLength(1));
+      expect(region.eraseRects.single.left, 4);
+      expect(region.eraseRects.single.bottom, 76);
+    });
+
+    test('ignores invalid per-line erase rectangles', () {
+      var region = TranslatedRegion.fromJson({
+        'l': 1,
+        't': 2,
+        'r': 60,
+        'b': 80,
+        'es': [
+          [4, 5, 4, 20],
+          [30, 30, 10, 40],
+        ],
+        'text': 'translated',
+        'bg': 0xFFFFFFFF,
+        'fg': 0xFF000000,
+      });
+
+      expect(region.eraseRects, hasLength(1));
+      expect(region.eraseRects.single.left, 1);
+      expect(region.eraseRects.single.bottom, 80);
     });
   });
 }

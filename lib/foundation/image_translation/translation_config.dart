@@ -67,5 +67,8 @@ class TranslationConfig {
   /// translated with these languages starts with it, so changing the pair
   /// naturally addresses a different cache generation instead of serving pages
   /// translated into another language.
-  String get cachePrefix => 'pageTranslation@$sourceLang>$targetLang@';
+  // Generation 2 stores per-line erase rectangles and uses stricter OCR block
+  // grouping. Reusing generation-1 rows would keep their broad erase boxes and
+  // could still remove artwork even though the renderer itself was fixed.
+  String get cachePrefix => 'pageTranslation@2@$sourceLang>$targetLang@';
 }

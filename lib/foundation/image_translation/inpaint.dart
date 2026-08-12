@@ -116,13 +116,17 @@ abstract final class TextInpainter {
         }
       }
     }
-    // Nothing found, or more than 60% of the window flagged: stroke detection
-    // is untrustworthy here (a stylized/low-contrast crop the Otsu split
-    // misread, or dense bold lettering / heavy screentone). Bail rather than
-    // erase — a solid fill over the whole box smears art titles and thick
-    // display lettering into a blur, so it's better to leave the original and
-    // draw the translation over it.
-    if (maskCount == 0 || maskCount > n * 0.6) return null;
+    // Judge density against the detector rectangle, not the padded sampling
+    // window. Near a page edge that padding is clipped; using the smaller
+    // clipped window made dense title lettering look like an invalid mask and
+    // left the source text underneath the translation. Still reject a crop
+    // where almost the whole OCR rectangle became foreground, which is much
+    // more likely to be line art or screentone than glyphs.
+    var allowedArea = math.max(
+      1,
+      (allowedRight - allowedLeft) * (allowedBottom - allowedTop),
+    );
+    if (maskCount == 0 || maskCount > allowedArea * 0.85) return null;
 
     // Drop isolated speck components (threshold noise) before erasing: an
     // erased+filled speck becomes a faint smudge on otherwise clean art. Only

@@ -41,18 +41,24 @@ class OcrBlock {
   OcrBlock({
     required this.rect,
     IntRect? eraseRect,
+    List<IntRect>? eraseRects,
     required this.text,
     required this.language,
     required this.backgroundColor,
     required this.textColor,
     this.lineHeight = 0,
-  }) : eraseRect = eraseRect ?? rect;
+  }) : eraseRect = eraseRect ?? rect,
+       eraseRects = eraseRects ?? [eraseRect ?? rect];
 
   /// Area available to the translated lettering.
   final IntRect rect;
 
   /// Tighter detected-source area used only for removing the original glyphs.
   final IntRect eraseRect;
+
+  /// Individual detected text-line areas. Keeping gaps out of these masks
+  /// prevents nearby artwork inside the block bounds from being erased.
+  final List<IntRect> eraseRects;
 
   /// Recognized source text.
   final String text;
@@ -75,11 +81,13 @@ class TranslatedRegion {
   TranslatedRegion({
     required this.rect,
     IntRect? eraseRect,
+    List<IntRect>? eraseRects,
     required this.text,
     required this.backgroundColor,
     required this.textColor,
     this.lineHeight = 0,
-  }) : eraseRect = eraseRect ?? rect;
+  }) : eraseRect = eraseRect ?? rect,
+       eraseRects = eraseRects ?? [eraseRect ?? rect];
 
   /// Area available to the translated lettering.
   final IntRect rect;
@@ -87,6 +95,10 @@ class TranslatedRegion {
   /// Tighter source-text area. Kept separate so erasing never has to cover the
   /// full layout box when the translation needs more room.
   final IntRect eraseRect;
+
+  /// Per-line source rectangles used by the inpainter. [eraseRect] remains as
+  /// the backward-compatible union for older cached results.
+  final List<IntRect> eraseRects;
   final String text;
   final int backgroundColor;
   final int textColor;
@@ -113,16 +125,42 @@ class TranslatedRegion {
       'er': eraseRect.right,
       'eb': eraseRect.bottom,
     },
+    if (!_sameEraseRects(eraseRects, eraseRect))
+      'es': [
+        for (var rect in eraseRects)
+          [rect.left, rect.top, rect.right, rect.bottom],
+      ],
     if (lineHeight > 0) 'lh': lineHeight,
   };
 
   factory TranslatedRegion.fromJson(Map<String, dynamic> json) {
     var rect = IntRect(json['l'], json['t'], json['r'], json['b']);
+    var eraseRect = json['el'] == null
+        ? rect
+        : IntRect(json['el'], json['et'], json['er'], json['eb']);
+    var storedEraseRects = json['es'];
+    var eraseRects = <IntRect>[];
+    if (storedEraseRects is List) {
+      for (var stored in storedEraseRects) {
+        if (stored is List &&
+            stored.length == 4 &&
+            stored.every((value) => value is num)) {
+          var candidate = IntRect(
+            (stored[0] as num).toInt(),
+            (stored[1] as num).toInt(),
+            (stored[2] as num).toInt(),
+            (stored[3] as num).toInt(),
+          );
+          if (candidate.width > 0 && candidate.height > 0) {
+            eraseRects.add(candidate);
+          }
+        }
+      }
+    }
     return TranslatedRegion(
       rect: rect,
-      eraseRect: json['el'] == null
-          ? rect
-          : IntRect(json['el'], json['et'], json['er'], json['eb']),
+      eraseRect: eraseRect,
+      eraseRects: eraseRects.isEmpty ? null : eraseRects,
       text: json['text'],
       backgroundColor: json['bg'],
       textColor: json['fg'],
@@ -135,6 +173,9 @@ class TranslatedRegion {
       a.top == b.top &&
       a.right == b.right &&
       a.bottom == b.bottom;
+
+  static bool _sameEraseRects(List<IntRect> rects, IntRect eraseRect) =>
+      rects.length == 1 && _sameRect(rects.single, eraseRect);
 }
 
 class PipelineCanceled implements Exception {
