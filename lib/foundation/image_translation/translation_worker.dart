@@ -68,6 +68,100 @@ class _WorkerResponse {
   final String? error;
 }
 
+/// Resolves the OCR worker count without touching platform or settings state.
+/// Kept public so the mobile memory policy can be covered by a pure unit test.
+int resolveOcrPoolSize({
+  required int requested,
+  required int processorCount,
+  required bool isMobile,
+  required bool isDesktop,
+  required String sourceLang,
+  required bool hasJapaneseModel,
+}) {
+  if (isMobile &&
+      (sourceLang == 'ja' || (sourceLang == 'auto' && hasJapaneseModel))) {
+    return 1;
+  }
+  if (requested > 0) {
+    return requested.clamp(1, isMobile ? 2 : 6);
+  }
+  var automatic = processorCount ~/ 2;
+  return automatic.clamp(1, isDesktop ? 3 : 2);
+}
+
+/// Conservative page-local hint for auto OCR. Only the first two blocks with
+/// unambiguous script evidence participate; a disagreement disables the hint.
+/// Han-only text is deliberately not evidence, except vertical Japanese text.
+class OcrPageEngineHint {
+  String? _candidate;
+  var _evidenceCount = 0;
+  var _settled = false;
+
+  String? get preferredEngine => _evidenceCount >= 2 ? _candidate : null;
+
+  void observe({
+    required String text,
+    required String language,
+    required String engine,
+    required bool isVertical,
+  }) {
+    if (_settled) return;
+    var signal = strongOcrEngineSignal(
+      text: text,
+      language: language,
+      engine: engine,
+      isVertical: isVertical,
+    );
+    if (signal == null) return;
+    if (_candidate == null) {
+      _candidate = signal;
+      _evidenceCount = 1;
+      return;
+    }
+    _settled = true;
+    if (_candidate == signal) {
+      _evidenceCount = 2;
+    } else {
+      _candidate = null;
+      _evidenceCount = 0;
+    }
+  }
+}
+
+String? strongOcrEngineSignal({
+  required String text,
+  required String language,
+  required String engine,
+  required bool isVertical,
+}) {
+  if (language != engine) return null;
+  var hasKana = false;
+  var hasHangul = false;
+  var hasHan = false;
+  var hasLatin = false;
+  for (var rune in text.runes) {
+    if ((rune >= 0x3040 && rune <= 0x30FF) ||
+        (rune >= 0x31F0 && rune <= 0x31FF)) {
+      hasKana = true;
+    } else if ((rune >= 0xAC00 && rune <= 0xD7AF) ||
+        (rune >= 0x1100 && rune <= 0x11FF)) {
+      hasHangul = true;
+    } else if ((rune >= 0x4E00 && rune <= 0x9FFF) ||
+        (rune >= 0x3400 && rune <= 0x4DBF)) {
+      hasHan = true;
+    } else if ((rune >= 0x41 && rune <= 0x5A) ||
+        (rune >= 0x61 && rune <= 0x7A)) {
+      hasLatin = true;
+    }
+  }
+  if (language == 'ja' && (hasKana || (engine == 'ja' && isVertical))) {
+    return engine;
+  }
+  if (language == 'ko' && hasHangul) return engine;
+  if (language == 'en' && hasLatin && !hasHan) return engine;
+  return null;
+}
+
 // ===========================================================================
 // Main-isolate client
 // ===========================================================================
@@ -87,14 +181,17 @@ class TranslationWorker {
 
   final _workers = <_IsolateWorker>[];
 
-  /// Pool size: settings value when >0 (clamped 1..6), else auto by platform.
-  int get _poolSize {
+  int _poolSize(String sourceLang, WorkerModelPaths paths) {
     var setting = appdata.settings['imageTranslationOcrWorkers'];
     var n = setting is int ? setting : int.tryParse('$setting') ?? 0;
-    if (n > 0) return n.clamp(1, 6);
-    var auto = Platform.numberOfProcessors ~/ 2;
-    var cap = App.isDesktop ? 3 : 2;
-    return auto.clamp(1, cap);
+    return resolveOcrPoolSize(
+      requested: n,
+      processorCount: Platform.numberOfProcessors,
+      isMobile: App.isMobile,
+      isDesktop: App.isDesktop,
+      sourceLang: sourceLang,
+      hasJapaneseModel: paths.jaEncoder != null,
+    );
   }
 
   Future<List<OcrBlock>> ocrPage(
@@ -102,7 +199,8 @@ class TranslationWorker {
     required String sourceLang,
     required WorkerModelPaths paths,
   }) {
-    var poolSize = _poolSize;
+    var poolSize = _poolSize(sourceLang, paths);
+    _trimIdleWorkers(poolSize);
     // Keep total ONNX intra-op threads ~= cores: dividing by the pool size
     // avoids oversubscribing the CPU (which would make more workers slower).
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
@@ -116,20 +214,30 @@ class TranslationWorker {
   }
 
   _IsolateWorker _pickWorker(int poolSize) {
+    var eligibleCount = math.min(poolSize, _workers.length);
     // Prefer an idle existing worker — avoids spawning (and re-loading models
     // into) a new isolate when load is low.
-    for (var w in _workers) {
+    for (var w in _workers.take(eligibleCount)) {
       if (w.pendingCount == 0) return w;
     }
     // Under capacity and all busy: add a worker for more parallelism.
-    if (_workers.length < poolSize) {
+    if (eligibleCount < poolSize) {
       var worker = _IsolateWorker();
-      _workers.add(worker);
+      _workers.insert(eligibleCount, worker);
       return worker;
     }
     // At capacity: dispatch to the least-busy worker.
-    var idx = pickLeastBusyIndex([for (var w in _workers) w.pendingCount]);
+    var idx = pickLeastBusyIndex([
+      for (var w in _workers.take(poolSize)) w.pendingCount,
+    ]);
     return _workers[idx];
+  }
+
+  void _trimIdleWorkers(int poolSize) {
+    for (var i = _workers.length - 1; i >= poolSize; i--) {
+      if (_workers[i].pendingCount != 0) continue;
+      _workers.removeAt(i).dispose();
+    }
   }
 
   /// Frees model memory in every worker (sessions re-create lazily).
@@ -306,13 +414,37 @@ class _WorkerState {
     }
 
     var blocks = <OcrBlock>[];
+    var pageHint = OcrPageEngineHint();
     for (var cluster in clusters) {
-      var bounds = _boundsOf(cluster).inflated(4, 4, image.width, image.height);
+      var detectedBounds = _boundsOf(cluster);
+      var eraseBounds = detectedBounds.inflated(
+        2,
+        2,
+        image.width,
+        image.height,
+      );
+      var bounds = detectedBounds.inflated(4, 4, image.width, image.height);
       if (bounds.width < 8 || bounds.height < 8) continue;
       var colors = _sampleColors(image, bounds);
-      var (text, lang) = _recognizeBlock(image, cluster, bounds, req);
+      var recognized = _recognizeBlock(
+        image,
+        cluster,
+        bounds,
+        req,
+        preferredEngine: pageHint.preferredEngine,
+      );
+      var text = recognized.text;
+      var lang = recognized.language;
       text = text.trim();
       if (text.isEmpty) continue;
+      if (req.sourceLang == 'auto') {
+        pageHint.observe(
+          text: text,
+          language: lang,
+          engine: recognized.engine,
+          isVertical: bounds.height > bounds.width * 1.3,
+        );
+      }
       // Median line height across the cluster's line boxes ≈ the original
       // glyph height, so the renderer can size the translation to match the
       // source text instead of stretching it to fill the (often much taller)
@@ -321,6 +453,7 @@ class _WorkerState {
       blocks.add(
         OcrBlock(
           rect: bounds,
+          eraseRect: eraseBounds,
           text: text,
           language: lang,
           backgroundColor: colors.$1,
@@ -344,12 +477,13 @@ class _WorkerState {
   /// engine and horizontal blocks try the installed engines in order until
   /// one produces plausible text; the language is then derived from the
   /// recognized script.
-  (String, String) _recognizeBlock(
+  ({String text, String language, String engine}) _recognizeBlock(
     RgbaImage image,
     List<IntRect> lines,
     IntRect bounds,
-    _OcrPageRequest req,
-  ) {
+    _OcrPageRequest req, {
+    String? preferredEngine,
+  }) {
     var paths = req.paths;
     var hasJa = paths.jaEncoder != null;
 
@@ -358,11 +492,12 @@ class _WorkerState {
       engineOrder = [req.sourceLang];
     } else {
       var vertical = bounds.height > bounds.width * 1.3;
-      engineOrder = [
+      engineOrder = <String>{
+        if (preferredEngine != null) preferredEngine,
         if (vertical && hasJa) 'ja',
         ...paths.recModels.keys,
         if (!vertical && hasJa) 'ja',
-      ];
+      }.toList();
     }
 
     for (var engine in engineOrder) {
@@ -376,13 +511,17 @@ class _WorkerState {
       }
       text = text.trim();
       if (_isPlausible(text)) {
-        return (text, _detectLanguage(text, engine));
+        return (
+          text: text,
+          language: _detectLanguage(text, engine),
+          engine: engine,
+        );
       }
     }
     // No engine produced plausible text: return empty so the block is dropped
     // rather than emitting garbled OCR — that region then shows the original
     // art untouched (no erase, no lettering) instead of a mistranslation.
-    return ('', 'unknown');
+    return (text: '', language: 'unknown', engine: 'unknown');
   }
 
   bool _isPlausible(String text) {
@@ -491,10 +630,7 @@ class _WorkerState {
     var ids = <int>[startToken];
     while (ids.length < maxTokens) {
       var next = decoder.runArgmaxLastRow({
-        'input_ids': OrtInput.int64(
-          Int64List.fromList(ids),
-          [1, ids.length],
-        ),
+        'input_ids': OrtInput.int64(Int64List.fromList(ids), [1, ids.length]),
         'encoder_hidden_states': OrtInput.float32(hidden.data, hidden.shape),
       }, decoder.outputNames.first);
       if (next == eosToken) break;
@@ -553,9 +689,10 @@ class _WorkerState {
     for (var line in sorted) {
       var rect = line.inflated(2, 2, image.width, image.height);
       if (rect.width < 8 || rect.height < 8) continue;
-      var outW = (rect.width * height / math.max(1, rect.height))
-          .round()
-          .clamp(16, 960);
+      var outW = (rect.width * height / math.max(1, rect.height)).round().clamp(
+        16,
+        960,
+      );
       outW = (outW / 8).ceil() * 8;
       var tensor = _cropNormalized(image, rect, outW, height);
       var output = session
@@ -628,14 +765,14 @@ Uint8List _resizeRegion(RgbaImage src, IntRect region, int outW, int outH) {
       var wx = fx - fx.floor();
       var outIndex = (y * outW + x) * 4;
       for (var c = 0; c < 4; c++) {
-        var p00 =
-            src.pixels[((region.top + y0) * src.width + region.left + x0) * 4 + c];
-        var p01 =
-            src.pixels[((region.top + y0) * src.width + region.left + x1) * 4 + c];
-        var p10 =
-            src.pixels[((region.top + y1) * src.width + region.left + x0) * 4 + c];
-        var p11 =
-            src.pixels[((region.top + y1) * src.width + region.left + x1) * 4 + c];
+        var p00 = src
+            .pixels[((region.top + y0) * src.width + region.left + x0) * 4 + c];
+        var p01 = src
+            .pixels[((region.top + y0) * src.width + region.left + x1) * 4 + c];
+        var p10 = src
+            .pixels[((region.top + y1) * src.width + region.left + x0) * 4 + c];
+        var p11 = src
+            .pixels[((region.top + y1) * src.width + region.left + x1) * 4 + c];
         var top = p00 + (p01 - p00) * wx;
         var bottom = p10 + (p11 - p10) * wx;
         out[outIndex + c] = (top + (bottom - top) * wy).round().clamp(0, 255);
@@ -873,7 +1010,8 @@ Float32List _cropNormalized(RgbaImage image, IntRect rect, int outW, int outH) {
 
   if (lum.length < 8) {
     var bg = ringMedianColor();
-    var bgLum = 0.299 * ((bg >> 16) & 0xFF) +
+    var bgLum =
+        0.299 * ((bg >> 16) & 0xFF) +
         0.587 * ((bg >> 8) & 0xFF) +
         0.114 * (bg & 0xFF);
     return (bg, bgLum < 128 ? 0xFFF5F5F5 : 0xFF202020);
@@ -900,17 +1038,15 @@ Float32List _cropNormalized(RgbaImage image, IntRect rect, int outW, int outH) {
   // almost entirely one class (no real strokes visible) falls back to the ring.
   if (loN == 0 || hiN == 0) {
     var bg = ringMedianColor();
-    var bgLum = 0.299 * ((bg >> 16) & 0xFF) +
+    var bgLum =
+        0.299 * ((bg >> 16) & 0xFF) +
         0.587 * ((bg >> 8) & 0xFF) +
         0.114 * (bg & 0xFF);
     return (bg, bgLum < 128 ? 0xFFF5F5F5 : 0xFF202020);
   }
 
   int packMean(int sr, int sg, int sb, int n) =>
-      0xFF000000 |
-      ((sr ~/ n) << 16) |
-      ((sg ~/ n) << 8) |
-      (sb ~/ n);
+      0xFF000000 | ((sr ~/ n) << 16) | ((sg ~/ n) << 8) | (sb ~/ n);
   var loColor = packMean(loSumR, loSumG, loSumB, loN);
   var hiColor = packMean(hiSumR, hiSumG, hiSumB, hiN);
 
