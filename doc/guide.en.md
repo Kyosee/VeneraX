@@ -29,9 +29,10 @@ Detection and recognition run on the device; the recognized text is sent to an A
 ### Setup
 
 1. Settings → Reading → expand "AI Translation (experimental)".
-2. "LLM providers" → add one with its API URL, API Key and Model. Any OpenAI-compatible service works; add several and switch at any time.
-3. "Test translation" → a returned translation confirms the configuration works.
-4. "Translation models" → download. The text detector (~5 MB) is required; add one recognition model for the comic's language:
+2. "LLM providers" → add one. Pick a common provider template first, then enter its API key (some local services can leave it blank); tap "Get models" to choose a model. Any OpenAI-compatible service works, and you can add several and switch at any time.
+3. If your service is not listed, expand "Advanced settings" to enter its name, API URL and model. If model fetching fails, enter the model name manually.
+4. "Test translation" → a returned translation confirms the configuration works.
+5. "Translation models" → download. The text detector (~5 MB) is required; add one recognition model for the comic's language:
 
 | Language | Size |
 | --- | --- |
@@ -75,16 +76,19 @@ Other options:
 <!--anchor:translation-performance-->
 ### Performance and usage
 
-Translations are stored, so each page is translated once and re-reading issues no further requests. "Clear translation results" frees the space and keeps the language and glossary learned per comic.
+Translated text is stored, so a page normally runs OCR and an LLM request only once; re-reading does not spend more credits. Switching between "Smart erase" and "Color patch" only redraws the page from stored text, without repeating OCR or translation. "Clear translation results" frees the space and keeps the language and glossary learned per comic. Results written by the old cache format are discarded automatically after upgrading and must be translated again.
 
 If throughput is poor or the provider returns rate-limit errors, adjust:
 
 | Setting | Effect |
 | --- | --- |
+| Performance mode | "Save resources" reduces memory and heat; "Balanced" (recommended) suits most devices; "Fast" raises concurrency and battery use. The mode is device-local, so desktop values do not overwrite a phone |
 | Pages per pre-translation request | Pages per request. More reduces the request count but increases per-request latency; too many can exceed the model's context |
 | Translation request concurrency | Requests in flight at once. Lower it when rate-limited |
-| OCR parallelism | Local recognition threads, 0 for automatic. Lower it if the device heats up or stutters |
+| OCR parallelism | Local recognition threads, 0 for automatic. Mobile limits concurrency automatically; the Japanese model uses one worker on mobile. Lower it if the device heats up or stutters |
 | Image download concurrency | Images downloaded at once |
+
+Most users do not need Advanced settings; changing any performance detail switches the mode to "Custom" automatically. Each text line is erased using a tight region and the translated text is kept inside its own area, reducing damage to characters and backgrounds. Complex artwork, very long sentences and unusual layouts can still need a retry or the "Color patch" fallback.
 
 <!--anchor:translation-limits-->
 ### Things to know
