@@ -43,8 +43,11 @@ void main() {
       // Every previously-dark pixel is now close to the bubble colour.
       for (var y = 24; y < 36; y++) {
         for (var x = 20; x < 40; x++) {
-          expect(_lum(img, x, y), greaterThan(200),
-              reason: 'stroke pixel at $x,$y should be filled with background');
+          expect(
+            _lum(img, x, y),
+            greaterThan(200),
+            reason: 'stroke pixel at $x,$y should be filled with background',
+          );
         }
       }
     });
@@ -64,8 +67,12 @@ void main() {
 
       for (var y = 24; y < 36; y++) {
         for (var x = 20; x < 40; x++) {
-          expect(_lum(img, x, y), lessThan(60),
-              reason: 'stroke pixel at $x,$y should be filled with dark background');
+          expect(
+            _lum(img, x, y),
+            lessThan(60),
+            reason:
+                'stroke pixel at $x,$y should be filled with dark background',
+          );
         }
       }
     });
@@ -102,10 +109,34 @@ void main() {
       expect(m.mask[0], equals(0));
     });
 
+    test('does not erase high-contrast artwork outside the OCR rectangle', () {
+      var img = _solid(60, 60, 245, 245, 245);
+      // Source glyph inside the OCR rectangle.
+      for (var y = 25; y < 35; y++) {
+        for (var x = 25; x < 35; x++) {
+          var i = (y * 60 + x) * 4;
+          img.pixels[i] = img.pixels[i + 1] = img.pixels[i + 2] = 20;
+        }
+      }
+      // Nearby line art is inside the sampling window, but outside the OCR box.
+      for (var y = 20; y < 40; y++) {
+        var i = (y * 60 + 12) * 4;
+        img.pixels[i] = img.pixels[i + 1] = img.pixels[i + 2] = 20;
+      }
+
+      TextInpainter.erase(img, [IntRect(22, 22, 38, 38)]);
+
+      expect(_lum(img, 30, 30), greaterThan(200));
+      expect(_lum(img, 12, 30), lessThan(60));
+    });
+
     test('skips tiny regions without error', () {
       var img = _solid(10, 10, 255, 255, 255);
       // A 2px rect is below the working-window minimum.
-      expect(() => TextInpainter.erase(img, [IntRect(4, 4, 6, 6)]), returnsNormally);
+      expect(
+        () => TextInpainter.erase(img, [IntRect(4, 4, 6, 6)]),
+        returnsNormally,
+      );
     });
 
     test('drops isolated speck noise, keeps a real stroke', () {
@@ -161,6 +192,35 @@ void main() {
         var renderedKey = '$base#${mode.token}';
         expect(renderedKey.startsWith(scopePrefix), isTrue);
       }
+    });
+  });
+
+  group('TranslatedRegion cache', () {
+    test('old entries use the layout rectangle for erasing', () {
+      var region = TranslatedRegion.fromJson({
+        'l': 1,
+        't': 2,
+        'r': 30,
+        'b': 40,
+        'text': 'translated',
+        'bg': 0xFFFFFFFF,
+        'fg': 0xFF000000,
+      });
+      expect(region.eraseRect.left, 1);
+      expect(region.eraseRect.bottom, 40);
+    });
+
+    test('round-trips a tighter erase rectangle', () {
+      var region = TranslatedRegion(
+        rect: IntRect(1, 2, 30, 40),
+        eraseRect: IntRect(4, 5, 26, 36),
+        text: 'translated',
+        backgroundColor: 0xFFFFFFFF,
+        textColor: 0xFF000000,
+      );
+      var restored = TranslatedRegion.fromJson(region.toJson());
+      expect(restored.eraseRect.left, 4);
+      expect(restored.eraseRect.bottom, 36);
     });
   });
 }

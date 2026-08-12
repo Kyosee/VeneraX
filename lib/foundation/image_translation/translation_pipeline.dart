@@ -154,7 +154,7 @@ class PageTranslationPipeline {
   }) async {
     var image = await _decode(imageBytes);
     if (mode != InpaintMode.patch && regions.isNotEmpty) {
-      TextInpainter.erase(image, [for (var r in regions) r.rect]);
+      TextInpainter.erase(image, [for (var r in regions) r.eraseRect]);
     }
     return await renderTranslatedPage(imageBytes, image, regions, mode: mode);
   }
@@ -162,6 +162,7 @@ class PageTranslationPipeline {
   TranslatedRegion _region(OcrBlock block, String text) {
     return TranslatedRegion(
       rect: block.rect,
+      eraseRect: block.eraseRect,
       text: text,
       backgroundColor: block.backgroundColor,
       textColor: block.textColor,

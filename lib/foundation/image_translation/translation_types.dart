@@ -40,14 +40,19 @@ class IntRect {
 class OcrBlock {
   OcrBlock({
     required this.rect,
+    IntRect? eraseRect,
     required this.text,
     required this.language,
     required this.backgroundColor,
     required this.textColor,
     this.lineHeight = 0,
-  });
+  }) : eraseRect = eraseRect ?? rect;
 
+  /// Area available to the translated lettering.
   final IntRect rect;
+
+  /// Tighter detected-source area used only for removing the original glyphs.
+  final IntRect eraseRect;
 
   /// Recognized source text.
   final String text;
@@ -69,13 +74,19 @@ class OcrBlock {
 class TranslatedRegion {
   TranslatedRegion({
     required this.rect,
+    IntRect? eraseRect,
     required this.text,
     required this.backgroundColor,
     required this.textColor,
     this.lineHeight = 0,
-  });
+  }) : eraseRect = eraseRect ?? rect;
 
+  /// Area available to the translated lettering.
   final IntRect rect;
+
+  /// Tighter source-text area. Kept separate so erasing never has to cover the
+  /// full layout box when the translation needs more room.
+  final IntRect eraseRect;
   final String text;
   final int backgroundColor;
   final int textColor;
@@ -96,18 +107,34 @@ class TranslatedRegion {
     'text': text,
     'bg': backgroundColor,
     'fg': textColor,
+    if (!_sameRect(eraseRect, rect)) ...{
+      'el': eraseRect.left,
+      'et': eraseRect.top,
+      'er': eraseRect.right,
+      'eb': eraseRect.bottom,
+    },
     if (lineHeight > 0) 'lh': lineHeight,
   };
 
   factory TranslatedRegion.fromJson(Map<String, dynamic> json) {
+    var rect = IntRect(json['l'], json['t'], json['r'], json['b']);
     return TranslatedRegion(
-      rect: IntRect(json['l'], json['t'], json['r'], json['b']),
+      rect: rect,
+      eraseRect: json['el'] == null
+          ? rect
+          : IntRect(json['el'], json['et'], json['er'], json['eb']),
       text: json['text'],
       backgroundColor: json['bg'],
       textColor: json['fg'],
       lineHeight: json['lh'] ?? 0,
     );
   }
+
+  static bool _sameRect(IntRect a, IntRect b) =>
+      a.left == b.left &&
+      a.top == b.top &&
+      a.right == b.right &&
+      a.bottom == b.bottom;
 }
 
 class PipelineCanceled implements Exception {

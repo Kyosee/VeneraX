@@ -49,8 +49,10 @@ abstract final class TextInpainter {
     var h = image.height;
     // Region plus a border: the fill needs known pixels to borrow, and the ring
     // sampling needs to see the true background.
-    var pad =
-        math.max(4, (math.min(region.width, region.height) * 0.25).round());
+    var pad = math.max(
+      4,
+      (math.min(region.width, region.height) * 0.25).round(),
+    );
     var left = (region.left - pad).clamp(0, w - 1);
     var top = (region.top - pad).clamp(0, h - 1);
     var right = (region.right + pad).clamp(1, w);
@@ -91,14 +93,27 @@ abstract final class TextInpainter {
     var mask = Uint8List(n);
     var maskCount = 0;
     var textIsDark = textMean < bgLum;
-    for (var i = 0; i < n; i++) {
-      var l = lum[i];
-      var isText = textIsDark
-          ? l <= threshold && (bgLum - l) >= minMargin
-          : l > threshold && (l - bgLum) >= minMargin;
-      if (isText) {
-        mask[i] = 1;
-        maskCount++;
+    // The padded window is context for background sampling and filling only.
+    // Candidate strokes must stay close to the detector's text rectangle;
+    // otherwise high-contrast line art in that context gets erased as well.
+    var guard = math
+        .max(1, (math.min(region.width, region.height) * 0.04).round())
+        .clamp(1, 3);
+    var allowedLeft = (region.left - guard - left).clamp(0, rw);
+    var allowedTop = (region.top - guard - top).clamp(0, rh);
+    var allowedRight = (region.right + guard - left).clamp(0, rw);
+    var allowedBottom = (region.bottom + guard - top).clamp(0, rh);
+    for (var y = allowedTop; y < allowedBottom; y++) {
+      for (var x = allowedLeft; x < allowedRight; x++) {
+        var i = y * rw + x;
+        var l = lum[i];
+        var isText = textIsDark
+            ? l <= threshold && (bgLum - l) >= minMargin
+            : l > threshold && (l - bgLum) >= minMargin;
+        if (isText) {
+          mask[i] = 1;
+          maskCount++;
+        }
       }
     }
     // Nothing found, or more than 60% of the window flagged: stroke detection
@@ -123,6 +138,17 @@ abstract final class TextInpainter {
     // that under-covers big glyphs.
     var radius = math.max(2, (math.min(rw, rh) * 0.03).round()).clamp(2, 5);
     mask = _dilate(mask, rw, rh, radius);
+    // Dilation covers anti-aliased glyph edges but must not grow into artwork.
+    for (var y = 0; y < rh; y++) {
+      for (var x = 0; x < rw; x++) {
+        if (x < allowedLeft ||
+            x >= allowedRight ||
+            y < allowedTop ||
+            y >= allowedBottom) {
+          mask[y * rw + x] = 0;
+        }
+      }
+    }
     return TextMask(left, top, rw, rh, mask);
   }
 
