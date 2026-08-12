@@ -17,6 +17,31 @@ class ReaderSettings extends StatefulWidget {
 }
 
 class _ReaderSettingsState extends State<ReaderSettings> {
+  late bool _translationAdvanced;
+
+  @override
+  void initState() {
+    super.initState();
+    _translationAdvanced =
+        TranslationPerformanceConfig.current ==
+        TranslationPerformancePreset.custom;
+  }
+
+  void _setTranslationPreset(String value) {
+    var preset = TranslationPerformanceConfig.fromSetting(value);
+    TranslationPerformanceConfig.apply(preset);
+    setState(
+      () =>
+          _translationAdvanced = preset == TranslationPerformancePreset.custom,
+    );
+  }
+
+  void _markTranslationCustom(String key) {
+    TranslationPerformanceConfig.markCustom();
+    setState(() {});
+    widget.onChanged?.call(key);
+  }
+
   bool _isChapterCommentsAtEndSupported() {
     String? readerMode;
     bool? showChapterComments;
@@ -138,10 +163,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             },
             child: Text("Full guide".tl),
           ),
-          Button.filled(
-            onPressed: context.pop,
-            child: Text("OK".tl),
-          ),
+          Button.filled(onPressed: context.pop, child: Text("OK".tl)),
         ],
       ),
     );
@@ -164,10 +186,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     String? result;
     String? error;
     try {
-      var res = await LlmTranslator.translateBatch(
-        const ['こんにちは', 'ありがとう'],
-        _effectiveTargetLang(),
-      );
+      var res = await LlmTranslator.translateBatch(const [
+        'こんにちは',
+        'ありがとう',
+      ], _effectiveTargetLang());
       result = res.texts.where((t) => t.isNotEmpty).join(' / ');
       if (result.isEmpty) {
         error = "The model returned an empty response".tl;
@@ -186,16 +208,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             : "Translation failed".tl,
         content: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            error ?? "こんにちは / ありがとう →\n$result",
-            style: ts.s14,
-          ),
+          child: Text(error ?? "こんにちは / ありがとう →\n$result", style: ts.s14),
         ),
         actions: [
-          FilledButton(
-            onPressed: () => context.pop(),
-            child: Text("OK".tl),
-          ),
+          FilledButton(onPressed: () => context.pop(), child: Text("OK".tl)),
         ],
       ),
     );
@@ -323,8 +339,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             _PageTurnModeSetting(
               onChanged: widget.onChanged,
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -334,8 +351,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("enablePageAnimation");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
@@ -362,8 +380,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("readerMode");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -374,8 +393,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("enableContinuousChapterReading");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             if (appdata.settings['readerMode']!.startsWith('gallery'))
@@ -392,8 +412,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("readerScreenPicNumberForLandscape");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['readerMode']!.startsWith('gallery'))
@@ -409,8 +430,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("readerScreenPicNumberForPortrait");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['readerMode']!.startsWith('gallery') &&
@@ -423,8 +445,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("showSingleImageOnFirstPage");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['readerMode']!.startsWith('gallery'))
@@ -437,8 +460,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("galleryFillScreen");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             SelectSetting(
@@ -456,14 +480,15 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("readerBackgroundColor");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
               title: "Night mode".tl,
-              subtitle: "Dim the page with a warm overlay to reduce eye strain"
-                  .tl,
+              subtitle:
+                  "Dim the page with a warm overlay to reduce eye strain".tl,
               settingKey: "readerNightMode",
               enabled: appdata.settings['readerNightModeFollowSystem'] != true,
               onChanged: () {
@@ -481,7 +506,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 if (appdata.settings['readerNightModeFollowSystem'] == true) {
                   final isDark =
                       View.of(context).platformDispatcher.platformBrightness ==
-                          Brightness.dark;
+                      Brightness.dark;
                   appdata.settings['readerNightMode'] = isDark;
                   appdata.saveData();
                   widget.onChanged?.call("readerNightMode");
@@ -527,8 +552,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("autoPageTurningInterval");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             if (appdata.settings['readerMode']!.startsWith('continuous'))
@@ -542,8 +568,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("readerScrollSpeed");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['readerMode'] == 'continuousTopToBottom')
@@ -557,8 +584,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("readerCenterPageOnTurn");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['readerMode']!.startsWith('continuous'))
@@ -572,8 +600,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("readerPageSpacing");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             _SliderSetting(
@@ -583,8 +612,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               min: 1,
               max: 16,
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
           ],
@@ -602,8 +632,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call('enableDoubleTapToZoom');
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -614,8 +645,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call('enableLongPressToZoom');
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             if (appdata.settings['enableLongPressToZoom'] == true)
@@ -627,8 +659,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   "center": "Screen center".tl,
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (App.isAndroid)
@@ -639,23 +672,24 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call('enableTurnPageByVolumeKey');
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['enableTapToTurnPages'] == true)
               _SwitchSetting(
                 title: 'Custom tap-to-turn zones'.tl,
-                subtitle:
-                    'Choose what tapping each screen edge does'.tl,
+                subtitle: 'Choose what tapping each screen edge does'.tl,
                 settingKey: 'enableCustomTapZones',
                 onChanged: () {
                   setState(() {});
                   widget.onChanged?.call('enableCustomTapZones');
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             if (appdata.settings['enableTapToTurnPages'] == true &&
@@ -678,8 +712,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     widget.onChanged?.call(e.$1);
                   },
                   comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource:
-                      isEnabledSpecificSettings ? widget.comicSource : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
               ),
@@ -697,8 +732,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("autoFavoriteCover");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
@@ -716,8 +752,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   "On the image browsing page, you can quickly collect images by sliding horizontally or vertically according to your reading mode"
                       .tl,
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
           ],
@@ -735,8 +772,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call('limitImageWidth');
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _CallbackSetting(
@@ -811,8 +849,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("enableClockAndBatteryInfoInReader");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -822,8 +861,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("showSystemStatusBar");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -833,8 +873,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("showPageNumberInReader");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SwitchSetting(
@@ -842,8 +883,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               settingKey: "showChapterComments",
               onChanged: _onShowChapterCommentsChanged,
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             _SliderSetting(
@@ -864,8 +906,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("showChapterCommentsAtEnd");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource:
-                    isEnabledSpecificSettings ? widget.comicSource : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
           ],
@@ -947,8 +990,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("imageTranslationSource");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
@@ -970,60 +1014,97 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 widget.onChanged?.call("imageTranslationTarget");
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
             SelectSetting(
-              title: "Text removal".tl,
-              settingKey: "imageTranslationInpaintMode",
-              help:
-                  "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
-                      .tl,
+              title: "Performance mode".tl,
+              settingKey: TranslationPerformanceConfig.settingKey,
               optionTranslation: {
-                "smart": "Smart erase".tl,
-                "patch": "Color patch".tl,
+                "saver": "Save resources (low memory)".tl,
+                "balanced": "Balanced (recommended)".tl,
+                "fast": "Fast (more battery)".tl,
+                "custom": "Custom".tl,
               },
               onChanged: () {
-                setState(() {});
-                widget.onChanged?.call("imageTranslationInpaintMode");
-              },
-              comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource:
-                  isEnabledSpecificSettings ? widget.comicSource : null,
-              useDeviceSettings: useDeviceSpecificSettings,
-            ),
-            _SliderSetting(
-              title: "Pages per pre-translation request".tl,
-              settingsIndex: "imageTranslationPreBatchPages",
-              interval: 1,
-              min: 1,
-              max: 20,
-              onChanged: () {
-                widget.onChanged?.call("imageTranslationPreBatchPages");
+                _setTranslationPreset(
+                  '${appdata.settings[TranslationPerformanceConfig.settingKey]}',
+                );
               },
             ),
-            _SliderSetting(
-              title: "OCR parallelism (0 = auto)".tl,
-              settingsIndex: "imageTranslationOcrWorkers",
-              interval: 1,
-              min: 0,
-              max: 6,
+            ListTile(
+              leading: const Icon(Icons.tune),
+              title: Text("Advanced settings".tl),
+              trailing: Icon(
+                _translationAdvanced ? Icons.expand_less : Icons.expand_more,
+              ),
+              onTap: () =>
+                  setState(() => _translationAdvanced = !_translationAdvanced),
             ),
-            _SliderSetting(
-              title: "Image download concurrency".tl,
-              settingsIndex: "imageTranslationImageConcurrency",
-              interval: 1,
-              min: 1,
-              max: 6,
-            ),
-            _SliderSetting(
-              title: "Translation request concurrency".tl,
-              settingsIndex: "imageTranslationLlmConcurrency",
-              interval: 1,
-              min: 1,
-              max: 4,
-            ),
+            if (_translationAdvanced) ...[
+              SelectSetting(
+                title: "Text removal".tl,
+                settingKey: "imageTranslationInpaintMode",
+                help:
+                    "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
+                        .tl,
+                optionTranslation: {
+                  "smart": "Smart erase".tl,
+                  "patch": "Color patch".tl,
+                },
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call("imageTranslationInpaintMode");
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              _SliderSetting(
+                title: "Pages per pre-translation request".tl,
+                settingsIndex: "imageTranslationPreBatchPages",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 20 : 8,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationPreBatchPages");
+                },
+              ),
+              _SliderSetting(
+                title: "OCR parallelism (0 = auto)".tl,
+                settingsIndex: "imageTranslationOcrWorkers",
+                interval: 1,
+                min: 0,
+                max: App.isDesktop ? 6 : 2,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationOcrWorkers");
+                },
+              ),
+              _SliderSetting(
+                title: "Image download concurrency".tl,
+                settingsIndex: "imageTranslationImageConcurrency",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 6 : 3,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationImageConcurrency");
+                },
+              ),
+              _SliderSetting(
+                title: "Translation request concurrency".tl,
+                settingsIndex: "imageTranslationLlmConcurrency",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 4 : 3,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationLlmConcurrency");
+                },
+              ),
+            ],
             _CallbackSetting(
               title: "Translation models".tl,
               subtitle: TranslationModels.isReadyFor(_effectiveSourceLang())
@@ -1051,8 +1132,10 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     message: "Translation results cleared".tl,
                   );
                 }
-                Log.info('Image Translation',
-                    'Cleared $removed translated pages by user');
+                Log.info(
+                  'Image Translation',
+                  'Cleared $removed translated pages by user',
+                );
               },
             ),
           ],

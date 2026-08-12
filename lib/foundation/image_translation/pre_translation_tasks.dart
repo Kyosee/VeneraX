@@ -10,6 +10,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_translation/ordered_group_committer.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
+import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
@@ -172,7 +173,9 @@ class PreTranslationTask {
       ),
       chapters: (json['chapters'] as List? ?? [])
           .whereType<Map>()
-          .map((e) => PreTranslationChapter.fromJson(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => PreTranslationChapter.fromJson(Map<String, dynamic>.from(e)),
+          )
           .toList(),
     );
   }
@@ -357,7 +360,8 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// just the failed pages. Succeeded pages are never re-requested (they skip
   /// via hasRenderedPage). Does nothing if the job has no failures.
   void retryFailed(String id) {
-    var task = currentTasks.where((t) => t.id == id).firstOrNull ??
+    var task =
+        currentTasks.where((t) => t.id == id).firstOrNull ??
         historyTasks.where((t) => t.id == id).firstOrNull;
     if (task == null || !task.hasFailures) return;
     if (_runningIds.contains(task.id)) return;
@@ -516,8 +520,7 @@ class PreTranslationTaskManager with ChangeNotifier {
           // prefix boundary and is redone on resume.
           Log.error('Pre-translation', 'Group task failed: $e', s);
         }
-      }()
-          .whenComplete(() => active.remove(f));
+      }().whenComplete(() => active.remove(f));
       active.add(f);
     }
 
@@ -537,9 +540,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// LLM concurrency setting (the pipeline's scarcest shared resource); the
   /// per-source image gate and OCR worker pool further shape actual parallelism.
   int get _pipelineConcurrency {
-    var raw = appdata.settings['imageTranslationLlmConcurrency'];
-    var n = raw is int ? raw : int.tryParse('$raw') ?? 2;
-    return n.clamp(1, 4);
+    return TranslationPerformanceConfig.effective.llmConcurrency.clamp(1, 4);
   }
 
   /// Re-runs only the pages that failed, across every chapter that has any.
@@ -580,10 +581,11 @@ class PreTranslationTaskManager with ChangeNotifier {
 
       // Only indices still in range and still marked failed. Sorted so grouping
       // is deterministic.
-      var targets = chapter.failedPages
-          .where((i) => i >= 0 && i < pageKeys.length)
-          .toList()
-        ..sort();
+      var targets =
+          chapter.failedPages
+              .where((i) => i >= 0 && i < pageKeys.length)
+              .toList()
+            ..sort();
       for (var g = 0; g < targets.length; g += groupSize) {
         if (_canceledIds.contains(task.id)) return;
         await _waitWhilePaused(task);
@@ -669,9 +671,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// cuts request count. Clamped to a sane range so a bad stored value can't
   /// break the loop or overflow the model's context.
   int get _batchPages {
-    var raw = appdata.settings['imageTranslationPreBatchPages'];
-    var n = raw is int ? raw : int.tryParse('$raw') ?? 1;
-    return n.clamp(1, 20);
+    return TranslationPerformanceConfig.effective.batchPages.clamp(1, 20);
   }
 
   /// Translates pages [start, end) of a chapter. For a single page this is the
@@ -890,8 +890,9 @@ class PreTranslationTaskManager with ChangeNotifier {
   }
 
   void _saveHistory() {
-    appdata.implicitData[_historyKey] =
-        historyTasks.map((t) => t.toJson()).toList();
+    appdata.implicitData[_historyKey] = historyTasks
+        .map((t) => t.toJson())
+        .toList();
     appdata.writeImplicitData();
   }
 
@@ -902,8 +903,9 @@ class PreTranslationTaskManager with ChangeNotifier {
         ..clear()
         ..addAll(
           active.whereType<Map>().map((e) {
-            var task =
-                PreTranslationTask.fromJson(Map<String, dynamic>.from(e));
+            var task = PreTranslationTask.fromJson(
+              Map<String, dynamic>.from(e),
+            );
             // Anything persisted as active is coerced back to running so it can
             // be resumed after a restart.
             task.status = PreTranslationTaskStatus.running;
@@ -1021,8 +1023,10 @@ class PreTranslationTaskManager with ChangeNotifier {
 class _ImageRateLimit {
   static final aimd = AimdController(min: 1, max: 6);
   static final gate = ConcurrencyGate((bucket) {
-    var raw = appdata.settings['imageTranslationImageConcurrency'];
-    var userMax = (raw is int ? raw : int.tryParse('$raw') ?? 3).clamp(1, 6);
+    var userMax = TranslationPerformanceConfig.effective.imageConcurrency.clamp(
+      1,
+      6,
+    );
     return math.min(userMax, aimd.limitFor(bucket));
   });
 }

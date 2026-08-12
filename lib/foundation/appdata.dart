@@ -274,6 +274,17 @@ class Appdata with Init {
           settings[key] = json['settings'][key];
         }
       }
+      var loadedSettings = json['settings'] as Map<String, dynamic>;
+      if (!loadedSettings.containsKey('imageTranslationPerformancePreset')) {
+        var usedOldDefaults =
+            settings['imageTranslationPreBatchPages'] == 1 &&
+            settings['imageTranslationOcrWorkers'] == 0 &&
+            settings['imageTranslationImageConcurrency'] == 3 &&
+            settings['imageTranslationLlmConcurrency'] == 2;
+        settings['imageTranslationPerformancePreset'] = usedOldDefaults
+            ? 'balanced'
+            : 'custom';
+      }
       searchHistory = List.from(json['searchHistory']);
     } catch (e) {
       Log.error("Appdata", "Failed to load appdata", e);
@@ -387,7 +398,8 @@ class Settings with ChangeNotifier {
     'appLockType': 'biometric', // biometric, pin, password, pattern
     'appLockCredential': null, // {salt, hash} for non-biometric methods
     'batteryOptimizationPrompted': false, // 是否已提示过忽略电池优化（每设备一次，#84）
-    'appLauncherIcon': 'default', // launcher icon preset: default, orig, flat (device-local)
+    'appLauncherIcon':
+        'default', // launcher icon preset: default, orig, flat (device-local)
     'requireDisclaimerConsent': false,
     'disclaimerConsented': false,
     'onClickFavorite': 'viewDetail', // viewDetail, read
@@ -437,7 +449,8 @@ class Settings with ChangeNotifier {
         false, // auto-toggle night mode with system dark mode
     'readerNightModeColor': 'warm', // overlay tint: warm, black, red
     'readerNightModeIntensity': 0.45, // overlay opacity, 0.1 - 0.85
-    'enableReaderImageEnhance': false, // GPU render-time image sharpening in reader
+    'enableReaderImageEnhance':
+        false, // GPU render-time image sharpening in reader
     'readerImageEnhanceStrength': 0.5, // unsharp mask strength
     'readerImageEnhanceClarity': 0.0, // 0.0 - 1.0 mid-radius local contrast
     'readerImageEnhanceContrast': 0.0, // 0.0 - 1.0 level-stretch amount
@@ -462,12 +475,15 @@ class Settings with ChangeNotifier {
     // 与旧的 url/key 单键同为明文。activeId 指向当前生效的服务商。
     'imageTranslationProviders': <dynamic>[],
     'imageTranslationActiveProviderId': '',
+    // 新手性能档位；非 custom 时由设置页按当前设备写入下方四个兼容参数。
+    // 保存档位名，避免桌面并发上限原样同步到手机。
+    'imageTranslationPerformancePreset': 'balanced',
     // 预翻译时把多少页的气泡合并成一次 LLM 请求。1=逐页（默认）；更大值让模型
     // 一次看到更多上下文，译名/语气更连贯并减少请求数，代价是首批结果更晚出、
     // 单次请求更大。仅作用于后台预翻译，阅读器内即时翻译始终逐页。
     'imageTranslationPreBatchPages': 1,
-    // OCR 推理并行的 worker 数。0=自动（桌面 min(核数/2,3)、移动 min(核数/2,2)）；
-    // >0 时固定该数量（clamp 1..6）。更多 worker=更快但更吃内存(每个载入模型)。
+    // OCR 推理并行的 worker 数。0=自动；移动端日文模型始终单 worker，其他移动
+    // OCR 最多 2，桌面最多 6。更多 worker=更快但更吃内存（每个载入一份模型）。
     'imageTranslationOcrWorkers': 0,
     // 预翻译抓取原图的每源并发上限（clamp 1..6）。遇 429/503 时 AIMD 自动降并发。
     'imageTranslationImageConcurrency': 3,

@@ -103,7 +103,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     1,
     keywords: ["script", "process"],
   ),
-  _SettingsSearchEntry("Image enhancement", 1, keywords: ["sharpen", "enhance"]),
+  _SettingsSearchEntry(
+    "Image enhancement",
+    1,
+    keywords: ["sharpen", "enhance"],
+  ),
   _SettingsSearchEntry("Sharpen strength", 1, keywords: ["enhance"]),
   _SettingsSearchEntry("Clarity", 1, keywords: ["enhance"]),
   _SettingsSearchEntry("Contrast", 1, keywords: ["enhance"]),
@@ -112,7 +116,20 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Show system status bar", 1),
   _SettingsSearchEntry("Show Page Number", 1),
   _SettingsSearchEntry("Show Chapter Comments", 1, keywords: ["comment"]),
-  _SettingsSearchEntry("Show Comments at Chapter End", 1, keywords: ["comment"]),
+  _SettingsSearchEntry(
+    "Show Comments at Chapter End",
+    1,
+    keywords: ["comment"],
+  ),
+  _SettingsSearchEntry(
+    "AI Translation (experimental)",
+    1,
+    keywords: ["LLM", "OCR", "translate"],
+  ),
+  _SettingsSearchEntry("LLM providers", 1, keywords: ["API", "model"]),
+  _SettingsSearchEntry("Performance mode", 1, keywords: ["speed", "mobile"]),
+  _SettingsSearchEntry("Text removal", 1, keywords: ["erase", "inpaint"]),
+  _SettingsSearchEntry("Translation models", 1, keywords: ["OCR", "download"]),
 
   // --- 2: Appearance ---
   _SettingsSearchEntry("Theme Mode", 2, keywords: ["dark", "light"]),
@@ -180,11 +197,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
 
   // --- 6: About ---
-  _SettingsSearchEntry(
-    "Check for updates",
-    6,
-    keywords: ["update", "version"],
-  ),
+  _SettingsSearchEntry("Check for updates", 6, keywords: ["update", "version"]),
   _SettingsSearchEntry("Check for updates on startup", 6, keywords: ["update"]),
   _SettingsSearchEntry(
     "Guide",
@@ -197,7 +210,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   // --- 7: Debug ---
   _SettingsSearchEntry("Reload Configs", 7),
   _SettingsSearchEntry("Open Log", 7, keywords: ["log", "logs"]),
-  _SettingsSearchEntry("Ignore Certificate Errors", 7, keywords: ["ssl", "tls"]),
+  _SettingsSearchEntry(
+    "Ignore Certificate Errors",
+    7,
+    keywords: ["ssl", "tls"],
+  ),
   _SettingsSearchEntry(
     "JS Evaluator",
     7,
@@ -222,7 +239,8 @@ bool _settingsEntryMatches(_SettingsSearchEntry e, String q) {
   if (e.title.toLowerCase().contains(q)) return true;
   if (e.title.tl.toLowerCase().contains(q)) return true;
   final catName = _settingsCategories[e.category];
-  if (catName.toLowerCase().contains(q) || catName.tl.toLowerCase().contains(q)) {
+  if (catName.toLowerCase().contains(q) ||
+      catName.tl.toLowerCase().contains(q)) {
     return true;
   }
   for (final k in e.keywords) {

@@ -3,10 +3,10 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
+import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/worker_pool_selection.dart';
 import 'package:venera/utils/io.dart';
 
@@ -182,8 +182,7 @@ class TranslationWorker {
   final _workers = <_IsolateWorker>[];
 
   int _poolSize(String sourceLang, WorkerModelPaths paths) {
-    var setting = appdata.settings['imageTranslationOcrWorkers'];
-    var n = setting is int ? setting : int.tryParse('$setting') ?? 0;
+    var n = TranslationPerformanceConfig.effective.ocrWorkers;
     return resolveOcrPoolSize(
       requested: n,
       processorCount: Platform.numberOfProcessors,

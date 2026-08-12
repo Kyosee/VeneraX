@@ -106,15 +106,18 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
       if (provider.model.isNotEmpty) provider.model,
     ];
     return ListTile(
-      leading: Radio<String>(
-        value: provider.id,
+      leading: RadioGroup<String>(
         groupValue: activeId,
         onChanged: (v) {
-          LlmProviderStore.setActive(provider.id);
+          if (v == null) return;
+          LlmProviderStore.setActive(v);
           _refresh();
         },
+        child: Radio<String>(value: provider.id),
       ),
-      title: Text(provider.name.isEmpty ? "Unnamed provider".tl : provider.name),
+      title: Text(
+        provider.name.isEmpty ? "Unnamed provider".tl : provider.name,
+      ),
       subtitle: subtitleParts.isEmpty
           ? Text("Not configured".tl)
           : Text(subtitleParts.join('\n')),
@@ -145,15 +148,25 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
   late final TextEditingController _url;
   late final TextEditingController _key;
   late String _model;
+  late String _providerType;
+  late bool _advanced;
+  bool _showKey = false;
 
   @override
   void initState() {
     super.initState();
     var e = widget.existing;
-    _name = TextEditingController(text: e?.name ?? '');
-    _url = TextEditingController(text: e?.url ?? '');
+    var initialTemplate = e == null
+        ? LlmProviderTemplate.values.first
+        : LlmProviderTemplate.byId(LlmProviderTemplate.idForUrl(e.url));
+    _name = TextEditingController(text: e?.name ?? initialTemplate?.name ?? '');
+    _url = TextEditingController(text: e?.url ?? initialTemplate?.url ?? '');
     _key = TextEditingController(text: e?.key ?? '');
     _model = e?.model ?? '';
+    _providerType = e == null
+        ? initialTemplate!.id
+        : LlmProviderTemplate.idForUrl(e.url);
+    _advanced = _providerType == 'custom';
   }
 
   @override
@@ -208,53 +221,119 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
     );
   }
 
+  void _applyProviderType(String value) {
+    setState(() {
+      var previousUrl = _url.text;
+      _providerType = value;
+      var template = LlmProviderTemplate.byId(value);
+      if (template != null) {
+        _name.text = template.name;
+        _url.text = template.url;
+      } else {
+        _advanced = true;
+      }
+      if (LlmTranslator.baseUrlOf(previousUrl) !=
+          LlmTranslator.baseUrlOf(_url.text)) {
+        _model = '';
+      }
+    });
+  }
+
   void _showModelPicker(List<String> models) {
+    var query = '';
     showDialog(
       context: App.rootContext,
       builder: (context) {
-        return ContentDialog(
-          title: "Select model".tl,
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 360),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var model in models)
-                    ListTile(
-                      title: Text(model),
-                      trailing: model == _model
-                          ? Icon(Icons.check, color: context.colorScheme.primary)
-                          : null,
-                      onTap: () {
-                        context.pop();
-                        setState(() => _model = model);
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            var pickerHeight = (MediaQuery.sizeOf(context).height * 0.55)
+                .clamp(260.0, 420.0)
+                .toDouble();
+            var filtered = query.isEmpty
+                ? models
+                : models
+                      .where(
+                        (model) =>
+                            model.toLowerCase().contains(query.toLowerCase()),
+                      )
+                      .toList();
+            return ContentDialog(
+              title: "Select model".tl,
+              content: SizedBox(
+                width: 460,
+                height: pickerHeight,
+                child: Column(
+                  children: [
+                    TextField(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: "Search models".tl,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() => query = value.trim());
                       },
                     ),
-                ],
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          var model = filtered[index];
+                          return ListTile(
+                            title: Text(
+                              model,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: model == _model
+                                ? Icon(
+                                    Icons.check,
+                                    color: context.colorScheme.primary,
+                                  )
+                                : null,
+                            onTap: () {
+                              context.pop();
+                              setState(() => _model = model);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                context.pop();
-                _enterModelManually();
-              },
-              child: Text("Enter manually".tl),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    context.pop();
+                    _enterModelManually();
+                  },
+                  child: Text("Enter manually".tl),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
   void _confirm() {
+    var url = _url.text.trim();
+    if (!LlmTranslator.isValidBaseUrl(url)) {
+      context.showMessage(message: "Enter a valid API URL".tl);
+      return;
+    }
+    if (_model.trim().isEmpty) {
+      context.showMessage(message: "Select or enter a model".tl);
+      return;
+    }
     var existing = widget.existing;
     var provider = LlmProvider(
       id: existing?.id ?? const Uuid().v4(),
       name: _name.text.trim(),
-      url: _url.text.trim(),
+      url: url,
       key: _key.text.trim(),
       model: _model.trim(),
     );
@@ -264,61 +343,122 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
   @override
   Widget build(BuildContext context) {
     return ContentDialog(
-      title: widget.existing == null
-          ? "Add provider".tl
-          : "Edit provider".tl,
-      content: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _name,
-              decoration: InputDecoration(
-                labelText: "Name".tl,
-                hintText: "e.g. OpenAI, Local gateway".tl,
-                border: const OutlineInputBorder(),
+      title: widget.existing == null ? "Add provider".tl : "Edit provider".tl,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 540),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _providerType,
+                decoration: InputDecoration(
+                  labelText: "Service type".tl,
+                  border: const OutlineInputBorder(),
+                ),
+                items: [
+                  for (var template in LlmProviderTemplate.values)
+                    DropdownMenuItem(
+                      value: template.id,
+                      child: Text(template.name),
+                    ),
+                  DropdownMenuItem(
+                    value: 'custom',
+                    child: Text("Custom service".tl),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) _applyProviderType(value);
+                },
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _url,
-              decoration: InputDecoration(
-                labelText: "LLM API URL".tl,
-                hintText: 'https://example.com/v1',
-                border: const OutlineInputBorder(),
+              const SizedBox(height: 12),
+              if (_providerType == 'custom' && !_advanced) ...[
+                TextField(
+                  controller: _url,
+                  decoration: InputDecoration(
+                    labelText: "LLM API URL".tl,
+                    hintText: 'https://example.com/v1',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: _key,
+                obscureText: !_showKey,
+                decoration: InputDecoration(
+                  labelText: "LLM API Key".tl,
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    tooltip: _showKey ? "Hide".tl : "Show".tl,
+                    icon: Icon(
+                      _showKey ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () => setState(() => _showKey = !_showKey),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _key,
-              decoration: InputDecoration(
-                labelText: "LLM API Key".tl,
-                border: const OutlineInputBorder(),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text("LLM Model".tl),
+                subtitle: Text(_model.isEmpty ? "Not configured".tl : _model),
+                trailing: Button.filled(
+                  onPressed: _chooseModel,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_download_outlined, size: 18),
+                      const SizedBox(width: 6),
+                      Text("Get models".tl),
+                    ],
+                  ),
+                ).fixHeight(36),
               ),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text("LLM Model".tl),
-              subtitle: Text(_model.isEmpty ? "Not configured".tl : _model),
-              trailing: TextButton(
-                onPressed: _chooseModel,
-                child: Text("Select".tl),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.tune),
+                title: Text("Advanced settings".tl),
+                trailing: Icon(
+                  _advanced ? Icons.expand_less : Icons.expand_more,
+                ),
+                onTap: () => setState(() => _advanced = !_advanced),
               ),
-            ),
-          ],
+              if (_advanced) ...[
+                TextField(
+                  controller: _name,
+                  decoration: InputDecoration(
+                    labelText: "Name".tl,
+                    hintText: "e.g. OpenAI, Local gateway".tl,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _url,
+                  decoration: InputDecoration(
+                    labelText: "LLM API URL".tl,
+                    hintText: 'https://example.com/v1',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _enterModelManually,
+                    child: Text("Enter model manually".tl),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => context.pop(),
-          child: Text("Cancel".tl),
-        ),
-        Button.filled(
-          onPressed: _confirm,
-          child: Text("Save".tl),
-        ),
+        TextButton(onPressed: () => context.pop(), child: Text("Cancel".tl)),
+        Button.filled(onPressed: _confirm, child: Text("Save".tl)),
       ],
     );
   }

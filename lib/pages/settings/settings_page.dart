@@ -20,6 +20,7 @@ import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
+import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
+import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
@@ -56,12 +57,12 @@ class LlmProvider {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'key': key,
-        'model': model,
-      };
+    'id': id,
+    'name': name,
+    'url': url,
+    'key': key,
+    'model': model,
+  };
 
   static LlmProvider? fromJson(dynamic json) {
     if (json is! Map) return null;
@@ -74,6 +75,59 @@ class LlmProvider {
       key: (json['key'] as String?)?.trim() ?? '',
       model: (json['model'] as String?)?.trim() ?? '',
     );
+  }
+}
+
+/// Common OpenAI-compatible endpoints for the beginner setup flow.
+class LlmProviderTemplate {
+  const LlmProviderTemplate({
+    required this.id,
+    required this.name,
+    required this.url,
+  });
+
+  final String id;
+  final String name;
+  final String url;
+
+  static const values = <LlmProviderTemplate>[
+    LlmProviderTemplate(
+      id: 'openai',
+      name: 'OpenAI',
+      url: 'https://api.openai.com/v1',
+    ),
+    LlmProviderTemplate(
+      id: 'deepseek',
+      name: 'DeepSeek',
+      url: 'https://api.deepseek.com',
+    ),
+    LlmProviderTemplate(
+      id: 'siliconflow',
+      name: 'SiliconFlow',
+      url: 'https://api.siliconflow.cn/v1',
+    ),
+    LlmProviderTemplate(
+      id: 'openrouter',
+      name: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1',
+    ),
+  ];
+
+  static LlmProviderTemplate? byId(String id) {
+    for (var template in values) {
+      if (template.id == id) return template;
+    }
+    return null;
+  }
+
+  static String idForUrl(String url) {
+    var normalized = LlmTranslator.baseUrlOf(url).toLowerCase();
+    for (var template in values) {
+      if (LlmTranslator.baseUrlOf(template.url).toLowerCase() == normalized) {
+        return template.id;
+      }
+    }
+    return 'custom';
   }
 }
 
@@ -165,8 +219,8 @@ abstract class LlmProviderStore {
       name: 'LLM',
       url: url,
       key: (appdata.settings['imageTranslationLlmKey'] as String? ?? '').trim(),
-      model:
-          (appdata.settings['imageTranslationLlmModel'] as String? ?? '').trim(),
+      model: (appdata.settings['imageTranslationLlmModel'] as String? ?? '')
+          .trim(),
     );
     _persist([provider]);
     appdata.settings[_activeKey] = provider.id;
@@ -191,8 +245,10 @@ abstract class LlmTranslator {
   /// 429/503 and recovers on success.
   static final _aimd = AimdController(min: 1, max: 4);
   static final _gate = ConcurrencyGate((bucket) {
-    var raw = appdata.settings['imageTranslationLlmConcurrency'];
-    var userMax = (raw is int ? raw : int.tryParse('$raw') ?? 2).clamp(1, 4);
+    var userMax = TranslationPerformanceConfig.effective.llmConcurrency.clamp(
+      1,
+      4,
+    );
     return math.min(userMax, _aimd.limitFor(bucket));
   });
 
@@ -257,6 +313,13 @@ abstract class LlmTranslator {
     return url;
   }
 
+  static bool isValidBaseUrl(String rawUrl) {
+    var uri = Uri.tryParse(rawUrl.trim());
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
+  }
+
   /// Fetches the model id list from the endpoint's `/models` (OpenAI-style).
   /// Returns the ids; throws with a readable message on failure so the UI can
   /// fall back to manual entry.
@@ -276,9 +339,7 @@ abstract class LlmTranslator {
       BaseOptions(
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: probeTimeout,
-        headers: {
-          if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey',
-        },
+        headers: {if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey'},
         validateStatus: (status) => status != null && status < 500,
       ),
       probeTimeout,
@@ -428,8 +489,8 @@ abstract class LlmTranslator {
           );
           var status = response.statusCode ?? 0;
           if (status == 200) {
-            var content = response
-                .data['choices']?[0]?['message']?['content'] as String?;
+            var content =
+                response.data['choices']?[0]?['message']?['content'] as String?;
             if (content == null || content.isEmpty) {
               throw Exception('LLM response has no content');
             }
@@ -447,8 +508,9 @@ abstract class LlmTranslator {
           cls = status != null
               ? classifyStatus(status)
               : HttpErrorClass.transient;
-          retryAfter =
-              parseRetryAfter(e.response?.headers.value('retry-after'));
+          retryAfter = parseRetryAfter(
+            e.response?.headers.value('retry-after'),
+          );
           Log.warning('Image Translation', 'LLM request failed: $e');
         } catch (e) {
           // Parse/other unexpected error: allow a couple of retries.
@@ -563,7 +625,8 @@ abstract class LlmTranslator {
     var arrStart = content.indexOf('[');
     var arrEnd = content.lastIndexOf(']');
     // An object wrapping the array has its '{' before the '['.
-    if (objStart != -1 && objEnd > objStart &&
+    if (objStart != -1 &&
+        objEnd > objStart &&
         (arrStart == -1 || objStart < arrStart)) {
       try {
         return jsonDecode(content.substring(objStart, objEnd + 1));

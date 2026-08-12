@@ -520,6 +520,8 @@ class _SliderSettingState extends State<_SliderSetting> {
                 : widget.useDeviceSettings
                 ? appdata.settings.getDeviceReaderSetting(widget.settingsIndex)
                 : appdata.settings[widget.settingsIndex])
+            .toDouble()
+            .clamp(widget.min, widget.max)
             .toDouble();
     // Decimal places needed to show the current step without float noise,
     // derived from the interval (0.1 -> 1 digit, 0.05 -> 2 digits, 1 -> 0).
