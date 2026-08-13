@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_7zip/flutter_7zip.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
@@ -99,95 +101,229 @@ abstract class CBZ {
     }
   }
 
-  static Future<LocalComic> import(File file) async {
-    var cache = Directory(FilePath.join(App.cachePath, 'cbz_import'));
-    if (cache.existsSync()) cache.deleteSync(recursive: true);
-    cache.createSync();
-    await extractArchive(file, cache);
-    var f = cache.listSync();
-    if (f.length == 1 && f.first is Directory) {
-      cache = f.first as Directory;
+  /// Image extensions recognised as comic pages, lower-case, no dot.
+  static const _imageExts = {
+    'jpg',
+    'jpeg',
+    'jpe',
+    'png',
+    'webp',
+    'gif',
+    'bmp',
+    'avif',
+  };
+
+  /// Whether [name] is a comic page by extension. Case-insensitive: archives
+  /// from other tools often carry `.JPG`.
+  @visibleForTesting
+  static bool isImageName(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0) return false;
+    return _imageExts.contains(name.substring(dot + 1).toLowerCase());
+  }
+
+  static bool _isImage(File f) => isImageName(f.name);
+
+  /// Images directly inside [dir], in natural order.
+  static List<File> _imagesIn(Directory dir) {
+    var files = dir.listSync().whereType<File>().where(_isImage).toList();
+    files.sort((a, b) => naturalCompare(a.name, b.name));
+    return files;
+  }
+
+  /// `2.jpg` before `10.jpg`, and case-insensitive elsewhere. Archives written
+  /// by other tools rarely zero-pad, so a plain string sort scrambles pages.
+  @visibleForTesting
+  static int naturalCompare(String a, String b) {
+    final ra = RegExp(r'\d+|\D+').allMatches(a).map((m) => m[0]!).toList();
+    final rb = RegExp(r'\d+|\D+').allMatches(b).map((m) => m[0]!).toList();
+    for (var i = 0; i < ra.length && i < rb.length; i++) {
+      final na = int.tryParse(ra[i]), nb = int.tryParse(rb[i]);
+      final c = (na != null && nb != null)
+          ? na.compareTo(nb)
+          : ra[i].toLowerCase().compareTo(rb[i].toLowerCase());
+      if (c != 0) return c;
     }
-    var metaData = resolveMetadataOrNull(cache);
-    metaData ??= ComicMetaData(
-      title: file.name.substring(0, file.name.lastIndexOf('.')),
-      author: "",
-      tags: [],
+    return ra.length.compareTo(rb.length);
+  }
+
+  /// Descends through single-child wrapper directories, so an archive whose
+  /// pages sit under `<name>/` (or `<name>/<name>/`) is treated as flat.
+  static Directory _unwrap(Directory dir) {
+    for (var i = 0; i < 8; i++) {
+      var entries = dir.listSync();
+      if (entries.length != 1 || entries.first is! Directory) return dir;
+      dir = entries.first as Directory;
+    }
+    return dir;
+  }
+
+  /// Imports every comic contained in [file]. Usually one, but an archive that
+  /// bundles several comics (each in its own subdirectory, or nested archives)
+  /// yields one entry per comic instead of failing as "no images".
+  static Future<List<LocalComic>> importAll(File file) async {
+    var cache = Directory(
+      FilePath.join(
+        App.cachePath,
+        'cbz_import_${DateTime.now().microsecondsSinceEpoch}',
+      ),
     );
-    var old = LocalManager().findByName(metaData.title);
-    if (old != null) {
-      throw Exception('Comic with name ${metaData.title} already exists');
+    if (cache.existsSync()) cache.deleteSync(recursive: true);
+    cache.createSync(recursive: true);
+    try {
+      await extractArchive(file, cache);
+      var root = _unwrap(cache);
+      var fallbackTitle = file.name.contains('.')
+          ? file.name.substring(0, file.name.lastIndexOf('.'))
+          : file.name;
+      return await _importDir(root, fallbackTitle);
+    } finally {
+      await cache.deleteIgnoreError(recursive: true);
     }
-    var files = cache.listSync().whereType<File>().toList();
-    files.removeWhere((e) {
-      var ext = e.path.split('.').last;
-      return !['jpg', 'jpeg', 'png', 'webp', 'gif', 'jpe'].contains(ext);
-    });
-    if (files.isEmpty) {
-      cache.deleteSync(recursive: true);
+  }
+
+  /// Turns one extracted directory into comics. [fallbackTitle] is used when the
+  /// directory carries no metadata of its own.
+  static Future<List<LocalComic>> _importDir(
+    Directory dir,
+    String fallbackTitle,
+  ) async {
+    var entries = dir.listSync();
+    var subDirs = entries.whereType<Directory>().toList()
+      ..sort((a, b) => naturalCompare(a.name, b.name));
+    var nestedArchives = entries
+        .whereType<File>()
+        .where((e) => archiveExts.contains(e.extension.toLowerCase()))
+        .toList()
+      ..sort((a, b) => naturalCompare(a.name, b.name));
+    var rootImages = _imagesIn(dir);
+    var metaData = resolveMetadataOrNull(dir);
+
+    // Pages at this level, or metadata describing this level: one comic, whose
+    // chapters are the subdirectories when it has any. Let failures propagate —
+    // there is a single comic here, so its error is the archive's error.
+    if (rootImages.isNotEmpty || metaData != null) {
+      var comic = await _importSingle(
+        dir,
+        metaData ?? ComicMetaData(title: fallbackTitle, author: '', tags: []),
+        rootImages,
+        subDirs,
+      );
+      if (comic != null) return [comic];
+    }
+
+    // Otherwise every subdirectory and every nested archive is its own comic.
+    // A failing member is skipped so it can't take the rest of the batch down.
+    var result = <LocalComic>[];
+    for (var sub in subDirs) {
+      try {
+        result.addAll(await _importDir(_unwrap(sub), sub.name));
+      } catch (e, s) {
+        Log.error('Import Comic', e.toString(), s);
+      }
+    }
+    for (var nested in nestedArchives) {
+      try {
+        result.addAll(await importAll(nested));
+      } catch (e, s) {
+        Log.error('Import Comic', e.toString(), s);
+      }
+    }
+    if (result.isEmpty && subDirs.isEmpty && nestedArchives.isEmpty) {
       throw Exception('No images found in the archive');
     }
-    files.sort((a, b) {
-      var aName = a.basenameWithoutExt;
-      var bName = b.basenameWithoutExt;
-      var aIndex = int.tryParse(aName);
-      var bIndex = int.tryParse(bName);
-      if (aIndex != null && bIndex != null) {
-        return aIndex.compareTo(bIndex);
-      } else {
-        return a.path.compareTo(b.path);
+    return result;
+  }
+
+  /// Archive extensions that may appear nested inside an archive.
+  static const archiveExts = {'cbz', 'zip', '7z', 'cb7'};
+
+  /// Copies one comic out of [dir] into the local library. Returns null when
+  /// there is nothing importable (no pages anywhere under [dir]).
+  static Future<LocalComic?> _importSingle(
+    Directory dir,
+    ComicMetaData metaData,
+    List<File> rootImages,
+    List<Directory> subDirs,
+  ) async {
+    // Chapter layout: subdirectories holding images. Preferred over the
+    // metadata's index ranges, since the directories are the actual truth.
+    var chapterFiles = <String, List<File>>{};
+    for (var sub in subDirs) {
+      var images = _imagesIn(_unwrap(sub));
+      if (images.isNotEmpty) {
+        chapterFiles[sub.name] = images;
       }
-    });
-    var coverFile = files.firstWhereOrNull(
-      (element) =>
-          element.path.endsWith('cover.${element.path.split('.').last}'),
+    }
+
+    var files = rootImages.toList();
+    File? coverFile = files.firstWhereOrNull(
+      (e) => e.basenameWithoutExt.toLowerCase() == 'cover',
     );
     if (coverFile != null) {
       files.remove(coverFile);
-    } else {
-      coverFile = files.first;
     }
+    // An archive holding only a cover has no pages to read; don't register it.
+    if (files.isEmpty && chapterFiles.isEmpty) return null;
+    coverFile ??= files.firstOrNull ?? chapterFiles.values.first.first;
+
+    var title = metaData.title.isNotEmpty ? metaData.title : dir.name;
+    if (LocalManager().findByName(title) != null) {
+      throw Exception('Comic with name $title already exists');
+    }
+
     Map<String, String>? cpMap;
     var dest = Directory(
-      FilePath.join(LocalManager().path, sanitizeFileName(metaData.title)),
+      FilePath.join(
+        LocalManager().path,
+        findValidDirectoryName(LocalManager().path, title),
+      ),
     );
-    dest.createSync();
-    coverFile.copyMem(FilePath.join(dest.path, 'cover.${coverFile.extension}'));
-    if (metaData.chapters == null) {
-      for (var i = 0; i < files.length; i++) {
-        var src = files[i];
-        var dst = File(
-          FilePath.join(dest.path, '${i + 1}.${src.path.split('.').last}'),
-        );
-        await src.copyMem(dst.path);
+    dest.createSync(recursive: true);
+    await coverFile.copyMem(
+      FilePath.join(dest.path, 'cover.${coverFile.extension}'),
+    );
+
+    if (chapterFiles.isNotEmpty) {
+      // Root images alongside chapter directories (other than the cover) would
+      // have no chapter to live in; fold them into a leading chapter under a
+      // name no subdirectory already claims.
+      if (files.isNotEmpty) {
+        var name = title;
+        while (chapterFiles.containsKey(name)) {
+          name = '$name ';
+        }
+        chapterFiles = {name: files, ...chapterFiles};
       }
-    } else {
-      dest.createSync();
-      var chapters = <String, List<File>>{};
-      for (var chapter in metaData.chapters!) {
-        chapters[chapter.title] = files.sublist(chapter.start - 1, chapter.end);
-      }
-      int i = 0;
       cpMap = <String, String>{};
-      for (var chapter in chapters.entries) {
+      var i = 0;
+      for (var chapter in chapterFiles.entries) {
         cpMap[i.toString()] = chapter.key;
         var chapterDir = Directory(FilePath.join(dest.path, i.toString()));
         chapterDir.createSync();
-        for (var i = 0; i < chapter.value.length; i++) {
-          var src = chapter.value[i];
-          var dst = File(
-            FilePath.join(
-              chapterDir.path,
-              '${i + 1}.${src.path.split('.').last}',
-            ),
-          );
-          await src.copyMem(dst.path);
-        }
+        await _copyPages(chapter.value, chapterDir);
+        i++;
       }
+    } else if (metaData.chapters != null &&
+        metaData.chapters!.isNotEmpty &&
+        rangesFit(metaData.chapters!, files.length)) {
+      // Flat archive whose metadata splits the pages into chapters by index.
+      cpMap = <String, String>{};
+      var i = 0;
+      for (var chapter in metaData.chapters!) {
+        cpMap[i.toString()] = chapter.title;
+        var chapterDir = Directory(FilePath.join(dest.path, i.toString()));
+        chapterDir.createSync();
+        await _copyPages(files.sublist(chapter.start - 1, chapter.end), chapterDir);
+        i++;
+      }
+    } else {
+      await _copyPages(files, dest);
     }
-    var comic = LocalComic(
+
+    return LocalComic(
       id: LocalManager().findValidId(ComicType.local),
-      title: metaData.title,
+      title: title,
       subtitle: metaData.author.isNotEmpty ? metaData.author : metaData.artist,
       tags: metaData.tags,
       comicType: ComicType.local,
@@ -198,8 +334,26 @@ abstract class CBZ {
       createdAt: DateTime.now(),
       description: metaData.description,
     );
-    await cache.delete(recursive: true);
-    return comic;
+  }
+
+  /// Whether every chapter range stays inside a page list of [total] entries.
+  /// A mismatch means the metadata does not describe this archive's pages, and
+  /// slicing by it would throw.
+  @visibleForTesting
+  static bool rangesFit(List<ComicChapter> chapters, int total) {
+    for (var c in chapters) {
+      if (c.start < 1 || c.end < c.start || c.end > total) return false;
+    }
+    return true;
+  }
+
+  static Future<void> _copyPages(List<File> pages, Directory dest) async {
+    for (var i = 0; i < pages.length; i++) {
+      var src = pages[i];
+      await src.copyMem(
+        FilePath.join(dest.path, '${i + 1}.${src.extension}'),
+      );
+    }
   }
 
   static Future<File> export(LocalComic comic, String outFilePath) async {

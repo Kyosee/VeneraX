@@ -35,8 +35,13 @@ class ImportComic {
     Map<String?, List<LocalComic>> imported = {};
     var controller = showLoadingDialog(App.rootContext, allowCancel: false);
     try {
-      var comic = await CBZ.import(file);
-      imported[selectedFolder] = [comic];
+      // importAll, not import: one archive may hold several comics (a folder of
+      // per-comic archives zipped together, or one subdirectory per comic).
+      var comics = await CBZ.importAll(file);
+      if (comics.isEmpty) {
+        App.rootContext.showMessage(message: "No valid comics found".tl);
+      }
+      imported[selectedFolder] = comics;
     } catch (e, s) {
       Log.error("Import Comic", e.toString(), s);
       App.rootContext.showMessage(message: e.toString());
@@ -82,8 +87,7 @@ class ImportComic {
     var comics = <LocalComic>[];
     for (var file in files) {
       try {
-        var comic = await CBZ.import(file);
-        comics.add(comic);
+        comics.addAll(await CBZ.importAll(file));
       } catch (e, s) {
         Log.error("Import Comic", e.toString(), s);
       }

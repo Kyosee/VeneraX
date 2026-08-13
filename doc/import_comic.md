@@ -65,10 +65,29 @@ The name of directory will be used as comic title. And the name of chapter direc
 
 Venera supports importing comics from archive files.
 
-The archive file must follow [Comic Book Archive](https://en.wikipedia.org/wiki/Comic_book_archive_file) format.
-
 Currently, Venera supports the following archive formats:
 - `.cbz`
 - `.cb7`
 - `.zip`
 - `.7z`
+
+Inside the archive, any of these layouts works:
+
+- Images at the top level (one comic, no chapters).
+- One subdirectory per chapter, each holding that chapter's images.
+- One subdirectory per comic, when the top level has no images and no metadata
+  file. Every subdirectory is then imported as its own comic.
+- Archives nested inside the archive, so a folder of `.cbz` files zipped
+  together imports every comic it contains.
+
+Image extensions are matched case-insensitively, and pages are sorted in
+natural order (`2.jpg` before `10.jpg`), so archives that don't zero-pad page
+numbers keep their reading order.
+
+A wrapping directory is transparent: `archive.cbz/comic_name/1.jpg` is treated
+the same as `archive.cbz/1.jpg`.
+
+`cover.[ext]` is used as the cover when present. `details.json`,
+`ComicInfo.xml` and `metadata.json` are read for title, author, tags and
+description when present; otherwise the file or directory name becomes the
+title.
