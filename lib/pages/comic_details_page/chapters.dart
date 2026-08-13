@@ -204,6 +204,11 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
       icon: Icons.view_list_rounded,
       title: "Chapters".tl,
       horizontalPadding: 0,
+      // The list on screen came from cache/local data while the real request
+      // is still running; make the ongoing refresh visible.
+      titleBadge: pageState.isDetailsLoading
+          ? const _ChaptersUpdatingIndicator()
+          : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -282,6 +287,10 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
   @override
   void didUpdateWidget(covariant _NormalComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The background details refresh can replace the chapter map while this
+    // widget stays mounted (cache-first load); re-read it like the grouped
+    // variant does.
+    chapters = state.comic.chapters!;
     if (!selectMode) {
       setState(() {
         _history = widget.history;
@@ -785,6 +794,34 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
           ],
         );
       },
+    );
+  }
+}
+
+/// "Updating" text + spinner next to the "Chapters" title while the background
+/// details fetch refreshes a chapter list that is already on screen.
+class _ChaptersUpdatingIndicator extends StatelessWidget {
+  const _ChaptersUpdatingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.6,
+            color: context.colorScheme.outline,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          "Updating".tl,
+          style: ts.s12.withColor(context.colorScheme.outline),
+        ),
+      ],
     );
   }
 }

@@ -12,6 +12,7 @@ import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_details_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -452,6 +453,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     // Return local data immediately, fetch network data in background
     _networkFetching = true;
     scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
+    // Cached details from an earlier visit render the chapter list (and group
+    // tabs) instantly; the background fetch above refreshes them.
+    final cached = ComicDetailsCache().find(widget.sourceKey, widget.id);
+    if (cached != null) {
+      return Res(cached);
+    }
     return Res(_fallbackDetails(state));
   }
 
@@ -515,6 +522,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           setState(() {
             data = res.data;
           });
+          ComicDetailsCache().update(widget.sourceKey, widget.id, res.data);
           await onDataLoaded();
           return;
         }
@@ -1414,12 +1422,18 @@ class _ComicSectionHeader extends StatelessWidget {
   const _ComicSectionHeader({
     required this.icon,
     required this.title,
+    this.titleBadge,
     this.trailing,
     this.horizontalPadding,
   });
 
   final IconData icon;
   final String title;
+
+  /// Small inline status widget right after the title, e.g. the chapters
+  /// background-refresh indicator.
+  final Widget? titleBadge;
+
   final Widget? trailing;
 
   /// Overrides the header's left/right padding when provided. Defaults keep the
@@ -1452,11 +1466,21 @@ class _ComicSectionHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (titleBadge != null) ...[
+                  const SizedBox(width: 8),
+                  titleBadge!,
+                ],
+              ],
             ),
           ),
           if (trailing != null) trailing!,
