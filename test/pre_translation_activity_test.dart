@@ -120,8 +120,36 @@ void main() {
       expect(activity.liveProgress(task), 1.0);
     });
 
-    test('dropping a group takes its pages back out of live progress', () {
-      // An abandoned group (cancel/pause) is removed rather than committed, so
+    test('partly-finished pages move the bar before the group commits', () {
+      // The point of the fractional weights: one group of 4 walking fetch →
+      // recognize → translate → render must show four distinct values, not sit
+      // at 0 and then jump when its counters commit.
+      var task = taskWith([
+        PreTranslationChapter(eid: '1', title: 'Ch 1', total: 8),
+      ]);
+      var activity = PreTranslationActivity()..chapterIndex = 1;
+      var group = PreTranslationGroupActivity(index: 0, pageCount: 4);
+      activity.groups[0] = group;
+
+      var seen = <double>[];
+      for (var completed in [
+        4 * fetchedPageWeight, // all downloaded
+        4 * 0.55, // all recognized
+        4 * 0.8, // translation returned
+        4.0, // drawn
+      ]) {
+        group.completedPages = completed;
+        seen.add(activity.liveProgress(task));
+      }
+
+      expect(seen.first, greaterThan(0));
+      expect(seen.last, closeTo(0.5, 1e-9));
+      for (var i = 1; i < seen.length; i++) {
+        expect(seen[i], greaterThan(seen[i - 1]));
+      }
+    });
+
+    test('dropping a group takes its pages back out of live progress', () {      // An abandoned group (cancel/pause) is removed rather than committed, so
       // the bar has to fall back to the committed value instead of keeping
       // credit for work that will be redone.
       var task = taskWith([
