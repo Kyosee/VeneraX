@@ -2109,6 +2109,47 @@ class ComicListState extends State<ComicList> {
     ];
   }
 
+  /// Overflow menu for the multi-select bar: batch favorite, file into a
+  /// collection, or clear from all folders. Each action no-ops on an empty
+  /// selection.
+  Widget _buildSelectMenu() {
+    return MenuButton(
+      entries: [
+        MenuEntry(
+          icon: Icons.favorite_outline,
+          text: "Add to favorites".tl,
+          onClick: () {
+            if (_selected.isEmpty) return;
+            addFavorite(_selected.keys.toList());
+            _exitSelect();
+          },
+        ),
+        // The batch path is the main way a collection gets built: pick the
+        // three volumes of one story, then file them together in one step.
+        MenuEntry(
+          icon: Icons.library_books_outlined,
+          text: "Add to collection".tl,
+          onClick: () {
+            if (_selected.isEmpty) return;
+            showAddToCollectionDialog(context, _selected.keys.toList());
+            _exitSelect();
+          },
+        ),
+        // Undo a mis-tapped batch favorite: clear the selected comics from
+        // every folder in one step.
+        MenuEntry(
+          icon: Icons.heart_broken_outlined,
+          text: "Cancel favorite".tl,
+          onClick: () {
+            if (_selected.isEmpty) return;
+            _removeAllFavoritesOf(_selected.keys.toList());
+            _exitSelect();
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildSelectAppbar() {
     return SliverAppbar(
       leading: Tooltip(
@@ -2133,40 +2174,9 @@ class ComicListState extends State<ComicList> {
               ? null
               : () => setState(() => _selected.clear()),
         ),
-        IconButton(
-          icon: const Icon(Icons.stars_outlined),
-          tooltip: "Add to favorites".tl,
-          onPressed: _selected.isEmpty
-              ? null
-              : () {
-                  addFavorite(_selected.keys.toList());
-                  _exitSelect();
-                },
-        ),
-        // The batch path is the main way a collection gets built: pick the
-        // three volumes of one story, then file them together in one step.
-        IconButton(
-          icon: const Icon(Icons.library_books_outlined),
-          tooltip: "Add to collection".tl,
-          onPressed: _selected.isEmpty
-              ? null
-              : () {
-                  showAddToCollectionDialog(context, _selected.keys.toList());
-                  _exitSelect();
-                },
-        ),
-        // Undo a mis-tapped batch favorite: clear the selected comics from
-        // every folder in one step.
-        IconButton(
-          icon: const Icon(Icons.heart_broken_outlined),
-          tooltip: "Cancel favorite".tl,
-          onPressed: _selected.isEmpty
-              ? null
-              : () {
-                  _removeAllFavoritesOf(_selected.keys.toList());
-                  _exitSelect();
-                },
-        ),
+        // Favorite / collection / unfavorite live in an overflow menu, like
+        // the other multi-select pages, keeping the bar uncluttered.
+        _buildSelectMenu(),
       ],
     );
   }
