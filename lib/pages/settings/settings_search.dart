@@ -4,7 +4,7 @@ part of 'settings_page.dart';
 ///
 /// IMPORTANT: this list mirrors the settings rendered by the category pages
 /// (explore_settings.dart, reader.dart, appearance.dart, local_favorites.dart,
-/// app.dart, network.dart, about.dart, debug.dart). When you add, rename, or
+/// data_sync.dart, app.dart, network.dart, about.dart, debug.dart). When you add, rename, or
 /// remove a setting on those pages, update the matching entry here so it stays
 /// searchable.
 ///
@@ -152,12 +152,13 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Delete all unavailable local favorite items", 3),
   _SettingsSearchEntry("Click favorite", 3),
 
-  // --- 4: APP ---
+  // --- 4: Data & Sync ---
   _SettingsSearchEntry("Storage Path for local comics", 4, keywords: ["path"]),
   _SettingsSearchEntry("Set New Storage Path", 4, keywords: ["path"]),
   _SettingsSearchEntry("Cache Size", 4, keywords: ["cache"]),
   _SettingsSearchEntry("Clear Cache", 4, keywords: ["cache"]),
   _SettingsSearchEntry("Cache Limit", 4, keywords: ["cache"]),
+  _SettingsSearchEntry("Auto clean reading history", 4),
   _SettingsSearchEntry("Export App Data", 4, keywords: ["backup", "export"]),
   _SettingsSearchEntry("Import App Data", 4, keywords: ["restore", "import"]),
   _SettingsSearchEntry(
@@ -171,53 +172,55 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     4,
     keywords: ["webdav", "library", "comic", "remote", "nas", "cloud"],
   ),
-  _SettingsSearchEntry("Language", 4, keywords: ["locale", "language"]),
+
+  // --- 5: APP ---
+  _SettingsSearchEntry("Language", 5, keywords: ["locale", "language"]),
   _SettingsSearchEntry(
     "Authorization Required",
-    4,
+    5,
     keywords: ["password", "lock", "biometric", "fingerprint", "privacy"],
     visible: () => !App.isLinux,
   ),
   _SettingsSearchEntry(
     "Minimize to tray",
-    4,
+    5,
     keywords: ["tray", "window"],
     visible: () => App.isWindows,
   ),
 
-  // --- 5: Network ---
-  _SettingsSearchEntry("Proxy", 5, keywords: ["vpn", "socks", "http"]),
-  _SettingsSearchEntry("DNS Overrides", 5, keywords: ["dns", "hosts", "sni"]),
-  _SettingsSearchEntry("Download Threads", 5, keywords: ["download"]),
-  _SettingsSearchEntry("Parallel Downloads", 5, keywords: ["download"]),
+  // --- 6: Network ---
+  _SettingsSearchEntry("Proxy", 6, keywords: ["vpn", "socks", "http"]),
+  _SettingsSearchEntry("DNS Overrides", 6, keywords: ["dns", "hosts", "sni"]),
+  _SettingsSearchEntry("Download Threads", 6, keywords: ["download"]),
+  _SettingsSearchEntry("Parallel Downloads", 6, keywords: ["download"]),
   _SettingsSearchEntry(
     "Download on WiFi Only",
-    5,
+    6,
     keywords: ["wifi", "wlan", "download", "data"],
   ),
 
-  // --- 6: About ---
-  _SettingsSearchEntry("Check for updates", 6, keywords: ["update", "version"]),
-  _SettingsSearchEntry("Check for updates on startup", 6, keywords: ["update"]),
+  // --- 7: About ---
+  _SettingsSearchEntry("Check for updates", 7, keywords: ["update", "version"]),
+  _SettingsSearchEntry("Check for updates on startup", 7, keywords: ["update"]),
   _SettingsSearchEntry(
     "Guide",
-    6,
+    7,
     keywords: ["guide", "help", "manual", "how to", "usage"],
   ),
-  _SettingsSearchEntry("Repository", 6, keywords: ["github", "source"]),
-  _SettingsSearchEntry("User Agreement & Disclaimer", 6),
+  _SettingsSearchEntry("Repository", 7, keywords: ["github", "source"]),
+  _SettingsSearchEntry("User Agreement & Disclaimer", 7),
 
-  // --- 7: Debug ---
-  _SettingsSearchEntry("Reload Configs", 7),
-  _SettingsSearchEntry("Open Log", 7, keywords: ["log", "logs"]),
+  // --- 8: Debug ---
+  _SettingsSearchEntry("Reload Configs", 8),
+  _SettingsSearchEntry("Open Log", 8, keywords: ["log", "logs"]),
   _SettingsSearchEntry(
     "Ignore Certificate Errors",
-    7,
+    8,
     keywords: ["ssl", "tls"],
   ),
   _SettingsSearchEntry(
     "JS Evaluator",
-    7,
+    8,
     keywords: ["javascript", "js", "eval"],
   ),
 ];

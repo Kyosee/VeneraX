@@ -336,14 +336,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           icon: Icons.menu_book,
           title: "Reading settings".tl,
           children: [
-            _PageTurnModeSetting(
-              onChanged: widget.onChanged,
-              comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource: isEnabledSpecificSettings
-                  ? widget.comicSource
-                  : null,
-              useDeviceSettings: useDeviceSpecificSettings,
-            ),
             _SwitchSetting(
               title: "Page animation".tl,
               settingKey: "enablePageAnimation",
@@ -465,82 +457,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            SelectSetting(
-              title: "Reading background color".tl,
-              settingKey: "readerBackgroundColor",
-              optionTranslation: {
-                "system": "Follow theme".tl,
-                "white": "White".tl,
-                "gray": "Gray".tl,
-                "black": "Black".tl,
-                "sepia": "Sepia".tl,
-                "green": "Eye-care green".tl,
-              },
-              onChanged: () {
-                widget.onChanged?.call("readerBackgroundColor");
-              },
-              comicId: isEnabledSpecificSettings ? widget.comicId : null,
-              comicSource: isEnabledSpecificSettings
-                  ? widget.comicSource
-                  : null,
-              useDeviceSettings: useDeviceSpecificSettings,
-            ),
-            _SwitchSetting(
-              title: "Night mode".tl,
-              subtitle:
-                  "Dim the page with a warm overlay to reduce eye strain".tl,
-              settingKey: "readerNightMode",
-              enabled: appdata.settings['readerNightModeFollowSystem'] != true,
-              onChanged: () {
-                setState(() {});
-                widget.onChanged?.call("readerNightMode");
-              },
-            ),
-            _SwitchSetting(
-              title: "Follow system dark mode".tl,
-              subtitle:
-                  "Turn night mode on/off automatically with the system theme"
-                      .tl,
-              settingKey: "readerNightModeFollowSystem",
-              onChanged: () {
-                if (appdata.settings['readerNightModeFollowSystem'] == true) {
-                  final isDark =
-                      View.of(context).platformDispatcher.platformBrightness ==
-                      Brightness.dark;
-                  appdata.settings['readerNightMode'] = isDark;
-                  appdata.saveData();
-                  widget.onChanged?.call("readerNightMode");
-                }
-                setState(() {});
-                widget.onChanged?.call("readerNightModeFollowSystem");
-              },
-            ),
-            if (appdata.settings['readerNightMode'] == true ||
-                appdata.settings['readerNightModeFollowSystem'] == true)
-              SelectSetting(
-                title: "Night mode color".tl,
-                settingKey: "readerNightModeColor",
-                optionTranslation: {
-                  "warm": "Warm".tl,
-                  "black": "Black".tl,
-                  "red": "Dim red".tl,
-                },
-                onChanged: () {
-                  widget.onChanged?.call("readerNightModeColor");
-                },
-              ),
-            if (appdata.settings['readerNightMode'] == true ||
-                appdata.settings['readerNightModeFollowSystem'] == true)
-              _SliderSetting(
-                title: "Night mode intensity".tl,
-                settingsIndex: "readerNightModeIntensity",
-                interval: 0.05,
-                min: 0.1,
-                max: 0.85,
-                onChanged: () {
-                  widget.onChanged?.call("readerNightModeIntensity");
-                },
-              ),
             _SliderSetting(
               title: "Auto page turning interval".tl,
               settingsIndex: "autoPageTurningInterval",
@@ -624,6 +540,14 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           icon: Icons.touch_app,
           title: "Gesture settings".tl,
           children: [
+            _PageTurnModeSetting(
+              onChanged: widget.onChanged,
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
+              useDeviceSettings: useDeviceSpecificSettings,
+            ),
             _SwitchSetting(
               title: 'Double tap to zoom'.tl,
               settingKey: 'enableDoubleTapToZoom',
@@ -842,6 +766,82 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           icon: Icons.tv,
           title: "Display settings".tl,
           children: [
+            SelectSetting(
+              title: "Reading background color".tl,
+              settingKey: "readerBackgroundColor",
+              optionTranslation: {
+                "system": "Follow theme".tl,
+                "white": "White".tl,
+                "gray": "Gray".tl,
+                "black": "Black".tl,
+                "sepia": "Sepia".tl,
+                "green": "Eye-care green".tl,
+              },
+              onChanged: () {
+                widget.onChanged?.call("readerBackgroundColor");
+              },
+              comicId: isEnabledSpecificSettings ? widget.comicId : null,
+              comicSource: isEnabledSpecificSettings
+                  ? widget.comicSource
+                  : null,
+              useDeviceSettings: useDeviceSpecificSettings,
+            ),
+            _SwitchSetting(
+              title: "Night mode".tl,
+              subtitle:
+                  "Dim the page with a warm overlay to reduce eye strain".tl,
+              settingKey: "readerNightMode",
+              enabled: appdata.settings['readerNightModeFollowSystem'] != true,
+              onChanged: () {
+                setState(() {});
+                widget.onChanged?.call("readerNightMode");
+              },
+            ),
+            _SwitchSetting(
+              title: "Follow system dark mode".tl,
+              subtitle:
+                  "Turn night mode on/off automatically with the system theme"
+                      .tl,
+              settingKey: "readerNightModeFollowSystem",
+              onChanged: () {
+                if (appdata.settings['readerNightModeFollowSystem'] == true) {
+                  final isDark =
+                      View.of(context).platformDispatcher.platformBrightness ==
+                      Brightness.dark;
+                  appdata.settings['readerNightMode'] = isDark;
+                  appdata.saveData();
+                  widget.onChanged?.call("readerNightMode");
+                }
+                setState(() {});
+                widget.onChanged?.call("readerNightModeFollowSystem");
+              },
+            ),
+            if (appdata.settings['readerNightMode'] == true ||
+                appdata.settings['readerNightModeFollowSystem'] == true)
+              SelectSetting(
+                title: "Night mode color".tl,
+                settingKey: "readerNightModeColor",
+                optionTranslation: {
+                  "warm": "Warm".tl,
+                  "black": "Black".tl,
+                  "red": "Dim red".tl,
+                },
+                onChanged: () {
+                  widget.onChanged?.call("readerNightModeColor");
+                },
+              ),
+            if (appdata.settings['readerNightMode'] == true ||
+                appdata.settings['readerNightModeFollowSystem'] == true)
+              _SliderSetting(
+                title: "Night mode intensity".tl,
+                settingsIndex: "readerNightModeIntensity",
+                interval: 0.05,
+                min: 0.1,
+                max: 0.85,
+                onChanged: () {
+                  widget.onChanged?.call("readerNightModeIntensity");
+                },
+              ),
             _SwitchSetting(
               title: "Display time & battery info in reader".tl,
               settingKey: "enableClockAndBatteryInfoInReader",
