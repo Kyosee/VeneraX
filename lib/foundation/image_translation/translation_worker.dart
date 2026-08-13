@@ -181,6 +181,14 @@ class TranslationWorker {
 
   final _workers = <_IsolateWorker>[];
 
+  bool _isWarm = false;
+
+  /// Whether a recognition request has already come back. Until it has, the
+  /// next one also pays for loading the ONNX models into a fresh isolate —
+  /// seconds on mobile — which the task list shows as its own stage rather
+  /// than as a recognition step that appears to hang.
+  bool get isWarm => _isWarm;
+
   int _poolSize(String sourceLang, WorkerModelPaths paths) {
     var n = TranslationPerformanceConfig.effective.ocrWorkers;
     return resolveOcrPoolSize(
@@ -204,12 +212,14 @@ class TranslationWorker {
     // avoids oversubscribing the CPU (which would make more workers slower).
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
     var worker = _pickWorker(poolSize);
-    return worker.ocrPage(
-      image,
-      sourceLang: sourceLang,
-      paths: paths,
-      intraThreads: intraThreads,
-    );
+    return worker
+        .ocrPage(
+          image,
+          sourceLang: sourceLang,
+          paths: paths,
+          intraThreads: intraThreads,
+        )
+        .whenComplete(() => _isWarm = true);
   }
 
   _IsolateWorker _pickWorker(int poolSize) {
@@ -244,6 +254,8 @@ class TranslationWorker {
     for (var w in _workers) {
       w.release();
     }
+    // Sessions re-create lazily, so the next request pays the load again.
+    _isWarm = false;
   }
 
   /// Kills all worker isolates; they restart lazily on the next request.

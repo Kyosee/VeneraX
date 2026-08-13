@@ -183,6 +183,72 @@ class PreTranslationTask {
   }
 }
 
+/// Live view of one in-flight page group.
+///
+/// Never persisted and never folded into [PreTranslationChapter.done] /
+/// `failed`: the resume cursor is `done + failed` and requires those to stay a
+/// contiguous *committed* prefix, so a per-page stage change must not touch
+/// them. This is the parallel, display-only channel instead.
+class PreTranslationGroupActivity {
+  PreTranslationGroupActivity({required this.index, required this.pageCount});
+
+  /// Group order within the chapter, which is also its commit order.
+  final int index;
+  final int pageCount;
+  TranslationStage stage = TranslationStage.fetching;
+
+  /// Pages of this group already resolved, ahead of the group's commit.
+  int pagesDone = 0;
+}
+
+/// What a running job is doing right now, beyond its committed counters.
+class PreTranslationActivity {
+  /// 1-based index of the chapter being processed; 0 before the first starts.
+  int chapterIndex = 0;
+  String chapterTitle = '';
+
+  final Map<int, PreTranslationGroupActivity> groups = {};
+
+  /// Stage of the lowest-numbered live group. Counts commit in group order, so
+  /// that group is the one holding the cursor — it answers "why hasn't the
+  /// number moved" better than whichever group changed stage most recently.
+  TranslationStage? get headStage {
+    PreTranslationGroupActivity? head;
+    for (var g in groups.values) {
+      if (head == null || g.index < head.index) head = g;
+    }
+    return head?.stage;
+  }
+
+  /// How many live groups sit in each stage, for the expanded breakdown.
+  Map<TranslationStage, int> get stageCounts {
+    var counts = <TranslationStage, int>{};
+    for (var g in groups.values) {
+      counts[g.stage] = (counts[g.stage] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  /// Pages finished inside groups that have not committed yet.
+  int get uncommittedPages =>
+      groups.values.fold(0, (sum, g) => sum + g.pagesDone);
+
+  /// [PreTranslationTask.progress] plus those uncommitted pages. A group of
+  /// 4-8 pages commits its counts at once, so the committed value can sit
+  /// still for minutes — long enough to read as a stalled job. Falls back to
+  /// the committed value whenever the running chapter is unknown or its page
+  /// count is not resolved yet.
+  double liveProgress(PreTranslationTask task) {
+    var base = task.progress;
+    var index = chapterIndex - 1;
+    if (index < 0 || index >= task.chapters.length) return base;
+    var chapter = task.chapters[index];
+    if (chapter.total <= 0) return base;
+    var extra = (uncommittedPages / chapter.total).clamp(0.0, 1.0);
+    return (base + extra / task.chapters.length).clamp(0.0, 1.0);
+  }
+}
+
 /// Manages background pre-translation jobs. Mirrors the structure of the
 /// other task managers (currentTasks / historyTasks / persistence) so the
 /// tasks page can render it the same way.
@@ -198,6 +264,34 @@ class PreTranslationTaskManager with ChangeNotifier {
   final historyTasks = <PreTranslationTask>[];
   final _canceledIds = <String>{};
   final _runningIds = <String>{};
+  final _activities = <String, PreTranslationActivity>{};
+
+  /// Live stage detail for a running job; null once it stops. Not persisted —
+  /// a restart resumes from the committed counters, not from mid-group state.
+  PreTranslationActivity? activityOf(String taskId) => _activities[taskId];
+
+  Timer? _activityNotifyTimer;
+  DateTime _lastActivityNotify = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Stage changes land per page across up to four concurrent groups, and each
+  /// one rebuilds the whole task list. Coalesce them to a few frames a second;
+  /// the trailing timer makes sure the final change is not swallowed.
+  void _notifyActivity() {
+    var now = DateTime.now();
+    const window = Duration(milliseconds: 400);
+    if (now.difference(_lastActivityNotify) >= window) {
+      _lastActivityNotify = now;
+      _activityNotifyTimer?.cancel();
+      _activityNotifyTimer = null;
+      notifyListeners();
+      return;
+    }
+    _activityNotifyTimer ??= Timer(window, () {
+      _activityNotifyTimer = null;
+      _lastActivityNotify = DateTime.now();
+      notifyListeners();
+    });
+  }
 
   void Function(PreTranslationTask task)? onTaskFinished;
 
@@ -394,6 +488,7 @@ class PreTranslationTaskManager with ChangeNotifier {
       return;
     }
     _runningIds.add(task.id);
+    _activities[task.id] = PreTranslationActivity();
     _refreshKeepAlive(task);
     try {
       for (var chapter in task.chapters) {
@@ -422,6 +517,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     } finally {
       _canceledIds.remove(task.id);
       _runningIds.remove(task.id);
+      // The coalescing timer is shared by every running job, so it is not this
+      // job's to cancel; the notifyListeners below already flushes this one.
+      _activities.remove(task.id);
       _moveToHistory(task);
       if (currentTasks.every((t) => !t.isRunning)) {
         BackgroundKeepAlive.instance.remove(
@@ -448,6 +546,11 @@ class PreTranslationTaskManager with ChangeNotifier {
     PreTranslationTask task,
     PreTranslationChapter chapter,
   ) async {
+    var activity = _activities[task.id];
+    activity
+      ?..chapterIndex = task.chapters.indexOf(chapter) + 1
+      ..chapterTitle = chapter.title
+      ..groups.clear();
     List<String> pageKeys;
     try {
       pageKeys = await _resolvePageKeys(task, chapter);
@@ -506,15 +609,26 @@ class PreTranslationTaskManager with ChangeNotifier {
 
     void launch(int groupIndex) {
       late Future<void> f;
+      var range = ranges[groupIndex];
+      // Registered before the work starts so the card shows the group the
+      // moment it is queued, and dropped in whenComplete whether it committed,
+      // was abandoned or threw — a leftover entry would keep counting pages
+      // that no longer exist toward the live progress.
+      var groupActivity = PreTranslationGroupActivity(
+        index: groupIndex,
+        pageCount: range.end - range.start,
+      );
+      activity?.groups[groupIndex] = groupActivity;
+      _notifyActivity();
       f = () async {
         try {
-          var range = ranges[groupIndex];
           var result = await _processGroup(
             task,
             chapter,
             pageKeys,
             range.start,
             range.end,
+            groupActivity,
           );
           // A canceled/paused-out group returns null; skip committing it so
           // counts stay at the group boundary and a resume redoes it.
@@ -527,7 +641,10 @@ class PreTranslationTaskManager with ChangeNotifier {
           // prefix boundary and is redone on resume.
           Log.error('Pre-translation', 'Group task failed: $e', s);
         }
-      }().whenComplete(() => active.remove(f));
+      }().whenComplete(() {
+        active.remove(f);
+        activity?.groups.remove(groupIndex);
+      });
       active.add(f);
     }
 
@@ -629,7 +746,33 @@ class PreTranslationTaskManager with ChangeNotifier {
     List<String> pageKeys,
     List<int> indices,
   ) async {
+    // The retry sweep runs after the forward loop, so no other group holds a
+    // slot; index 0 makes this the head one, and the card keeps naming a stage
+    // instead of dropping back to a bare "running" for the whole sweep.
+    var activity = _activities[task.id];
+    var slot = PreTranslationGroupActivity(
+      index: 0,
+      pageCount: indices.length,
+    );
+    activity?.groups[0] = slot;
+    _notifyActivity();
+    try {
+      await _retrySlice(task, chapter, pageKeys, indices, slot);
+    } finally {
+      activity?.groups.remove(0);
+      _notifyActivity();
+    }
+  }
+
+  Future<void> _retrySlice(
+    PreTranslationTask task,
+    PreTranslationChapter chapter,
+    List<String> pageKeys,
+    List<int> indices,
+    PreTranslationGroupActivity activity,
+  ) async {
     var service = ImageTranslationService.instance;
+    var settledBeforeBatch = 0;
     var pending = <({int index, String cacheKey, Uint8List imageBytes})>[];
     for (var i in indices) {
       if (_canceledIds.contains(task.id)) return;
@@ -643,6 +786,8 @@ class PreTranslationTaskManager with ChangeNotifier {
       try {
         if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           _markRetrySuccess(chapter, i);
+          activity.pagesDone = ++settledBeforeBatch;
+          _notifyActivity();
           continue;
         }
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
@@ -650,6 +795,8 @@ class PreTranslationTaskManager with ChangeNotifier {
       } catch (e, s) {
         Log.warning('Pre-translation', 'Retry page failed: $e\n$s');
         // Still failed; leave it recorded.
+        activity.pagesDone = ++settledBeforeBatch;
+        _notifyActivity();
       }
     }
     if (pending.isEmpty) return;
@@ -661,6 +808,11 @@ class PreTranslationTaskManager with ChangeNotifier {
         task.comicKey,
         task.config,
         shouldCancel: () => _canceledIds.contains(task.id),
+        onStage: (stage, settled) {
+          activity.stage = stage;
+          activity.pagesDone = settledBeforeBatch + settled;
+          _notifyActivity();
+        },
       );
       for (var j = 0; j < pending.length; j++) {
         if (results[j]) {
@@ -701,6 +853,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     List<String> pageKeys,
     int start,
     int end,
+    PreTranslationGroupActivity activity,
   ) async {
     var service = ImageTranslationService.instance;
     var pending = <({int index, String cacheKey, Uint8List imageBytes})>[];
@@ -711,6 +864,11 @@ class PreTranslationTaskManager with ChangeNotifier {
     // the caller's committer merges them into the chapter in strict group
     // order (never mutating the chapter directly from here).
     var failedIndices = <int>{};
+    // Pages this group settled before the batch call; the service reports its
+    // own settled count relative to what it was handed, so the two add up.
+    var preSettled = 0;
+    activity.stage = TranslationStage.fetching;
+    _notifyActivity();
     for (var i = start; i < end; i++) {
       // Cancel before the group is counted: return null so the caller leaves
       // the chapter counters at the group's start boundary and a resume redoes
@@ -727,6 +885,9 @@ class PreTranslationTaskManager with ChangeNotifier {
       try {
         if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           done++;
+          preSettled++;
+          activity.pagesDone = preSettled;
+          _notifyActivity();
           continue;
         }
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
@@ -735,6 +896,9 @@ class PreTranslationTaskManager with ChangeNotifier {
         Log.warning('Pre-translation', 'Page failed: $e\n$s');
         failed++;
         failedIndices.add(i);
+        preSettled++;
+        activity.pagesDone = preSettled;
+        _notifyActivity();
       }
     }
     if (pending.isNotEmpty) {
@@ -746,6 +910,11 @@ class PreTranslationTaskManager with ChangeNotifier {
           task.comicKey,
           task.config,
           shouldCancel: () => _canceledIds.contains(task.id),
+          onStage: (stage, settled) {
+            activity.stage = stage;
+            activity.pagesDone = preSettled + settled;
+            _notifyActivity();
+          },
         );
         for (var j = 0; j < pending.length; j++) {
           if (results[j]) {

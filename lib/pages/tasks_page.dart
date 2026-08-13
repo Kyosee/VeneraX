@@ -10,6 +10,7 @@ import 'package:venera/foundation/import_tasks.dart';
 import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
 import 'package:venera/foundation/webdav_migration_tasks.dart';
@@ -632,13 +633,43 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     }
   }
 
+  /// Label for one live pipeline phase. Shown in place of "Running" because
+  /// the committed page count only moves when a whole group lands, so the
+  /// phase is the only thing that tells a stalled job from a working one.
+  String translationStageText(TranslationStage stage) => switch (stage) {
+    TranslationStage.fetching => "Downloading images".tl,
+    TranslationStage.loadingModel => "Loading recognition model".tl,
+    TranslationStage.recognizing => "Recognizing text".tl,
+    TranslationStage.translating => "Translating".tl,
+    TranslationStage.rendering => "Rendering pages".tl,
+  };
+
+  /// "Recognizing text ×2 · Translating ×1" — one entry per phase that has a
+  /// live group, so concurrent groups read as parallel work instead of making
+  /// the single phase label flicker between them.
+  String translationStageBreakdown(PreTranslationActivity activity) {
+    var counts = activity.stageCounts;
+    return [
+      for (var stage in TranslationStage.values)
+        if (counts[stage] != null)
+          counts[stage]! > 1
+              ? '${translationStageText(stage)} ×${counts[stage]}'
+              : translationStageText(stage),
+    ].join(' · ');
+  }
+
   Widget buildPreTranslateTaskCard(
     PreTranslationTask task, {
     required bool expanded,
   }) {
+    var activity = task.isRunning
+        ? preTranslationManager.activityOf(task.id)
+        : null;
+    var stage = activity?.headStage;
+    var progress = activity?.liveProgress(task) ?? task.progress;
     var progressText = task.total == 0
         ? "0%"
-        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+        : "${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
     final card = Card(
       elevation: 0,
       color: context.colorScheme.surface,
@@ -657,7 +688,9 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         ),
         subtitle: buildTaskSubtitle(
           [
-            preTranslateStatusText(task),
+            stage == null
+                ? preTranslateStatusText(task)
+                : translationStageText(stage),
             "@count chapters".tlParams({'count': task.chapters.length}),
             progressText,
           ],
@@ -669,13 +702,40 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: LinearProgressIndicator(
-              value: task.isRunning && task.total == 0 ? null : task.progress,
+              value: task.isRunning && task.total == 0 ? null : progress,
             ),
           ),
           const SizedBox(height: 8),
           buildSourceBox(
             title: "Details".tl,
             children: [
+              if (activity != null && activity.chapterIndex > 0) ...[
+                Text(
+                  activity.chapterTitle.isEmpty
+                      ? "Chapter @index/@total".tlParams({
+                          'index': activity.chapterIndex,
+                          'total': task.chapters.length,
+                        })
+                      : "Chapter @index/@total: @title".tlParams({
+                          'index': activity.chapterIndex,
+                          'total': task.chapters.length,
+                          'title': activity.chapterTitle,
+                        }),
+                  style: ts.s14,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+              ],
+              if (activity != null && activity.groups.isNotEmpty) ...[
+                Text(
+                  "In progress: @detail".tlParams({
+                    'detail': translationStageBreakdown(activity),
+                  }),
+                  style: ts.s14,
+                ),
+                const SizedBox(height: 2),
+              ],
               Text(
                 "Pages: @done/@total".tlParams({
                   'done': task.done,

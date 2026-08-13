@@ -211,3 +211,26 @@ enum InpaintMode {
     };
   }
 }
+
+/// Coarse phase of one page group's work, surfaced to the task list.
+///
+/// Display only: it never drives control flow and never feeds the resume
+/// cursor. Pre-translation commits a whole group's page counts at once to keep
+/// `done + failed` a contiguous prefix, so between commits the only honest
+/// signal that a job is alive is which phase it is in.
+enum TranslationStage {
+  /// Downloading the group's source images.
+  fetching,
+
+  /// First recognition of the run — the OCR isolate is still loading models.
+  loadingModel,
+
+  /// Running text detection and recognition.
+  recognizing,
+
+  /// Waiting on the translation request for the whole group.
+  translating,
+
+  /// Erasing the source text and drawing the translation.
+  rendering,
+}

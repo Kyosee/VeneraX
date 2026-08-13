@@ -472,11 +472,16 @@ class ImageTranslationService with ChangeNotifier {
     String comicKey,
     TranslationConfig config, {
     bool Function()? shouldCancel,
+    void Function(TranslationStage stage, int settled)? onStage,
   }) async {
     var success = List.filled(pages.length, false);
     if (pages.isEmpty) return success;
     var pipeline = _pipeline ??= PageTranslationPipeline();
     var sourceLang = _effectiveSourceFor(comicKey, config);
+
+    // Pages of this group fully resolved so far, reported alongside each stage
+    // so a caller can show movement between the group's atomic count commits.
+    var settledCount = 0;
 
     // Final regions per page once known; null = a fresh-OCR page still awaiting
     // the LLM (composed in stage 2) or a page that failed and is skipped.
@@ -500,6 +505,7 @@ class ImageTranslationService with ChangeNotifier {
           _completed.add(renderKey);
           success[i] = true;
           settled[i] = true;
+          settledCount++;
           continue;
         }
         var stored = TranslationStore().get(p.cacheKey);
@@ -507,6 +513,12 @@ class ImageTranslationService with ChangeNotifier {
           regionsOf[i] = stored;
           continue;
         }
+        onStage?.call(
+          pipeline.ocrIsWarm
+              ? TranslationStage.recognizing
+              : TranslationStage.loadingModel,
+          settledCount,
+        );
         pendingOcr[i] = await pipeline.ocrPage(
           p.imageBytes,
           sourceLang: sourceLang,
@@ -516,6 +528,7 @@ class ImageTranslationService with ChangeNotifier {
       } catch (e, s) {
         Log.warning('Image Translation', 'Batch OCR failed: $e\n$s');
         settled[i] = true; // failed; success[i] stays false
+        settledCount++;
       }
     }
 
@@ -541,6 +554,7 @@ class ImageTranslationService with ChangeNotifier {
     var translated = const <String>[];
     if (texts.isNotEmpty) {
       if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+      onStage?.call(TranslationStage.translating, settledCount);
       try {
         var result = await LlmTranslator.translateBatch(
           texts,
@@ -560,6 +574,7 @@ class ImageTranslationService with ChangeNotifier {
       if (po == null) continue;
       if (!batchOk && po.pending.isNotEmpty) {
         settled[i] = true; // request failed; retry this page on a later run
+        settledCount++;
         continue;
       }
       var slice = po.pending.isEmpty || !batchOk
@@ -581,6 +596,7 @@ class ImageTranslationService with ChangeNotifier {
       if (regions == null) continue;
       if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
       var p = pages[i];
+      onStage?.call(TranslationStage.rendering, settledCount);
       try {
         if (freshOcr[i]) {
           TranslationStore().put(p.cacheKey, regions);
@@ -606,8 +622,11 @@ class ImageTranslationService with ChangeNotifier {
       } catch (e, s) {
         Log.warning('Image Translation', 'Batch render failed: $e\n$s');
         // success[i] stays false
+      } finally {
+        settledCount++;
       }
     }
+    onStage?.call(TranslationStage.rendering, settledCount);
     return success;
   }
 

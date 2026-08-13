@@ -81,6 +81,12 @@ class PageTranslationPipeline {
     return PageAnalysis(regions, ocr.languageVotes, result.glossary);
   }
 
+  /// Whether the OCR isolate already holds its models — see
+  /// [TranslationWorker.isWarm]. Lets a caller tell "loading the model" apart
+  /// from "recognizing", which look identical from the outside but differ by
+  /// seconds on the first page.
+  bool get ocrIsWarm => TranslationWorker.instance.isWarm;
+
   /// OCR-only stage: decode, recognize, vote on language and apply the
   /// no-LLM zh→zh-TW conversion, returning the blocks still awaiting the model.
   /// Shared by [analyzePage] (reader, one page) and the batch pre-translation
