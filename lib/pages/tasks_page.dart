@@ -15,6 +15,7 @@ import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
 import 'package:venera/foundation/webdav_migration_tasks.dart';
 import 'package:venera/foundation/widget_utils.dart';
+import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -754,6 +755,21 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
                   style: ts.s14.withColor(context.colorScheme.error),
                 ),
               ],
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => context.to(
+                    () => ComicPage(
+                      id: task.cid,
+                      sourceKey: task.sourceKey,
+                      title: task.title,
+                    ),
+                  ),
+                  icon: const Icon(Icons.chrome_reader_mode_outlined, size: 18),
+                  label: Text("View Detail".tl),
+                ),
+              ),
             ],
           ),
         ],
