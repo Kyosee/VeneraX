@@ -33,6 +33,11 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
   String? error;
   List<WebdavEntry> entries = const [];
 
+  /// Filters the already-listed entries by name. The whole directory listing is
+  /// in memory after one PROPFIND, so this costs no extra request.
+  bool searchMode = false;
+  String keyword = "";
+
   WebdavLibraryConfig? get _config => WebdavLibraryStore.find(widget.libraryId);
 
   @override
@@ -68,7 +73,14 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
     });
   }
 
-  List<Comic> get _comicEntries => entries
+  /// Entries left after the name filter.
+  List<WebdavEntry> get _visibleEntries {
+    final k = keyword.trim().toLowerCase();
+    if (k.isEmpty) return entries;
+    return entries.where((e) => e.name.toLowerCase().contains(k)).toList();
+  }
+
+  List<Comic> get _comicEntries => _visibleEntries
       .where((e) => !e.isArchiveFile)
       .map(
         (e) => Comic(
@@ -90,50 +102,98 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
       .toList();
 
   List<WebdavEntry> get _archiveEntries =>
-      entries.where((e) => e.isArchiveFile).toList();
+      _visibleEntries.where((e) => e.isArchiveFile).toList();
+
+  void _exitSearch() {
+    setState(() {
+      searchMode = false;
+      keyword = "";
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final config = _config;
-    return Scaffold(
+    final body = Scaffold(
       body: SmoothCustomScrollView(
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
-          SliverAppbar(
-            title: Text(
-              widget.dir == null
-                  ? (config?.displayName ?? "WebDAV Library".tl)
-                  : WebdavLibrary.titleOf(widget.dir!),
-            ),
-            actions: [
-              if (widget.dir == null)
-                Tooltip(
-                  message: "Settings".tl,
-                  child: IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () async {
-                      final current = _config;
-                      if (current == null) return;
-                      await showPopUpWidget(
-                        context,
-                        WebdavLibraryEditor(config: current),
-                      );
-                      if (mounted) _load();
-                    },
-                  ),
-                ),
-              Tooltip(
-                message: "Refresh".tl,
+          if (searchMode)
+            SliverAppbar(
+              leading: Tooltip(
+                message: "Cancel".tl,
                 child: IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _load,
+                  icon: const Icon(Icons.close),
+                  onPressed: _exitSearch,
                 ),
               ),
-            ],
-          ),
+              title: AppSearchField(
+                autofocus: true,
+                height: AppSearchField.toolbarHeight,
+                onChanged: (v) {
+                  setState(() {
+                    keyword = v;
+                  });
+                },
+              ).paddingRight(8),
+            )
+          else
+            SliverAppbar(
+              title: Text(
+                widget.dir == null
+                    ? (config?.displayName ?? "WebDAV Library".tl)
+                    : WebdavLibrary.titleOf(widget.dir!),
+              ),
+              actions: [
+                if (entries.isNotEmpty)
+                  Tooltip(
+                    message: "Search".tl,
+                    child: IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () {
+                        setState(() {
+                          searchMode = true;
+                        });
+                      },
+                    ),
+                  ),
+                if (widget.dir == null)
+                  Tooltip(
+                    message: "Settings".tl,
+                    child: IconButton(
+                      icon: const Icon(Icons.settings_outlined),
+                      onPressed: () async {
+                        final current = _config;
+                        if (current == null) return;
+                        await showPopUpWidget(
+                          context,
+                          WebdavLibraryEditor(config: current),
+                        );
+                        if (mounted) _load();
+                      },
+                    ),
+                  ),
+                Tooltip(
+                  message: "Refresh".tl,
+                  child: IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _load,
+                  ),
+                ),
+              ],
+            ),
           ..._buildBody(),
         ],
       ),
+    );
+
+    return PopScope(
+      canPop: !searchMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _exitSearch();
+      },
+      child: body,
     );
   }
 
@@ -169,6 +229,14 @@ class _WebdavLibraryPageState extends State<WebdavLibraryPage> {
         SliverFillRemaining(
           hasScrollBody: false,
           child: Center(child: Text("Nothing here".tl)),
+        ),
+      ];
+    }
+    if (_visibleEntries.isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: Text("No search results found".tl)),
         ),
       ];
     }
