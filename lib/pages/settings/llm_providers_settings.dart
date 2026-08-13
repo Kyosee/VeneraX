@@ -148,25 +148,16 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
   late final TextEditingController _url;
   late final TextEditingController _key;
   late String _model;
-  late String _providerType;
-  late bool _advanced;
   bool _showKey = false;
 
   @override
   void initState() {
     super.initState();
     var e = widget.existing;
-    var initialTemplate = e == null
-        ? LlmProviderTemplate.values.first
-        : LlmProviderTemplate.byId(LlmProviderTemplate.idForUrl(e.url));
-    _name = TextEditingController(text: e?.name ?? initialTemplate?.name ?? '');
-    _url = TextEditingController(text: e?.url ?? initialTemplate?.url ?? '');
+    _name = TextEditingController(text: e?.name ?? '');
+    _url = TextEditingController(text: e?.url ?? '');
     _key = TextEditingController(text: e?.key ?? '');
     _model = e?.model ?? '';
-    _providerType = e == null
-        ? initialTemplate!.id
-        : LlmProviderTemplate.idForUrl(e.url);
-    _advanced = _providerType == 'custom';
   }
 
   @override
@@ -220,24 +211,6 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
         return null;
       },
     );
-  }
-
-  void _applyProviderType(String value) {
-    setState(() {
-      var previousUrl = _url.text;
-      _providerType = value;
-      var template = LlmProviderTemplate.byId(value);
-      if (template != null) {
-        _name.text = template.name;
-        _url.text = template.url;
-      } else {
-        _advanced = true;
-      }
-      if (LlmTranslator.baseUrlOf(previousUrl) !=
-          LlmTranslator.baseUrlOf(_url.text)) {
-        _model = '';
-      }
-    });
   }
 
   void _showModelPicker(List<String> models) {
@@ -352,39 +325,24 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _providerType,
+              TextField(
+                controller: _name,
                 decoration: InputDecoration(
-                  labelText: "Service type".tl,
+                  labelText: "Name".tl,
+                  hintText: "e.g. OpenAI, Local gateway".tl,
                   border: const OutlineInputBorder(),
                 ),
-                items: [
-                  for (var template in LlmProviderTemplate.values)
-                    DropdownMenuItem(
-                      value: template.id,
-                      child: Text(template.name),
-                    ),
-                  DropdownMenuItem(
-                    value: 'custom',
-                    child: Text("Custom service".tl),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) _applyProviderType(value);
-                },
               ),
               const SizedBox(height: 12),
-              if (_providerType == 'custom' && !_advanced) ...[
-                TextField(
-                  controller: _url,
-                  decoration: InputDecoration(
-                    labelText: "LLM API URL".tl,
-                    hintText: 'https://example.com/v1',
-                    border: const OutlineInputBorder(),
-                  ),
+              TextField(
+                controller: _url,
+                decoration: InputDecoration(
+                  labelText: "LLM API URL".tl,
+                  hintText: 'https://example.com/v1',
+                  border: const OutlineInputBorder(),
                 ),
-                const SizedBox(height: 12),
-              ],
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _key,
                 obscureText: !_showKey,
@@ -417,42 +375,13 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
                   ),
                 ).fixHeight(36),
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.tune),
-                title: Text("Advanced settings".tl),
-                trailing: Icon(
-                  _advanced ? Icons.expand_less : Icons.expand_more,
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _enterModelManually,
+                  child: Text("Enter model manually".tl),
                 ),
-                onTap: () => setState(() => _advanced = !_advanced),
               ),
-              if (_advanced) ...[
-                TextField(
-                  controller: _name,
-                  decoration: InputDecoration(
-                    labelText: "Name".tl,
-                    hintText: "e.g. OpenAI, Local gateway".tl,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _url,
-                  decoration: InputDecoration(
-                    labelText: "LLM API URL".tl,
-                    hintText: 'https://example.com/v1',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _enterModelManually,
-                    child: Text("Enter model manually".tl),
-                  ),
-                ),
-              ],
             ],
           ),
         ),

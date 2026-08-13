@@ -78,59 +78,6 @@ class LlmProvider {
   }
 }
 
-/// Common OpenAI-compatible endpoints for the beginner setup flow.
-class LlmProviderTemplate {
-  const LlmProviderTemplate({
-    required this.id,
-    required this.name,
-    required this.url,
-  });
-
-  final String id;
-  final String name;
-  final String url;
-
-  static const values = <LlmProviderTemplate>[
-    LlmProviderTemplate(
-      id: 'openai',
-      name: 'OpenAI',
-      url: 'https://api.openai.com/v1',
-    ),
-    LlmProviderTemplate(
-      id: 'deepseek',
-      name: 'DeepSeek',
-      url: 'https://api.deepseek.com',
-    ),
-    LlmProviderTemplate(
-      id: 'siliconflow',
-      name: 'SiliconFlow',
-      url: 'https://api.siliconflow.cn/v1',
-    ),
-    LlmProviderTemplate(
-      id: 'openrouter',
-      name: 'OpenRouter',
-      url: 'https://openrouter.ai/api/v1',
-    ),
-  ];
-
-  static LlmProviderTemplate? byId(String id) {
-    for (var template in values) {
-      if (template.id == id) return template;
-    }
-    return null;
-  }
-
-  static String idForUrl(String url) {
-    var normalized = LlmTranslator.baseUrlOf(url).toLowerCase();
-    for (var template in values) {
-      if (LlmTranslator.baseUrlOf(template.url).toLowerCase() == normalized) {
-        return template.id;
-      }
-    }
-    return 'custom';
-  }
-}
-
 /// Reads and writes the user's list of LLM providers and which one is active.
 ///
 /// The list is stored in settings (and synced across devices as a whole), so
