@@ -1695,15 +1695,51 @@ class _SelectPreTranslateChapterState
         length: widget.groups!.length,
         vsync: this,
       );
+      // Select-all acts on the visible tab, so its label has to be recomputed
+      // when the tab changes; the controller alone does not rebuild us.
+      _tabController!.addListener(_onTabChanged);
     }
     PreTranslationTaskManager.instance.addListener(_onTaskUpdate);
   }
 
   @override
   void dispose() {
+    _tabController?.removeListener(_onTabChanged);
     _tabController?.dispose();
     PreTranslationTaskManager.instance.removeListener(_onTaskUpdate);
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (mounted && !_tabController!.indexIsChanging) setState(() {});
+  }
+
+  /// Flat entry indices the visible tab covers — the scope select-all acts on.
+  /// A grouped comic shows one tab per edition, and selecting every chapter of
+  /// every edition is virtually never what the user means, so the action stays
+  /// inside the tab they are looking at.
+  List<int> get _visibleIndices => widget.groups != null
+      ? widget.groups![_tabController!.index].$2
+      : [for (int i = 0; i < widget.entries.length; i++) i];
+
+  bool get _allVisibleSelected {
+    var visible = _visibleIndices;
+    return visible.isNotEmpty && visible.every(selected.contains);
+  }
+
+  /// Ticks or clears just the visible tab's chapters, leaving any selection in
+  /// the other tabs alone. Ticking never starts translation — only Start does.
+  void _toggleSelectVisible() {
+    var visible = _visibleIndices;
+    setState(() {
+      if (_allVisibleSelected) {
+        selected.removeWhere(visible.contains);
+      } else {
+        for (var i in visible) {
+          if (!selected.contains(i)) selected.add(i);
+        }
+      }
+    });
   }
 
   void _onTaskUpdate() {
@@ -2154,18 +2190,12 @@ class _SelectPreTranslateChapterState
                 const SizedBox(width: 16),
                 Expanded(
                   child: TextButton(
-                    onPressed: () {
-                      setState(() {
-                        var all = [
-                          for (int i = 0; i < widget.entries.length; i++) i,
-                        ];
-                        // Toggle: a full selection clears, otherwise select all.
-                        // Ticking boxes never starts translation — only "Start"
-                        // does.
-                        selected = selected.length == all.length ? [] : all;
-                      });
-                    },
-                    child: Text("Select All".tl),
+                    onPressed: _toggleSelectVisible,
+                    child: Text(
+                      _allVisibleSelected
+                          ? "Deselect All".tl
+                          : "Select All".tl,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),
