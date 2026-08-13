@@ -73,6 +73,44 @@ void main() {
       );
     });
 
+    test('hasFailures ignores a canceled chapter', () {
+      // Both the forward loop and the retry sweep skip a canceled chapter, so
+      // its failures can never be re-run: offering a retry would do nothing.
+      expect(
+        taskWith([
+          PreTranslationChapter(
+            eid: '0',
+            title: '',
+            total: 10,
+            done: 4,
+            failed: 2,
+            canceled: true,
+            failedPages: {4, 5},
+          ),
+        ]).hasFailures,
+        isFalse,
+      );
+      // A live chapter alongside a canceled one still offers the retry.
+      expect(
+        taskWith([
+          PreTranslationChapter(
+            eid: '0',
+            title: '',
+            failed: 2,
+            canceled: true,
+            failedPages: {0, 1},
+          ),
+          PreTranslationChapter(
+            eid: '1',
+            title: '',
+            failed: 1,
+            failedPages: {3},
+          ),
+        ]).hasFailures,
+        isTrue,
+      );
+    });
+
     test('resume-cursor invariant: a successful retry preserves done+failed',
         () {
       // A retry moves a page failed->done. The forward resume cursor is

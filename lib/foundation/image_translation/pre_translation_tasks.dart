@@ -127,8 +127,11 @@ class PreTranslationTask {
   int get done => chapters.fold(0, (sum, c) => sum + c.done);
   int get failed => chapters.fold(0, (sum, c) => sum + c.failed);
 
-  /// Whether any chapter has failed pages that could be retried.
-  bool get hasFailures => chapters.any((c) => c.failed > 0);
+  /// Whether any chapter has failed pages that could be retried. A canceled
+  /// chapter is excluded: both the forward loop and the retry sweep skip it, so
+  /// its failures are unreachable and offering a retry for them would do
+  /// nothing. Re-running such a chapter goes through the picker's re-translate.
+  bool get hasFailures => chapters.any((c) => !c.canceled && c.failed > 0);
 
   /// Overall progress across the whole job, weighted by chapters rather than
   /// pages. Each chapter contributes an equal 1/N slice; a chapter whose page
