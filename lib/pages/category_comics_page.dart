@@ -127,6 +127,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     } else {
       body = ComicList(
         key: Key(widget.category + optionsValue.toString()),
+        enableSelection: true,
         errorLeading: buildOptions().paddingTop(topPadding),
         leadingSliver: buildOptions().paddingTop(topPadding).toSliver(),
         scrollbarTopPadding: topPadding,

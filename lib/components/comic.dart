@@ -2013,23 +2013,60 @@ class ComicListState extends State<ComicList> {
     );
   }
 
-  /// Left-swipe pane that quick-favorites a single comic, or files it into a
-  /// collection. Mobile only (the grid swipe gesture is gated to mobile in
-  /// SliverGridComics).
+  /// Remove [comic] from every favorite folder it belongs to.
+  void _removeAllFavorites(Comic comic) {
+    final type = ComicType.fromKey(comic.sourceKey);
+    LocalFavoritesManager().batchDeleteComicsInAllFolders([
+      ComicID(type, comic.id),
+    ]);
+    App.rootContext.showMessage(message: "Removed from favorites".tl);
+  }
+
+  /// Swipe panes for a grid tile. Mobile only (gated in SliverGridComics).
+  ///
+  /// Left swipe reveals "Add to collection" then "Add to favorites" (orange,
+  /// at the trailing edge); a large left swipe quick-favorites to the
+  /// configured folder without a tap. When the comic is already favorited, a
+  /// right swipe reveals a red "Cancel favorite" that clears every folder, and
+  /// a large right swipe does it without a tap. Neither full swipe removes the
+  /// tile — these lists aren't the item's home.
   SwipePanes _favoriteSwipePanes(Comic comic) {
+    final favorited = LocalFavoritesManager().isExist(
+      comic.id,
+      ComicType.fromKey(comic.sourceKey),
+    );
+    final canCollect =
+        !ComicCollectionStore.isCollectionSourceKey(comic.sourceKey);
     return (
-      start: null,
+      start: favorited
+          ? SwipePane(
+              extentRatio: 0.3,
+              dismissOnFullSwipe: true,
+              keepItemOnFullSwipe: true,
+              // Clear gap below so resting to reveal the button doesn't trip
+              // the quick-cancel.
+              dismissThreshold: 0.7,
+              onFullSwipe: () => _removeAllFavorites(comic),
+              actions: [
+                SwipeAction(
+                  icon: Icons.heart_broken_outlined,
+                  label: "Cancel favorite".tl,
+                  onPressed: () => _removeAllFavorites(comic),
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
+                ),
+              ],
+            )
+          : null,
       end: SwipePane(
+        extentRatio: canCollect ? 0.5 : 0.3,
+        dismissOnFullSwipe: true,
+        keepItemOnFullSwipe: true,
+        dismissThreshold: 0.7,
+        onFullSwipe: () => _quickFavorite(comic),
         actions: [
-          SwipeAction(
-            icon: Icons.stars_outlined,
-            label: "Add to favorites".tl,
-            onPressed: () => _quickFavorite(comic),
-            backgroundColor: context.colorScheme.primaryContainer,
-            foregroundColor: context.colorScheme.onPrimaryContainer,
-          ),
-          // Hidden for a collection: it cannot be nested in another one.
-          if (!ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+          // Collection sits on the leading side; a collection can't nest.
+          if (canCollect)
             SwipeAction(
               icon: Icons.library_books_outlined,
               label: "Add to collection".tl,
@@ -2037,6 +2074,14 @@ class ComicListState extends State<ComicList> {
               backgroundColor: context.colorScheme.secondaryContainer,
               foregroundColor: context.colorScheme.onSecondaryContainer,
             ),
+          // Favorite sits at the trailing edge, in the common orange.
+          SwipeAction(
+            icon: Icons.favorite_outline,
+            label: "Add to favorites".tl,
+            onPressed: () => addFavorite([comic]),
+            backgroundColor: const Color(0xFFFF9800),
+            foregroundColor: Colors.white,
+          ),
         ],
       ),
     );

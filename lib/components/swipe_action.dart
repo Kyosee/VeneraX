@@ -33,6 +33,7 @@ class SwipePane {
     required this.actions,
     this.dismissOnFullSwipe = false,
     this.onFullSwipe,
+    this.keepItemOnFullSwipe = false,
     this.extentRatio = 0.28,
     this.dismissThreshold = 0.55,
   }) : assert(
@@ -50,6 +51,12 @@ class SwipePane {
 
   /// Runs on a large swipe when [dismissOnFullSwipe] is true.
   final VoidCallback? onFullSwipe;
+
+  /// When true, a large swipe still runs [onFullSwipe] but leaves the tile in
+  /// place, for lists that aren't the item's home (favoriting a search result
+  /// shouldn't make the result vanish). Only meaningful with
+  /// [dismissOnFullSwipe].
+  final bool keepItemOnFullSwipe;
 
   /// Fraction of tile width the pane occupies when fully revealed.
   final double extentRatio;
@@ -93,7 +100,16 @@ class SwipeActionTile extends StatelessWidget {
       dismissible: pane.dismissOnFullSwipe
           ? DismissiblePane(
               dismissThreshold: pane.dismissThreshold,
-              onDismissed: pane.onFullSwipe!,
+              // When the tile must stay, run the action via confirmDismiss and
+              // return false so the pane closes instead of removing the tile.
+              closeOnCancel: pane.keepItemOnFullSwipe,
+              confirmDismiss: pane.keepItemOnFullSwipe
+                  ? () async {
+                      pane.onFullSwipe!();
+                      return false;
+                    }
+                  : null,
+              onDismissed: pane.keepItemOnFullSwipe ? () {} : pane.onFullSwipe!,
             )
           : null,
       children: [
