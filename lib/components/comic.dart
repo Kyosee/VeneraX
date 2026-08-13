@@ -1887,6 +1887,7 @@ class ComicList extends StatefulWidget {
     this.controller,
     this.refreshHandlerCallback,
     this.selectionHandlerCallback,
+    this.onSelectionStateChanged,
     this.enablePageStorage = false,
     this.enableSelection = false,
     this.scrollbar = true,
@@ -1913,6 +1914,11 @@ class ComicList extends StatefulWidget {
   /// from a toolbar button), since long-press isn't discoverable for everyone.
   /// Only meaningful together with [enableSelection].
   final void Function(VoidCallback enterSelection)? selectionHandlerCallback;
+
+  /// Fires with the new selecting state whenever multi-select is entered or
+  /// exited. Hosts with their own app bar use it to hide that bar while the
+  /// grid shows its selection bar, avoiding two stacked bars.
+  final void Function(bool selecting)? onSelectionStateChanged;
 
   final bool enablePageStorage;
 
@@ -1968,6 +1974,7 @@ class ComicListState extends State<ComicList> {
       _selecting = true;
       _selected[c] = true;
     });
+    widget.onSelectionStateChanged?.call(true);
   }
 
   void _toggleSelect(Comic c) {
@@ -1984,6 +1991,7 @@ class ComicListState extends State<ComicList> {
       _selecting = false;
       _selected.clear();
     });
+    widget.onSelectionStateChanged?.call(false);
   }
 
   /// Enter selection mode without pre-selecting any comic — used by the host's
@@ -1991,6 +1999,7 @@ class ComicListState extends State<ComicList> {
   void _enterSelectMode() {
     if (_selecting) return;
     setState(() => _selecting = true);
+    widget.onSelectionStateChanged?.call(true);
   }
 
   /// Quick-favorite [comic] to the configured Quick Favorite folder

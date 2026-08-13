@@ -33,6 +33,9 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
   late String sourceKey;
   String? error;
 
+  void Function()? _enterSelection;
+  bool _selecting = false;
+
   void findData() {
     for (final source in ComicSource.all()) {
       if (source.categoryData?.key == widget.categoryKey) {
@@ -128,6 +131,8 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
       body = ComicList(
         key: Key(widget.category + optionsValue.toString()),
         enableSelection: true,
+        selectionHandlerCallback: (fn) => _enterSelection = fn,
+        onSelectionStateChanged: (s) => setState(() => _selecting = s),
         errorLeading: buildOptions().paddingTop(topPadding),
         leadingSliver: buildOptions().paddingTop(topPadding).toSliver(),
         scrollbarTopPadding: topPadding,
@@ -138,7 +143,21 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: Appbar(title: Text(widget.category)),
+      // The grid renders its own selection bar; hide this one while selecting.
+      appBar: _selecting
+          ? null
+          : Appbar(
+              title: Text(widget.category),
+              actions: [
+                Tooltip(
+                  message: "Multi-Select".tl,
+                  child: IconButton(
+                    icon: const Icon(Icons.checklist),
+                    onPressed: () => _enterSelection?.call(),
+                  ),
+                ),
+              ],
+            ),
       body: body,
     );
   }
