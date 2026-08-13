@@ -287,12 +287,14 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
   @override
   void didUpdateWidget(covariant _NormalComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // The background details refresh can replace the chapter map while this
-    // widget stays mounted (cache-first load); re-read it like the grouped
-    // variant does.
-    chapters = state.comic.chapters!;
+    // A background details refresh can replace the chapter map while this
+    // widget stays mounted (cache-first load). Freeze it during multi-select:
+    // selection keys are chapter indices, so a list that grows or reorders
+    // mid-selection would shift them under the user. Re-read once selection
+    // ends; picked up on the next rebuild.
     if (!selectMode) {
       setState(() {
+        chapters = state.comic.chapters!;
         _history = widget.history;
       });
     }
@@ -597,12 +599,15 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   void didUpdateWidget(covariant _GroupedComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The chapter map is re-read on every rebuild, not just captured on first
-    // mount: renaming or reordering a collection's members reloads the detail
-    // in place, and a captured map would keep showing the previous tab names
-    // and order until the page was left and re-entered.
-    chapters = state.comic.chapters!;
-    _syncTabController();
+    // mount: renaming/reordering a collection's members, or a background
+    // details refresh adding chapters/tabs, reloads the detail in place, and a
+    // captured map would keep showing the previous tabs until the page was left
+    // and re-entered. Frozen during multi-select: selection keys are
+    // group-chapter indices, so a list that grows or reorders mid-selection
+    // would shift them under the user.
     if (!selectMode) {
+      chapters = state.comic.chapters!;
+      _syncTabController();
       setState(() {
         _history = widget.history;
       });
