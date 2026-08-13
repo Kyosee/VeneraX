@@ -886,14 +886,21 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     ))
                   Builder(
                     builder: (context) {
-                      var task = PreTranslationTaskManager.instance
-                          .runningTaskFor(comic.id, comic.sourceKey);
+                      var manager = PreTranslationTaskManager.instance;
+                      var task = manager.runningTaskFor(
+                        comic.id,
+                        comic.sourceKey,
+                      );
                       if (task != null) {
+                        // Same live figure the tasks page shows: committed
+                        // counters alone sit still for minutes while a group
+                        // is in flight.
+                        var progress =
+                            manager.activityOf(task.id)?.liveProgress(task) ??
+                            task.progress;
                         var pct = task.total == 0
                             ? null
-                            : (task.progress * 100)
-                                  .clamp(0, 100)
-                                  .toStringAsFixed(0);
+                            : (progress * 100).clamp(0, 100).toStringAsFixed(0);
                         return _ActionButton(
                           icon: const Icon(Icons.translate_rounded),
                           activeIcon: const Icon(Icons.translate_rounded),

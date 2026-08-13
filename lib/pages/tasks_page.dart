@@ -713,6 +713,22 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           const SizedBox(height: 8),
           buildSourceBox(
             title: "Details".tl,
+            titleTrailing: TextButton.icon(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => context.to(
+                () => ComicPage(
+                  id: task.cid,
+                  sourceKey: task.sourceKey,
+                  title: task.title,
+                ),
+              ),
+              icon: const Icon(Icons.chrome_reader_mode_outlined, size: 16),
+              label: Text("View Detail".tl, style: ts.s12),
+            ),
             children: [
               if (activity != null && activity.chapterIndex > 0) ...[
                 Text(
@@ -755,21 +771,6 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
                   style: ts.s14.withColor(context.colorScheme.error),
                 ),
               ],
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => context.to(
-                    () => ComicPage(
-                      id: task.cid,
-                      sourceKey: task.sourceKey,
-                      title: task.title,
-                    ),
-                  ),
-                  icon: const Icon(Icons.chrome_reader_mode_outlined, size: 18),
-                  label: Text("View Detail".tl),
-                ),
-              ),
             ],
           ),
         ],
@@ -1682,7 +1683,11 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     );
   }
 
-  Widget buildSourceBox({required List<Widget> children, String? title}) {
+  Widget buildSourceBox({
+    required List<Widget> children,
+    String? title,
+    Widget? titleTrailing,
+  }) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -1694,7 +1699,12 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title ?? "By comic source".tl, style: ts.s16),
+          Row(
+            children: [
+              Expanded(child: Text(title ?? "By comic source".tl, style: ts.s16)),
+              if (titleTrailing != null) titleTrailing,
+            ],
+          ),
           const SizedBox(height: 8),
           ...children,
         ],
