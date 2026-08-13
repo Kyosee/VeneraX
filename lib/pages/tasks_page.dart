@@ -667,6 +667,10 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         : null;
     var stage = activity?.headStage;
     var progress = activity?.liveProgress(task) ?? task.progress;
+    // Committed counters lag by design (they double as the resume cursor), so
+    // the card reports the live figures a running job's activity carries.
+    var donePages = activity?.liveDone(task) ?? task.done;
+    var failedPages = activity?.liveFailed(task) ?? task.failed;
     var progressText = task.total == 0
         ? "0%"
         : "${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
@@ -738,15 +742,15 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
               ],
               Text(
                 "Pages: @done/@total".tlParams({
-                  'done': task.done,
+                  'done': donePages,
                   'total': task.total,
                 }),
                 style: ts.s14,
               ),
-              if (task.failed > 0) ...[
+              if (failedPages > 0) ...[
                 const SizedBox(height: 2),
                 Text(
-                  "Failed: @count".tlParams({'count': task.failed}),
+                  "Failed: @count".tlParams({'count': failedPages}),
                   style: ts.s14.withColor(context.colorScheme.error),
                 ),
               ],

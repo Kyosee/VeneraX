@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/image_translation/ordered_group_committer.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
@@ -149,7 +150,8 @@ void main() {
       }
     });
 
-    test('dropping a group takes its pages back out of live progress', () {      // An abandoned group (cancel/pause) is removed rather than committed, so
+    test('dropping a group takes its pages back out of live progress', () {
+      // An abandoned group (cancel/pause) is removed rather than committed, so
       // the bar has to fall back to the committed value instead of keeping
       // credit for work that will be redone.
       var task = taskWith([
@@ -163,6 +165,112 @@ void main() {
       activity.groups.remove(0);
       expect(activity.uncommittedPages, 0);
       expect(activity.liveProgress(task), closeTo(0.2, 1e-9));
+    });
+  });
+
+  // Groups overlap and may finish out of order, but their counts commit in
+  // strict group order so done+failed stays a contiguous prefix for the resume
+  // cursor. These guard the buffered-credit channel that keeps the display
+  // honest while a finished group waits behind a slower predecessor.
+  group('applyGroupResult', () {
+    test('a group finishing out of order does not make the live figures dip', () {
+      // Group 1 wins the race while group 0 is still on the LLM. Its counts
+      // cannot move the cursor, so without buffered credit its pages would
+      // vanish from the display the moment it left the in-flight map.
+      var chapter = PreTranslationChapter(eid: '1', title: 'Ch 1', total: 8);
+      var task = taskWith([chapter]);
+      var activity = PreTranslationActivity()
+        ..chapterIndex = 1
+        ..chapterEid = '1';
+      activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
+        ..completedPages = 4 * 0.8; // translated, waiting to be drawn
+      activity.groups[1] = PreTranslationGroupActivity(index: 1, pageCount: 4)
+        ..completedPages = 4; // drawn
+      var before = activity.liveProgress(task);
+
+      PreTranslationTaskManager.applyGroupResult(
+        OrderedGroupCommitter(0),
+        chapter,
+        activity,
+        1,
+        GroupResult(4, 0, {}),
+      );
+
+      expect(chapter.done, 0, reason: 'cursor cannot move past group 0');
+      expect(activity.bufferedDone, 4);
+      expect(activity.groups.containsKey(1), isFalse);
+      expect(activity.liveProgress(task), closeTo(before, 1e-9));
+
+      // The chapter still reads as unfinished: group 0's pages are neither
+      // committed nor buffered, so a premature "translated" tick is impossible.
+      var live = PreTranslationTaskManager.livePagesFor(chapter, activity);
+      expect(live, (done: 4, processed: 4));
+      expect(live.processed, lessThan(chapter.total));
+    });
+
+    test("every group's pages leave the buffer when the prefix commits", () {
+      var chapter = PreTranslationChapter(eid: '1', title: 'Ch 1', total: 8);
+      var activity = PreTranslationActivity()..chapterEid = '1';
+      var committer = OrderedGroupCommitter(0);
+
+      PreTranslationTaskManager.applyGroupResult(
+        committer,
+        chapter,
+        activity,
+        1,
+        GroupResult(3, 1, {5}),
+      );
+      expect((chapter.done, chapter.failed), (0, 0));
+      expect((activity.bufferedDone, activity.bufferedFailed), (3, 1));
+
+      // Group 0 releases itself and the buffered group 1 in one go.
+      PreTranslationTaskManager.applyGroupResult(
+        committer,
+        chapter,
+        activity,
+        0,
+        GroupResult(4, 0, {}),
+      );
+
+      expect((chapter.done, chapter.failed), (7, 1));
+      expect(chapter.failedPages, {5});
+      expect(activity.bufferedPages, 0, reason: 'buffer must balance to zero');
+      expect(
+        PreTranslationTaskManager.livePagesFor(chapter, activity),
+        (done: 7, processed: 8),
+      );
+    });
+
+    test('buffered pages only credit the chapter they belong to', () {
+      var running = PreTranslationChapter(
+        eid: '1',
+        title: 'Ch 1',
+        total: 8,
+        done: 4,
+      );
+      var other = PreTranslationChapter(
+        eid: '2',
+        title: 'Ch 2',
+        total: 8,
+        done: 4,
+      );
+      var activity = PreTranslationActivity()
+        ..chapterEid = '1'
+        ..bufferedDone = 3
+        ..bufferedFailed = 1;
+
+      expect(
+        PreTranslationTaskManager.livePagesFor(running, activity),
+        (done: 7, processed: 8),
+      );
+      expect(
+        PreTranslationTaskManager.livePagesFor(other, activity),
+        (done: 4, processed: 4),
+      );
+      expect(
+        PreTranslationTaskManager.livePagesFor(running, null),
+        (done: 4, processed: 4),
+      );
     });
   });
 }

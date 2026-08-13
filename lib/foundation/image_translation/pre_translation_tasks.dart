@@ -209,7 +209,30 @@ class PreTranslationActivity {
   int chapterIndex = 0;
   String chapterTitle = '';
 
+  /// eid of the chapter being processed, so a per-chapter display can tell
+  /// whether [bufferedPages] belongs to it.
+  String chapterEid = '';
+
   final Map<int, PreTranslationGroupActivity> groups = {};
+
+  /// Pages of groups that finished and handed their counts to the committer,
+  /// but which are still buffered behind an earlier, slower group.
+  ///
+  /// These pages are genuinely rendered and cached; only the resume cursor
+  /// cannot move past them yet, because `done + failed` has to stay a
+  /// contiguous prefix. Keeping them here lets the display credit real work
+  /// without touching the chapter counters. Reset per chapter, since each
+  /// chapter gets its own committer.
+  int bufferedDone = 0;
+  int bufferedFailed = 0;
+
+  int get bufferedPages => bufferedDone + bufferedFailed;
+
+  /// Pages settled for display: committed plus buffered. Never write this back
+  /// into [PreTranslationChapter.done] — that would break the resume cursor.
+  int liveDone(PreTranslationTask task) => task.done + bufferedDone;
+
+  int liveFailed(PreTranslationTask task) => task.failed + bufferedFailed;
 
   /// Stage of the lowest-numbered live group. Counts commit in group order, so
   /// that group is the one holding the cursor — it answers "why hasn't the
@@ -232,8 +255,10 @@ class PreTranslationActivity {
   }
 
   /// Pages finished inside groups that have not committed yet, weighted by how
-  /// far each in-flight page has got.
+  /// far each in-flight page has got, plus whole groups already waiting on the
+  /// committer.
   double get uncommittedPages =>
+      bufferedPages +
       groups.values.fold(0.0, (sum, g) => sum + g.completedPages);
 
   /// [PreTranslationTask.progress] plus those uncommitted pages. A group of
@@ -377,6 +402,49 @@ class PreTranslationTaskManager with ChangeNotifier {
     return null;
   }
 
+  /// Live page counts for [chapter] of a comic: the committed counters plus a
+  /// running job's finished-but-buffered groups.
+  ({int done, int processed}) livePagesOf(
+    String cid,
+    String sourceKey,
+    PreTranslationChapter chapter,
+  ) {
+    var task = runningTaskFor(cid, sourceKey);
+    // Identity check, not eid: a per-chapter cancel makes chapterProgressFor
+    // fall through to a history record for the same eid, and that record must
+    // not be credited with the running job's buffered pages.
+    if (task == null || !task.chapters.contains(chapter)) {
+      return livePagesFor(chapter, null);
+    }
+    return livePagesFor(chapter, _activities[task.id]);
+  }
+
+  /// Credits [activity]'s buffered groups to [chapter] for display, when they
+  /// belong to this chapter.
+  ///
+  /// Buffered pages cannot advance `done + failed` (that must stay a contiguous
+  /// prefix for the resume cursor), but they are rendered and cached, so
+  /// leaving them out makes the number sit still while work is plainly
+  /// happening — which is what a slow head group looks like from the outside.
+  /// Display only: never write these back into the chapter.
+  @visibleForTesting
+  static ({int done, int processed}) livePagesFor(
+    PreTranslationChapter chapter,
+    PreTranslationActivity? activity,
+  ) {
+    var committed = (
+      done: chapter.done,
+      processed: chapter.done + chapter.failed,
+    );
+    if (activity == null || activity.chapterEid != chapter.eid) {
+      return committed;
+    }
+    return (
+      done: committed.done + activity.bufferedDone,
+      processed: committed.processed + activity.bufferedPages,
+    );
+  }
+
   /// Whether a chapter belongs to a currently running/paused job (so the picker
   /// can distinguish "queued/among this run" from a finished-in-history one).
   bool isChapterActive(String cid, String sourceKey, String eid) {
@@ -476,11 +544,12 @@ class PreTranslationTaskManager with ChangeNotifier {
   }
 
   void _refreshKeepAlive(PreTranslationTask task) {
+    var done = _activities[task.id]?.liveDone(task) ?? task.done;
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagPreTranslate,
       formatTaskStatus(
         title: task.title,
-        detail: task.total == 0 ? null : '${task.done}/${task.total}',
+        detail: task.total == 0 ? null : '$done/${task.total}',
       ),
     );
   }
@@ -553,6 +622,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     activity
       ?..chapterIndex = task.chapters.indexOf(chapter) + 1
       ..chapterTitle = chapter.title
+      ..chapterEid = chapter.eid
+      ..bufferedDone = 0
+      ..bufferedFailed = 0
       ..groups.clear();
     List<String> pageKeys;
     try {
@@ -600,11 +672,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     var active = <Future<void>>{};
 
     void commit(int groupIndex, GroupResult result) {
-      for (var r in committer.record(groupIndex, result)) {
-        chapter.done += r.done;
-        chapter.failed += r.failed;
-        chapter.failedPages.addAll(r.failedPages);
-      }
+      applyGroupResult(committer, chapter, activity, groupIndex, result);
       _refreshKeepAlive(task);
       _saveActiveThrottled();
       notifyListeners();
@@ -616,7 +684,10 @@ class PreTranslationTaskManager with ChangeNotifier {
       // Registered before the work starts so the card shows the group the
       // moment it is queued, and dropped in whenComplete whether it committed,
       // was abandoned or threw — a leftover entry would keep counting pages
-      // that no longer exist toward the live progress.
+      // that no longer exist toward the live progress. A committed group has
+      // already been removed (and re-credited as buffered) inside commit; the
+      // removal here is idempotent and covers the abandoned/threw paths, where
+      // dropping the credit is the correct outcome.
       var groupActivity = PreTranslationGroupActivity(
         index: groupIndex,
         pageCount: range.end - range.start,
@@ -663,6 +734,40 @@ class PreTranslationTaskManager with ChangeNotifier {
     await Future.wait(active);
   }
 
+  /// Applies one finished group's counts, keeping the display channel in step.
+  ///
+  /// The group leaves [activity]'s in-flight map and its pages become buffered
+  /// credit; when [committer] releases a contiguous run, those pages move out of
+  /// the buffer and into the chapter counters. Every group's pages therefore
+  /// enter the buffer exactly once and leave exactly once, so the live figures
+  /// never double-count a group and never dip while one waits behind a slower
+  /// predecessor. A group that is abandoned instead of committed never gets
+  /// here, so its in-flight credit is simply dropped — which is correct, since
+  /// a resume will redo it.
+  @visibleForTesting
+  static void applyGroupResult(
+    OrderedGroupCommitter committer,
+    PreTranslationChapter chapter,
+    PreTranslationActivity? activity,
+    int groupIndex,
+    GroupResult result,
+  ) {
+    activity?.groups.remove(groupIndex);
+    if (activity != null) {
+      activity.bufferedDone += result.done;
+      activity.bufferedFailed += result.failed;
+    }
+    for (var r in committer.record(groupIndex, result)) {
+      chapter.done += r.done;
+      chapter.failed += r.failed;
+      chapter.failedPages.addAll(r.failedPages);
+      if (activity != null) {
+        activity.bufferedDone -= r.done;
+        activity.bufferedFailed -= r.failed;
+      }
+    }
+  }
+
   /// How many pre-translation groups may be in flight at once. Bounded by the
   /// LLM concurrency setting (the pipeline's scarcest shared resource); the
   /// per-source image gate and OCR worker pool further shape actual parallelism.
@@ -697,6 +802,17 @@ class PreTranslationTaskManager with ChangeNotifier {
       if (_canceledIds.contains(task.id)) return;
       if (chapter.canceled) continue;
       if (chapter.failed <= 0) continue;
+
+      // The retry sweep also walks one chapter at a time: point the activity at
+      // it so the card names the right chapter, and clear any buffered credit
+      // the forward pass left behind (an abandoned group can strand a later
+      // group in the committer) so it cannot be attributed to this one.
+      _activities[task.id]
+        ?..chapterIndex = task.chapters.indexOf(chapter) + 1
+        ..chapterTitle = chapter.title
+        ..chapterEid = chapter.eid
+        ..bufferedDone = 0
+        ..bufferedFailed = 0;
 
       // Legacy task with failures but no recorded indices: reset the chapter so
       // the forward loop re-scans it. Cheap — already-rendered pages skip.
