@@ -7,6 +7,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
@@ -58,7 +59,104 @@ class ComicSourceManager with ChangeNotifier, Init {
 
   factory ComicSourceManager() => _instance ??= ComicSourceManager._create();
 
+  /// User-arranged source order, as a list of source keys. Synced with the rest
+  /// of the settings, so the arrangement travels between devices.
+  static const orderKey = 'comicSourceOrder';
+
   List<ComicSource> all() => List.from(_sources);
+
+  /// key -> position in the stored order. Empty when the user never arranged
+  /// anything, in which case registration order stands.
+  static Map<String, int> _orderRank(dynamic raw) {
+    if (raw is! List) return const {};
+    final rank = <String, int>{};
+    for (final entry in raw) {
+      final key = entry?.toString();
+      if (key == null || key.isEmpty) continue;
+      rank.putIfAbsent(key, () => rank.length);
+    }
+    return rank;
+  }
+
+  /// Positions of [keys] under the arrangement stored in [raw], as indices into
+  /// [keys]. Keys with no stored position (a freshly installed source) land
+  /// after the arranged ones, keeping their relative order in [keys]. Stored
+  /// keys naming a source that is no longer installed are simply absent.
+  @visibleForTesting
+  static List<int> sortedIndices(List<String> keys, dynamic raw) {
+    final rank = _orderRank(raw);
+    int rankOf(int i) => rank[keys[i]] ?? rank.length + i;
+    return List<int>.generate(keys.length, (i) => i)..sort((a, b) {
+      final byRank = rankOf(a).compareTo(rankOf(b));
+      // Stable: equal rank can only mean the same key twice, so fall back to
+      // the incoming position rather than leaving the result unspecified.
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+  }
+
+  /// Sorts [_sources] into the stored order.
+  ///
+  /// Called from every path that inserts into [_sources] rather than from
+  /// [all]: the getter runs on build and image-load paths, where re-sorting on
+  /// each call would be pure waste.
+  void _applyOrder() {
+    final raw = appdata.settings[orderKey];
+    if (_orderRank(raw).isEmpty) return;
+    final original = List<ComicSource>.from(_sources);
+    final order = sortedIndices(original.map((e) => e.key).toList(), raw);
+    _sources
+      ..clear()
+      ..addAll(order.map((i) => original[i]));
+  }
+
+  /// Merges [orderedKeys] into [currentKeys]: the named keys are laid back into
+  /// the slots they collectively occupy today, so keys absent from
+  /// [orderedKeys] keep their current positions.
+  @visibleForTesting
+  static List<String> mergeOrder(
+    List<String> currentKeys,
+    List<String> orderedKeys,
+  ) {
+    final keys = List<String>.from(currentKeys);
+    // Drop names that are not registered: writing one into a slot would evict
+    // the real key that lives there, losing its position entirely.
+    final moving = orderedKeys.where(currentKeys.contains).toList();
+    final slots = <int>[];
+    for (var i = 0; i < keys.length; i++) {
+      if (moving.contains(keys[i])) {
+        slots.add(i);
+      }
+    }
+    for (var i = 0; i < slots.length && i < moving.length; i++) {
+      keys[slots[i]] = moving[i];
+    }
+    return keys;
+  }
+
+  /// Re-sorts the registered sources from the stored arrangement. For callers
+  /// that replaced the settings behind our back (a sync download or backup
+  /// restore) without re-registering any source.
+  void reapplySourceOrder() {
+    _applyOrder();
+    notifyListeners();
+  }
+
+  /// Records [orderedKeys] as the arrangement of the sources it names, then
+  /// re-sorts.
+  ///
+  /// Only the named sources move: they are laid back into the slots they
+  /// collectively occupy today, so sources the caller does not list — the
+  /// native library and collection sources, which the manage screen hides —
+  /// keep their current positions instead of being pushed to the end.
+  void setSourceOrder(List<String> orderedKeys) {
+    appdata.settings[orderKey] = mergeOrder(
+      _sources.map((e) => e.key).toList(),
+      orderedKeys,
+    );
+    appdata.saveData();
+    _applyOrder();
+    notifyListeners();
+  }
 
   ComicSource? find(String key) =>
       _findRegistered(key) ?? _adoptWebdavLibrary(key) ?? _adoptCollection(key);
@@ -90,6 +188,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     final source = buildWebdavComicSource(config);
     _sources.add(source);
     _webdavLibrarySourceKeys.add(key);
+    _applyOrder();
     SourcePlatformResolver.registerLegacyIntSourceKey(key.hashCode, key);
     return source;
   }
@@ -106,6 +205,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     final source = buildComicCollectionSource(collection);
     _sources.add(source);
     _collectionSourceKeys.add(key);
+    _applyOrder();
     SourcePlatformResolver.registerLegacyIntSourceKey(key.hashCode, key);
     return source;
   }
@@ -134,6 +234,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     final path = "${App.dataPath}/comic_source";
     if (!(await Directory(path).exists())) {
       await Directory(path).create(recursive: true);
+      _applyOrder();
       return;
     }
     await for (var entity in Directory(path).list()) {
@@ -153,6 +254,9 @@ class ComicSourceManager with ChangeNotifier, Init {
         }
       }
     }
+    // Directory listing order is filesystem-defined, so the arrangement has to
+    // be re-applied after the scan on every startup and reload.
+    _applyOrder();
   }
 
   Future reload() async {
@@ -186,6 +290,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     _sources.removeWhere((e) => _webdavLibrarySourceKeys.contains(e.key));
     _webdavLibrarySourceKeys.clear();
     _registerWebdavLibrarySources();
+    _applyOrder();
     notifyListeners();
   }
 
@@ -212,6 +317,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     _sources.removeWhere((e) => _collectionSourceKeys.contains(e.key));
     _collectionSourceKeys.clear();
     _registerCollectionSources();
+    _applyOrder();
     notifyListeners();
   }
 
@@ -222,6 +328,7 @@ class ComicSourceManager with ChangeNotifier, Init {
   bool add(ComicSource source) {
     final added = _addParsedSource(source, source.filePath);
     if (added) {
+      _applyOrder();
       notifyListeners();
     }
     return added;

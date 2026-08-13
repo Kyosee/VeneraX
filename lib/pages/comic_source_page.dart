@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' hide Cookie;
 import 'package:url_launcher/url_launcher_string.dart';
@@ -382,7 +383,26 @@ class _Body extends StatefulWidget {
 class _BodyState extends State<_Body> {
   var url = "";
 
+  /// Working copy of the sources being rearranged. Non-null only in sort mode;
+  /// the arrangement is persisted when the user confirms.
+  List<ComicSource>? _sorting;
+
   void updateUI() {
+    // A background update task can remove and re-add a source while sorting is
+    // open. Re-sync the working copy against what is actually installed so a
+    // gone source cannot linger in the list.
+    final sorting = _sorting;
+    if (sorting != null) {
+      final installed = _managedSources();
+      final keys = installed.map((e) => e.key).toSet();
+      if (!setEquals(keys, sorting.map((e) => e.key).toSet())) {
+        _sorting = installed;
+      } else {
+        // Same set: keep the user's arrangement, refresh the instances.
+        final byKey = {for (final e in installed) e.key: e};
+        _sorting = sorting.map((e) => byKey[e.key]!).toList();
+      }
+    }
     setState(() {});
   }
 
@@ -398,27 +418,91 @@ class _BodyState extends State<_Body> {
     ComicSourceManager().removeListener(updateUI);
   }
 
+  /// The sources this screen manages: the native WebDAV library and comic
+  /// collection sources have no script to edit/update/delete, so they never
+  /// appear here — they are managed through their own screens instead.
+  List<ComicSource> _managedSources() => ComicSource.all()
+      .where(
+        (e) =>
+            !WebdavLibraryStore.isLibrarySourceKey(e.key) &&
+            !ComicCollectionStore.isCollectionSourceKey(e.key),
+      )
+      .toList();
+
+  void _enterSortMode() {
+    final sources = _managedSources();
+    if (sources.length < 2) return;
+    setState(() {
+      _sorting = sources;
+    });
+  }
+
+  void _exitSortMode() {
+    setState(() {
+      _sorting = null;
+    });
+  }
+
+  void _onSortReorder(int oldIndex, int newIndex) {
+    final sorting = _sorting;
+    if (sorting == null) return;
+    setState(() {
+      final moved = sorting.removeAt(oldIndex);
+      sorting.insert(newIndex.clamp(0, sorting.length), moved);
+    });
+  }
+
+  void _saveSortOrder() {
+    final sorting = _sorting;
+    if (sorting == null) return;
+    ComicSourceManager().setSourceOrder(sorting.map((e) => e.key).toList());
+    _exitSortMode();
+    // Explore/search/category tabs are built from the source order, so they
+    // have to be rebuilt for the new arrangement to show up outside this page.
+    App.forceRebuild();
+  }
+
+  void _sortByName() {
+    final sorting = _sorting;
+    if (sorting == null) return;
+    setState(() {
+      sorting.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sorting = _sorting;
     return SmoothCustomScrollView(
       scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
-        buildCard(context),
-        const _WebdavLibrariesCard(),
-        // The built-in WebDAV library and comic collection sources have no
-        // script to edit/update/delete, so they never appear in this management
-        // list — they are managed through their own screens instead.
-        for (var source in ComicSource.all())
-          if (!WebdavLibraryStore.isLibrarySourceKey(source.key) &&
-              !ComicCollectionStore.isCollectionSourceKey(source.key))
+        if (sorting != null) ...[
+          _SortModeBanner(onDone: _saveSortOrder, onSortByName: _sortByName),
+          SliverReorderableList(
+            itemCount: sorting.length,
+            onReorderItem: _onSortReorder,
+            itemBuilder: (context, index) => _SortTile(
+              key: ValueKey('sort-${sorting[index].key}'),
+              source: sorting[index],
+              index: index,
+            ),
+          ),
+        ] else ...[
+          buildCard(context),
+          const _WebdavLibrariesCard(),
+          for (var source in _managedSources())
             _SliverComicSource(
               key: ValueKey(source.key),
               source: source,
               edit: edit,
               update: update,
               delete: delete,
+              onLongPress: _enterSortMode,
             ),
+        ],
         SliverPadding(padding: EdgeInsets.only(bottom: context.padding.bottom)),
       ],
     );
@@ -1869,6 +1953,85 @@ class _SourceSelectSetting extends StatelessWidget {
   }
 }
 
+class _SortModeBanner extends StatelessWidget {
+  const _SortModeBanner({required this.onDone, required this.onSortByName});
+
+  final VoidCallback onDone;
+  final VoidCallback onSortByName;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: context.colorScheme.primaryContainer.toOpacity(0.4),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.swap_vert, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text("Drag to reorder".tl, style: ts.s14)),
+            TextButton(
+              onPressed: onSortByName,
+              child: Text("Sort by name".tl),
+            ),
+            FilledButton(onPressed: onDone, child: Text("Done".tl)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SortTile extends StatelessWidget {
+  const _SortTile({
+    super.key,
+    required this.source,
+    required this.index,
+  });
+
+  final ComicSource source;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: context.colorScheme.outlineVariant.toOpacity(0.5),
+          width: 0.6,
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              source.name,
+              style: ts.s16,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ReorderableDragStartListener(
+            index: index,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              child: Icon(Icons.drag_handle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SliverComicSource extends StatefulWidget {
   const _SliverComicSource({
     super.key,
@@ -1876,6 +2039,7 @@ class _SliverComicSource extends StatefulWidget {
     required this.edit,
     required this.update,
     required this.delete,
+    required this.onLongPress,
   });
 
   final ComicSource source;
@@ -1883,6 +2047,9 @@ class _SliverComicSource extends StatefulWidget {
   final void Function(ComicSource source) edit;
   final void Function(ComicSource source) update;
   final void Function(ComicSource source) delete;
+
+  /// Long-pressing a card enters sort mode.
+  final VoidCallback onLongPress;
 
   @override
   State<_SliverComicSource> createState() => _SliverComicSourceState();
@@ -1934,6 +2101,7 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                   _expanded = !_expanded;
                 });
               },
+              onLongPress: widget.onLongPress,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
                 child: Column(

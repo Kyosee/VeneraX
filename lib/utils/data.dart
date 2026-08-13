@@ -738,6 +738,11 @@ Future<void> _importAppDataLocked(
       liveDir.deleteIfExistsSync(recursive: true);
       stagingDir.renameSync(liveDir.path);
       await ComicSourceManager().reload();
+    } else {
+      // A backup carrying settings but no scripts still brings the restored
+      // source arrangement; without this it would only take effect at the next
+      // restart, since nothing else re-sorts the registered sources.
+      ComicSourceManager().reapplySourceOrder();
     }
   } finally {
     cacheDir.deleteIgnoreError(recursive: true);
