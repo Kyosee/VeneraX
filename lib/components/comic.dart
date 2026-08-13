@@ -2023,10 +2023,12 @@ class ComicListState extends State<ComicList> {
   }
 
   /// Remove [comic] from every favorite folder it belongs to.
-  void _removeAllFavorites(Comic comic) {
-    final type = ComicType.fromKey(comic.sourceKey);
+  void _removeAllFavorites(Comic comic) => _removeAllFavoritesOf([comic]);
+
+  /// Remove each of [comics] from every favorite folder it belongs to.
+  void _removeAllFavoritesOf(List<Comic> comics) {
     LocalFavoritesManager().batchDeleteComicsInAllFolders([
-      ComicID(type, comic.id),
+      for (final c in comics) ComicID(ComicType.fromKey(c.sourceKey), c.id),
     ]);
     App.rootContext.showMessage(message: "Removed from favorites".tl);
   }
@@ -2150,6 +2152,18 @@ class ComicListState extends State<ComicList> {
               ? null
               : () {
                   showAddToCollectionDialog(context, _selected.keys.toList());
+                  _exitSelect();
+                },
+        ),
+        // Undo a mis-tapped batch favorite: clear the selected comics from
+        // every folder in one step.
+        IconButton(
+          icon: const Icon(Icons.heart_broken_outlined),
+          tooltip: "Cancel favorite".tl,
+          onPressed: _selected.isEmpty
+              ? null
+              : () {
+                  _removeAllFavoritesOf(_selected.keys.toList());
                   _exitSelect();
                 },
         ),
