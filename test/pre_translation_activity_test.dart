@@ -65,7 +65,7 @@ void main() {
       var task = taskWith([chapter]);
       var activity = PreTranslationActivity()..chapterIndex = 1;
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 3;
+        ..completedPages = 3;
 
       expect(task.progress, closeTo(0.2, 1e-9));
       expect(activity.liveProgress(task), closeTo(0.5, 1e-9));
@@ -80,7 +80,7 @@ void main() {
       ]);
       var activity = PreTranslationActivity()..chapterIndex = 2;
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 2;
+        ..completedPages = 2;
 
       expect(task.progress, closeTo(0.5, 1e-9));
       expect(activity.liveProgress(task), closeTo(0.75, 1e-9));
@@ -93,7 +93,7 @@ void main() {
       // chapterIndex 0 = nothing running yet.
       var activity = PreTranslationActivity();
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 3;
+        ..completedPages = 3;
 
       expect(activity.liveProgress(task), task.progress);
     });
@@ -104,7 +104,7 @@ void main() {
       ]);
       var activity = PreTranslationActivity()..chapterIndex = 1;
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 2;
+        ..completedPages = 2;
 
       expect(activity.liveProgress(task), 0);
     });
@@ -115,7 +115,7 @@ void main() {
       ]);
       var activity = PreTranslationActivity()..chapterIndex = 1;
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 9;
+        ..completedPages = 9;
 
       expect(activity.liveProgress(task), 1.0);
     });
@@ -129,7 +129,7 @@ void main() {
       ]);
       var activity = PreTranslationActivity()..chapterIndex = 1;
       activity.groups[0] = PreTranslationGroupActivity(index: 0, pageCount: 4)
-        ..pagesDone = 3;
+        ..completedPages = 3;
       expect(activity.liveProgress(task), closeTo(0.5, 1e-9));
 
       activity.groups.remove(0);

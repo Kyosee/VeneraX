@@ -234,3 +234,9 @@ enum TranslationStage {
   /// Erasing the source text and drawing the translation.
   rendering,
 }
+
+/// Weight of a page that has been downloaded but not yet recognized, on the
+/// page-unit scale progress is reported in. Lives here because the fetch half
+/// of the pipeline and the recognize/translate/render half score pages
+/// separately and must agree on what a half-finished page is worth.
+const double fetchedPageWeight = 0.15;

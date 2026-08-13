@@ -197,8 +197,10 @@ class PreTranslationGroupActivity {
   final int pageCount;
   TranslationStage stage = TranslationStage.fetching;
 
-  /// Pages of this group already resolved, ahead of the group's commit.
-  int pagesDone = 0;
+  /// Pages of this group already accounted for, in page units and weighted by
+  /// the phase each page has reached — so a group that is minutes from
+  /// committing still reads as partial progress rather than as nothing.
+  double completedPages = 0;
 }
 
 /// What a running job is doing right now, beyond its committed counters.
@@ -229,9 +231,10 @@ class PreTranslationActivity {
     return counts;
   }
 
-  /// Pages finished inside groups that have not committed yet.
-  int get uncommittedPages =>
-      groups.values.fold(0, (sum, g) => sum + g.pagesDone);
+  /// Pages finished inside groups that have not committed yet, weighted by how
+  /// far each in-flight page has got.
+  double get uncommittedPages =>
+      groups.values.fold(0.0, (sum, g) => sum + g.completedPages);
 
   /// [PreTranslationTask.progress] plus those uncommitted pages. A group of
   /// 4-8 pages commits its counts at once, so the committed value can sit
@@ -774,6 +777,14 @@ class PreTranslationTaskManager with ChangeNotifier {
     var service = ImageTranslationService.instance;
     var settledBeforeBatch = 0;
     var pending = <({int index, String cacheKey, Uint8List imageBytes})>[];
+    void reportFetchPhase() {
+      activity
+        ..completedPages =
+            settledBeforeBatch + pending.length * fetchedPageWeight
+        ..stage = TranslationStage.fetching;
+      _notifyActivity();
+    }
+
     for (var i in indices) {
       if (_canceledIds.contains(task.id)) return;
       var imageKey = pageKeys[i];
@@ -786,17 +797,18 @@ class PreTranslationTaskManager with ChangeNotifier {
       try {
         if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           _markRetrySuccess(chapter, i);
-          activity.pagesDone = ++settledBeforeBatch;
-          _notifyActivity();
+          settledBeforeBatch++;
+          reportFetchPhase();
           continue;
         }
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((index: i, cacheKey: cacheKey, imageBytes: bytes));
+        reportFetchPhase();
       } catch (e, s) {
         Log.warning('Pre-translation', 'Retry page failed: $e\n$s');
         // Still failed; leave it recorded.
-        activity.pagesDone = ++settledBeforeBatch;
-        _notifyActivity();
+        settledBeforeBatch++;
+        reportFetchPhase();
       }
     }
     if (pending.isEmpty) return;
@@ -808,9 +820,10 @@ class PreTranslationTaskManager with ChangeNotifier {
         task.comicKey,
         task.config,
         shouldCancel: () => _canceledIds.contains(task.id),
-        onStage: (stage, settled) {
+        onStage: (stage, completed) {
           activity.stage = stage;
-          activity.pagesDone = settledBeforeBatch + settled;
+          // The service scores only the pages it was handed, on the same scale.
+          activity.completedPages = settledBeforeBatch + completed;
           _notifyActivity();
         },
       );
@@ -869,6 +882,13 @@ class PreTranslationTaskManager with ChangeNotifier {
     var preSettled = 0;
     activity.stage = TranslationStage.fetching;
     _notifyActivity();
+
+    void reportFetchPhase() {
+      activity.completedPages =
+          preSettled + pending.length * fetchedPageWeight;
+      _notifyActivity();
+    }
+
     for (var i = start; i < end; i++) {
       // Cancel before the group is counted: return null so the caller leaves
       // the chapter counters at the group's start boundary and a resume redoes
@@ -886,19 +906,18 @@ class PreTranslationTaskManager with ChangeNotifier {
         if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
           done++;
           preSettled++;
-          activity.pagesDone = preSettled;
-          _notifyActivity();
+          reportFetchPhase();
           continue;
         }
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((index: i, cacheKey: cacheKey, imageBytes: bytes));
+        reportFetchPhase();
       } catch (e, s) {
         Log.warning('Pre-translation', 'Page failed: $e\n$s');
         failed++;
         failedIndices.add(i);
         preSettled++;
-        activity.pagesDone = preSettled;
-        _notifyActivity();
+        reportFetchPhase();
       }
     }
     if (pending.isNotEmpty) {
@@ -910,9 +929,11 @@ class PreTranslationTaskManager with ChangeNotifier {
           task.comicKey,
           task.config,
           shouldCancel: () => _canceledIds.contains(task.id),
-          onStage: (stage, settled) {
+          onStage: (stage, completed) {
             activity.stage = stage;
-            activity.pagesDone = preSettled + settled;
+            // The service scores only the pages it was handed, on the same
+            // page-unit scale, so the two halves simply add up.
+            activity.completedPages = preSettled + completed;
             _notifyActivity();
           },
         );
