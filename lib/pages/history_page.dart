@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
@@ -380,6 +381,21 @@ class _HistoryPageState extends State<HistoryPage>
               }
             },
           ),
+          // Hidden while the selection holds a collection, since collections
+          // cannot nest. Matches the favorites list.
+          if (!selectedItems.keys.any(
+            (e) => ComicCollectionStore.isCollectionSourceKey(e.sourceKey),
+          ))
+            MenuEntry(
+              icon: Icons.library_books_outlined,
+              text: "Add to collection".tl,
+              onClick: () {
+                if (selectedItems.isEmpty) return;
+                final picked = List<Comic>.from(selectedItems.keys);
+                exitSelectMode();
+                showAddToCollectionDialog(context, picked);
+              },
+            ),
         ],
       ),
     ];
