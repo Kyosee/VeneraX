@@ -47,7 +47,7 @@ class TranslationStore {
     _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute(_createTableSql);
     _migrateSchema();
-    removeLegacyCacheRows(_db);
+    migrateLegacyKeys(_db);
     isInitialized = true;
   }
 
@@ -84,7 +84,7 @@ class TranslationStore {
           ]);
           merged++;
         }
-        removeLegacyCacheRows(_db);
+        migrateLegacyKeys(_db);
         _db.execute("COMMIT;");
       } catch (e) {
         _db.execute("ROLLBACK;");
@@ -109,18 +109,50 @@ class TranslationStore {
   /// Columns a foreign database must have for [mergeFrom] to read it.
   static const _requiredColumns = ["cache_key", "regions", "time"];
 
-  /// Generation 1 used broad erase bounds and cannot be rendered safely after
-  /// the per-line-mask upgrade. Those rows are unreachable by generation-2
-  /// lookups, so discard them on startup and after a backup merge.
+  /// Generation 1 keys carry no generation segment (`pageTranslation@ja>zh@…`),
+  /// so generation-2 lookups (`pageTranslation@2@ja>zh@…`) miss them and the
+  /// pages read as never translated. Rewrite those keys into the generation-2
+  /// namespace instead of dropping the rows: the stored text is the expensive,
+  /// non-reproducible part (OCR + a paid translation request) and is unaffected
+  /// by the generation bump. What generation 1 lacks is per-line erase
+  /// rectangles (`es`), and their absence is already handled downstream — the
+  /// renderer falls back to the union [TranslatedRegion.eraseRect] and computes
+  /// the actual stroke mask from the page pixels at render time, so a migrated
+  /// row erases no more broadly than a fresh one.
+  ///
+  /// A generation-2 row for the same page already being present means the page
+  /// was re-translated after the upgrade; that row is newer, so INSERT OR IGNORE
+  /// keeps it and the legacy duplicate is dropped.
   @visibleForTesting
-  static void removeLegacyCacheRows(CommonDatabase db) {
+  static void migrateLegacyKeys(CommonDatabase db) {
     db.execute(
-      "delete from translated_page "
-      "where cache_key like 'pageTranslation@%' "
-      "and substr(cache_key, length('pageTranslation@') + 1, 1) "
-      "not glob '[0-9]';",
+      "insert or ignore into translated_page (cache_key, regions, time) "
+      "select '$_currentPrefix' || $_tail, regions, time "
+      "from translated_page where $_isLegacyKey;",
     );
+    db.execute("delete from translated_page where $_isLegacyKey;");
   }
+
+  static const _keyPrefix = 'pageTranslation@';
+
+  /// Current generation prefix. Must stay in step with
+  /// `TranslationConfig.cachePrefix`.
+  static const _currentPrefix = '${_keyPrefix}2@';
+
+  /// Everything after `pageTranslation@` — for a legacy key this is the whole
+  /// `sourceLang>targetLang@source@comic@chapter@image` remainder.
+  static const _tail = "substr(cache_key, length('$_keyPrefix') + 1)";
+
+  /// The generation segment: the part of [_tail] before its first `@` — `ja>zh`
+  /// for a legacy key, `2` for a current one. Matched as a whole segment so a
+  /// future two-digit generation is not mistaken for a legacy key.
+  static const _generation = "substr($_tail, 1, instr($_tail, '@') - 1)";
+
+  /// A key belongs to generation 1 when its generation segment is not a number,
+  /// i.e. the language pair sits where the generation number now goes. A key
+  /// with no `@` at all is malformed rather than legacy and is left untouched.
+  static const _isLegacyKey =
+      "cache_key like '$_keyPrefix%' and $_generation glob '*[^0-9]*'";
 
   static const Map<String, String> _expectedColumns = {
     "cache_key": "text",

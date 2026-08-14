@@ -91,8 +91,22 @@ void main() {
     });
   });
 
-  group('TranslationStore.removeLegacyCacheRows', () {
+  // Generation 1 keys must be carried into the generation-2 namespace, not
+  // dropped: the stored text costs OCR + a paid translation request to rebuild,
+  // and #201 was every already-translated page reverting to untranslated after
+  // updating.
+  group('TranslationStore.migrateLegacyKeys', () {
     late CommonDatabase db;
+
+    void put(String key, [String regions = '[]', int time = 0]) => db.execute(
+      "insert into translated_page (cache_key, regions, time) values (?, ?, ?);",
+      [key, regions, time],
+    );
+
+    List<Object?> keys() => db
+        .select('select cache_key from translated_page order by cache_key;')
+        .map((row) => row['cache_key'])
+        .toList();
 
     setUp(() {
       db = sqlite3.open(':memory:');
@@ -107,30 +121,70 @@ void main() {
 
     tearDown(() => db.dispose());
 
-    test('removes generation 1 and keeps generation 2', () {
-      for (var key in [
-        'pageTranslation@ja>zh@src@cid@ch@1',
-        'pageTranslation@2@ja>zh@src@cid@ch@1',
-        'pageTranslation@3@ja>zh@src@cid@ch@1',
-        'other@row',
-      ]) {
-        db.execute(
-          "insert into translated_page values (?, '[]', 0);",
-          [key],
-        );
-      }
+    test('rewrites generation 1 keys into the current generation', () {
+      put('pageTranslation@ja>zh@src@cid@ch@1', '[{"text":"x"}]', 7);
 
-      TranslationStore.removeLegacyCacheRows(db);
+      TranslationStore.migrateLegacyKeys(db);
 
-      var keys = db
-          .select('select cache_key from translated_page order by cache_key;')
-          .map((row) => row['cache_key'])
-          .toList();
-      expect(keys, [
+      expect(keys(), ['pageTranslation@2@ja>zh@src@cid@ch@1']);
+      // The expensive part — the stored text — and its timestamp survive.
+      var row = db.select('select regions, time from translated_page;').first;
+      expect(row['regions'], '[{"text":"x"}]');
+      expect(row['time'], 7);
+    });
+
+    test('leaves current and future generations alone', () {
+      put('pageTranslation@2@ja>zh@src@cid@ch@1');
+      put('pageTranslation@3@ja>zh@src@cid@ch@1');
+      // A two-digit generation must not read as legacy.
+      put('pageTranslation@10@ja>zh@src@cid@ch@1');
+      put('other@row');
+
+      TranslationStore.migrateLegacyKeys(db);
+
+      expect(keys(), [
         'other@row',
+        'pageTranslation@10@ja>zh@src@cid@ch@1',
         'pageTranslation@2@ja>zh@src@cid@ch@1',
         'pageTranslation@3@ja>zh@src@cid@ch@1',
       ]);
+    });
+
+    test('keeps the newer row when the page was re-translated after upgrading',
+        () {
+      put('pageTranslation@ja>zh@src@cid@ch@1', '[{"text":"old"}]', 1);
+      put('pageTranslation@2@ja>zh@src@cid@ch@1', '[{"text":"new"}]', 2);
+
+      TranslationStore.migrateLegacyKeys(db);
+
+      expect(keys(), ['pageTranslation@2@ja>zh@src@cid@ch@1']);
+      expect(
+        db.select('select regions from translated_page;').first['regions'],
+        '[{"text":"new"}]',
+      );
+    });
+
+    test('is idempotent across restarts', () {
+      put('pageTranslation@ja>zh@src@cid@ch@1', '[{"text":"x"}]', 7);
+
+      TranslationStore.migrateLegacyKeys(db);
+      TranslationStore.migrateLegacyKeys(db);
+
+      expect(keys(), ['pageTranslation@2@ja>zh@src@cid@ch@1']);
+      expect(
+        db.select('select regions from translated_page;').first['regions'],
+        '[{"text":"x"}]',
+      );
+    });
+
+    test('an image key containing @ still migrates whole', () {
+      // Image keys are URLs and may contain the field separator; the rewrite
+      // only replaces the leading prefix and must not split on later '@'.
+      put('pageTranslation@ja>zh@src@cid@ch@https://h/a@b.jpg');
+
+      TranslationStore.migrateLegacyKeys(db);
+
+      expect(keys(), ['pageTranslation@2@ja>zh@src@cid@ch@https://h/a@b.jpg']);
     });
   });
 
