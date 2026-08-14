@@ -100,12 +100,23 @@ Future<void> writeStringAtomic(String path, String content) async {
   await tmp.writeAsString(content, flush: true);
   try {
     await tmp.rename(path);
+    return;
   } on FileSystemException {
     // Some platforms/filesystems refuse to rename onto an existing file;
     // remove the target first. The temp file survives a crash in this
     // window, so the data is still recoverable on disk.
-    await File(path).deleteIgnoreError();
+  }
+  await File(path).deleteIgnoreError();
+  try {
     await tmp.rename(path);
+  } on FileSystemException {
+    // The delete above already removed the target, so a second rename failure
+    // (a full disk is the realistic one) would leave NO file at all — and
+    // these snapshots are only ever recreated by their own writer, so the loss
+    // is permanent rather than stale-by-one-write. Give up atomicity instead
+    // of the file and write in place.
+    await File(path).writeAsString(content, flush: true);
+    await tmp.deleteIgnoreError();
   }
 }
 
@@ -116,11 +127,20 @@ void writeStringAtomicSync(String path, String content) {
   tmp.writeAsStringSync(content, flush: true);
   try {
     tmp.renameSync(path);
+    return;
   } on FileSystemException {
-    try {
-      File(path).deleteSync();
-    } catch (_) {}
+    // See [writeStringAtomic].
+  }
+  try {
+    File(path).deleteSync();
+  } catch (_) {}
+  try {
     tmp.renameSync(path);
+  } on FileSystemException {
+    File(path).writeAsStringSync(content, flush: true);
+    try {
+      tmp.deleteSync();
+    } catch (_) {}
   }
 }
 

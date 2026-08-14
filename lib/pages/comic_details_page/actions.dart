@@ -143,19 +143,51 @@ abstract mixin class _ComicPageActions {
     Share.shareText(text);
   }
 
+  /// Translation needs two things that never travel with a backup: the OCR
+  /// models downloaded onto THIS device, and a configured LLM endpoint. A comic
+  /// switched on elsewhere therefore arrives unusable, so instead of hiding the
+  /// button (leaving the user with nothing to act on) we name the missing half
+  /// and offer to open the page that fixes it. Returns false when it prompted.
+  bool _ensureTranslationReady() {
+    var context = App.rootContext;
+    var lang = TranslationConfig.of(comic.id, comic.sourceKey).sourceLang;
+    if (!TranslationModels.isReadyFor(lang)) {
+      showConfirmDialog(
+        context: context,
+        title: "Models not downloaded".tl,
+        content:
+            "AI translation needs the offline recognition models on this device. Download them now?"
+                .tl,
+        confirmText: "Go to download".tl,
+        onConfirm: () =>
+            context.to(() => TranslationModelsPage(sourceLang: lang)),
+      );
+      return false;
+    }
+    if (!LlmTranslator.isConfigured) {
+      showConfirmDialog(
+        context: context,
+        title: "LLM provider not configured".tl,
+        content:
+            "AI translation needs a translation service. Set one up now?".tl,
+        confirmText: "Go to settings".tl,
+        onConfirm: () => context.to(() => const LlmProvidersPage()),
+      );
+      return false;
+    }
+    return true;
+  }
+
   /// Queues selected chapters for background pre-translation so their pages are
   /// rendered and cached before the user opens the reader (no in-reader wait).
   void preTranslate() {
-    if (!ImageTranslationService.isReadyForComic(comic.id, comic.sourceKey)) {
-      App.rootContext.showMessage(
-        message: "Configure AI translation first".tl,
-      );
-      return;
-    }
     if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       App.rootContext.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
       );
+      return;
+    }
+    if (!_ensureTranslationReady()) {
       return;
     }
     // The chapter list arrives with the background network fetch; until it
@@ -710,16 +742,14 @@ abstract mixin class _ComicPageActions {
   /// for when cached translations came out wrong.
   void showTranslationMenu() {
     var context = App.rootContext;
-    if (!ImageTranslationService.isReadyForComic(comic.id, comic.sourceKey)) {
-      context.showMessage(message: "Configure AI translation first".tl);
-      return;
-    }
     if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       context.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
       );
       return;
     }
+    // No readiness gate here: the glossary and re-translate entries work
+    // without models, and the pre-translate entry prompts on its own.
     showMenuX(context, Offset(context.width - 16, context.padding.top), [
       MenuEntry(
         icon: Icons.translate_rounded,

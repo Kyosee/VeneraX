@@ -21,6 +21,9 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/favorites_meta.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/llm_translator.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
+import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -35,6 +38,7 @@ import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/webdav_migration_dialog.dart';
 import 'package:venera/pages/search_result_page.dart';
+import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -876,14 +880,15 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     text: (comic.commentCount ?? 'Comments'.tl).toString(),
                     onPressed: showComments,
                   ),
-                if (ImageTranslationService.isReadyForComic(
-                      comic.id,
-                      comic.sourceKey,
-                    ) &&
-                    ImageTranslationService.isEnabledForComic(
-                      comic.id,
-                      comic.sourceKey,
-                    ))
+                // Only the per-comic switch gates visibility. Readiness (OCR
+                // models on this device, a configured LLM) deliberately does
+                // not: neither rides the backup, so a comic enabled on one
+                // device showed no button at all on another, with nothing to
+                // tap and no hint why. preTranslate explains and offers to fix.
+                if (ImageTranslationService.isEnabledForComic(
+                  comic.id,
+                  comic.sourceKey,
+                ))
                   Builder(
                     builder: (context) {
                       var manager = PreTranslationTaskManager.instance;

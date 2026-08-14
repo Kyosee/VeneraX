@@ -285,6 +285,22 @@ Future<File> exportAppData({
   if (await cacheFile.exists()) {
     await cacheFile.delete();
   }
+  // Both JSON snapshots exist only because [Appdata.saveData] wrote them: a
+  // profile that never changed a setting never had one, and an atomic write
+  // interrupted by a full disk (an image-pack export can fill the volume) could
+  // lose the one already there. The zip step below then failed the WHOLE backup
+  // with an opaque ZIP_ENOENT, permanently, since nothing else recreates these
+  // files. Rebuild instead. Falling back to appdata.json for a sync export is
+  // not an option — it still carries the device-local fields (WebDAV
+  // credentials, proxy, app-lock secret) that syncdata.json exists to strip.
+  var appdataName = sync ? "syncdata.json" : "appdata.json";
+  if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
+    Log.warning('Export Data', 'Missing $appdataName, rebuilding it');
+    await appdata.saveData(false);
+    if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
+      throw Exception('Cannot export: failed to rebuild $appdataName');
+    }
+  }
   // Serialize the export against database restores and background-isolate
   // reads: the checkpoints below open short-lived second connections, and the
   // zip step reads the database files directly — neither may overlap a
@@ -353,13 +369,17 @@ Future<File> exportAppData({
     var historyFile = FilePath.join(dataPath, "history.db");
     var localFavoriteFile = FilePath.join(dataPath, "local_favorite.db");
     var domainFile = DomainDatabase.databasePathFor(dataPath);
-    var appdata = FilePath.join(
-      dataPath,
-      sync ? "syncdata.json" : "appdata.json",
-    );
+    var appdataFile = FilePath.join(dataPath, appdataName);
     var cookies = FilePath.join(dataPath, "cookie.db");
-    zipFile.addFile("history.db", historyFile);
-    zipFile.addFile("local_favorite.db", localFavoriteFile);
+    // Every entry is existence-guarded: a single missing file used to abort the
+    // whole export, which for the sync path meant no device could ever upload
+    // again until the file came back on its own.
+    if (File(historyFile).existsSync()) {
+      zipFile.addFile("history.db", historyFile);
+    }
+    if (File(localFavoriteFile).existsSync()) {
+      zipFile.addFile("local_favorite.db", localFavoriteFile);
+    }
     if (sourceTypeMapBytes != null) {
       zipFile.addFileFromBytes("source_type_map.json", sourceTypeMapBytes);
     }
@@ -380,17 +400,20 @@ Future<File> exportAppData({
     if (File(readLaterFile).existsSync()) {
       zipFile.addFile("read_later.db", readLaterFile);
     }
-    zipFile.addFile("appdata.json", appdata);
-    zipFile.addFile("cookie.db", cookies);
+    zipFile.addFile("appdata.json", appdataFile);
+    if (File(cookies).existsSync()) {
+      zipFile.addFile("cookie.db", cookies);
+    }
     var localDbFile = FilePath.join(dataPath, "local.db");
     if (includeLocalComics && File(localDbFile).existsSync()) {
       zipFile.addFile("local.db", localDbFile);
     }
-    for (var file in Directory(
-      FilePath.join(dataPath, "comic_source"),
-    ).listSync()) {
-      if (file is File) {
-        zipFile.addFile("comic_source/${file.name}", file.path);
+    var sourceDir = Directory(FilePath.join(dataPath, "comic_source"));
+    if (sourceDir.existsSync()) {
+      for (var file in sourceDir.listSync()) {
+        if (file is File) {
+          zipFile.addFile("comic_source/${file.name}", file.path);
+        }
       }
     }
     // Covers a user picked for a collection live as files in our data
