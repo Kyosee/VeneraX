@@ -29,8 +29,8 @@ Detection and recognition run on the device; the recognized text is sent to an A
 ### Setup
 
 1. Settings → Reading → expand "AI Translation (experimental)".
-2. "LLM providers" → add one. Pick a common provider template first, then enter its API key (some local services can leave it blank); tap "Get models" to choose a model. Any OpenAI-compatible service works, and you can add several and switch at any time.
-3. If your service is not listed, expand "Advanced settings" to enter its name, API URL and model. If model fetching fails, enter the model name manually.
+2. "LLM providers" → add one. Pick "No key needed" to use a free public translation service: no account, no key, nothing to fill in — just save and it works. The trade-off is that each line is translated on its own, so wording and character names may vary between pages, and quality is below an AI model.
+3. For better results pick "AI model": enter the API URL and API key (some local services can leave it blank), then tap "Get models" to choose a model. Any OpenAI-compatible service works. If model fetching fails, enter the model name manually. You can add several providers and switch at any time.
 4. "Test translation" → a returned translation confirms the configuration works.
 5. "Translation models" → download. The text detector (~5 MB) is required; add one recognition model for the comic's language:
 

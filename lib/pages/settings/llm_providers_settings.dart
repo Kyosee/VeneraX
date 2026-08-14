@@ -101,10 +101,12 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
     LlmProvider provider,
     String activeId,
   ) {
-    var subtitleParts = <String>[
-      if (provider.url.isNotEmpty) provider.url,
-      if (provider.model.isNotEmpty) provider.model,
-    ];
+    var subtitleParts = provider.isPublicFree
+        ? <String>["No key needed".tl]
+        : <String>[
+            if (provider.url.isNotEmpty) provider.url,
+            if (provider.model.isNotEmpty) provider.model,
+          ];
     return ListTile(
       leading: RadioGroup<String>(
         groupValue: activeId,
@@ -148,6 +150,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
   late final TextEditingController _url;
   late final TextEditingController _key;
   late String _model;
+  late LlmProviderKind _kind;
   bool _showKey = false;
 
   @override
@@ -158,6 +161,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
     _url = TextEditingController(text: e?.url ?? '');
     _key = TextEditingController(text: e?.key ?? '');
     _model = e?.model ?? '';
+    _kind = e?.kind ?? LlmProviderKind.openai;
   }
 
   @override
@@ -294,6 +298,24 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
   }
 
   void _confirm() {
+    var existing = widget.existing;
+    // The keyless service takes no endpoint, key or model: skip the validation
+    // that only applies to a user-supplied endpoint and store empty fields.
+    if (_kind == LlmProviderKind.publicFree) {
+      context.pop(
+        LlmProvider(
+          id: existing?.id ?? const Uuid().v4(),
+          name: _name.text.trim().isEmpty
+              ? "Public translation (no key)".tl
+              : _name.text.trim(),
+          url: '',
+          key: '',
+          model: '',
+          kind: LlmProviderKind.publicFree,
+        ),
+      );
+      return;
+    }
     var url = _url.text.trim();
     if (!LlmTranslator.isValidBaseUrl(url)) {
       context.showMessage(message: "Enter a valid API URL".tl);
@@ -303,13 +325,13 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
       context.showMessage(message: "Select or enter a model".tl);
       return;
     }
-    var existing = widget.existing;
     var provider = LlmProvider(
       id: existing?.id ?? const Uuid().v4(),
       name: _name.text.trim(),
       url: url,
       key: _key.text.trim(),
       model: _model.trim(),
+      kind: LlmProviderKind.openai,
     );
     context.pop(provider);
   }
@@ -324,64 +346,95 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text("Service type".tl, style: ts.s14),
+              const SizedBox(height: 8),
+              SegmentedButton<LlmProviderKind>(
+                segments: [
+                  ButtonSegment(
+                    value: LlmProviderKind.openai,
+                    label: Text("AI model".tl),
+                  ),
+                  ButtonSegment(
+                    value: LlmProviderKind.publicFree,
+                    label: Text("No key needed".tl),
+                  ),
+                ],
+                selected: {_kind},
+                showSelectedIcon: false,
+                onSelectionChanged: (selected) {
+                  setState(() => _kind = selected.first);
+                },
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _name,
                 decoration: InputDecoration(
                   labelText: "Name".tl,
-                  hintText: "e.g. OpenAI, Local gateway".tl,
+                  hintText: _kind == LlmProviderKind.publicFree
+                      ? "Optional".tl
+                      : "e.g. OpenAI, Local gateway".tl,
                   border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _url,
-                decoration: InputDecoration(
-                  labelText: "LLM API URL".tl,
-                  hintText: 'https://example.com/v1',
-                  border: const OutlineInputBorder(),
+              if (_kind == LlmProviderKind.publicFree)
+                Text(
+                  "Uses a free public translation service — no account, no API key, nothing to fill in. Quality is lower than an AI model: each line is translated on its own, so wording and character names may vary between pages."
+                      .tl,
+                  style: ts.s14.copyWith(color: context.colorScheme.outline),
+                )
+              else ...[
+                TextField(
+                  controller: _url,
+                  decoration: InputDecoration(
+                    labelText: "LLM API URL".tl,
+                    hintText: 'https://example.com/v1',
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _key,
-                obscureText: !_showKey,
-                decoration: InputDecoration(
-                  labelText: "LLM API Key".tl,
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    tooltip: _showKey ? "Hide".tl : "Show".tl,
-                    icon: Icon(
-                      _showKey ? Icons.visibility_off : Icons.visibility,
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _key,
+                  obscureText: !_showKey,
+                  decoration: InputDecoration(
+                    labelText: "LLM API Key".tl,
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      tooltip: _showKey ? "Hide".tl : "Show".tl,
+                      icon: Icon(
+                        _showKey ? Icons.visibility_off : Icons.visibility,
+                      ),
+                      onPressed: () => setState(() => _showKey = !_showKey),
                     ),
-                    onPressed: () => setState(() => _showKey = !_showKey),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text("LLM Model".tl),
-                subtitle: Text(_model.isEmpty ? "Not configured".tl : _model),
-                trailing: Button.filled(
-                  onPressed: _chooseModel,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_download_outlined, size: 18),
-                      const SizedBox(width: 6),
-                      Text("Get models".tl),
-                    ],
-                  ),
-                ).fixHeight(36),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _enterModelManually,
-                  child: Text("Enter model manually".tl),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text("LLM Model".tl),
+                  subtitle: Text(_model.isEmpty ? "Not configured".tl : _model),
+                  trailing: Button.filled(
+                    onPressed: _chooseModel,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_download_outlined, size: 18),
+                        const SizedBox(width: 6),
+                        Text("Get models".tl),
+                      ],
+                    ),
+                  ).fixHeight(36),
                 ),
-              ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _enterModelManually,
+                    child: Text("Enter model manually".tl),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

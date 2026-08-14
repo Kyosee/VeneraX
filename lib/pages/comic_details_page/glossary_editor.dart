@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -169,13 +170,29 @@ class _GlossaryEditorPageState extends State<GlossaryEditorPage> {
       ),
       body: (_entries.isEmpty && _blocked.isEmpty)
           ? Center(
-              child: Text(
-                "No glossary terms yet".tl,
-                style: ts.s16.withColor(context.colorScheme.outline),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  LlmTranslator.activeIsPublicFree
+                      ? "The no-key translation service does not use the glossary. Switch to an AI model to keep names consistent."
+                            .tl
+                      : "No glossary terms yet".tl,
+                  style: ts.s16.withColor(context.colorScheme.outline),
+                  textAlign: TextAlign.center,
+                ),
               ),
             )
           : ListView(
               children: [
+                if (LlmTranslator.activeIsPublicFree)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      "The no-key translation service does not use the glossary. Switch to an AI model to keep names consistent."
+                          .tl,
+                      style: ts.s14.withColor(context.colorScheme.outline),
+                    ),
+                  ),
                 for (var entry in _entries)
                   ListTile(
                     title: Text(entry.key),

@@ -99,7 +99,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     }
     var label = active.name.isNotEmpty
         ? active.name
-        : (active.url.isNotEmpty ? active.url : "Unnamed provider".tl);
+        : (active.isPublicFree
+              ? "No key needed".tl
+              : (active.url.isNotEmpty ? active.url : "Unnamed provider".tl));
     var count = LlmProviderStore.providers.length;
     if (count > 1) {
       label += " (${"@count configured".tlParams({'count': count})})";
@@ -139,7 +141,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
               section(
                 "One-time setup".tl,
-                "1. Open LLM providers and add one with its API URL, API Key, and Model — any OpenAI-compatible service works. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
+                "1. Open LLM providers and add one. Pick \"No key needed\" to use a free public service with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
                     .tl,
               ),
               section(
@@ -175,7 +177,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   /// success, or the error on failure.
   void _testTranslation() async {
     if (!LlmTranslator.isConfigured) {
-      context.showMessage(message: "Configure the LLM endpoint first".tl);
+      context.showMessage(message: "Add a translation service first".tl);
       return;
     }
     var controller = showLoadingDialog(

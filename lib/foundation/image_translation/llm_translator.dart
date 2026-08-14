@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/image_translation/public_translator.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/log.dart';
@@ -21,11 +22,36 @@ class LlmTranslationResult {
   final Map<String, String> glossary;
 }
 
-/// One user-configured OpenAI-compatible LLM service: a stable [id], a
-/// display [name], and the endpoint/credential/model triple that used to be
-/// the app's single global config. Users keep several of these and pick which
-/// one is active, so they can switch between vendors (or a paid account and a
-/// LAN gateway) without re-typing settings each time.
+/// Which translation engine a provider entry stands for.
+enum LlmProviderKind {
+  /// A user-supplied OpenAI-compatible chat endpoint. Needs URL + model.
+  openai('openai'),
+
+  /// The keyless public machine-translation endpoint. Needs no configuration
+  /// at all, so its URL/key/model stay empty.
+  publicFree('public');
+
+  const LlmProviderKind(this.token);
+
+  final String token;
+
+  static LlmProviderKind fromToken(dynamic token) {
+    for (var kind in values) {
+      if (kind.token == token) return kind;
+    }
+    // Entries written before this field existed are all OpenAI-compatible.
+    return openai;
+  }
+}
+
+/// One configured translation service: a stable [id], a display [name], and —
+/// for an OpenAI-compatible entry — the endpoint/credential/model triple that
+/// used to be the app's single global config. Users keep several of these and
+/// pick which one is active, so they can switch between vendors (or a paid
+/// account and a LAN gateway) without re-typing settings each time.
+///
+/// A [LlmProviderKind.publicFree] entry is the exception: it carries no
+/// endpoint, key or model, because the public service needs none.
 class LlmProvider {
   LlmProvider({
     required this.id,
@@ -33,6 +59,7 @@ class LlmProvider {
     required this.url,
     required this.key,
     required this.model,
+    this.kind = LlmProviderKind.openai,
   });
 
   final String id;
@@ -40,12 +67,16 @@ class LlmProvider {
   final String url;
   final String key;
   final String model;
+  final LlmProviderKind kind;
+
+  bool get isPublicFree => kind == LlmProviderKind.publicFree;
 
   LlmProvider copyWith({
     String? name,
     String? url,
     String? key,
     String? model,
+    LlmProviderKind? kind,
   }) {
     return LlmProvider(
       id: id,
@@ -53,6 +84,7 @@ class LlmProvider {
       url: url ?? this.url,
       key: key ?? this.key,
       model: model ?? this.model,
+      kind: kind ?? this.kind,
     );
   }
 
@@ -62,6 +94,7 @@ class LlmProvider {
     'url': url,
     'key': key,
     'model': model,
+    'kind': kind.token,
   };
 
   static LlmProvider? fromJson(dynamic json) {
@@ -74,6 +107,7 @@ class LlmProvider {
       url: (json['url'] as String?)?.trim() ?? '',
       key: (json['key'] as String?)?.trim() ?? '',
       model: (json['model'] as String?)?.trim() ?? '',
+      kind: LlmProviderKind.fromToken(json['kind']),
     );
   }
 }
@@ -224,9 +258,22 @@ abstract class LlmTranslator {
 
   static String get _model => (LlmProviderStore.active?.model ?? '').trim();
 
-  /// A key is optional on purpose: local gateways (ollama, lm-studio,
-  /// one-api instances on LAN) often run without authentication.
-  static bool get isConfigured => _rawUrl.isNotEmpty && _model.isNotEmpty;
+  /// Whether the active provider can translate right now. The public service
+  /// needs nothing configured; an OpenAI-compatible one needs a URL and model.
+  /// A key is optional on purpose: local gateways (ollama, lm-studio, one-api
+  /// instances on LAN) often run without authentication.
+  static bool get isConfigured {
+    var active = LlmProviderStore.active;
+    if (active == null) return false;
+    if (active.isPublicFree) return true;
+    return _rawUrl.isNotEmpty && _model.isNotEmpty;
+  }
+
+  /// Whether the active provider translates line-by-line with no model context.
+  /// The glossary and the reported-names round trip only mean something for an
+  /// LLM, so callers skip both when this is true.
+  static bool get activeIsPublicFree =>
+      LlmProviderStore.active?.isPublicFree ?? false;
 
   /// Whether just the URL is set — enough to try fetching the model list
   /// before the user has picked a model.
@@ -360,6 +407,9 @@ abstract class LlmTranslator {
     if (texts.isEmpty) {
       return const LlmTranslationResult([], {});
     }
+    if (activeIsPublicFree) {
+      return _translateBatchPublic(texts, targetLang);
+    }
     var target = _targetName(targetLang);
     var systemPrompt =
         '你是资深的二次元漫画本地化译者，热爱 ACGN 文化。将用户提供的 JSON 对象中 lines '
@@ -481,6 +531,32 @@ abstract class LlmTranslator {
         await Future.delayed(wait);
       }
       throw Exception('LLM translation failed: $lastError');
+    } finally {
+      _gate.release(bucket);
+    }
+  }
+
+  /// [translateBatch] for a [LlmProviderKind.publicFree] provider.
+  ///
+  /// Goes through the same [_gate] as the LLM path so the reader and background
+  /// pre-translation still cannot overrun the endpoint between them, and feeds
+  /// the same AIMD estimator so a rate-limited public service backs off too.
+  /// Returns no glossary entries: this engine translates each line in isolation
+  /// and reports no proper nouns.
+  static Future<LlmTranslationResult> _translateBatchPublic(
+    List<String> texts,
+    String targetLang,
+  ) async {
+    var bucket = LlmProviderStore.active?.id ?? 'public';
+    await _gate.acquire(bucket, maxWait: _slotWaitBackstop);
+    try {
+      var translated = await PublicTranslator.translate(
+        texts,
+        targetLang,
+        onSuccess: () => _aimd.onSuccess(bucket),
+        onRateLimited: () => _aimd.onRateLimited(bucket),
+      );
+      return LlmTranslationResult(translated, const {});
     } finally {
       _gate.release(bucket);
     }

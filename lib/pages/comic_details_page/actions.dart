@@ -169,7 +169,8 @@ abstract mixin class _ComicPageActions {
         context: context,
         title: "LLM provider not configured".tl,
         content:
-            "AI translation needs a translation service. Set one up now?".tl,
+            "AI translation needs a translation service. Add one now? A no-key option is available."
+                .tl,
         confirmText: "Go to settings".tl,
         onConfirm: () => context.to(() => const LlmProvidersPage()),
       );
