@@ -237,6 +237,13 @@ class PreTranslationActivity {
 
   int liveFailed(PreTranslationTask task) => task.failed + bufferedFailed;
 
+  /// Pages the job is finished with, successes and failures alike — the same
+  /// set [PreTranslationTask.progress] counts. Page counters must report this
+  /// rather than [liveDone], or a failed page freezes the number while the bar
+  /// keeps advancing.
+  int liveProcessed(PreTranslationTask task) =>
+      liveDone(task) + liveFailed(task);
+
   /// Stage of the lowest-numbered live group. Counts commit in group order, so
   /// that group is the one holding the cursor — it answers "why hasn't the
   /// number moved" better than whichever group changed stage most recently.
@@ -547,12 +554,15 @@ class PreTranslationTaskManager with ChangeNotifier {
   }
 
   void _refreshKeepAlive(PreTranslationTask task) {
-    var done = _activities[task.id]?.liveDone(task) ?? task.done;
+    var activity = _activities[task.id];
+    // Processed, not succeeded: a chapter whose pages keep failing would
+    // otherwise leave the notification frozen on the last successful page.
+    var processed = activity?.liveProcessed(task) ?? (task.done + task.failed);
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagPreTranslate,
       formatTaskStatus(
         title: task.title,
-        detail: task.total == 0 ? null : '$done/${task.total}',
+        detail: task.total == 0 ? null : '$processed/${task.total}',
       ),
     );
   }

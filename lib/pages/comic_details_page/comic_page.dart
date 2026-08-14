@@ -1878,9 +1878,11 @@ class _SelectPreTranslateChapterState
     var active = manager.isChapterActive(widget.cid, widget.sourceKey, eid);
     // Live counts: committed pages plus the running job's finished-but-buffered
     // groups, so the bar tracks work actually done instead of the deliberately
-    // conservative resume cursor.
-    var live = manager.livePagesOf(widget.cid, widget.sourceKey, chapter);
-    var processed = live.processed;
+    // conservative resume cursor. Processed (success + failed) keeps the number
+    // in step with the bar when a page fails.
+    var processed = manager
+        .livePagesOf(widget.cid, widget.sourceKey, chapter)
+        .processed;
     var isCompleted = chapter.total > 0 && processed >= chapter.total;
 
     if (isCompleted) {
@@ -1931,7 +1933,7 @@ class _SelectPreTranslateChapterState
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '${live.done}/${chapter.total}',
+            '$processed/${chapter.total}',
             style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 2),

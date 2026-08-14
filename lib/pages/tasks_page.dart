@@ -670,8 +670,12 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
     var progress = activity?.liveProgress(task) ?? task.progress;
     // Committed counters lag by design (they double as the resume cursor), so
     // the card reports the live figures a running job's activity carries.
-    var donePages = activity?.liveDone(task) ?? task.done;
     var failedPages = activity?.liveFailed(task) ?? task.failed;
+    // Pages the job is finished with, matching what the percentage counts. A
+    // failed page must still move this number, otherwise the counter sits
+    // still while the bar advances and the card reads as stuck.
+    var processedPages =
+        activity?.liveProcessed(task) ?? (task.done + task.failed);
     var progressText = task.total == 0
         ? "0%"
         : "${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
@@ -758,8 +762,8 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
                 const SizedBox(height: 2),
               ],
               Text(
-                "Pages: @done/@total".tlParams({
-                  'done': donePages,
+                "Pages: @processed/@total".tlParams({
+                  'processed': processedPages,
                   'total': task.total,
                 }),
                 style: ts.s14,

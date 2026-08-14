@@ -166,6 +166,34 @@ void main() {
       expect(activity.uncommittedPages, 0);
       expect(activity.liveProgress(task), closeTo(0.2, 1e-9));
     });
+
+    test('failed pages keep the page counter moving with the bar', () {
+      // A page that fails is finished work: it moves the percentage, so the
+      // counter has to move with it. Reporting successes only froze the number
+      // whenever a batch failed, making a running job look stuck.
+      var chapter = PreTranslationChapter(
+        eid: '1',
+        title: 'Ch 1',
+        total: 10,
+        done: 4,
+        failed: 2,
+      );
+      var task = taskWith([chapter]);
+      var activity = PreTranslationActivity()
+        ..chapterIndex = 1
+        ..chapterEid = '1'
+        ..bufferedDone = 1
+        ..bufferedFailed = 2;
+
+      expect(activity.liveDone(task), 5);
+      expect(activity.liveFailed(task), 4);
+      expect(activity.liveProcessed(task), 9);
+      // Same set the bar counts.
+      expect(
+        activity.liveProcessed(task) / chapter.total,
+        closeTo(activity.liveProgress(task), 1e-9),
+      );
+    });
   });
 
   // Groups overlap and may finish out of order, but their counts commit in
