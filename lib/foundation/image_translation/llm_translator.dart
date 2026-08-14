@@ -27,8 +27,8 @@ enum LlmProviderKind {
   /// A user-supplied OpenAI-compatible chat endpoint. Needs URL + model.
   openai('openai'),
 
-  /// The keyless public machine-translation endpoint. Needs no configuration
-  /// at all, so its URL/key/model stay empty.
+  /// Google Translate's free endpoint. Needs no configuration at all, so its
+  /// URL/key/model stay empty.
   publicFree('public');
 
   const LlmProviderKind(this.token);
@@ -51,7 +51,7 @@ enum LlmProviderKind {
 /// account and a LAN gateway) without re-typing settings each time.
 ///
 /// A [LlmProviderKind.publicFree] entry is the exception: it carries no
-/// endpoint, key or model, because the public service needs none.
+/// endpoint, key or model, because that service needs none.
 class LlmProvider {
   LlmProvider({
     required this.id,
@@ -258,7 +258,7 @@ abstract class LlmTranslator {
 
   static String get _model => (LlmProviderStore.active?.model ?? '').trim();
 
-  /// Whether the active provider can translate right now. The public service
+  /// Whether the active provider can translate right now. The keyless service
   /// needs nothing configured; an OpenAI-compatible one needs a URL and model.
   /// A key is optional on purpose: local gateways (ollama, lm-studio, one-api
   /// instances on LAN) often run without authentication.
@@ -540,7 +540,7 @@ abstract class LlmTranslator {
   ///
   /// Goes through the same [_gate] as the LLM path so the reader and background
   /// pre-translation still cannot overrun the endpoint between them, and feeds
-  /// the same AIMD estimator so a rate-limited public service backs off too.
+  /// the same AIMD estimator so a rate-limited endpoint backs off too.
   /// Returns no glossary entries: this engine translates each line in isolation
   /// and reports no proper nouns.
   static Future<LlmTranslationResult> _translateBatchPublic(

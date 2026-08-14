@@ -34,7 +34,7 @@ void main() {
     // Default kind shows the endpoint fields.
     expect(find.text("LLM API URL".tl), findsOneWidget);
 
-    await tester.tap(find.text("No key needed".tl).last);
+    await tester.tap(find.text("Google Translate (no key)".tl).last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 

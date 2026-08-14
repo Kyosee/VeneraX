@@ -5,8 +5,8 @@ import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
-/// Translates recognized bubble texts through a public machine-translation
-/// web endpoint that needs no account and no API key.
+/// Translates recognized bubble texts through Google Translate's free endpoint,
+/// which needs no account and no API key.
 ///
 /// This exists for readers who have no LLM service to point the app at. It is
 /// plain machine translation: no system prompt, no glossary, no cross-page
@@ -20,9 +20,9 @@ import 'package:venera/network/app_dio.dart';
 abstract class PublicTranslator {
   static const _endpoint = 'https://translate.googleapis.com/translate_a/t';
 
-  /// Query params that select the plain-text, one-result-per-line response
-  /// shape. `sl=auto` lets the service detect the source language, which the
-  /// caller does not supply.
+  /// Selects the plain-text, one-result-per-line response shape. Paired with
+  /// `sl=auto`, which lets the service detect the source language — the caller
+  /// does not supply one.
   static const _client = 'dict-chrome-ex';
 
   /// Per-request caps. The service accepts far more, but a big request that

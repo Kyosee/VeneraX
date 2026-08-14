@@ -100,7 +100,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     var label = active.name.isNotEmpty
         ? active.name
         : (active.isPublicFree
-              ? "No key needed".tl
+              ? "Google Translate (no key)".tl
               : (active.url.isNotEmpty ? active.url : "Unnamed provider".tl));
     var count = LlmProviderStore.providers.length;
     if (count > 1) {
@@ -141,7 +141,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
               section(
                 "One-time setup".tl,
-                "1. Open LLM providers and add one. Pick \"No key needed\" to use a free public service with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
+                "1. Open LLM providers and add one. Pick \"Google Translate\" to use its free endpoint with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
                     .tl,
               ),
               section(

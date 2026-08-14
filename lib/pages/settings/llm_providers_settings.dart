@@ -102,7 +102,7 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
     String activeId,
   ) {
     var subtitleParts = provider.isPublicFree
-        ? <String>["No key needed".tl]
+        ? <String>["Google Translate (no key)".tl]
         : <String>[
             if (provider.url.isNotEmpty) provider.url,
             if (provider.model.isNotEmpty) provider.model,
@@ -306,7 +306,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
         LlmProvider(
           id: existing?.id ?? const Uuid().v4(),
           name: _name.text.trim().isEmpty
-              ? "Public translation (no key)".tl
+              ? "Google Translate (no key)".tl
               : _name.text.trim(),
           url: '',
           key: '',
@@ -358,7 +358,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
                   ),
                   ButtonSegment(
                     value: LlmProviderKind.publicFree,
-                    label: Text("No key needed".tl),
+                    label: Text("Google Translate (no key)".tl),
                   ),
                 ],
                 selected: {_kind},
@@ -381,7 +381,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
               const SizedBox(height: 12),
               if (_kind == LlmProviderKind.publicFree)
                 Text(
-                  "Uses a free public translation service — no account, no API key, nothing to fill in. Quality is lower than an AI model: each line is translated on its own, so wording and character names may vary between pages."
+                  "Uses Google Translate's free endpoint — no account, no API key, nothing to fill in. Quality is lower than an AI model: each line is translated on its own, so wording and character names may vary between pages. It is not an official API, so it can be rate-limited or stop working at any time."
                       .tl,
                   style: ts.s14.copyWith(color: context.colorScheme.outline),
                 )

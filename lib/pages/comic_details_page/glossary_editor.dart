@@ -174,7 +174,7 @@ class _GlossaryEditorPageState extends State<GlossaryEditorPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
                   LlmTranslator.activeIsPublicFree
-                      ? "The no-key translation service does not use the glossary. Switch to an AI model to keep names consistent."
+                      ? "Google Translate does not use the glossary. Switch to an AI model to keep names consistent."
                             .tl
                       : "No glossary terms yet".tl,
                   style: ts.s16.withColor(context.colorScheme.outline),
@@ -188,7 +188,7 @@ class _GlossaryEditorPageState extends State<GlossaryEditorPage> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                     child: Text(
-                      "The no-key translation service does not use the glossary. Switch to an AI model to keep names consistent."
+                      "Google Translate does not use the glossary. Switch to an AI model to keep names consistent."
                           .tl,
                       style: ts.s14.withColor(context.colorScheme.outline),
                     ),
