@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.3",
+          "buildVersion": "232",
+          "date": "2026-08-14",
+          "localizedDescription": "## What's Changed\n\n### Added\n- AI translation now offers a \"Google Translate (no key)\" service type — no account, address or API key to fill in, just save it and start translating\n- The no-key service does not support the glossary, and the endpoint it uses is unofficial, so it may be rate-limited or stop working at any time; stay on an AI model if you need reliability\n\n### Fixed\n- Fixed pages translated before an update coming back as untranslated and needing a full re-translation\n- Fixed pre-translation progress freezing as soon as one page failed to translate\n- Fixed the pre-translation button disappearing on a second device for a comic where translation was enabled; the button now always shows, tells you what is missing and jumps straight to the model download or service settings\n- Fixed a backup or sync run failing entirely because a single file was missing, leaving the device unable to upload from then on\n- Fixed the text-removal setting still describing an option that no longer exists\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.2...v2.2.3",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.3/VeneraX-ios-2.2.3%2B232.ipa",
+          "size": 35098644,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.2",
           "buildVersion": "231",
           "date": "2026-08-13",
@@ -177,11 +186,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.2",
-      "versionDate": "2026-08-13",
-      "versionDescription": "## What's Changed\n\n### Added\n- A built-in guide covering AI translation, collections and hidden gestures, from Settings → About → Guide\n- Comic source list can be reordered by long-pressing and dragging, or sorted by name in one tap; the order is kept when syncing to another device\n- Pre-translation task cards now show the live stage (downloading images, loading the recognition model, recognizing text, translating, rendering), and expand to show which chapter is running\n- Translation tasks have a \"View details\" button that opens the matching comic\n- A performance mode for AI translation with Save resources / Balanced / Fast presets, with the old per-item sliders moved under Advanced settings\n- Category and ranking pages now support multi-select and swipe-to-favorite, same as search results\n- Multi-select bar can remove the selected comics from every favorites folder at once\n- Reading history multi-select can add several entries to the same collection\n- Swipe left on a comic for Add to collection and Add to favorites; a long swipe favorites it immediately, and a long right swipe on a favorited comic un-favorites it\n- WebDAV library browser can filter the current folder by name\n- Appearance setting to turn off the predictive back animation, for systems that force the back gesture without a matching animation\n- New Data & Sync settings section, with backup, sync and storage options moved out of the App section\n\n### Changed\n- Chapter lists of comics you have opened before are cached and shown instantly, then refreshed in the background with an indicator next to the \"Chapters\" title\n- Search fields and list scrollbars now look the same across the app\n- Multi-select actions (add to favorites, add to collection, remove from favorites) moved into the three-dot menu\n- Reading settings regrouped so related options sit together\n- Adding or editing an LLM provider is back to a flat form (name, API URL, API key, model), without service-type templates\n\n### Fixed\n- Pre-translation page count and the chapter progress on the detail page no longer stall for a long time or jump backwards\n- Cancelled chapters no longer show a retry button that does nothing\n- Pre-translation freezing the whole app while rendering text, and words on one line being split apart\n- Comic import returning 0 books for archives with chapter subfolders, uppercase extensions, or several comics in one archive; page order now follows natural numbering\n- Chapter list refreshing in the background while you are selecting items\n- Custom collection covers not showing up after restoring a backup on another device\n- Details and preview taps doing nothing on the collection edit page\n- Scrollbar still capturing touches after fading out, fighting the page's own edge gesture\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.1...v2.2.2",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.2/VeneraX-ios-2.2.2%2B231.ipa",
-      "size": 35072761
+      "version": "2.2.3",
+      "versionDate": "2026-08-14",
+      "versionDescription": "## What's Changed\n\n### Added\n- AI translation now offers a \"Google Translate (no key)\" service type — no account, address or API key to fill in, just save it and start translating\n- The no-key service does not support the glossary, and the endpoint it uses is unofficial, so it may be rate-limited or stop working at any time; stay on an AI model if you need reliability\n\n### Fixed\n- Fixed pages translated before an update coming back as untranslated and needing a full re-translation\n- Fixed pre-translation progress freezing as soon as one page failed to translate\n- Fixed the pre-translation button disappearing on a second device for a comic where translation was enabled; the button now always shows, tells you what is missing and jumps straight to the model download or service settings\n- Fixed a backup or sync run failing entirely because a single file was missing, leaving the device unable to upload from then on\n- Fixed the text-removal setting still describing an option that no longer exists\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.2...v2.2.3",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.3/VeneraX-ios-2.2.3%2B232.ipa",
+      "size": 35098644
     }
   ],
   "news": []
