@@ -835,6 +835,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
   final _continuousChapterLoads = <int, Future<void>>{};
   final _continuousChapterErrors = <int, String>{};
   final _continuousCachedImages = <String>{};
+  late final ContinuousPageTurnCoordinator<_ContinuousReaderEntry>
+      _pageTurnCoordinator;
+  int _turnInteractionGeneration = 0;
+  int? _boundaryTurnChapter;
 
   /// Pages already pre-downloaded in non-seamless (single-chapter) mode.
   final _cachedPages = <int>{};
@@ -916,6 +920,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (reader.images != null) {
       _continuousChapterImages[reader.chapter] = reader.images!;
     }
+    _pageTurnCoordinator = ContinuousPageTurnCoordinator(
+      prepare: _prepareTurnTarget,
+      navigate: _navigateTurnTarget,
+    );
     _rebuildEntries();
     _scrollController.addListener(onScroll);
     // Warm up around the anchor once the first frame is laid out.
@@ -935,6 +943,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void dispose() {
+    _pageTurnCoordinator.cancel();
     _scrollController.removeListener(onScroll);
     _scrollController.dispose();
     photoViewController.dispose();
@@ -1081,6 +1090,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
             _continuousChapterErrors.remove(chapter);
             _rebuildEntries();
           });
+          final currentIndex = _indexOfEntry(reader.chapter, reader.page);
+          if (_entries.isNotEmpty && _entries[currentIndex].isImage) {
+            _cacheAround(_entries[currentIndex]);
+          }
         })
         .catchError((e, s) {
           Log.error('Continuous chapter reading', e, s);
@@ -1329,28 +1342,38 @@ class _ContinuousModeState extends State<_ContinuousMode>
       if (isCTRLPressed) {
         return;
       }
+      _cancelProgrammaticPageTurn();
       smoothTo(event.scrollDelta.dy);
     }
   }
 
-  /// Pre-download around the current entry in seamless mode (entry-based,
-  /// spanning chapter boundaries).
+  void _cancelProgrammaticPageTurn() {
+    _turnInteractionGeneration++;
+    _boundaryTurnChapter = null;
+    _pageTurnCoordinator.cancel();
+  }
+
+  /// Download and decode around the current entry in seamless mode.
   void _cacheAround(_ContinuousReaderEntry current) {
     final idx = _indexOfEntry(current.chapter, current.page);
-    for (var i = idx + 1; i <= idx + preCacheCount && i < _entries.length; i++) {
+    var remaining = preCacheCount;
+    for (var i = idx + 1; i < _entries.length && remaining > 0; i++) {
       final entry = _entries[i];
       if (!entry.isImage) continue;
+      remaining--;
       final cacheKey = '${entry.chapter}:${entry.page}:${entry.imageKey}';
       if (_continuousCachedImages.add(cacheKey)) {
-        _preDownloadImageEntry(entry, context);
+        unawaited(_precacheImageEntry(entry, context));
       }
     }
-    for (var i = idx - 1; i >= idx - preCacheCount && i >= 0; i--) {
+    remaining = preCacheCount;
+    for (var i = idx - 1; i >= 0 && remaining > 0; i--) {
       final entry = _entries[i];
       if (!entry.isImage) continue;
+      remaining--;
       final cacheKey = '${entry.chapter}:${entry.page}:${entry.imageKey}';
       if (_continuousCachedImages.add(cacheKey)) {
-        _preDownloadImageEntry(entry, context);
+        unawaited(_precacheImageEntry(entry, context));
       }
     }
   }
@@ -1664,6 +1687,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       },
       onPointerPanZoomUpdate: (event) {
         if (event.scale == 1.0) {
+          _cancelProgrammaticPageTurn();
           smoothTo(0 - event.panDelta.dy);
         }
       },
@@ -1699,6 +1723,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
       onNotification: (notification) {
         if (notification is ScrollStartNotification) {
           delayedSetIsScrolling(true);
+          if (notification.dragDetails != null) {
+            _cancelProgrammaticPageTurn();
+          }
         } else if (notification is ScrollEndNotification) {
           delayedSetIsScrolling(false);
         }
@@ -1819,8 +1846,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// naive idx/length * maxScrollExtent mapping got wrong (it ignored the
   /// negative region, so jumps to the first/middle pages missed).
   Future<void> _goToEntry(int chapter, int page,
-      {required bool animate, bool center = false}) async {
-    if (!_scrollController.hasClients) return;
+      {required bool animate,
+      bool center = false,
+      bool Function()? isCurrent}) async {
+    bool isStale() => isCurrent != null && !isCurrent();
+    if (!_scrollController.hasClients || isStale()) return;
 
     // Fast path: target already laid out — one precise move.
     final delta = _offsetDeltaToEntry(chapter, page);
@@ -1836,7 +1866,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // Iterative approach for off-screen targets.
     final targetIdx = _indexOfEntry(chapter, page);
     for (var attempt = 0; attempt < 6; attempt++) {
-      if (!_scrollController.hasClients || !mounted) return;
+      if (!_scrollController.hasClients || !mounted || isStale()) return;
       final pos = _scrollController.position;
 
       // Find any currently laid-out image entry to use as a reference point.
@@ -1848,6 +1878,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
           animate: false,
         );
         await WidgetsBinding.instance.endOfFrame;
+        if (isStale()) return;
         continue;
       }
 
@@ -1865,6 +1896,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
           pos.pixels + refDelta + (targetIdx - refIdx) * unit;
       await _applyScroll(estimate, animate: false);
       await WidgetsBinding.instance.endOfFrame;
+      if (isStale()) return;
 
       // Did the target come into layout? If so, finish precisely.
       final d = _offsetDeltaToEntry(chapter, page);
@@ -1907,24 +1939,107 @@ class _ContinuousModeState extends State<_ContinuousMode>
   @override
   bool turnPage(bool forward) {
     if (_entries.isEmpty) return false;
-    final curIdx = _indexOfEntry(reader.chapter, reader.page);
+    final intended = _pageTurnCoordinator.intendedTarget;
+    final curIdx = intended == null
+        ? _indexOfEntry(reader.chapter, reader.page)
+        : _indexOfEntry(intended.chapter, intended.page);
     final step = forward ? 1 : -1;
     for (var i = curIdx + step; i >= 0 && i < _entries.length; i += step) {
       final entry = _entries[i];
       if (!entry.isImage) continue;
-      final center = appdata.settings.getReaderSetting(
-            reader.cid,
-            reader.type.sourceKey,
-            'readerCenterPageOnTurn',
-          ) ==
-          true;
+      if (_boundaryTurnChapter != null) {
+        _turnInteractionGeneration++;
+        _boundaryTurnChapter = null;
+      }
       _futurePosition = null;
-      final animate = reader.enablePageAnimation(reader.cid, reader.type);
-      _goToEntry(entry.chapter, entry.page, animate: animate, center: center);
+      unawaited(_pageTurnCoordinator.request(entry));
       return true;
+    }
+    if (seamlessChapterReading) {
+      final current = intended ?? _entries[curIdx];
+      final chapterImages = _continuousChapterImages[current.chapter];
+      final atBoundary =
+          current.isImage &&
+          chapterImages != null &&
+          (forward ? current.page >= chapterImages.length : current.page <= 1);
+      final adjacentChapter = current.chapter + (forward ? 1 : -1);
+      if (atBoundary &&
+          adjacentChapter >= 1 &&
+          adjacentChapter <= reader.maxChapter) {
+        _requestBoundaryTurn(adjacentChapter, forward: forward);
+        return true;
+      }
     }
     // No adjacent image in the loaded window — let the caller try chapter nav.
     return false;
+  }
+
+  Future<void> _prepareTurnTarget(
+    _ContinuousReaderEntry entry,
+    bool Function() isCurrent,
+  ) async {
+    if (!mounted || !entry.isImage) return;
+    try {
+      await _precacheImageEntry(entry, context);
+    } catch (_) {
+      // Keep the normal image error UI reachable when warm-up fails.
+    }
+  }
+
+  Future<void> _navigateTurnTarget(
+    _ContinuousReaderEntry entry,
+    bool Function() isCurrent,
+  ) {
+    if (!mounted || !entry.isImage || !isCurrent()) return Future.value();
+    final center =
+        appdata.settings.getReaderSetting(
+          reader.cid,
+          reader.type.sourceKey,
+          'readerCenterPageOnTurn',
+        ) ==
+        true;
+    final animate = reader.enablePageAnimation(reader.cid, reader.type);
+    _futurePosition = null;
+    return _goToEntry(
+      entry.chapter,
+      entry.page,
+      animate: animate,
+      center: center,
+      isCurrent: isCurrent,
+    );
+  }
+
+  void _requestBoundaryTurn(int chapter, {required bool forward}) {
+    if (_boundaryTurnChapter != null) return;
+    _boundaryTurnChapter = chapter;
+    final generation = _turnInteractionGeneration;
+    unawaited(
+      _ensureContinuousChapterLoaded(chapter)
+          .then((_) {
+            if (!mounted ||
+                generation != _turnInteractionGeneration ||
+                _boundaryTurnChapter != chapter) {
+              return;
+            }
+            final images = _continuousChapterImages[chapter];
+            if (images == null || images.isEmpty) return;
+            final targetPage = forward ? 1 : images.length;
+            final targets = _entries.where(
+              (entry) =>
+                  entry.isImage &&
+                  entry.chapter == chapter &&
+                  entry.page == targetPage,
+            );
+            if (targets.isEmpty) return;
+            final target = targets.first;
+            unawaited(_pageTurnCoordinator.request(target));
+          })
+          .whenComplete(() {
+            if (_boundaryTurnChapter == chapter) {
+              _boundaryTurnChapter = null;
+            }
+          }),
+    );
   }
 
   @override
@@ -2234,22 +2349,20 @@ void _preDownloadImage(int page, BuildContext context) {
   ImageDownloader.loadComicImage(imageKey, sourceKey, cid, eid);
 }
 
-void _preDownloadImageEntry(
+Future<void> _precacheImageEntry(
   _ContinuousReaderEntry entry,
   BuildContext context,
-) {
+) async {
   final imageKey = entry.imageKey;
-  if (imageKey == null || imageKey.startsWith("file://")) {
-    return;
-  }
-  final reader = context.reader;
-  final eid =
-      reader.widget.chapters?.ids.elementAtOrNull(entry.chapter - 1) ?? '0';
-  ImageDownloader.loadComicImage(
-    imageKey,
-    reader.type.comicSource?.key,
-    reader.cid,
-    eid,
+  if (imageKey == null) return;
+  await precacheImage(
+    _createImageProviderFromKey(
+      imageKey,
+      context,
+      entry.page,
+      chapter: entry.chapter,
+    ),
+    context,
   );
 }
 
