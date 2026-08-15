@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:venera/foundation/cache_manager.dart';
@@ -6,6 +7,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/consts.dart';
+import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/image.dart';
 
 import 'app_dio.dart';
@@ -16,6 +18,23 @@ abstract class ImageDownloader {
     String? sourceKey, [
     String? cid,
   ]) async* {
+    // A locally stored cover (a collection's custom cover, or one borrowed from
+    // a downloaded member) can't go through the HTTP client: it rejects the
+    // file scheme, which failed the whole download task (#206).
+    if (url.startsWith('file://')) {
+      var file = File(url.substring(7));
+      if (!await file.exists()) {
+        throw "Cover file not found".tl;
+      }
+      var data = await file.readAsBytes();
+      yield ImageDownloadProgress(
+        currentBytes: data.length,
+        totalBytes: data.length,
+        imageBytes: data,
+      );
+      return;
+    }
+
     final cacheKey = "$url@$sourceKey${cid != null ? '@$cid' : ''}";
     final cache = await CacheManager().findCache(cacheKey);
 
