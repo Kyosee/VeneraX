@@ -1,6 +1,9 @@
 name: Build ALL
 run-name: Build ALL
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       platform:
@@ -15,16 +18,20 @@ on:
           - windows
           - macos
           - linux
-  release:
-    types: [published]
 
 permissions:
   contents: write
 
+# A newer release tag supersedes any still-running older release build. Manual
+# build-only dispatches use a unique group and never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'release' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   Build_MacOS:
     runs-on: macos-15
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'macos' }}
     steps:
       - uses: actions/checkout@v3
       - uses: subosito/flutter-action@v2
@@ -82,7 +89,7 @@ jobs:
           path: result/
   Build_IOS:
     runs-on: macos-15
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ios' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'ios' }}
     steps:
       - uses: actions/checkout@v3
       - uses: subosito/flutter-action@v2
@@ -109,7 +116,7 @@ jobs:
           path: result/
   Build_Android:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'android' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'android' }}
     steps:
       - uses: actions/checkout@v3
       - run: rm -rf /opt/hostedtoolcache
@@ -152,13 +159,50 @@ jobs:
         run: rustup show
       - run: flutter pub get
       - run: flutter build apk --release
+      - name: Verify Android signature continuity
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          current_apks=(build/app/outputs/apk/release/*universal*.apk)
+          test "${#current_apks[@]}" -eq 1 || {
+            echo "Expected exactly one universal APK, found ${#current_apks[@]}"
+            exit 1
+          }
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -1)
+          test -n "$apksigner" || { echo "apksigner not found"; exit 1; }
+          current_digest=$(
+            "$apksigner" verify --print-certs "${current_apks[0]}" |
+              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+          )
+          test -n "$current_digest" || { echo "Current APK signer digest missing"; exit 1; }
+
+          previous_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          mkdir -p previous-apk
+          gh release download "$previous_tag" --pattern "*universal*.apk" --dir previous-apk
+          previous_apks=(previous-apk/*universal*.apk)
+          test "${#previous_apks[@]}" -eq 1 || {
+            echo "Expected exactly one universal APK in $previous_tag, found ${#previous_apks[@]}"
+            exit 1
+          }
+          previous_digest=$(
+            "$apksigner" verify --print-certs "${previous_apks[0]}" |
+              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+          )
+          test "$current_digest" = "$previous_digest" || {
+            echo "APK signing certificate mismatch with $previous_tag"
+            exit 1
+          }
+          echo "Android signer SHA-256: $current_digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: apks
           path: build/app/outputs/apk/release
   Build_Windows:
     runs-on: windows-latest
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     steps:
       - uses: actions/checkout@v3
       - name: install dependencies
@@ -182,7 +226,7 @@ jobs:
           path: build/windows/VeneraX-*
   Build_Linux:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -228,7 +272,7 @@ jobs:
           path: build/linux/arch/
   Build_Linux_ARM64:
     runs-on: ubuntu-22.04-arm
-    if: ${{ github.event_name == 'release' || github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -260,8 +304,11 @@ jobs:
   Release:
     runs-on: ubuntu-22.04
     needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64]
-    if: github.event_name == 'release'  # 仅在 push 事件时执行
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    outputs:
+      prerelease: ${{ steps.release_meta.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: macos_build
@@ -290,21 +337,138 @@ jobs:
         with:
           name: deb_arm64_build
           path: outputs
-      - uses: softprops/action-gh-release@v2
+
+      - name: Validate release inputs
+        id: release_meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          existing_draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)
+          if [[ "$existing_draft" == "false" ]]; then
+            echo "Release $TAG is already published; refusing to rebuild it"
+            exit 1
+          fi
+          for lang in en zh-CN; do
+            notes="release-notes/${TAG}.${lang}.md"
+            test -s "$notes" || { echo "Missing or empty $notes"; exit 1; }
+          done
+
+          app_version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
+          version="${app_version%%+*}"
+          test -n "$version" || { echo "Missing version in pubspec.yaml"; exit 1; }
+          test "$TAG" = "v$version" || {
+            echo "Tag $TAG does not match pubspec version $version"
+            exit 1
+          }
+
+          mkdir -p release-assets
+          shopt -s nullglob
+          files=(
+            outputs/*.ipa outputs/*.dmg outputs/*.apk outputs/*.zip
+            outputs/*.exe outputs/*.deb outputs/*.zst outputs/*.AppImage
+          )
+          test "${#files[@]}" -gt 0 || { echo "No release assets found"; exit 1; }
+          cp -- "${files[@]}" release-assets/
+
+          require_asset() {
+            compgen -G "$1" > /dev/null || {
+              echo "Missing required release asset: $1"
+              exit 1
+            }
+          }
+          require_asset 'release-assets/*.ipa'
+          require_asset 'release-assets/*.dmg'
+          require_asset 'release-assets/*.apk'
+          require_asset 'release-assets/*universal*.apk'
+          require_asset 'release-assets/*.deb'
+          require_asset 'release-assets/*.zst'
+          if ! compgen -G 'release-assets/*.exe' > /dev/null &&
+             ! compgen -G 'release-assets/*.zip' > /dev/null; then
+            echo "Missing Windows installer/archive"
+            exit 1
+          fi
+          while IFS= read -r asset; do
+            test -s "$asset" || { echo "Empty release asset: $asset"; exit 1; }
+          done < <(find release-assets -maxdepth 1 -type f -print)
+
+          body_file="$RUNNER_TEMP/${TAG}.release-body.md"
+          base="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$TAG/release-notes"
+          {
+            printf '> **Language / 语言**: [English](%s/%s.en.md) · [简体中文](%s/%s.zh-CN.md)\n\n' \
+              "$base" "$TAG" "$base" "$TAG"
+            cat "release-notes/${TAG}.en.md"
+          } > "$body_file"
+
+          prerelease=false
+          if [[ "$TAG" == *-* ]]; then prerelease=true; fi
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release and upload assets
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: |
-            outputs/*.ipa
-            outputs/*.dmg
-            outputs/*.apk
-            outputs/*.zip
-            outputs/*.exe
-            outputs/*.deb
-            outputs/*.zst
-            outputs/*.AppImage
+          draft: true
+          prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
+          body_path: ${{ steps.release_meta.outputs.body_file }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Verify draft release assets
+        id: release_gate
+        env:
+          BODY_FILE: ${{ steps.release_meta.outputs.body_file }}
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/${TAG}.release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$release_json"
+          jq -e '.draft == true' "$release_json" > /dev/null
+          jq -e --arg tag "$TAG" --argjson prerelease "$PRERELEASE" \
+            '.tag_name == $tag and .prerelease == $prerelease and (.body | type == "string" and length > 0)' \
+            "$release_json" > /dev/null
+          jq -e '.assets | length > 0 and all(.[]; .state == "uploaded" and .size > 0)' \
+            "$release_json" > /dev/null
+
+          jq -r '.body' "$release_json" > "$RUNNER_TEMP/remote-release-body.md"
+          diff -u "$BODY_FILE" "$RUNNER_TEMP/remote-release-body.md"
+
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort \
+            > "$RUNNER_TEMP/local-assets.txt"
+          jq -r '.assets[].name' "$release_json" | sort \
+            > "$RUNNER_TEMP/remote-assets.txt"
+          diff -u "$RUNNER_TEMP/local-assets.txt" "$RUNNER_TEMP/remote-assets.txt"
+          echo "release_id=$(jq -r '.id' "$release_json")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(release edit "$TAG" --draft=false)
+          if [[ "$PRERELEASE" == "false" ]]; then
+            latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+            if [[ -n "$latest_tag" && "$latest_tag" != "$TAG" ]]; then
+              newest=$(printf '%s\n%s\n' "$latest_tag" "$TAG" | sort -V | tail -1)
+              test "$newest" = "$TAG" || {
+                echo "Refusing to publish $TAG after newer release $latest_tag"
+                exit 1
+              }
+            fi
+            args+=(--latest)
+          fi
+          gh "${args[@]}"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq 'select(.draft == false and .published_at != null) | .html_url'
 
   Update_AltStore_Source:
     runs-on: ubuntu-22.04
@@ -313,7 +477,7 @@ jobs:
     # AltStore users. (The in-app updater is safe by itself — GitHub's
     # releases/latest API never returns pre-releases — but this job would
     # otherwise overwrite the manifest with the beta.)
-    if: github.event_name == 'release' && !github.event.release.prerelease
+    if: ${{ needs.Release.result == 'success' && needs.Release.outputs.prerelease == 'false' }}
     permissions:
       contents: write
     steps:
@@ -331,17 +495,27 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          DL=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name|endswith(".ipa")) | .url' | head -1)
-          SZ=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name|endswith(".ipa")) | .size' | head -1)
-          PUB=$(gh release view "$TAG" --json publishedAt --jq '.publishedAt' | cut -dT -f1)
-          VER=$(grep '^version:' pubspec.yaml | cut -d':' -f2 | tr -d ' ')
-          test -n "$DL" || { echo "No .ipa asset found in release $TAG"; exit 1; }
+          release_json="$RUNNER_TEMP/${TAG}.altstore-release.json"
+          gh release view "$TAG" --json assets,publishedAt > "$release_json"
+          IPA_COUNT=$(jq '[.assets[] | select(.name | endswith(".ipa"))] | length' "$release_json")
+          test "$IPA_COUNT" -eq 1 || { echo "Expected exactly one IPA asset, found $IPA_COUNT"; exit 1; }
+          DL=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .url' "$release_json")
+          SZ=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .size' "$release_json")
+          PUB=$(jq -r '.publishedAt' "$release_json" | cut -dT -f1)
+          VER=$(git show "${TAG}:pubspec.yaml" | grep '^version:' | cut -d':' -f2 | tr -d ' ')
+          VERSION=${VER%%+*}
+          BUILD=${VER##*+}
+          test -n "$DL" && test "$DL" != "null" || { echo "IPA URL missing"; exit 1; }
+          test "$SZ" -gt 0 || { echo "IPA size is invalid: $SZ"; exit 1; }
+          test -n "$PUB" && test "$PUB" != "null" || { echo "Release date missing"; exit 1; }
+          test -n "$VERSION" && test "$VERSION" != "$VER" || { echo "Version/build missing: $VER"; exit 1; }
+          [[ "$BUILD" =~ ^[0-9]+$ ]] || { echo "Invalid build number: $BUILD"; exit 1; }
           {
             echo "download_url=$DL"
             echo "size=$SZ"
             echo "pub_date=$PUB"
-            echo "version=${VER%%+*}"
-            echo "build=${VER##*+}"
+            echo "version=$VERSION"
+            echo "build=$BUILD"
           } >> "$GITHUB_OUTPUT"
       - name: Regenerate AltStore manifest
         env:
@@ -378,7 +552,7 @@ jobs:
   Update_AltStore_Beta_Source:
     runs-on: ubuntu-22.04
     needs: [Release]
-    if: github.event_name == 'release' && github.event.release.prerelease
+    if: ${{ needs.Release.result == 'success' && needs.Release.outputs.prerelease == 'true' }}
     permissions:
       contents: write
     steps:
@@ -396,17 +570,27 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          DL=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name|endswith(".ipa")) | .url' | head -1)
-          SZ=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name|endswith(".ipa")) | .size' | head -1)
-          PUB=$(gh release view "$TAG" --json publishedAt --jq '.publishedAt' | cut -dT -f1)
-          VER=$(grep '^version:' pubspec.yaml | cut -d':' -f2 | tr -d ' ')
-          test -n "$DL" || { echo "No .ipa asset found in release $TAG"; exit 1; }
+          release_json="$RUNNER_TEMP/${TAG}.altstore-release.json"
+          gh release view "$TAG" --json assets,publishedAt > "$release_json"
+          IPA_COUNT=$(jq '[.assets[] | select(.name | endswith(".ipa"))] | length' "$release_json")
+          test "$IPA_COUNT" -eq 1 || { echo "Expected exactly one IPA asset, found $IPA_COUNT"; exit 1; }
+          DL=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .url' "$release_json")
+          SZ=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .size' "$release_json")
+          PUB=$(jq -r '.publishedAt' "$release_json" | cut -dT -f1)
+          VER=$(git show "${TAG}:pubspec.yaml" | grep '^version:' | cut -d':' -f2 | tr -d ' ')
+          VERSION=${VER%%+*}
+          BUILD=${VER##*+}
+          test -n "$DL" && test "$DL" != "null" || { echo "IPA URL missing"; exit 1; }
+          test "$SZ" -gt 0 || { echo "IPA size is invalid: $SZ"; exit 1; }
+          test -n "$PUB" && test "$PUB" != "null" || { echo "Release date missing"; exit 1; }
+          test -n "$VERSION" && test "$VERSION" != "$VER" || { echo "Version/build missing: $VER"; exit 1; }
+          [[ "$BUILD" =~ ^[0-9]+$ ]] || { echo "Invalid build number: $BUILD"; exit 1; }
           {
             echo "download_url=$DL"
             echo "size=$SZ"
             echo "pub_date=$PUB"
-            echo "version=${VER%%+*}"
-            echo "build=${VER##*+}"
+            echo "version=$VERSION"
+            echo "build=$BUILD"
           } >> "$GITHUB_OUTPUT"
       - name: Regenerate beta AltStore manifest
         env:
