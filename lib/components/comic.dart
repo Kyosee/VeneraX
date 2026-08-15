@@ -28,7 +28,8 @@ void _warmCollectionCover(String collectionId) {
   });
 }
 
-ImageProvider? _findImageProvider(Comic comic) {
+/// Picks the loader for a comic's cover. Exposed for tests.
+ImageProvider? findImageProvider(Comic comic) {
   ImageProvider image;
   // A collection's cover is resolved from the store, not from the passed-in
   // comic: a favourite or history row froze whatever the cover was when it was
@@ -55,7 +56,18 @@ ImageProvider? _findImageProvider(Comic comic) {
     );
   }
   if (comic is LocalComic) {
-    image = LocalComicImageProvider(comic);
+    // A queued download task merged into the grid has no directory on disk yet,
+    // so its `cover` holds the remote url carried over from the list that
+    // started it (see ImagesDownloadTask.toLocalComic) rather than a file name.
+    if (comic.directory.isEmpty && comic.cover.isNotEmpty) {
+      image = CachedImageProvider(
+        comic.cover,
+        sourceKey: comic.sourceKey,
+        cid: comic.id,
+      );
+    } else {
+      image = LocalComicImageProvider(comic);
+    }
   } else if (comic is History) {
     image = HistoryImageProvider(comic);
   } else if (comic.sourceKey == 'local') {
@@ -480,7 +492,7 @@ class ComicTile extends StatelessWidget {
   }
 
   Widget _buildImageNow(BuildContext context) {
-    var image = _findImageProvider(comic);
+    var image = findImageProvider(comic);
     if (image == null) {
       return const SizedBox();
     }
@@ -2880,7 +2892,7 @@ class SimpleComicTile extends StatelessWidget {
   final bool showFavorite;
 
   Widget _buildCover() {
-    var image = _findImageProvider(comic);
+    var image = findImageProvider(comic);
     if (image == null) return const SizedBox();
     return AnimatedImage(
       image: image,

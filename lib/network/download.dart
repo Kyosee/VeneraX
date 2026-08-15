@@ -116,12 +116,18 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   String? comicTitle;
 
+  /// Cover url already known by whoever created the task. A queued task only
+  /// fetches comic details (and the real cover) once it starts running, so
+  /// without this the whole queue would render blank covers while waiting.
+  final String? comicCover;
+
   ImagesDownloadTask({
     required this.source,
     required this.comicId,
     this.comic,
     this.chapters,
     this.comicTitle,
+    this.comicCover,
   });
 
   @override
@@ -158,7 +164,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   }
 
   @override
-  String? get cover => _cover ?? comic?.cover;
+  String? get cover => _cover ?? comic?.cover ?? comicCover;
 
   @override
   String get message => _message;
@@ -664,6 +670,8 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "chapters": chapters,
       "path": path,
       "cover": _cover,
+      "comicCover": comicCover,
+      "comicTitle": comicTitle,
       "images": _images,
       "downloadedCount": _downloadedCount,
       "totalCount": _totalCount,
@@ -694,6 +702,8 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       comic:
           json["comic"] == null ? null : ComicDetails.fromJson(json["comic"]),
       chapters: ListOrNull.from(json["chapters"]),
+      comicCover: json["comicCover"],
+      comicTitle: json["comicTitle"],
     )
       ..path = json["path"]
       ..wasRunning = json["wasRunning"] ?? false
@@ -715,6 +725,19 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   @override
   LocalComic toLocalComic() {
+    String coverName;
+    if (path == null) {
+      // Not scheduled yet, so there is no directory and no cover file to name.
+      // Carry the remote cover url instead; `findImageProvider` recognises such
+      // a placeholder by its empty directory and loads it over the network. A
+      // record written to the database always has a path, so it never holds a
+      // url here.
+      coverName = comic?.cover ?? comicCover ?? '';
+    } else {
+      coverName = _cover == null
+          ? ''
+          : File(_cover!.split("file://").last).name;
+    }
     return LocalComic(
       id: id,
       title: title,
@@ -725,7 +748,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           [],
       directory: path == null ? '' : Directory(path!).name,
       chapters: comic?.chapters,
-      cover: _cover == null ? '' : File(_cover!.split("file://").last).name,
+      cover: coverName,
       comicType: comicType,
       downloadedChapters: chapters ?? comic?.chapters?.ids.toList() ?? [],
       createdAt: DateTime.now(),

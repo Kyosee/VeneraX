@@ -305,7 +305,11 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
             child: t.cover == null
                 ? null
                 : Image(
-                    image: CachedImageProvider(t.cover!),
+                    image: CachedImageProvider(
+                      t.cover!,
+                      sourceKey: t.comicType.sourceKey,
+                      cid: t.id,
+                    ),
                     filterQuality: FilterQuality.medium,
                     fit: BoxFit.cover,
                   ),

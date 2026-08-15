@@ -482,7 +482,12 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
       }
       if (!await ensureDownloadStorageWritable()) return false;
       LocalManager().addTask(
-        ImagesDownloadTask(source: source, comicId: c.id, comicTitle: c.title),
+        ImagesDownloadTask(
+          source: source,
+          comicId: c.id,
+          comicTitle: c.title,
+          comicCover: c.cover,
+        ),
       );
       return true;
     }
@@ -505,6 +510,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
           source: source,
           comicId: fav.id,
           comicTitle: fav.title,
+          comicCover: fav.cover,
         ),
       );
     }
