@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/history.dart';
-import 'package:venera/foundation/random_comic_pool.dart';
+import 'package:venera/foundation/random_comic_scope.dart';
 
 History history({required int page, int? maxPage}) {
   final value = History.fromMap({

@@ -16,7 +16,7 @@ FavoriteItem favorite(String id, int type) => FavoriteItem(
 
 void main() {
   group('UniformRandomComicPicker', () {
-    test('returns null for an empty card pool', () {
+    test('returns null for an empty selection', () {
       final picker = UniformRandomComicPicker(random: Random(1));
 
       expect(picker.pick(const []), isNull);
@@ -33,7 +33,7 @@ void main() {
       );
     });
 
-    test('returns null when the whole card pool was drawn', () {
+    test('returns null when the whole selection was drawn', () {
       final picker = UniformRandomComicPicker(random: Random(1));
       final comic = favorite('a', 1);
 
@@ -57,7 +57,7 @@ void main() {
       );
     });
 
-    test('seeded selection is deterministic and remains in the pool', () {
+    test('seeded selection is deterministic and remains in the selection', () {
       final candidates = [favorite('a', 1), favorite('b', 1), favorite('c', 1)];
       final first = UniformRandomComicPicker(
         random: Random(42),

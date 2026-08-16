@@ -8,7 +8,7 @@ typedef RandomComicIdentity = ({String sourceKey, String id});
 RandomComicIdentity randomComicIdentity(FavoriteItem comic) =>
     (sourceKey: comic.sourceKey, id: comic.id);
 
-/// Selects one comic from a card pool.
+/// Selects one comic from the current random scope.
 ///
 /// A future reading-statistics-weighted implementation can implement this
 /// contract without changing the draw UI. The current release deliberately

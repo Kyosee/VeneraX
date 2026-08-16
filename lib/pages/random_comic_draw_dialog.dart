@@ -5,11 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/random_comic_picker.dart';
-import 'package:venera/foundation/random_comic_pool.dart';
+import 'package:venera/foundation/random_comic_scope.dart';
 import 'package:venera/utils/translations.dart';
+
+const _selectionFolderKey = 'random_comic_selection_folder';
+const _readingScopeKey = 'random_comic_reading_scope';
 
 Future<FavoriteItem?> showRandomComicDrawDialog(BuildContext context) {
   return showDialog<FavoriteItem>(
@@ -46,17 +50,18 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
   @override
   void initState() {
     super.initState();
+    _restoreSelection();
     _revealController =
         AnimationController(
           vsync: this,
           duration: const Duration(milliseconds: 900),
         )..addStatusListener((status) {
           if (status == AnimationStatus.completed && mounted) {
-            HapticFeedback.lightImpact();
+            HapticFeedback.mediumImpact();
             setState(() {});
           }
         });
-    _loadCardPool();
+    _loadSelectionScope();
   }
 
   @override
@@ -65,26 +70,43 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
     super.dispose();
   }
 
-  Future<void> _loadCardPool() async {
+  Future<void> _loadSelectionScope() async {
     final generation = ++_loadGeneration;
+    final manager = LocalFavoritesManager();
+    final folders = manager.folderNames;
+    if (_selectedFolder != null && !folders.contains(_selectedFolder)) {
+      _selectedFolder = null;
+      _persistSelection();
+    }
     setState(() {
+      _folders = folders;
       _loading = true;
       _selectedComic = null;
       _drawn.clear();
       _revealController.reset();
     });
-    final manager = LocalFavoritesManager();
-    final folders = manager.folderNames;
     final comics = _selectedFolder == null
         ? await manager.getAllComicsAsync()
         : await manager.getFolderComicsAsync(_selectedFolder!);
     if (!mounted || generation != _loadGeneration) return;
     setState(() {
-      _folders = folders;
       _loadedComics = comics;
       _loading = false;
       _applyReadingScope(resetDraw: false);
     });
+  }
+
+  void _restoreSelection() {
+    final folder = appdata.implicitData[_selectionFolderKey];
+    _selectedFolder = folder is String && folder.isNotEmpty ? folder : null;
+    final scopeName = appdata.implicitData[_readingScopeKey];
+    _readingScope = randomComicReadingScopeFromName(scopeName);
+  }
+
+  void _persistSelection() {
+    appdata.implicitData[_selectionFolderKey] = _selectedFolder;
+    appdata.implicitData[_readingScopeKey] = _readingScope.name;
+    appdata.writeImplicitData();
   }
 
   void _applyReadingScope({bool resetDraw = true}) {
@@ -112,6 +134,8 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
       comic = _picker.pick(_candidates);
     }
     if (comic == null) return;
+
+    HapticFeedback.selectionClick();
 
     final firstDraw = _selectedComic == null;
     setState(() {
@@ -194,7 +218,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildPoolControls(),
+            _buildScopeControls(),
             const SizedBox(height: 14),
             _buildChanceDescription(),
             const SizedBox(height: 12),
@@ -215,7 +239,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
     );
   }
 
-  Widget _buildPoolControls() {
+  Widget _buildScopeControls() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -223,10 +247,13 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
           children: [
             Expanded(
               child: DropdownButtonFormField<String?>(
-                initialValue: _selectedFolder,
+                initialValue: randomComicAvailableFolder(
+                  _selectedFolder,
+                  _folders,
+                ),
                 isExpanded: true,
                 decoration: InputDecoration(
-                  labelText: 'Card pool'.tl,
+                  labelText: 'Selection scope'.tl,
                   isDense: true,
                   border: const OutlineInputBorder(),
                 ),
@@ -248,7 +275,8 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
                     : (folder) {
                         if (folder == _selectedFolder) return;
                         _selectedFolder = folder;
-                        _loadCardPool();
+                        _persistSelection();
+                        _loadSelectionScope();
                       },
               ),
             ),
@@ -281,6 +309,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
                           _readingScope = scope;
                           _applyReadingScope();
                         });
+                        _persistSelection();
                       },
               ),
             ),
@@ -331,9 +360,13 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
         final pulse = value < 0.28
             ? 1 + math.sin(value * math.pi * 8) * 0.018
             : 1.0;
+        final shake = value < 0.28
+            ? math.sin(value * math.pi * 18) * (1 - value / 0.28) * 0.022
+            : 0.0;
         final transform = Matrix4.identity()
           ..setEntry(3, 2, 0.0014)
           ..scaleByDouble(pulse, pulse, 1, 1)
+          ..rotateZ(shake)
           ..rotateY(angle);
         return SizedBox(
           width: width + 44,
@@ -526,9 +559,9 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
 
   Widget _buildDrawHint() {
     final text = _loading
-        ? 'Loading card pool...'.tl
+        ? 'Loading favorites...'.tl
         : _candidates.isEmpty
-        ? 'No favorite comics in this card pool'.tl
+        ? 'No favorite comics in this selection'.tl
         : _preparing
         ? 'Preparing your draw...'.tl
         : _revealController.isAnimating
@@ -623,6 +656,12 @@ class _RevealEffectsPainter extends CustomPainter {
     (0.88, 0.72, 4.2, 0.95),
     (0.25, 0.88, 5.1, 0.7),
     (0.72, 0.91, 3.5, 0.8),
+    (0.30, 0.12, 2.1, 0.55),
+    (0.68, 0.10, 4.8, 0.6),
+    (0.04, 0.42, 5.7, 0.5),
+    (0.95, 0.47, 0.9, 0.58),
+    (0.39, 0.96, 3.0, 0.52),
+    (0.61, 0.98, 1.2, 0.56),
   ];
 
   @override
@@ -679,6 +718,21 @@ class _RevealEffectsPainter extends CustomPainter {
         5 + 8 * energy * scale,
         paint,
       );
+    }
+
+    for (var i = 0; i < 12; i++) {
+      final angle = math.pi * 2 * i / 12 - progress * math.pi * 1.2;
+      final stagger = (i % 3) * 9.0;
+      final distance = 48 + stagger + energy * (54 + i % 4 * 8);
+      final point =
+          center +
+          Offset(math.cos(angle) * distance, math.sin(angle) * distance);
+      final radius = 1.4 + (i % 3) * 0.7 + energy * 1.2;
+      final particlePaint = Paint()
+        ..color = (i.isEven ? primary : secondary).withValues(
+          alpha: (0.35 + (i % 4) * 0.1) * fade,
+        );
+      canvas.drawCircle(point, radius, particlePaint);
     }
   }
 

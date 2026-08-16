@@ -2,6 +2,19 @@ import 'history.dart';
 
 enum RandomComicReadingScope { all, notStarted, inProgress, completed }
 
+String? randomComicAvailableFolder(
+  String? selectedFolder,
+  Iterable<String> folders,
+) => selectedFolder != null && folders.contains(selectedFolder)
+    ? selectedFolder
+    : null;
+
+RandomComicReadingScope randomComicReadingScopeFromName(Object? name) =>
+    RandomComicReadingScope.values.firstWhere(
+      (scope) => scope.name == name,
+      orElse: () => RandomComicReadingScope.all,
+    );
+
 bool randomComicMatchesReadingScope(
   RandomComicReadingScope scope,
   History? history,
