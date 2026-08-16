@@ -178,11 +178,26 @@ jobs:
           }
           apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -1)
           test -n "$apksigner" || { echo "apksigner not found"; exit 1; }
-          current_digest=$(
-            "$apksigner" verify --print-certs "$current_apk" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
-          )
-          test -n "$current_digest" || { echo "Current APK signer digest missing"; exit 1; }
+
+          # build-tools 37 prints "V2 Signer: certificate SHA-256 digest: <hex>"
+          # where older ones print "Signer #1 certificate SHA-256 digest: <hex>",
+          # so match the shared tail and fold the per-scheme repeats into one.
+          read_digest() {
+            sed -n 's/.*certificate SHA-256 digest: *//p' |
+              tr 'A-Z' 'a-z' | sort -u
+          }
+
+          current_certs=$("$apksigner" verify --print-certs "$current_apk" 2>&1) || {
+            echo "apksigner verify failed for $current_apk"
+            printf '%s\n' "$current_certs"
+            exit 1
+          }
+          current_digest=$(printf '%s\n' "$current_certs" | read_digest)
+          test "$(printf '%s\n' "$current_digest" | grep -c .)" = "1" || {
+            echo "Expected exactly one signer certificate in $current_apk"
+            printf '%s\n' "$current_certs"
+            exit 1
+          }
 
           previous_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
           previous_apk="previous-apk/VeneraX-${previous_tag#v}.apk"
@@ -193,12 +208,21 @@ jobs:
             echo "Missing universal APK in $previous_tag: $previous_apk"
             exit 1
           }
-          previous_digest=$(
-            "$apksigner" verify --print-certs "$previous_apk" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
-          )
+          previous_certs=$("$apksigner" verify --print-certs "$previous_apk" 2>&1) || {
+            echo "apksigner verify failed for $previous_apk"
+            printf '%s\n' "$previous_certs"
+            exit 1
+          }
+          previous_digest=$(printf '%s\n' "$previous_certs" | read_digest)
+          test "$(printf '%s\n' "$previous_digest" | grep -c .)" = "1" || {
+            echo "Expected exactly one signer certificate in $previous_apk"
+            printf '%s\n' "$previous_certs"
+            exit 1
+          }
           test "$current_digest" = "$previous_digest" || {
             echo "APK signing certificate mismatch with $previous_tag"
+            echo "  current  ($version): $current_digest"
+            echo "  previous ($previous_tag): $previous_digest"
             exit 1
           }
           echo "Android signer SHA-256: $current_digest" >> "$GITHUB_STEP_SUMMARY"
