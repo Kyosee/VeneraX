@@ -49,6 +49,44 @@ void main() {
   // The failure messages go through .tl, which reads this table.
   AppTranslation.translations = {};
 
+  test(
+    'a synced translation renders before the local translation queue',
+    () async {
+      final syncedPage = Uint8List.fromList([1, 2, 3, 4]);
+      var renderCalls = 0;
+      var scheduled = false;
+
+      final result = await resolveReaderTranslation(
+        renderStored: () async {
+          renderCalls++;
+          return syncedPage;
+        },
+        isEngineReady: true,
+        schedule: () => scheduled = true,
+      );
+
+      expect(result, syncedPage);
+      expect(renderCalls, 1);
+      expect(scheduled, isFalse);
+    },
+  );
+
+  test(
+    'a page missing from synced storage still queues local translation',
+    () async {
+      var scheduled = false;
+
+      final result = await resolveReaderTranslation(
+        renderStored: () async => null,
+        isEngineReady: true,
+        schedule: () => scheduled = true,
+      );
+
+      expect(result, isNull);
+      expect(scheduled, isTrue);
+    },
+  );
+
   test('a normal read is returned as-is', () async {
     final file = _ScriptedFile([_page], 3);
     expect(await readLocalPage(file), _page);

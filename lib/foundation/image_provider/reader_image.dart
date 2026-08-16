@@ -11,6 +11,25 @@ import 'base_image_provider.dart';
 import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
 
+/// Resolves the reader's translated variant without coupling the decision to
+/// image loading. A non-null result is displayed immediately; otherwise a
+/// ready local engine may continue the existing background translation path.
+@visibleForTesting
+Future<Uint8List?> resolveReaderTranslation({
+  required Future<Uint8List?> Function() renderStored,
+  required bool isEngineReady,
+  required VoidCallback schedule,
+}) async {
+  final rendered = await renderStored();
+  if (rendered != null) {
+    return rendered;
+  }
+  if (isEngineReady) {
+    schedule();
+  }
+  return null;
+}
+
 class ReaderImageProvider
     extends BaseImageProvider<image_provider.ReaderImageProvider> {
   /// Image provider for normal image.
@@ -37,9 +56,8 @@ class ReaderImageProvider
   final int page;
 
   /// Cache key of the offline-translated variant of this page, or null when
-  /// translation is off. When set, a cached translated page is shown instead
-  /// of the original; otherwise the original is shown and a translation is
-  /// scheduled in the background.
+  /// translation is off. When set, a cached or synced stored translation is
+  /// shown before falling back to the original and background translation.
   final String? translationKey;
 
   /// This comic's own language pair + text-removal mode. Non-null exactly when
@@ -98,34 +116,33 @@ class ReaderImageProvider
         );
         return await translatedFile.readAsBytes();
       }
-      if (ImageTranslationService.isReadyForLang(config.sourceLang)) {
-        // Models are usable: show the original for now and translate in the
-        // background. When it lands the reader is notified, this provider's
-        // cache entry is evicted and the next resolve picks up the translated
-        // file above.
-        ImageTranslationService.instance.schedule(
+      var rendered = await resolveReaderTranslation(
+        renderStored: () => ImageTranslationService.instance.renderStoredPage(
           translationKey!,
-          cid,
-          sourceKey,
-          imageBytes,
-          config,
-          () {
-            ImageTranslationService.evictImage(this);
-          },
-        );
-      } else {
-        // No models installed (e.g. a device that received translations over
-        // WebDAV): render straight from a synced stored result if there is one.
-        // Nothing is translated here — a page with no stored result just shows
-        // the original.
-        var rendered = await ImageTranslationService.instance.renderStoredPage(
-          translationKey!,
-          imageBytes,
+          imageBytes!,
           config.mode,
-        );
-        if (rendered != null) {
-          return rendered;
-        }
+        ),
+        isEngineReady: ImageTranslationService.isReadyForLang(
+          config.sourceLang,
+        ),
+        schedule: () {
+          // No synced result exists, but local models are usable: show the
+          // original for now and translate it in the background. When it lands
+          // the provider cache is evicted and the next resolve picks it up.
+          ImageTranslationService.instance.schedule(
+            translationKey!,
+            cid,
+            sourceKey,
+            imageBytes!,
+            config,
+            () {
+              ImageTranslationService.evictImage(this);
+            },
+          );
+        },
+      );
+      if (rendered != null) {
+        return rendered;
       }
     }
     if (appdata.settings['enableCustomImageProcessing']) {
