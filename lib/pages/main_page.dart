@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/pages/categories_page.dart';
+import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/random_comic_draw_dialog.dart';
 import 'package:venera/pages/search_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/pages/tasks_page.dart';
@@ -96,6 +98,22 @@ class _MainPageState extends State<MainPage> {
               to(() => const SearchPage(), preventDuplicate: true);
             },
           ),
+        PaneActionEntry(
+          icon: Icons.style_outlined,
+          label: 'Draw a comic'.tl,
+          onTap: () async {
+            final comic = await showRandomComicDrawDialog(context);
+            if (!mounted || comic == null) return;
+            to(
+              () => ComicPage(
+                id: comic.id,
+                sourceKey: comic.sourceKey,
+                cover: comic.cover,
+                title: comic.title,
+              ),
+            );
+          },
+        ),
         PaneActionEntry(
           icon: Icons.assignment_outlined,
           label: "Tasks".tl,
