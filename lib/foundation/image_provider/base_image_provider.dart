@@ -74,6 +74,9 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
           });
         } on _ImageLoadingStopException {
           rethrow;
+        } on ImageLoadingPermanentException {
+          // Retrying cannot help; report it now instead of sitting out the backoff.
+          rethrow;
         } catch (e) {
           if (e.toString().contains("Invalid Status Code: 404")) {
             rethrow;
@@ -108,7 +111,7 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
       }
 
       if (data!.isEmpty) {
-        throw Exception("Empty image data");
+        throw Exception("Empty image data: ${this.key}");
       }
 
       try {
@@ -171,4 +174,15 @@ typedef FileDecoderCallback = Future<ui.Codec> Function(Uint8List);
 
 class _ImageLoadingStopException implements Exception {
   const _ImageLoadingStopException();
+}
+
+/// Thrown by [BaseImageProvider.load] when retrying cannot help — a broken file
+/// rather than a transient failure.
+class ImageLoadingPermanentException implements Exception {
+  const ImageLoadingPermanentException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

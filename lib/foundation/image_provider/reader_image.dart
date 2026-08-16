@@ -6,6 +6,7 @@ import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/translations.dart';
 import 'base_image_provider.dart';
 import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
@@ -59,7 +60,7 @@ class ReaderImageProvider
     if (imageKey.startsWith('file://')) {
       var file = File(imageKey);
       if (await file.exists()) {
-        imageBytes = await file.readAsBytes();
+        imageBytes = await readLocalPage(file);
       } else {
         throw "Error: File not found.";
       }
@@ -197,4 +198,35 @@ class ReaderImageProvider
   String get key =>
       "$imageKey@$sourceKey@$cid@$eid@$enableResize"
       "${translationKey == null ? '' : '@tr:$translated'}";
+}
+
+/// Reads one page file from the local library.
+///
+/// Zero bytes does not mean the page is blank: on Android, a library kept in a
+/// folder granted through the system file picker reports a failed read as zero
+/// bytes rather than as an error. Retry first — that clears the transient
+/// failures — then let the file's own size decide whether it is truly blank.
+Future<Uint8List> readLocalPage(File file) async {
+  const attempts = 3;
+  for (var i = 0; i < attempts; i++) {
+    if (i > 0) {
+      await Future.delayed(Duration(milliseconds: 50 * i));
+    }
+    var bytes = await file.readAsBytes();
+    if (bytes.isNotEmpty) {
+      return bytes;
+    }
+  }
+  int size;
+  try {
+    size = await file.length();
+  } catch (_) {
+    size = -1; // unknown: treat as a failed read, not as a blank file
+  }
+  if (size == 0) {
+    throw ImageLoadingPermanentException(
+      "${"Image file is empty".tl}: ${file.name}",
+    );
+  }
+  throw "${"Failed to read image file".tl}: ${file.name}";
 }
