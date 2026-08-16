@@ -540,6 +540,21 @@ class WebdavLibraryClient {
       return -1;
     }
   }
+
+  /// Names of the immediate subfolders of [remoteDir]. Lets migration decide up
+  /// front which comics already have a folder there, with one request instead of
+  /// one per comic. Throws when the directory cannot be read.
+  Future<Set<String>> remoteFolderNames(String remoteDir) async {
+    final client = _newClient();
+    final files = await client.readDir(WebdavLibrary.ensureDir(remoteDir));
+    return files
+        .where((f) => f.isDir == true)
+        .map((f) => f.name ?? '')
+        // Hidden folders are not browsable as comics, so they must not count as
+        // "already in the library" either.
+        .where((n) => n.isNotEmpty && !n.startsWith('.'))
+        .toSet();
+  }
 }
 
 /// A single browsable item: either a comic folder or an importable archive.

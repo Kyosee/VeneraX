@@ -137,16 +137,19 @@ class MigrationComicRef {
 /// A background upload of local comics into the configured WebDAV library,
 /// re-laid-out so the WebDAV comic source can browse them (issue #149).
 ///
-/// Progress is per-comic ([doneKeys]); a comic whose remote folder is already
-/// populated is skipped, making the task resumable after pause or app restart.
+/// Progress is per-comic ([doneKeys]), so the task is resumable after a pause or
+/// an app restart. With [skipExisting] on, comics whose folder is already on the
+/// server are excluded up front rather than uploaded again.
 class WebdavMigrationTask {
   WebdavMigrationTask({
     required this.id,
     required this.comics,
     required this.createdAt,
     required this.numericPrefix,
+    required this.skipExisting,
     required this.librarySourceKey,
     Set<String>? doneKeys,
+    this.skippedKeys,
     this.failedCount = 0,
     this.status = WebdavMigrationStatus.running,
     this.currentTitle,
@@ -163,12 +166,27 @@ class WebdavMigrationTask {
   /// the same remote layout it started with.
   final bool numericPrefix;
 
+  /// When true, a comic whose target folder already exists on the server is
+  /// left untouched instead of being re-uploaded (issue #160). Fixed for the
+  /// whole task so a resume keeps the choice the user made.
+  final bool skipExisting;
+
   /// Source key of the library being uploaded into. Persisted so a resume after
   /// a restart writes to the same server even when several are configured, and
   /// so the folder-already-populated skip is judged against the right one.
   final String librarySourceKey;
 
   final Set<String> doneKeys;
+
+  /// Comics left untouched because their folder already existed on the server.
+  /// Resolved once, on the task's first run, and then frozen: a later run would
+  /// also see the folders this task itself created, and re-deciding against that
+  /// listing would skip a comic left half-uploaded by a pause. Null until
+  /// resolved; always a subset of [doneKeys] once set.
+  Set<String>? skippedKeys;
+
+  int get skippedCount => skippedKeys?.length ?? 0;
+
   int failedCount;
   WebdavMigrationStatus status;
   String? currentTitle;
@@ -198,8 +216,10 @@ class WebdavMigrationTask {
         'id': id,
         'comics': comics.map((e) => e.toJson()).toList(),
         'numericPrefix': numericPrefix,
+        'skipExisting': skipExisting,
         'librarySourceKey': librarySourceKey,
         'doneKeys': doneKeys.toList(),
+        'skippedKeys': skippedKeys?.toList(),
         'failedCount': failedCount,
         // Persist active tasks as paused so they are not auto-run on restart.
         'status': isActive
@@ -218,12 +238,17 @@ class WebdavMigrationTask {
             .map((e) => MigrationComicRef.fromJson(Map<String, dynamic>.from(e)))
             .toList(),
         numericPrefix: json['numericPrefix'] ?? true,
+        // A task created before this option existed always uploaded.
+        skipExisting: json['skipExisting'] ?? false,
         // A task written before multiple libraries existed targeted the only
         // one there was.
         librarySourceKey: json['librarySourceKey']?.toString().isNotEmpty == true
             ? json['librarySourceKey'].toString()
             : WebdavLibraryStore.legacySourceKey,
         doneKeys: (json['doneKeys'] as List? ?? []).map((e) => '$e').toSet(),
+        skippedKeys: json['skippedKeys'] is List
+            ? (json['skippedKeys'] as List).map((e) => '$e').toSet()
+            : null,
         failedCount: json['failedCount'] ?? 0,
         status: WebdavMigrationStatus.values.firstWhere(
           (e) => e.name == json['status'],
@@ -256,6 +281,7 @@ class WebdavMigrationTaskManager with ChangeNotifier {
   WebdavMigrationTask? start(
     List<LocalComic> comics, {
     required bool numericPrefix,
+    required bool skipExisting,
     required String librarySourceKey,
   }) {
     if (currentTasks.any((t) => t.isActive)) {
@@ -272,6 +298,7 @@ class WebdavMigrationTaskManager with ChangeNotifier {
           .toList(),
       createdAt: DateTime.now(),
       numericPrefix: numericPrefix,
+      skipExisting: skipExisting,
       librarySourceKey: librarySourceKey,
     );
     currentTasks.insert(0, task);
@@ -345,6 +372,8 @@ class WebdavMigrationTaskManager with ChangeNotifier {
       }
       final root = library.migrationRoot;
       await library.ensureRemoteDir(root);
+
+      await _resolveSkipped(task, library, root, folderNames);
 
       for (final ref in task.comics) {
         if (_canceledIds.contains(task.id)) {
@@ -441,6 +470,39 @@ class WebdavMigrationTaskManager with ChangeNotifier {
       _persist();
       notifyListeners();
     }
+  }
+
+  /// Freezes which comics are left untouched because the target library already
+  /// holds a folder of that name (issue #160). Runs only on the task's first
+  /// run: see [WebdavMigrationTask.skippedKeys] for why the decision must not be
+  /// re-made against a later listing. Skipped comics are marked done so progress
+  /// still reaches the end of the list.
+  ///
+  /// A failed listing propagates: the option is an explicit user instruction, so
+  /// uploading the whole batch in spite of it is worse than a retryable failure.
+  Future<void> _resolveSkipped(
+    WebdavMigrationTask task,
+    WebdavLibraryClient library,
+    String root,
+    Map<String, String> folderNames,
+  ) async {
+    if (!task.skipExisting || task.skippedKeys != null) return;
+    final existing = (await library.remoteFolderNames(root))
+        .map((e) => e.toLowerCase())
+        .toSet();
+    final skipped = <String>{};
+    for (final ref in task.comics) {
+      final name = folderNames[ref.key];
+      if (name != null && existing.contains(name.toLowerCase())) {
+        skipped.add(ref.key);
+      }
+    }
+    task.skippedKeys = skipped;
+    task.doneKeys.addAll(skipped);
+    // Persist before any upload so a kill here cannot leave the decision to a
+    // later run, which would judge it against folders this task created.
+    _persist();
+    notifyListeners();
   }
 
   /// Uploads one comic's cover + pages into `{root}/{title}/…` in the layout

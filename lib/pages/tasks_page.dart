@@ -1577,13 +1577,22 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
         Text(
           "Total: @total  Migrated: @done  Failed: @failed".tlParams({
             'total': task.total,
-            'done': task.done - task.failedCount < 0
+            'done': task.done - task.failedCount - task.skippedCount < 0
                 ? 0
-                : task.done - task.failedCount,
+                : task.done - task.failedCount - task.skippedCount,
             'failed': task.failedCount,
           }),
           style: ts.s14,
         ),
+        if (task.skippedCount > 0) ...[
+          const SizedBox(height: 2),
+          Text(
+            "Skipped (already in the library): @n".tlParams({
+              'n': task.skippedCount,
+            }),
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+          ),
+        ],
         if (task.currentTitle != null && task.isRunning) ...[
           const SizedBox(height: 2),
           Text(

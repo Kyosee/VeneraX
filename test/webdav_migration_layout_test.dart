@@ -120,4 +120,53 @@ void main() {
       expect(migrationExtOf('/a/b/trailing.'), '');
     });
   });
+
+  // The skip-existing choice and the comics it excluded must survive a restart:
+  // the decision is made once and then frozen, so losing it would let a resume
+  // re-decide against folders the task itself created (#160).
+  group('WebdavMigrationTask persistence', () {
+    WebdavMigrationTask newTask({required bool skipExisting}) =>
+        WebdavMigrationTask(
+          id: '1',
+          comics: [
+            MigrationComicRef(id: 'a', comicTypeValue: 0, title: 'A'),
+          ],
+          createdAt: DateTime(2026, 1, 1),
+          numericPrefix: false,
+          skipExisting: skipExisting,
+          librarySourceKey: 'webdav_lib',
+        );
+
+    test('round-trips the skip choice and the skipped comics', () {
+      final task = newTask(skipExisting: true);
+      task.skippedKeys = {'a_0'};
+      task.doneKeys.addAll(task.skippedKeys!);
+
+      final restored = WebdavMigrationTask.fromJson(task.toJson());
+
+      expect(restored.skipExisting, isTrue);
+      expect(restored.skippedKeys, {'a_0'});
+      expect(restored.skippedCount, 1);
+      expect(restored.doneKeys, contains('a_0'));
+    });
+
+    test('keeps an unresolved decision unresolved', () {
+      final restored =
+          WebdavMigrationTask.fromJson(newTask(skipExisting: true).toJson());
+
+      expect(restored.skippedKeys, isNull);
+      expect(restored.skippedCount, 0);
+    });
+
+    test('a task saved before the option existed still uploads everything', () {
+      final json = newTask(skipExisting: true).toJson()
+        ..remove('skipExisting')
+        ..remove('skippedKeys');
+
+      final restored = WebdavMigrationTask.fromJson(json);
+
+      expect(restored.skipExisting, isFalse);
+      expect(restored.skippedKeys, isNull);
+    });
+  });
 }

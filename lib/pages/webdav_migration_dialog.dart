@@ -41,6 +41,7 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
   }
 
   bool numericPrefix = false;
+  bool skipExisting = true;
   bool confirmed = false;
   // Which library receives the upload. Pre-selects the first one; with several
   // configured the user picks, since uploading into the wrong server would
@@ -138,6 +139,17 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
                     ],
                   ),
                 ),
+                const SizedBox(height: 4),
+                CheckboxListTile(
+                  value: skipExisting,
+                  onChanged: (v) =>
+                      setState(() => skipExisting = v ?? skipExisting),
+                  title: Text("Skip comics with existing directories".tl),
+                  subtitle: Text(
+                    "Skips comics whose folder already exists in the target library".tl,
+                    style: ts.s12,
+                  ),
+                ),
               ],
             ),
             actions: [
@@ -159,6 +171,7 @@ Future<bool> startWebdavMigrationFlow(List<LocalComic> comics) async {
   var task = manager.start(
     comics,
     numericPrefix: numericPrefix,
+    skipExisting: skipExisting,
     librarySourceKey: target.sourceKey,
   );
   if (task == null) {
