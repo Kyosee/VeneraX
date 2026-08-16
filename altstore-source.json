@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.4",
+          "buildVersion": "233",
+          "date": "2026-08-16",
+          "localizedDescription": "## What's Changed\n\n### Fixed\n- Fixed queued download tasks showing an empty cover box; every item in the queue now shows its cover while it waits\n- Fixed downloading a collection failing when the cover came from a comic already saved on the device\n- Fixed black flashes and the page jumping to the wrong position when tapping quickly to turn pages in continuous reading mode\n- Fixed pages near the start or end of a chapter not being ready in time in continuous reading mode\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.3...v2.2.4",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.4/VeneraX-ios-2.2.4%2B233.ipa",
+          "size": 35096319,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.3",
           "buildVersion": "232",
           "date": "2026-08-14",
@@ -186,11 +195,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.3",
-      "versionDate": "2026-08-14",
-      "versionDescription": "## What's Changed\n\n### Added\n- AI translation now offers a \"Google Translate (no key)\" service type — no account, address or API key to fill in, just save it and start translating\n- The no-key service does not support the glossary, and the endpoint it uses is unofficial, so it may be rate-limited or stop working at any time; stay on an AI model if you need reliability\n\n### Fixed\n- Fixed pages translated before an update coming back as untranslated and needing a full re-translation\n- Fixed pre-translation progress freezing as soon as one page failed to translate\n- Fixed the pre-translation button disappearing on a second device for a comic where translation was enabled; the button now always shows, tells you what is missing and jumps straight to the model download or service settings\n- Fixed a backup or sync run failing entirely because a single file was missing, leaving the device unable to upload from then on\n- Fixed the text-removal setting still describing an option that no longer exists\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.2...v2.2.3",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.3/VeneraX-ios-2.2.3%2B232.ipa",
-      "size": 35098644
+      "version": "2.2.4",
+      "versionDate": "2026-08-16",
+      "versionDescription": "## What's Changed\n\n### Fixed\n- Fixed queued download tasks showing an empty cover box; every item in the queue now shows its cover while it waits\n- Fixed downloading a collection failing when the cover came from a comic already saved on the device\n- Fixed black flashes and the page jumping to the wrong position when tapping quickly to turn pages in continuous reading mode\n- Fixed pages near the start or end of a chapter not being ready in time in continuous reading mode\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.3...v2.2.4",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.4/VeneraX-ios-2.2.4%2B233.ipa",
+      "size": 35096319
     }
   ],
   "news": []
