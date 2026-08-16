@@ -165,30 +165,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          current_apks=(build/app/outputs/apk/release/*universal*.apk)
-          test "${#current_apks[@]}" -eq 1 || {
-            echo "Expected exactly one universal APK, found ${#current_apks[@]}"
+          # The universal APK is the ABI-less output; per-ABI ones carry an
+          # -<abi> suffix (android/app/build.gradle outputFileName).
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
+          version="${version%%+*}"
+          test -n "$version" || { echo "Missing version in pubspec.yaml"; exit 1; }
+          current_apk="build/app/outputs/apk/release/VeneraX-${version}.apk"
+          test -s "$current_apk" || {
+            echo "Missing universal APK: $current_apk"
+            ls -1 build/app/outputs/apk/release || true
             exit 1
           }
           apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -1)
           test -n "$apksigner" || { echo "apksigner not found"; exit 1; }
           current_digest=$(
-            "$apksigner" verify --print-certs "${current_apks[0]}" |
+            "$apksigner" verify --print-certs "$current_apk" |
               sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
           )
           test -n "$current_digest" || { echo "Current APK signer digest missing"; exit 1; }
 
           previous_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          previous_apk="previous-apk/VeneraX-${previous_tag#v}.apk"
           mkdir -p previous-apk
-          gh release download "$previous_tag" --pattern "*universal*.apk" --dir previous-apk
-          previous_apks=(previous-apk/*universal*.apk)
-          test "${#previous_apks[@]}" -eq 1 || {
-            echo "Expected exactly one universal APK in $previous_tag, found ${#previous_apks[@]}"
+          gh release download "$previous_tag" \
+            --pattern "VeneraX-${previous_tag#v}.apk" --dir previous-apk
+          test -s "$previous_apk" || {
+            echo "Missing universal APK in $previous_tag: $previous_apk"
             exit 1
           }
           previous_digest=$(
-            "$apksigner" verify --print-certs "${previous_apks[0]}" |
+            "$apksigner" verify --print-certs "$previous_apk" |
               sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
           )
           test "$current_digest" = "$previous_digest" || {
@@ -381,7 +387,7 @@ jobs:
           require_asset 'release-assets/*.ipa'
           require_asset 'release-assets/*.dmg'
           require_asset 'release-assets/*.apk'
-          require_asset 'release-assets/*universal*.apk'
+          require_asset "release-assets/VeneraX-${version}.apk"
           require_asset 'release-assets/*.deb'
           require_asset 'release-assets/*.zst'
           if ! compgen -G 'release-assets/*.exe' > /dev/null &&
