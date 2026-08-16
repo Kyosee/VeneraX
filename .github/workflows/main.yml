@@ -459,7 +459,13 @@ jobs:
         run: |
           set -euo pipefail
           release_json="$RUNNER_TEMP/${TAG}.release.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$release_json"
+          # A draft release is invisible to the get-release-by-tag endpoint (404
+          # even once the tag exists), so locate it in the release list, which is
+          # newest-first and does include drafts, then fetch it by id.
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq "map(select(.tag_name == \"$TAG\")) | .[0].id // empty")
+          test -n "$release_id" || { echo "No release found for $TAG"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > "$release_json"
           jq -e '.draft == true' "$release_json" > /dev/null
           jq -e --arg tag "$TAG" --argjson prerelease "$PRERELEASE" \
             '.tag_name == $tag and .prerelease == $prerelease and (.body | type == "string" and length > 0)' \
@@ -468,7 +474,10 @@ jobs:
             "$release_json" > /dev/null
 
           jq -r '.body' "$release_json" > "$RUNNER_TEMP/remote-release-body.md"
-          diff -u "$BODY_FILE" "$RUNNER_TEMP/remote-release-body.md"
+          # jq -r appends a trailing newline the stored body does not carry, so
+          # fold trailing blank lines on both sides; real differences still fail.
+          diff -u <(printf '%s\n' "$(cat "$BODY_FILE")") \
+                  <(printf '%s\n' "$(cat "$RUNNER_TEMP/remote-release-body.md")")
 
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort \
             > "$RUNNER_TEMP/local-assets.txt"
