@@ -206,6 +206,7 @@ class _ReaderState extends State<Reader>
   PageRoute<dynamic>? _readingRoute;
   bool _readerRouteVisible = false;
   bool _appIsForeground = true;
+  bool _readingStatisticsChanged = false;
 
   @override
   void initState() {
@@ -329,7 +330,7 @@ class _ReaderState extends State<Reader>
 
   @override
   void dispose() {
-    _stopReadingTimer(notify: true);
+    _stopReadingTimer();
     App.rootRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (isFullscreen) {
@@ -360,10 +361,8 @@ class _ReaderState extends State<Reader>
     if (_appIsForeground) {
       _syncReadingTimer();
     } else {
-      final recorded = _stopReadingTimer(notify: true);
-      if (recorded) {
-        Future.microtask(() => DataSync().onDataChanged());
-      }
+      _stopReadingTimer();
+      _notifyReadingStatisticsChanged();
     }
   }
 
@@ -388,7 +387,7 @@ class _ReaderState extends State<Reader>
   @override
   void didPop() {
     _readerRouteVisible = false;
-    _stopReadingTimer(notify: true);
+    _stopReadingTimer();
   }
 
   void _syncReadingTimer() {
@@ -404,14 +403,14 @@ class _ReaderState extends State<Reader>
     }
   }
 
-  bool _stopReadingTimer({bool notify = false}) {
+  void _stopReadingTimer() {
     _readingCheckpointTimer?.cancel();
     _readingCheckpointTimer = null;
-    return _recordReadingSlice(_readingTimeTracker.stop(), notify: notify);
+    _recordReadingSlice(_readingTimeTracker.stop());
   }
 
-  bool _recordReadingSlice(ReadingTimeSlice? slice, {bool notify = false}) {
-    if (slice == null || slice.duration <= Duration.zero) return false;
+  void _recordReadingSlice(ReadingTimeSlice? slice) {
+    if (slice == null || slice.duration <= Duration.zero) return;
     HistoryManager().recordReadingDuration(
       id: widget.cid,
       type: widget.type,
@@ -420,9 +419,14 @@ class _ReaderState extends State<Reader>
       cover: widget.history.cover,
       startedAt: slice.startedAt,
       duration: slice.duration,
-      notify: notify,
     );
-    return true;
+    _readingStatisticsChanged = true;
+  }
+
+  void _notifyReadingStatisticsChanged() {
+    if (!_readingStatisticsChanged) return;
+    _readingStatisticsChanged = false;
+    Future.microtask(() => DataSync().onDataChanged());
   }
 
   @override
