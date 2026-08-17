@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -222,6 +223,33 @@ void main() {
     });
   });
 
+  test('migration failure strings cover every translated locale', () {
+    final data = jsonDecode(
+      File('assets/translation.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    const keys = [
+      'Completed with failures',
+      'Failed items',
+      'Copy failure details',
+      'Failure details copied',
+      'Failed to copy failure details',
+      '@count more failure items; copy details to view all',
+      'Local comic is no longer available',
+      'Local files directory is missing',
+      'No readable images were found',
+      'Failed to read local files',
+      'Failed to upload files',
+      'Migration failed',
+    ];
+
+    for (final locale in ['zh_CN', 'zh_TW']) {
+      final translations = data[locale] as Map<String, dynamic>;
+      for (final key in keys) {
+        expect(translations[key], isNotEmpty, reason: '$locale: $key');
+      }
+    }
+  });
+
   // The skip-existing choice and the comics it excluded must survive a restart:
   // the decision is made once and then frozen, so losing it would let a resume
   // re-decide against folders the task itself created (#160).
@@ -274,6 +302,40 @@ void main() {
         restored.failures.single.reason,
         WebdavMigrationFailureReason.directoryMissing,
       );
+    });
+
+    test('preserves a completed task with mixed outcomes', () {
+      final task = WebdavMigrationTask(
+        id: 'mixed',
+        comics: [
+          MigrationComicRef(id: 'a', comicTypeValue: 0, title: 'A'),
+          MigrationComicRef(id: 'b', comicTypeValue: 0, title: 'B'),
+          MigrationComicRef(id: 'c', comicTypeValue: 0, title: 'C'),
+        ],
+        createdAt: DateTime(2026, 1, 1),
+        numericPrefix: true,
+        skipExisting: false,
+        librarySourceKey: 'webdav_lib',
+        doneKeys: {'a_0', 'b_0', 'c_0'},
+        failedCount: 1,
+        status: WebdavMigrationStatus.completed,
+        failures: const [
+          WebdavMigrationFailure(
+            comicKey: 'b_0',
+            comicTitle: 'B',
+            chapterTitle: 'Chapter 2',
+            reason: WebdavMigrationFailureReason.noImages,
+          ),
+        ],
+      );
+
+      final restored = WebdavMigrationTask.fromJson(task.toJson());
+
+      expect(restored.status, WebdavMigrationStatus.completed);
+      expect(restored.done, 3);
+      expect(restored.failedCount, 1);
+      expect(restored.failures.single.comicKey, 'b_0');
+      expect(restored.progress, 1);
     });
 
     test('keeps an unresolved decision unresolved', () {
