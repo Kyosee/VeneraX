@@ -20,6 +20,7 @@ class WebdavLibraryConfig {
     required this.pass,
     required this.root,
     this.enabled = true,
+    this.detectLinkedFolders = false,
     this.isInherited = false,
   });
 
@@ -45,6 +46,10 @@ class WebdavLibraryConfig {
   /// hidden from the browse entry points.
   bool enabled;
 
+  /// Re-checks entries reported as files so servers that expose traversable
+  /// directory symlinks inconsistently can still surface them as comics.
+  bool detectLinkedFolders;
+
   /// True for the implicit library derived from the data-sync credentials, which
   /// is not persisted. Editing it saves a real config in its place.
   final bool isInherited;
@@ -58,8 +63,9 @@ class WebdavLibraryConfig {
   }
 
   /// Name to show, never empty.
-  String get displayName =>
-      name.trim().isNotEmpty ? name.trim() : defaultWebdavLibraryName(url, root);
+  String get displayName => name.trim().isNotEmpty
+      ? name.trim()
+      : defaultWebdavLibraryName(url, root);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -70,14 +76,14 @@ class WebdavLibraryConfig {
     'pass': pass,
     'root': root,
     'enabled': enabled,
+    'detectLinkedFolders': detectLinkedFolders,
   };
 
   factory WebdavLibraryConfig.fromJson(Map json) {
     final url = json['url']?.toString() ?? '';
     final user = json['user']?.toString() ?? '';
     final root = json['root']?.toString() ?? '';
-    final id =
-        json['id']?.toString() ?? stableWebdavLibraryId(url, user, root);
+    final id = json['id']?.toString() ?? stableWebdavLibraryId(url, user, root);
     return WebdavLibraryConfig(
       id: id,
       // Tolerate a record written before source keys were persisted by falling
@@ -91,6 +97,7 @@ class WebdavLibraryConfig {
       pass: json['pass']?.toString() ?? '',
       root: root,
       enabled: json['enabled'] != false,
+      detectLinkedFolders: json['detectLinkedFolders'] == true,
     );
   }
 
@@ -101,6 +108,7 @@ class WebdavLibraryConfig {
     String? pass,
     String? root,
     bool? enabled,
+    bool? detectLinkedFolders,
   }) => WebdavLibraryConfig(
     id: id,
     sourceKey: sourceKey,
@@ -110,6 +118,7 @@ class WebdavLibraryConfig {
     pass: pass ?? this.pass,
     root: root ?? this.root,
     enabled: enabled ?? this.enabled,
+    detectLinkedFolders: detectLinkedFolders ?? this.detectLinkedFolders,
     isInherited: isInherited,
   );
 }
@@ -340,6 +349,7 @@ abstract class WebdavLibraryStore {
     required String user,
     required String pass,
     required String root,
+    bool detectLinkedFolders = false,
   }) {
     if (url.trim().isEmpty) return null;
     final list = all();
@@ -352,6 +362,7 @@ abstract class WebdavLibraryStore {
         user: user.trim(),
         pass: pass,
         root: root.trim(),
+        detectLinkedFolders: detectLinkedFolders,
       );
       list[existingIndex] = updated;
       _write(list);
@@ -376,6 +387,7 @@ abstract class WebdavLibraryStore {
       user: user.trim(),
       pass: pass,
       root: root.trim(),
+      detectLinkedFolders: detectLinkedFolders,
     );
     list.add(config);
     _write(list);
@@ -393,6 +405,7 @@ abstract class WebdavLibraryStore {
     String? pass,
     String? root,
     bool? enabled,
+    bool? detectLinkedFolders,
   }) {
     final list = all();
     final index = list.indexWhere((e) => e.id == id);
@@ -404,6 +417,7 @@ abstract class WebdavLibraryStore {
       pass: pass,
       root: root?.trim(),
       enabled: enabled,
+      detectLinkedFolders: detectLinkedFolders,
     );
     if (updated.url.isEmpty) return null;
     list[index] = updated;

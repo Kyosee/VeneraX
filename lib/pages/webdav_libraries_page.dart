@@ -188,7 +188,8 @@ class _WebdavLibrariesPageState extends State<WebdavLibrariesPage> {
                     if (config.isInherited) ...[
                       const SizedBox(height: 4),
                       Text(
-                        "Using your data-sync WebDAV credentials. Save to customize.".tl,
+                        "Using your data-sync WebDAV credentials. Save to customize."
+                            .tl,
                         style: ts.s12.copyWith(
                           color: context.colorScheme.primary,
                         ),
@@ -256,7 +257,8 @@ class _WebdavLibrariesPageState extends State<WebdavLibrariesPage> {
           Text("WebDAV comic library is not configured".tl, style: ts.s16),
           const SizedBox(height: 8),
           Text(
-            "Browse comics on a WebDAV server without downloading them first.".tl,
+            "Browse comics on a WebDAV server without downloading them first."
+                .tl,
             style: ts.s14,
             textAlign: TextAlign.center,
           ).paddingHorizontal(32),
@@ -293,6 +295,7 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
   late final TextEditingController _root;
 
   bool isTesting = false;
+  late bool _detectLinkedFolders;
 
   bool get _isNew => widget.config == null || widget.config!.isInherited;
 
@@ -305,6 +308,7 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
     _user = TextEditingController(text: c?.user ?? '');
     _pass = TextEditingController(text: c?.pass ?? '');
     _root = TextEditingController(text: c?.root ?? '');
+    _detectLinkedFolders = c?.detectLinkedFolders ?? false;
   }
 
   @override
@@ -352,6 +356,7 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
         user: _user.text,
         pass: _pass.text,
         root: _root.text,
+        detectLinkedFolders: _detectLinkedFolders,
       );
     } else {
       WebdavLibraryStore.update(
@@ -361,6 +366,7 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
         user: _user.text,
         pass: _pass.text,
         root: _root.text,
+        detectLinkedFolders: _detectLinkedFolders,
       );
     }
     context.showMessage(message: "Saved".tl);
@@ -424,6 +430,18 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
                 border: const OutlineInputBorder(),
               ),
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text("Detect linked comic folders".tl),
+              subtitle: Text(
+                "Checks entries reported as files for linked folders. This adds extra requests."
+                    .tl,
+              ),
+              value: _detectLinkedFolders,
+              onChanged: (value) {
+                setState(() => _detectLinkedFolders = value);
+              },
+            ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -449,10 +467,7 @@ class _WebdavLibraryEditorState extends State<WebdavLibraryEditor> {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: Button.filled(
-                onPressed: _save,
-                child: Text("Save".tl),
-              ),
+              child: Button.filled(onPressed: _save, child: Text("Save".tl)),
             ),
             const SizedBox(height: 12),
           ],

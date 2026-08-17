@@ -21,8 +21,11 @@ void main() {
         canonical,
       );
       expect(
-        stableWebdavLibraryId('  https://nas.example.com/dav  ', ' me ',
-            ' comics '),
+        stableWebdavLibraryId(
+          '  https://nas.example.com/dav  ',
+          ' me ',
+          ' comics ',
+        ),
         canonical,
       );
     });
@@ -86,10 +89,9 @@ void main() {
         isNot(WebdavLibraryStore.legacySourceKey),
       );
       expect(
-        allocateWebdavLibrarySourceKey(
-          const ['${WebdavLibraryStore.sourceKeyPrefix}other'],
-          'abc123',
-        ),
+        allocateWebdavLibrarySourceKey(const [
+          '${WebdavLibraryStore.sourceKeyPrefix}other',
+        ], 'abc123'),
         isNot(WebdavLibraryStore.legacySourceKey),
       );
     });
@@ -204,6 +206,7 @@ void main() {
         pass: 'secret',
         root: '/comics',
         enabled: false,
+        detectLinkedFolders: true,
       );
       final back = WebdavLibraryConfig.fromJson(c.toJson());
       expect(back.id, c.id);
@@ -214,6 +217,7 @@ void main() {
       expect(back.pass, c.pass);
       expect(back.root, c.root);
       expect(back.enabled, isFalse);
+      expect(back.detectLinkedFolders, isTrue);
     });
 
     test('a record without a stored source key falls back to the old one', () {
@@ -225,6 +229,7 @@ void main() {
       });
       expect(back.sourceKey, WebdavLibraryStore.legacySourceKey);
       expect(back.enabled, isTrue);
+      expect(back.detectLinkedFolders, isFalse);
     });
 
     test('rootPath always names a directory', () {
@@ -257,22 +262,26 @@ void main() {
       expect(c.displayName, 'nas.example.com/manga');
     });
 
-    test('copyWith keeps the id and source key even when the address moves', () {
-      // A server that changed hostname must stay the same library, or its
-      // reading history would be stranded behind a key nothing resolves to.
-      final c = WebdavLibraryConfig(
-        id: 'abc123',
-        sourceKey: 'webdav_library_abc123',
-        name: 'Home',
-        url: 'https://old.example/dav',
-        user: 'me',
-        pass: 'secret',
-        root: '',
-      );
-      final moved = c.copyWith(url: 'https://new.example/dav');
-      expect(moved.id, 'abc123');
-      expect(moved.sourceKey, 'webdav_library_abc123');
-      expect(moved.url, 'https://new.example/dav');
-    });
+    test(
+      'copyWith keeps the id and source key even when the address moves',
+      () {
+        // A server that changed hostname must stay the same library, or its
+        // reading history would be stranded behind a key nothing resolves to.
+        final c = WebdavLibraryConfig(
+          id: 'abc123',
+          sourceKey: 'webdav_library_abc123',
+          name: 'Home',
+          url: 'https://old.example/dav',
+          user: 'me',
+          pass: 'secret',
+          root: '',
+        );
+        final moved = c.copyWith(url: 'https://new.example/dav');
+        expect(moved.id, 'abc123');
+        expect(moved.sourceKey, 'webdav_library_abc123');
+        expect(moved.url, 'https://new.example/dav');
+        expect(moved.detectLinkedFolders, isFalse);
+      },
+    );
   });
 }
