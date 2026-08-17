@@ -12,6 +12,8 @@ import 'package:venera/utils/image.dart';
 
 import 'app_dio.dart';
 
+const _imageStreamIdleTimeout = Duration(seconds: 30);
+
 abstract class ImageDownloader {
   static Stream<ImageDownloadProgress> loadThumbnail(
     String url,
@@ -90,7 +92,7 @@ abstract class ImageDownloader {
       expectedBytes = null;
     }
     var buffer = <int>[];
-    await for (var data in stream) {
+    await for (var data in stream.timeout(_imageStreamIdleTimeout)) {
       buffer.addAll(data);
       if (expectedBytes != null) {
         yield ImageDownloadProgress(
@@ -143,6 +145,7 @@ abstract class ImageDownloader {
       (wrapper) {
         _loadingImages.remove(cacheKey);
       },
+      isReplayable: (progress) => progress.imageBytes != null,
     );
     _loadingImages[cacheKey] = stream;
     return stream.stream;
@@ -230,7 +233,7 @@ abstract class ImageDownloader {
           expectedBytes = null;
         }
         var buffer = <int>[];
-        await for (var data in stream) {
+        await for (var data in stream.timeout(_imageStreamIdleTimeout)) {
           buffer.addAll(data);
           yield ImageDownloadProgress(
             currentBytes: buffer.length,
@@ -343,9 +346,15 @@ class _StreamWrapper<T> {
 
   final void Function(_StreamWrapper<T> wrapper) onClosed;
 
+  final bool Function(T data)? isReplayable;
+
   bool isClosed = false;
 
-  _StreamWrapper(this._stream, this.onClosed) {
+  bool _hasReplayableData = false;
+
+  late T _replayableData;
+
+  _StreamWrapper(this._stream, this.onClosed, {this.isReplayable}) {
     _listen();
   }
 
@@ -354,6 +363,10 @@ class _StreamWrapper<T> {
       await for (var data in _stream) {
         if (isClosed) {
           break;
+        }
+        if (isReplayable?.call(data) ?? false) {
+          _replayableData = data;
+          _hasReplayableData = true;
         }
         for (var controller in controllers) {
           if (!controller.isClosed) {
@@ -388,6 +401,9 @@ class _StreamWrapper<T> {
     controller.onCancel = () {
       controllers.remove(controller);
     };
+    if (_hasReplayableData) {
+      controller.add(_replayableData);
+    }
     return controller.stream;
   }
 
