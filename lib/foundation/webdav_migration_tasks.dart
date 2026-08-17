@@ -8,6 +8,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/network/webdav_library.dart';
+import 'package:venera/utils/io.dart';
 
 // --- Layout naming (pure functions, unit-tested) ---------------------------
 // The WebDAV comic source browses a folder tree where a comic is a folder named
@@ -103,6 +104,227 @@ String _sanitizeSegment(String name) {
 
 enum WebdavMigrationStatus { running, paused, completed, canceled, failed }
 
+enum WebdavMigrationFailureReason {
+  comicUnavailable,
+  directoryMissing,
+  noImages,
+  readFailed,
+  uploadFailed,
+  unknown,
+}
+
+class WebdavMigrationFailure {
+  const WebdavMigrationFailure({
+    required this.comicKey,
+    required this.comicTitle,
+    required this.reason,
+    this.chapterTitle,
+  });
+
+  final String comicKey;
+  final String comicTitle;
+  final String? chapterTitle;
+  final WebdavMigrationFailureReason reason;
+
+  Map<String, dynamic> toJson() => {
+    'comicKey': comicKey,
+    'comicTitle': comicTitle,
+    'chapterTitle': chapterTitle,
+    'reason': reason.name,
+  };
+
+  factory WebdavMigrationFailure.fromJson(Map<String, dynamic> json) =>
+      WebdavMigrationFailure(
+        comicKey: json['comicKey']?.toString() ?? '',
+        comicTitle: json['comicTitle']?.toString() ?? '',
+        chapterTitle: json['chapterTitle']?.toString(),
+        reason: WebdavMigrationFailureReason.values.firstWhere(
+          (e) => e.name == json['reason'],
+          orElse: () => WebdavMigrationFailureReason.unknown,
+        ),
+      );
+}
+
+class WebdavMigrationUploadPlan {
+  const WebdavMigrationUploadPlan({
+    required this.remoteDirectories,
+    required this.uploads,
+    required this.failures,
+  });
+
+  final List<String> remoteDirectories;
+  final List<({String local, String remote, String? chapterTitle})> uploads;
+  final List<WebdavMigrationFailure> failures;
+}
+
+/// Builds and validates the complete local upload plan before remote writes.
+Future<WebdavMigrationUploadPlan> prepareWebdavMigrationUpload({
+  required LocalComic comic,
+  required String comicDir,
+  required bool numericPrefix,
+}) async {
+  final comicKey = '${comic.id}_${comic.comicType.value}';
+  final remoteDirectories = <String>{comicDir};
+  final uploads = <({String local, String remote, String? chapterTitle})>[];
+  final failures = <WebdavMigrationFailure>[];
+  var pageCount = 0;
+
+  void addFailure(WebdavMigrationFailureReason reason, {String? chapterTitle}) {
+    failures.add(
+      WebdavMigrationFailure(
+        comicKey: comicKey,
+        comicTitle: comic.title,
+        chapterTitle: chapterTitle,
+        reason: reason,
+      ),
+    );
+  }
+
+  Future<void> addPages(
+    Object chapter,
+    String remoteDir, {
+    String? chapterTitle,
+  }) async {
+    final localDirectory = comic.hasChapters
+        ? Directory(
+            FilePath.join(
+              comic.baseDir,
+              LocalManager.getChapterDirectoryName(chapter.toString()),
+            ),
+          )
+        : Directory(comic.baseDir);
+    if (!await localDirectory.exists()) {
+      addFailure(
+        WebdavMigrationFailureReason.directoryMissing,
+        chapterTitle: chapterTitle,
+      );
+      return;
+    }
+
+    List<String> images;
+    try {
+      images = await LocalManager().getImagesForComic(comic, chapter);
+    } catch (e, s) {
+      Log.error('WebDAV Migration', 'Failed to inspect local files: $e', s);
+      addFailure(
+        WebdavMigrationFailureReason.readFailed,
+        chapterTitle: chapterTitle,
+      );
+      return;
+    }
+    if (images.isEmpty) {
+      addFailure(
+        WebdavMigrationFailureReason.noImages,
+        chapterTitle: chapterTitle,
+      );
+      return;
+    }
+
+    remoteDirectories.add(remoteDir);
+    pageCount += images.length;
+    for (var i = 0; i < images.length; i++) {
+      final local = _stripFileScheme(images[i]);
+      uploads.add((
+        local: local,
+        remote:
+            '$remoteDir${migrationImageName(i, images.length, migrationExtOf(local))}',
+        chapterTitle: chapterTitle,
+      ));
+    }
+  }
+
+  final coverFile = comic.coverFile;
+  if (await coverFile.exists()) {
+    final ext = migrationExtOf(coverFile.path);
+    uploads.add((
+      local: coverFile.path,
+      remote: '${comicDir}cover.${ext.isEmpty ? 'jpg' : ext}',
+      chapterTitle: null,
+    ));
+  }
+
+  if (!comic.hasChapters) {
+    await addPages(1, comicDir);
+  } else if (comic.chapters!.isGrouped) {
+    final chapters = comic.chapters!;
+    final groupNames = chapters.groups.toList();
+    final usedGroupNames = <String>{};
+    for (var gi = 0; gi < groupNames.length; gi++) {
+      final groupName = groupNames[gi];
+      final group = chapters.getGroup(groupName);
+      final groupIds = group.keys.toList();
+      if (!groupIds.any(comic.downloadedChapters.contains)) continue;
+      final groupFolder = migrationChapterFolderName(
+        groupName,
+        gi,
+        groupNames.length,
+        numericPrefix: numericPrefix,
+        used: usedGroupNames,
+      );
+      final groupDir = '$comicDir$groupFolder/';
+      remoteDirectories.add(groupDir);
+      final usedChapterNames = <String>{};
+      for (var ci = 0; ci < groupIds.length; ci++) {
+        final chapterId = groupIds[ci];
+        if (!comic.downloadedChapters.contains(chapterId)) continue;
+        final title = group[chapterId] ?? chapterId;
+        final folder = migrationChapterFolderName(
+          title,
+          ci,
+          groupIds.length,
+          numericPrefix: numericPrefix,
+          used: usedChapterNames,
+        );
+        final chapterTitle = '$groupName / $title';
+        await addPages(
+          chapterId,
+          '$groupDir$folder/',
+          chapterTitle: chapterTitle,
+        );
+      }
+    }
+  } else {
+    final chapters = comic.chapters!;
+    final ids = chapters.ids.toList();
+    final usedChapterNames = <String>{};
+    for (var ci = 0; ci < ids.length; ci++) {
+      final chapterId = ids[ci];
+      if (!comic.downloadedChapters.contains(chapterId)) continue;
+      final title = chapters[chapterId] ?? chapterId;
+      final folder = migrationChapterFolderName(
+        title,
+        ci,
+        ids.length,
+        numericPrefix: numericPrefix,
+        used: usedChapterNames,
+      );
+      await addPages(chapterId, '$comicDir$folder/', chapterTitle: title);
+    }
+  }
+
+  if (pageCount == 0 && failures.isEmpty) {
+    addFailure(WebdavMigrationFailureReason.noImages);
+  }
+  return WebdavMigrationUploadPlan(
+    remoteDirectories: remoteDirectories.toList(),
+    uploads: uploads,
+    failures: failures,
+  );
+}
+
+class _WebdavMigrationException implements Exception {
+  const _WebdavMigrationException(this.failures, [this.cause]);
+
+  final List<WebdavMigrationFailure> failures;
+  final Object? cause;
+
+  @override
+  String toString() => cause?.toString() ?? 'Migration failed';
+}
+
+String _stripFileScheme(String path) =>
+    path.startsWith('file://') ? path.substring('file://'.length) : path;
+
 /// Minimal persisted reference to a comic to migrate (mirrors ExportComicRef so
 /// a task survives an app restart and resumes).
 class MigrationComicRef {
@@ -150,13 +372,15 @@ class WebdavMigrationTask {
     required this.librarySourceKey,
     Set<String>? doneKeys,
     this.skippedKeys,
+    List<WebdavMigrationFailure>? failures,
     this.failedCount = 0,
     this.status = WebdavMigrationStatus.running,
     this.currentTitle,
     this.currentComicProgress,
     this.error,
     this.finishedAt,
-  }) : doneKeys = doneKeys ?? <String>{};
+  }) : doneKeys = doneKeys ?? <String>{},
+       failures = failures ?? <WebdavMigrationFailure>[];
 
   final String id;
   final List<MigrationComicRef> comics;
@@ -187,6 +411,7 @@ class WebdavMigrationTask {
 
   int get skippedCount => skippedKeys?.length ?? 0;
 
+  final List<WebdavMigrationFailure> failures;
   int failedCount;
   WebdavMigrationStatus status;
   String? currentTitle;
@@ -213,51 +438,57 @@ class WebdavMigrationTask {
   double get progress => total == 0 ? 0 : (done / total).clamp(0.0, 1.0);
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'comics': comics.map((e) => e.toJson()).toList(),
-        'numericPrefix': numericPrefix,
-        'skipExisting': skipExisting,
-        'librarySourceKey': librarySourceKey,
-        'doneKeys': doneKeys.toList(),
-        'skippedKeys': skippedKeys?.toList(),
-        'failedCount': failedCount,
-        // Persist active tasks as paused so they are not auto-run on restart.
-        'status': isActive
-            ? WebdavMigrationStatus.paused.name
-            : status.name,
-        'error': error,
-        'createdAt': createdAt.toIso8601String(),
-        'finishedAt': finishedAt?.toIso8601String(),
-      };
+    'id': id,
+    'comics': comics.map((e) => e.toJson()).toList(),
+    'numericPrefix': numericPrefix,
+    'skipExisting': skipExisting,
+    'librarySourceKey': librarySourceKey,
+    'doneKeys': doneKeys.toList(),
+    'skippedKeys': skippedKeys?.toList(),
+    'failures': failures.map((e) => e.toJson()).toList(),
+    'failedCount': failedCount,
+    // Persist active tasks as paused so they are not auto-run on restart.
+    'status': isActive ? WebdavMigrationStatus.paused.name : status.name,
+    'error': error,
+    'createdAt': createdAt.toIso8601String(),
+    'finishedAt': finishedAt?.toIso8601String(),
+  };
 
-  factory WebdavMigrationTask.fromJson(Map<String, dynamic> json) =>
-      WebdavMigrationTask(
-        id: json['id'] ?? '',
-        comics: (json['comics'] as List? ?? [])
-            .whereType<Map>()
-            .map((e) => MigrationComicRef.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
-        numericPrefix: json['numericPrefix'] ?? true,
-        // A task created before this option existed always uploaded.
-        skipExisting: json['skipExisting'] ?? false,
-        // A task written before multiple libraries existed targeted the only
-        // one there was.
-        librarySourceKey: json['librarySourceKey']?.toString().isNotEmpty == true
-            ? json['librarySourceKey'].toString()
-            : WebdavLibraryStore.legacySourceKey,
-        doneKeys: (json['doneKeys'] as List? ?? []).map((e) => '$e').toSet(),
-        skippedKeys: json['skippedKeys'] is List
-            ? (json['skippedKeys'] as List).map((e) => '$e').toSet()
-            : null,
-        failedCount: json['failedCount'] ?? 0,
-        status: WebdavMigrationStatus.values.firstWhere(
-          (e) => e.name == json['status'],
-          orElse: () => WebdavMigrationStatus.paused,
-        ),
-        error: json['error'],
-        createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
-        finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
-      );
+  factory WebdavMigrationTask.fromJson(
+    Map<String, dynamic> json,
+  ) => WebdavMigrationTask(
+    id: json['id'] ?? '',
+    comics: (json['comics'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => MigrationComicRef.fromJson(Map<String, dynamic>.from(e)))
+        .toList(),
+    numericPrefix: json['numericPrefix'] ?? true,
+    // A task created before this option existed always uploaded.
+    skipExisting: json['skipExisting'] ?? false,
+    // A task written before multiple libraries existed targeted the only
+    // one there was.
+    librarySourceKey: json['librarySourceKey']?.toString().isNotEmpty == true
+        ? json['librarySourceKey'].toString()
+        : WebdavLibraryStore.legacySourceKey,
+    doneKeys: (json['doneKeys'] as List? ?? []).map((e) => '$e').toSet(),
+    skippedKeys: json['skippedKeys'] is List
+        ? (json['skippedKeys'] as List).map((e) => '$e').toSet()
+        : null,
+    failures: (json['failures'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (e) => WebdavMigrationFailure.fromJson(Map<String, dynamic>.from(e)),
+        )
+        .toList(),
+    failedCount: json['failedCount'] ?? 0,
+    status: WebdavMigrationStatus.values.firstWhere(
+      (e) => e.name == json['status'],
+      orElse: () => WebdavMigrationStatus.paused,
+    ),
+    error: json['error'],
+    createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
+    finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
+  );
 }
 
 class WebdavMigrationTaskManager with ChangeNotifier {
@@ -398,10 +629,15 @@ class WebdavMigrationTaskManager with ChangeNotifier {
         _refreshKeepAlive(task);
 
         final comic = LocalManager().find(ref.id, ref.comicType);
-        if (comic == null ||
-            comic.status != LocalComicStatus.downloaded) {
-          // Deleted or not actually downloaded since the task was created.
-          task.failedCount++;
+        if (comic == null) {
+          // Deleted since the task was created.
+          _recordFailures(task, ref.key, [
+            WebdavMigrationFailure(
+              comicKey: ref.key,
+              comicTitle: ref.title,
+              reason: WebdavMigrationFailureReason.comicUnavailable,
+            ),
+          ]);
           task.doneKeys.add(ref.key);
           notifyListeners();
           _persist();
@@ -419,11 +655,22 @@ class WebdavMigrationTaskManager with ChangeNotifier {
             root,
             folderName,
           );
-        } catch (e, s) {
+        } on _WebdavMigrationException catch (e, s) {
           Log.error('WebDAV Migration', e.toString(), s);
-          task.failedCount++;
+          _recordFailures(task, ref.key, e.failures);
           lastError = e.toString();
           completed = true; // a genuine failure; don't retry this comic
+        } catch (e, s) {
+          Log.error('WebDAV Migration', e.toString(), s);
+          _recordFailures(task, ref.key, [
+            WebdavMigrationFailure(
+              comicKey: ref.key,
+              comicTitle: ref.title,
+              reason: WebdavMigrationFailureReason.unknown,
+            ),
+          ]);
+          lastError = e.toString();
+          completed = true;
         }
         // A false return means pause/cancel interrupted mid-comic: leave the
         // comic un-done and loop back so the top-of-loop guard sets the state
@@ -443,7 +690,9 @@ class WebdavMigrationTaskManager with ChangeNotifier {
       if (task.status == WebdavMigrationStatus.running) {
         if (task.failedCount >= task.total && task.total > 0) {
           task.status = WebdavMigrationStatus.failed;
-          task.error = lastError ?? 'Migration failed';
+          task.error = task.failures.isNotEmpty
+              ? 'Migration failed'
+              : lastError ?? 'Migration failed';
         } else {
           task.status = WebdavMigrationStatus.completed;
         }
@@ -518,127 +767,31 @@ class WebdavMigrationTaskManager with ChangeNotifier {
     String folderName,
   ) async {
     final comicDir = '$root$folderName/';
-
-    // Resume relies on [doneKeys], not on the remote folder state: a comic is
-    // marked done only after a full upload, so a comic re-entered on resume is
-    // genuinely incomplete and must be (re)uploaded. Names are deterministic
-    // for a given task (folder de-dup order + fixed [numericPrefix]), so a
-    // re-upload overwrites the same paths — idempotent, and it repairs a folder
-    // left partial by an app kill mid-upload rather than skipping it forever.
-    await library.ensureRemoteDir(comicDir);
-
-    // Collect the upload plan first so progress has a real denominator.
-    final uploads = <({String local, String remote})>[];
-
-    // Cover.
-    final coverFile = comic.coverFile;
-    if (await coverFile.exists()) {
-      final ext = migrationExtOf(coverFile.path);
-      uploads.add((
-        local: coverFile.path,
-        remote: '${comicDir}cover.${ext.isEmpty ? 'jpg' : ext}',
-      ));
+    final plan = await prepareWebdavMigrationUpload(
+      comic: comic,
+      comicDir: comicDir,
+      numericPrefix: task.numericPrefix,
+    );
+    if (plan.failures.isNotEmpty) {
+      throw _WebdavMigrationException(plan.failures);
     }
 
-    if (!comic.hasChapters) {
-      final images = await LocalManager().getImages(comic.id, comic.comicType, 1);
-      for (var i = 0; i < images.length; i++) {
-        final local = _stripScheme(images[i]);
-        uploads.add((
-          local: local,
-          remote: '$comicDir${migrationImageName(i, images.length, migrationExtOf(local))}',
-        ));
+    // Resume uses deterministic paths and overwrites an interrupted comic.
+    try {
+      for (final directory in plan.remoteDirectories) {
+        await library.ensureRemoteDir(directory);
       }
-    } else if (comic.chapters!.isGrouped) {
-      // Grouped chapters (卷/话/番外 tabs): insert a group-folder layer so the
-      // layout becomes comic/group/chapter/images. The WebDAV source rebuilds
-      // the tabs by detecting this extra depth. Both group and chapter folders
-      // honour [numericPrefix] so their tab/reading order survives the source's
-      // name-based sort.
-      final chapters = comic.chapters!;
-      final groupNames = chapters.groups.toList();
-      final usedGroupNames = <String>{};
-      for (var gi = 0; gi < groupNames.length; gi++) {
-        final groupName = groupNames[gi];
-        final group = chapters.getGroup(groupName);
-        final groupIds = group.keys.toList();
-        // Skip a tab entirely when none of its chapters are downloaded, so no
-        // empty group folder is created remotely.
-        if (!groupIds.any((cid) => comic.downloadedChapters.contains(cid))) {
-          continue;
-        }
-        final groupFolder = migrationChapterFolderName(
-          groupName,
-          gi,
-          groupNames.length,
-          numericPrefix: task.numericPrefix,
-          used: usedGroupNames,
-        );
-        final groupDir = '$comicDir$groupFolder/';
-        await library.ensureRemoteDir(groupDir);
-        final usedChapterNames = <String>{};
-        // Only migrate downloaded chapters, preserving their reading order
-        // within the tab.
-        for (var ci = 0; ci < groupIds.length; ci++) {
-          final cid = groupIds[ci];
-          if (!comic.downloadedChapters.contains(cid)) continue;
-          final title = group[cid] ?? cid;
-          final folder = migrationChapterFolderName(
-            title,
-            ci,
-            groupIds.length,
-            numericPrefix: task.numericPrefix,
-            used: usedChapterNames,
-          );
-          final chapterDir = '$groupDir$folder/';
-          await library.ensureRemoteDir(chapterDir);
-          final images =
-              await LocalManager().getImages(comic.id, comic.comicType, cid);
-          for (var i = 0; i < images.length; i++) {
-            final local = _stripScheme(images[i]);
-            uploads.add((
-              local: local,
-              remote:
-                  '$chapterDir${migrationImageName(i, images.length, migrationExtOf(local))}',
-            ));
-          }
-        }
-      }
-    } else {
-      final chapters = comic.chapters!;
-      final ids = chapters.ids.toList();
-      final usedChapterNames = <String>{};
-      // Only migrate downloaded chapters, preserving their reading order.
-      for (var ci = 0; ci < ids.length; ci++) {
-        final cid = ids[ci];
-        if (!comic.downloadedChapters.contains(cid)) continue;
-        final title = chapters[cid] ?? cid;
-        final folder = migrationChapterFolderName(
-          title,
-          ci,
-          ids.length,
-          numericPrefix: task.numericPrefix,
-          used: usedChapterNames,
-        );
-        final chapterDir = '$comicDir$folder/';
-        await library.ensureRemoteDir(chapterDir);
-        final images =
-            await LocalManager().getImages(comic.id, comic.comicType, cid);
-        for (var i = 0; i < images.length; i++) {
-          final local = _stripScheme(images[i]);
-          uploads.add((
-            local: local,
-            remote: '$chapterDir${migrationImageName(i, images.length, migrationExtOf(local))}',
-          ));
-        }
-      }
+    } catch (e) {
+      throw _WebdavMigrationException([
+        WebdavMigrationFailure(
+          comicKey: '${comic.id}_${comic.comicType.value}',
+          comicTitle: comic.title,
+          reason: WebdavMigrationFailureReason.uploadFailed,
+        ),
+      ], e);
     }
 
-    if (uploads.isEmpty) {
-      throw 'No images to migrate';
-    }
-
-    for (var i = 0; i < uploads.length; i++) {
+    for (var i = 0; i < plan.uploads.length; i++) {
       // A large comic (many chapters/pages) can take a while, so honour a
       // pause/cancel between individual images rather than only between comics.
       // Signalled to the caller by returning false — the comic stays un-done so
@@ -646,9 +799,20 @@ class WebdavMigrationTaskManager with ChangeNotifier {
       if (_canceledIds.contains(task.id) || _pausedIds.contains(task.id)) {
         return false;
       }
-      final u = uploads[i];
-      await library.uploadFile(u.local, u.remote);
-      task.currentComicProgress = (i + 1) / uploads.length;
+      final u = plan.uploads[i];
+      try {
+        await library.uploadFile(u.local, u.remote);
+      } catch (e) {
+        throw _WebdavMigrationException([
+          WebdavMigrationFailure(
+            comicKey: '${comic.id}_${comic.comicType.value}',
+            comicTitle: comic.title,
+            chapterTitle: u.chapterTitle,
+            reason: WebdavMigrationFailureReason.uploadFailed,
+          ),
+        ], e);
+      }
+      task.currentComicProgress = (i + 1) / plan.uploads.length;
       notifyListeners();
     }
     return true;
@@ -662,6 +826,16 @@ class WebdavMigrationTaskManager with ChangeNotifier {
         detail: task.total == 0 ? null : '${task.done}/${task.total}',
       ),
     );
+  }
+
+  void _recordFailures(
+    WebdavMigrationTask task,
+    String comicKey,
+    List<WebdavMigrationFailure> failures,
+  ) {
+    task.failedCount++;
+    task.failures.removeWhere((failure) => failure.comicKey == comicKey);
+    task.failures.addAll(failures);
   }
 
   void _trimHistory() {
@@ -698,9 +872,6 @@ class WebdavMigrationTaskManager with ChangeNotifier {
             ));
     }
   }
-
-  static String _stripScheme(String path) =>
-      path.startsWith('file://') ? path.substring('file://'.length) : path;
 
   /// Deterministically maps each comic (by [MigrationComicRef.key]) to its
   /// remote folder name, de-duplicating same-titled comics in list order. Runs
