@@ -9,6 +9,7 @@ import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
+import 'package:venera/pages/reading_statistics_page.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -88,7 +89,6 @@ class _HistoryPageState extends State<HistoryPage>
 
   List<History> comics = [];
   bool isLoading = true;
-  var controller = FlyoutController();
   var searchTextController = TextEditingController();
   var keyword = "";
   var readFilterSelect = "All";
@@ -329,6 +329,35 @@ class _HistoryPageState extends State<HistoryPage>
     App.rootContext.showMessage(message: "Task started".tl);
   }
 
+  void _showClearHistoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return ContentDialog(
+          title: 'Clear History'.tl,
+          content: Text('Are you sure you want to clear your history?'.tl),
+          actions: [
+            Button.outlined(
+              onPressed: () {
+                HistoryManager().clearUnfavoritedHistory();
+                context.pop();
+              },
+              child: Text('Clear Unfavorited'.tl),
+            ),
+            Button.filled(
+              color: context.colorScheme.error,
+              onPressed: () {
+                HistoryManager().clearHistory();
+                context.pop();
+              },
+              child: Text('Clear'.tl),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     List<Widget> selectActions = [
@@ -402,17 +431,18 @@ class _HistoryPageState extends State<HistoryPage>
 
     List<Widget> normalActions = [
       IconButton(
+        key: const Key('reading-statistics-entry'),
+        icon: const Icon(Icons.bar_chart),
+        tooltip: 'Reading Statistics'.tl,
+        onPressed: () => context.to(() => const ReadingStatisticsPage()),
+      ),
+      IconButton(
         icon: const Icon(Icons.filter_alt_outlined),
         tooltip: "Filter".tl,
         color: readFilterSelect != "All" || sourceFilterSelect.isNotEmpty
             ? context.colorScheme.primaryContainer
             : null,
         onPressed: showFilterDialog,
-      ),
-      IconButton(
-        icon: const Icon(Icons.refresh),
-        tooltip: 'Refresh All Histories'.tl,
-        onPressed: _refreshAllHistories,
       ),
       IconButton(
         icon: const Icon(Icons.checklist),
@@ -423,41 +453,20 @@ class _HistoryPageState extends State<HistoryPage>
           });
         },
       ),
-      Tooltip(
-        message: 'Clear History'.tl,
-        child: Flyout(
-          controller: controller,
-          flyoutBuilder: (context) {
-            return FlyoutContent(
-              title: 'Clear History'.tl,
-              content: Text('Are you sure you want to clear your history?'.tl),
-              actions: [
-                Button.outlined(
-                  onPressed: () {
-                    HistoryManager().clearUnfavoritedHistory();
-                    context.pop();
-                  },
-                  child: Text('Clear Unfavorited'.tl),
-                ),
-                const SizedBox(width: 4),
-                Button.filled(
-                  color: context.colorScheme.error,
-                  onPressed: () {
-                    HistoryManager().clearHistory();
-                    context.pop();
-                  },
-                  child: Text('Clear'.tl),
-                ),
-              ],
-            );
-          },
-          child: IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            onPressed: () {
-              controller.show();
-            },
+      MenuButton(
+        entries: [
+          MenuEntry(
+            icon: Icons.refresh,
+            text: 'Refresh All Histories'.tl,
+            onClick: _refreshAllHistories,
           ),
-        ),
+          MenuEntry(
+            icon: Icons.delete_sweep_outlined,
+            text: 'Clear History'.tl,
+            color: context.colorScheme.error,
+            onClick: _showClearHistoryDialog,
+          ),
+        ],
       ),
     ];
 
