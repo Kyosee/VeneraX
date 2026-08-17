@@ -279,6 +279,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: getTheme(primary, secondary, tertiary, Brightness.light),
         navigatorKey: App.rootNavigatorKey,
+        navigatorObservers: [App.rootRouteObserver],
         darkTheme: getTheme(primary, secondary, tertiary, Brightness.dark),
         themeMode: switch (appdata.settings['theme_mode']) {
           'light' => ThemeMode.light,

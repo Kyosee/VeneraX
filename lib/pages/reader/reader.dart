@@ -34,6 +34,7 @@ import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
@@ -117,7 +118,13 @@ class Reader extends StatefulWidget {
 }
 
 class _ReaderState extends State<Reader>
-    with _ReaderLocation, _ReaderWindow, _VolumeListener, _ImagePerPageHandler {
+    with
+        _ReaderLocation,
+        _ReaderWindow,
+        _VolumeListener,
+        _ImagePerPageHandler,
+        WidgetsBindingObserver,
+        RouteAware {
   @override
   void update() {
     setState(() {});
@@ -194,8 +201,18 @@ class _ReaderState extends State<Reader>
 
   var focusNode = FocusNode();
 
+  final ReadingTimeTracker _readingTimeTracker = ReadingTimeTracker();
+  Timer? _readingCheckpointTimer;
+  PageRoute<dynamic>? _readingRoute;
+  bool _readerRouteVisible = false;
+  bool _appIsForeground = true;
+
   @override
   void initState() {
+    WidgetsBinding.instance.addObserver(this);
+    _appIsForeground =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     page = widget.initialPage ?? 1;
     if (page < 1) {
       page = 1;
@@ -270,6 +287,16 @@ class _ReaderState extends State<Reader>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _readingRoute) {
+      if (_readingRoute != null) {
+        App.rootRouteObserver.unsubscribe(this);
+      }
+      _readingRoute = route;
+      App.rootRouteObserver.subscribe(this, route);
+      _readerRouteVisible = route.isCurrent;
+      _syncReadingTimer();
+    }
     if (!_isInitialized) {
       initImagesPerPage(widget.initialPage ?? 1);
       _isInitialized = true;
@@ -302,6 +329,9 @@ class _ReaderState extends State<Reader>
 
   @override
   void dispose() {
+    _stopReadingTimer(notify: true);
+    App.rootRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
     if (isFullscreen) {
       fullscreen();
     }
@@ -322,6 +352,77 @@ class _ReaderState extends State<Reader>
     PaintingBinding.instance.imageCache.maximumSizeBytes = 100 << 20;
     disposeReaderWindow();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground) {
+      _syncReadingTimer();
+    } else {
+      final recorded = _stopReadingTimer(notify: true);
+      if (recorded) {
+        Future.microtask(() => DataSync().onDataChanged());
+      }
+    }
+  }
+
+  @override
+  void didPush() {
+    _readerRouteVisible = true;
+    _syncReadingTimer();
+  }
+
+  @override
+  void didPopNext() {
+    _readerRouteVisible = true;
+    _syncReadingTimer();
+  }
+
+  @override
+  void didPushNext() {
+    _readerRouteVisible = false;
+    _stopReadingTimer();
+  }
+
+  @override
+  void didPop() {
+    _readerRouteVisible = false;
+    _stopReadingTimer(notify: true);
+  }
+
+  void _syncReadingTimer() {
+    if (_readerRouteVisible && _appIsForeground) {
+      if (_readingTimeTracker.isActive) return;
+      _readingTimeTracker.start();
+      _readingCheckpointTimer ??= Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _recordReadingSlice(_readingTimeTracker.checkpoint()),
+      );
+    } else {
+      _stopReadingTimer();
+    }
+  }
+
+  bool _stopReadingTimer({bool notify = false}) {
+    _readingCheckpointTimer?.cancel();
+    _readingCheckpointTimer = null;
+    return _recordReadingSlice(_readingTimeTracker.stop(), notify: notify);
+  }
+
+  bool _recordReadingSlice(ReadingTimeSlice? slice, {bool notify = false}) {
+    if (slice == null || slice.duration <= Duration.zero) return false;
+    HistoryManager().recordReadingDuration(
+      id: widget.cid,
+      type: widget.type,
+      title: widget.name,
+      subtitle: widget.author,
+      cover: widget.history.cover,
+      startedAt: slice.startedAt,
+      duration: slice.duration,
+      notify: notify,
+    );
+    return true;
   }
 
   @override

@@ -67,6 +67,8 @@ class _App {
 
   final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+  final rootRouteObserver = RouteObserver<PageRoute<dynamic>>();
+
   GlobalKey<NavigatorState>? mainNavigatorKey;
 
   BuildContext get rootContext => rootNavigatorKey.currentContext!;
