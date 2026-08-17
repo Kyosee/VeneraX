@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -8,6 +10,27 @@ import 'package:webdav_client/webdav_client.dart' as webdav;
 
 void main() {
   group('WebDAV linked comic folders', () {
+    test('ships translated labels for every configured locale', () {
+      final json =
+          jsonDecode(File('assets/translation.json').readAsStringSync())
+              as Map<String, dynamic>;
+      for (final locale in json.entries) {
+        final translations = Map<String, dynamic>.from(locale.value as Map);
+        expect(
+          translations,
+          contains('Detect linked comic folders'),
+          reason: locale.key,
+        );
+        expect(
+          translations,
+          contains(
+            'Checks entries reported as files for linked folders. This adds extra requests.',
+          ),
+          reason: locale.key,
+        );
+      }
+    });
+
     test('keeps the existing single-request behavior when disabled', () async {
       final adapter = _WebdavAdapter();
       final result = await _client(
