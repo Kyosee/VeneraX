@@ -7,6 +7,7 @@ class SmoothCustomScrollView extends StatelessWidget {
     this.controller,
     this.scrollbar = true,
     this.scrollbarTopPadding = 0,
+    this.physics,
   });
 
   final ScrollController? controller;
@@ -22,6 +23,9 @@ class SmoothCustomScrollView extends StatelessWidget {
   /// when [scrollbar] is true.
   final double scrollbarTopPadding;
 
+  /// Optional page-specific physics layered over the platform scroll behavior.
+  final ScrollPhysics? physics;
+
   @override
   Widget build(BuildContext context) {
     return SmoothScrollProvider(
@@ -29,7 +33,7 @@ class SmoothCustomScrollView extends StatelessWidget {
       builder: (context, controller, physics) {
         Widget view = CustomScrollView(
           controller: controller,
-          physics: physics,
+          physics: this.physics?.applyTo(physics) ?? physics,
           slivers: [
             ...slivers,
             SliverPadding(

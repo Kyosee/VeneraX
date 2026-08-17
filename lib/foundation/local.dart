@@ -216,6 +216,53 @@ class LocalComic with HistoryMixin implements Comic {
   double? get stars => null;
 }
 
+/// Keeps flat local-comic history attached to chapter IDs after a rescan.
+void remapLocalComicHistory(
+  History history,
+  LocalComic previous,
+  LocalComic refreshed,
+) {
+  history.title = refreshed.title;
+  history.subtitle = refreshed.subtitle;
+  history.cover = refreshed.cover;
+
+  final previousIds = previous.chapters?.ids.toList() ?? const <String>[];
+  final refreshedIds = refreshed.chapters?.ids.toList() ?? const <String>[];
+  if (previousIds.isEmpty || history.group != null) {
+    return;
+  }
+  if (refreshedIds.isEmpty) {
+    history.ep = 0;
+    history.page = 0;
+    history.readEpisode = <String>{};
+    return;
+  }
+
+  final previousIndex = history.ep - 1;
+  if (previousIndex >= 0 && previousIndex < previousIds.length) {
+    final refreshedIndex = refreshedIds.indexOf(previousIds[previousIndex]);
+    history.ep = refreshedIndex >= 0
+        ? refreshedIndex + 1
+        : history.ep.clamp(1, refreshedIds.length).toInt();
+  }
+
+  final remappedReadEpisodes = <String>{};
+  for (final value in history.readEpisode) {
+    final oldPosition = int.tryParse(value);
+    if (oldPosition == null ||
+        oldPosition < 1 ||
+        oldPosition > previousIds.length) {
+      remappedReadEpisodes.add(value);
+      continue;
+    }
+    final refreshedIndex = refreshedIds.indexOf(previousIds[oldPosition - 1]);
+    if (refreshedIndex >= 0) {
+      remappedReadEpisodes.add('${refreshedIndex + 1}');
+    }
+  }
+  history.readEpisode = remappedReadEpisodes;
+}
+
 class LocalManager with ChangeNotifier {
   static LocalManager? _instance;
 
@@ -471,17 +518,29 @@ class LocalManager with ChangeNotifier {
 
   Future<void> add(LocalComic comic, [String? id]) async {
     var old = find(id ?? comic.id, comic.comicType);
-    var downloaded = comic.downloadedChapters;
+    var downloaded = List<String>.from(comic.downloadedChapters);
     if (old != null) {
       downloaded.addAll(old.downloadedChapters);
     }
+    _writeComic(comic, id ?? comic.id, downloaded);
+    try {
+      const ComicStateRepository().mirrorLocalComic(comic);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  void _writeComic(
+    LocalComic comic,
+    String id,
+    List<String> downloadedChapters,
+  ) {
     _db.execute(
       'INSERT OR REPLACE INTO comics '
       '(id, title, subtitle, tags, directory, chapters, cover, comic_type, '
       'downloadedChapters, created_at, description) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
       [
-        id ?? comic.id,
+        id,
         comic.title,
         comic.subtitle,
         jsonEncode(comic.tags),
@@ -489,14 +548,48 @@ class LocalManager with ChangeNotifier {
         jsonEncode(comic.chapters),
         comic.cover,
         comic.comicType.value,
-        jsonEncode(downloaded),
+        jsonEncode(downloadedChapters),
         comic.createdAt.millisecondsSinceEpoch,
         comic.description,
       ],
     );
+  }
+
+  /// Replaces a pure local comic after a successful directory rescan.
+  /// Stable identity and user state live outside the refreshed metadata row.
+  void replaceLocalComic(LocalComic comic) {
+    final previous = find(comic.id, comic.comicType);
+    final existingHistory = HistoryManager().find(comic.id, comic.comicType);
+    if (previous != null && existingHistory != null) {
+      remapLocalComicHistory(existingHistory, previous, comic);
+    }
+    _writeComic(comic, comic.id, List<String>.from(comic.downloadedChapters));
     try {
       const ComicStateRepository().mirrorLocalComic(comic);
     } catch (_) {}
+    if (existingHistory != null) {
+      HistoryManager().addHistory(existingHistory);
+    }
+
+    final favorites = LocalFavoritesManager();
+    final folders = favorites.find(comic.id, comic.comicType);
+    final favorite = FavoriteItem(
+      id: comic.id,
+      name: comic.title,
+      coverPath: comic.cover,
+      author: comic.subtitle,
+      type: comic.comicType,
+      tags: comic.tags,
+      favoriteTime: comic.createdAt,
+    );
+    for (var i = 0; i < folders.length; i++) {
+      favorites.updateInfo(
+        folders[i],
+        favorite,
+        i == folders.length - 1,
+        false,
+      );
+    }
     notifyListeners();
   }
 

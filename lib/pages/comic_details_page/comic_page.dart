@@ -25,6 +25,7 @@ import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
@@ -41,6 +42,7 @@ import 'package:venera/pages/search_result_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/local_comic_scanner.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 import 'dart:math' as math;
@@ -139,10 +141,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   String? detailsLoadError;
 
-  bool _networkFetching = false;
+  bool _detailsRefreshing = false;
+
+  Future<bool>? _detailsRefreshFuture;
+
+  int _detailsRefreshGeneration = 0;
 
   @override
-  bool get isDetailsLoading => _networkFetching;
+  bool get isDetailsLoading => _detailsRefreshing;
 
   /// The backing local-library comic for this page, when there is one. Lets the
   /// cover load directly from disk for pure local imports (issue #38).
@@ -288,11 +294,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   void reloadDetails() {
     if (!mounted) return;
-    // _networkFetching guards retryLoadDetails, so clear it first: an edit can
-    // land while a fetch is still in flight, and that fetch would return the
-    // pre-edit layout.
-    _networkFetching = false;
-    retryLoadDetails();
+    final source = ComicSource.find(widget.sourceKey);
+    if (source == null || source.loadComicInfo == null) return;
+    unawaited(_refreshNetworkDetails(source, supersede: true));
   }
 
   @override
@@ -358,25 +362,29 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               child: const Icon(Icons.arrow_upward),
             )
           : null,
-      body: SmoothCustomScrollView(
-        controller: scrollController,
-        // The SliverAppbar scrolls with the content, so inset the thumb by the
-        // top bar height to clear it.
-        scrollbarTopPadding: context.padding.top + 56,
-        slivers: [
-          ...buildTitle(horizontalInset),
-          inset(buildActions()),
-          inset(buildDescription()),
-          inset(buildChapters()),
-          inset(buildComments()),
-          inset(buildThumbnails()),
-          inset(buildRecommend()),
-          SliverPadding(
-            padding: EdgeInsets.only(
-              bottom: context.padding.bottom + 80,
-            ), // Add additional padding for FAB
-          ),
-        ],
+      body: RefreshIndicator(
+        onRefresh: _refreshComicDetails,
+        child: SmoothCustomScrollView(
+          controller: scrollController,
+          physics: App.isDesktop ? null : const AlwaysScrollableScrollPhysics(),
+          // The SliverAppbar scrolls with the content, so inset the thumb by the
+          // top bar height to clear it.
+          scrollbarTopPadding: context.padding.top + 56,
+          slivers: [
+            ...buildTitle(horizontalInset),
+            inset(buildActions()),
+            inset(buildDescription()),
+            inset(buildChapters()),
+            inset(buildComments()),
+            inset(buildThumbnails()),
+            inset(buildRecommend()),
+            SliverPadding(
+              padding: EdgeInsets.only(
+                bottom: context.padding.bottom + 80,
+              ), // Add additional padding for FAB
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -436,8 +444,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       detailsLoadError = null;
       var comicSource = ComicSource.find(widget.sourceKey);
       if (comicSource != null && comicSource.loadComicInfo != null) {
-        _networkFetching = true;
-        scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
+        scheduleMicrotask(() => _refreshNetworkDetails(comicSource));
       }
       return Res(_localDetails(localComic, state));
     }
@@ -455,8 +462,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       return Res(_fallbackDetails(state));
     }
     // Return local data immediately, fetch network data in background
-    _networkFetching = true;
-    scheduleMicrotask(() => _fetchNetworkDetails(comicSource));
+    scheduleMicrotask(() => _refreshNetworkDetails(comicSource));
     // Cached details from an earlier visit render the chapter list (and group
     // tabs) instantly; the background fetch above refreshes them.
     final cached = ComicDetailsCache().find(widget.sourceKey, widget.id);
@@ -504,52 +510,143 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   /// Useful when the user switched networks and wants to reload chapters
   /// without leaving and re-entering the page.
   void retryLoadDetails() {
-    if (_networkFetching) return;
     var source = ComicSource.find(widget.sourceKey);
     if (source == null || source.loadComicInfo == null) return;
-    setState(() {
-      detailsLoadError = null;
-      _networkFetching = true;
-    });
-    scheduleMicrotask(() => _fetchNetworkDetails(source));
+    unawaited(_refreshNetworkDetails(source));
   }
 
-  Future<void> _fetchNetworkDetails(ComicSource source) async {
+  Future<void> _refreshComicDetails() async {
+    final localComic =
+        _localComic ??
+        _comicStateRepository.load(widget.sourceKey, widget.id).localComic;
+    final bool success;
+    if (widget.sourceKey == 'local' ||
+        localComic?.comicType == ComicType.local) {
+      success = localComic != null && await _refreshLocalDetails(localComic);
+    } else {
+      final source = ComicSource.find(widget.sourceKey);
+      success =
+          source != null &&
+          source.loadComicInfo != null &&
+          await _refreshNetworkDetails(source);
+    }
+    if (!success && mounted) {
+      context.showMessage(message: 'Refresh Failed'.tl);
+    }
+  }
+
+  Future<bool> _startDetailsRefresh(
+    Future<bool> Function(int generation) operation, {
+    bool supersede = false,
+  }) {
+    final running = _detailsRefreshFuture;
+    if (running != null && !supersede) return running;
+
+    final generation = ++_detailsRefreshGeneration;
+    if (mounted) {
+      setState(() {
+        detailsLoadError = null;
+        _detailsRefreshing = true;
+      });
+    } else {
+      detailsLoadError = null;
+      _detailsRefreshing = true;
+    }
+
+    late Future<bool> future;
+    future = operation(generation).whenComplete(() {
+      if (!mounted || generation != _detailsRefreshGeneration) return;
+      _detailsRefreshFuture = null;
+      setState(() {
+        _detailsRefreshing = false;
+      });
+    });
+    _detailsRefreshFuture = future;
+    return future;
+  }
+
+  Future<bool> _refreshNetworkDetails(
+    ComicSource source, {
+    bool supersede = false,
+  }) {
+    return _startDetailsRefresh(
+      (generation) => _fetchNetworkDetails(source, generation),
+      supersede: supersede,
+    );
+  }
+
+  Future<bool> _refreshLocalDetails(LocalComic current) {
+    return _startDetailsRefresh((generation) async {
+      try {
+        final directory = Directory(current.baseDir);
+        if (!await directory.exists()) {
+          detailsLoadError = 'Local path not found'.tl;
+          return false;
+        }
+        final refreshed = await scanLocalComicDirectory(
+          directory,
+          previous: current,
+          rejectExisting: false,
+        );
+        if (refreshed == null) {
+          detailsLoadError = 'Invalid Comic'.tl;
+          return false;
+        }
+        if (!mounted || generation != _detailsRefreshGeneration) return false;
+
+        await LocalComicImageProvider(current).evict();
+        LocalManager().replaceLocalComic(refreshed);
+        final state = _comicStateRepository.load(widget.sourceKey, widget.id);
+        if (!mounted || generation != _detailsRefreshGeneration) return false;
+        setState(() {
+          _localComic = refreshed;
+          data = _localDetails(refreshed, state);
+          detailsLoadError = null;
+        });
+        return true;
+      } catch (error, stackTrace) {
+        Log.error('Local Comic Refresh', error, stackTrace);
+        if (generation == _detailsRefreshGeneration) {
+          detailsLoadError = error.toString();
+        }
+        return false;
+      }
+    });
+  }
+
+  Future<bool> _fetchNetworkDetails(ComicSource source, int generation) async {
     int retryCount = 0;
+    String lastError = 'Load failed';
     while (retryCount < 3) {
       try {
         final res = await source.loadComicInfo!(widget.id);
-        if (!mounted) return;
+        if (!mounted || generation != _detailsRefreshGeneration) return false;
         if (res.success) {
           detailsLoadError = null;
-          _networkFetching = false;
           setState(() {
             data = res.data;
           });
           ComicDetailsCache().update(widget.sourceKey, widget.id, res.data);
           await onDataLoaded();
-          return;
+          return true;
         }
+        lastError = res.errorMessage ?? lastError;
         retryCount++;
         if (retryCount < 3) {
           await Future.delayed(const Duration(milliseconds: 200));
         }
-      } catch (e) {
-        if (!mounted) return;
+      } catch (error) {
+        if (!mounted || generation != _detailsRefreshGeneration) return false;
+        lastError = error.toString();
         retryCount++;
-        if (retryCount >= 3) {
-          _networkFetching = false;
-          detailsLoadError = e.toString();
-          setState(() {});
-          return;
+        if (retryCount < 3) {
+          await Future.delayed(const Duration(milliseconds: 200));
         }
-        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
-    if (!mounted) return;
-    _networkFetching = false;
-    detailsLoadError = 'Load failed';
-    setState(() {});
+    if (!mounted || generation != _detailsRefreshGeneration) return false;
+    detailsLoadError = lastError;
+    return false;
   }
 
   ComicDetails _fallbackDetails(ComicState state) {
@@ -621,6 +718,15 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           icon: const Icon(Icons.share),
           tooltip: 'Share'.tl,
         ),
+        if (widget.sourceKey == 'local' ||
+            ComicSource.find(widget.sourceKey)?.loadComicInfo != null)
+          IconButton(
+            onPressed: _detailsRefreshing
+                ? null
+                : () => unawaited(_refreshComicDetails()),
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh'.tl,
+          ),
         IconButton(
           onPressed: showMoreActions,
           icon: const Icon(Icons.more_horiz),
@@ -1312,7 +1418,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           ),
         );
       }
-      if (_networkFetching) {
+      if (_detailsRefreshing) {
         return SliverLazyToBoxAdapter(
           child: Container(
             margin: const EdgeInsets.only(top: 16, bottom: 8),
