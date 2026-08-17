@@ -68,6 +68,18 @@ part 'chapters.dart';
 
 part 'chapter_comments.dart';
 
+@visibleForTesting
+SystemUiMode resolveReaderSystemUiMode(bool showSystemStatusBar) {
+  return showSystemStatusBar ? SystemUiMode.edgeToEdge : SystemUiMode.immersive;
+}
+
+@visibleForTesting
+Future<void> applyReaderSystemUiMode(bool showSystemStatusBar) {
+  return SystemChrome.setEnabledSystemUIMode(
+    resolveReaderSystemUiMode(showSystemStatusBar),
+  );
+}
+
 extension _ReaderContext on BuildContext {
   _ReaderState get reader => findAncestorStateOfType<_ReaderState>()!;
 
@@ -238,13 +250,14 @@ class _ReaderState extends State<Reader>
       appdata.settings.getReaderSetting(cid, type.sourceKey, 'readerMode'),
     );
     history = widget.history;
-    if (!appdata.settings.getReaderSetting(
-      cid,
-      type.sourceKey,
-      'showSystemStatusBar',
-    )) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
-    }
+    final showSystemStatusBar =
+        appdata.settings.getReaderSetting(
+          cid,
+          type.sourceKey,
+          'showSystemStatusBar',
+        ) ==
+        true;
+    applyReaderSystemUiMode(showSystemStatusBar);
     if (appdata.settings.getReaderSetting(
       cid,
       type.sourceKey,

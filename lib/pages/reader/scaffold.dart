@@ -145,15 +145,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   void openOrClose() {
-    if (!_isOpen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    } else {
-      if (!appdata.settings['showSystemStatusBar']) {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
-      } else {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      }
-    }
+    // Keep the platform chrome stable for the whole reading session. Changing
+    // it here changes Android's viewport while an image stream may still be
+    // resolving, which can strand the rebuilt page in its loading state (#210).
     setState(() {
       _isOpen = !_isOpen;
     });
@@ -1000,6 +994,16 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           }
           if (key == "quickCollectImage") {
             addDragListener();
+          }
+          if (key == "showSystemStatusBar") {
+            final showSystemStatusBar =
+                appdata.settings.getReaderSetting(
+                  context.reader.cid,
+                  context.reader.type.sourceKey,
+                  key,
+                ) ==
+                true;
+            applyReaderSystemUiMode(showSystemStatusBar);
           }
           if (key == "showChapterComments" ||
               key == "showChapterCommentsAtEnd") {
