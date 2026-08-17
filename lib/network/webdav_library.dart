@@ -8,6 +8,7 @@ import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
+import 'package:xml/xml.dart';
 
 /// Path/name helpers shared by every WebDAV comic library. Pure functions with
 /// no configuration of their own, so they hold no notion of "the" library —
@@ -153,9 +154,20 @@ abstract class WebdavLibrary {
 /// each library as a native source lets all of that work unchanged — and gives
 /// two servers holding a same-named folder separate reading state.
 class WebdavLibraryClient {
-  WebdavLibraryClient(this.config);
+  WebdavLibraryClient(
+    this.config, {
+    webdav.Client Function(Duration timeout)? clientFactory,
+  }) : _clientFactory = clientFactory;
 
   final WebdavLibraryConfig config;
+  final webdav.Client Function(Duration timeout)? _clientFactory;
+
+  static const _resourceTypePropfindXml = '''
+<d:propfind xmlns:d="DAV:">
+  <d:prop><d:resourcetype/></d:prop>
+</d:propfind>
+''';
+  static const _linkedFolderProbeBatchSize = 4;
 
   /// Client for the library registered under [sourceKey], or null when that
   /// library has since been deleted.
@@ -176,6 +188,8 @@ class WebdavLibraryClient {
   String get rootPath => config.rootPath;
 
   webdav.Client _newClient([Duration timeout = WebdavLibrary.listTimeout]) {
+    final factory = _clientFactory;
+    if (factory != null) return factory(timeout);
     return webdav.newClient(
       config.url,
       user: config.user,
@@ -218,22 +232,25 @@ class WebdavLibraryClient {
       final client = _newClient();
       final files = await client.readDir(target);
       final entries = <WebdavEntry>[];
+      final linkedFolderCandidates = <({String name, String path})>[];
       for (final f in files) {
         final name = f.name ?? '';
         if (name.isEmpty || name.startsWith('.')) continue;
         final path = f.path ?? '$target$name';
         if (f.isDir == true) {
           entries.add(
-            WebdavEntry.comic(
-              name: name,
-              path: WebdavLibrary.ensureDir(path),
-            ),
+            WebdavEntry.comic(name: name, path: WebdavLibrary.ensureDir(path)),
           );
         } else if (WebdavLibrary.isArchive(name)) {
-          entries.add(WebdavEntry.archive(name: name, path: path, size: f.size));
+          entries.add(
+            WebdavEntry.archive(name: name, path: path, size: f.size),
+          );
+        } else if (config.detectLinkedFolders) {
+          linkedFolderCandidates.add((name: name, path: path));
         }
         // Loose images at the browse root are ignored: a comic is a folder.
       }
+      entries.addAll(await _probeLinkedFolders(client, linkedFolderCandidates));
       entries.sort((a, b) => WebdavLibrary.naturalCompare(a.name, b.name));
       return Res(entries);
     } catch (e, s) {
@@ -373,7 +390,9 @@ class WebdavLibraryClient {
       final d = subDirs[i];
       final path = WebdavLibrary.ensureDir(d.path ?? '$comicDir${d.name}/');
       // Reuse the probe for the first subfolder rather than reading it twice.
-      final c = i == 0 ? classified : await _classifySubDir(client, comicDir, d);
+      final c = i == 0
+          ? classified
+          : await _classifySubDir(client, comicDir, d);
       if (c.isGroup) {
         final childDirs = c.childDirs
           ..sort(
@@ -436,7 +455,9 @@ class WebdavLibraryClient {
       final files = await client.readDir(d);
       final images =
           files
-              .where((f) => f.isDir != true && WebdavLibrary.isImage(f.name ?? ''))
+              .where(
+                (f) => f.isDir != true && WebdavLibrary.isImage(f.name ?? ''),
+              )
               .map((f) => f.name!)
               .toList()
             ..sort(WebdavLibrary.naturalCompare);
@@ -457,7 +478,9 @@ class WebdavLibraryClient {
       final files = await client.readDir(dir);
       final images =
           files
-              .where((f) => f.isDir != true && WebdavLibrary.isImage(f.name ?? ''))
+              .where(
+                (f) => f.isDir != true && WebdavLibrary.isImage(f.name ?? ''),
+              )
               .map((f) => f.name!)
               .where((n) => !n.toLowerCase().startsWith('cover.'))
               .toList()
@@ -547,13 +570,86 @@ class WebdavLibraryClient {
   Future<Set<String>> remoteFolderNames(String remoteDir) async {
     final client = _newClient();
     final files = await client.readDir(WebdavLibrary.ensureDir(remoteDir));
-    return files
-        .where((f) => f.isDir == true)
-        .map((f) => f.name ?? '')
-        // Hidden folders are not browsable as comics, so they must not count as
-        // "already in the library" either.
-        .where((n) => n.isNotEmpty && !n.startsWith('.'))
-        .toSet();
+    final names = <String>{};
+    final linkedFolderCandidates = <({String name, String path})>[];
+    final dir = WebdavLibrary.ensureDir(remoteDir);
+    for (final f in files) {
+      final name = f.name ?? '';
+      // Hidden folders are not browsable as comics, so they must not count as
+      // "already in the library" either.
+      if (name.isEmpty || name.startsWith('.')) continue;
+      if (f.isDir == true) {
+        names.add(name);
+      } else if (config.detectLinkedFolders && !WebdavLibrary.isArchive(name)) {
+        linkedFolderCandidates.add((name: name, path: f.path ?? '$dir$name'));
+      }
+    }
+    names.addAll(
+      (await _probeLinkedFolders(
+        client,
+        linkedFolderCandidates,
+      )).map((entry) => entry.name),
+    );
+    return names;
+  }
+
+  Future<List<WebdavEntry>> _probeLinkedFolders(
+    webdav.Client client,
+    List<({String name, String path})> candidates,
+  ) async {
+    final entries = <WebdavEntry>[];
+    for (
+      var start = 0;
+      start < candidates.length;
+      start += _linkedFolderProbeBatchSize
+    ) {
+      final end = (start + _linkedFolderProbeBatchSize).clamp(
+        0,
+        candidates.length,
+      );
+      final batch = candidates.sublist(start, end);
+      final results = await Future.wait(
+        batch.map((candidate) async {
+          try {
+            final path = WebdavLibrary.ensureDir(candidate.path);
+            if (await _isCollection(client, path)) {
+              return WebdavEntry.comic(name: candidate.name, path: path);
+            }
+          } catch (_) {
+            // Compatibility probes are best-effort; one unreadable entry must
+            // not hide normal folders or fail the whole library listing.
+          }
+          return null;
+        }),
+      );
+      entries.addAll(results.whereType<WebdavEntry>());
+    }
+    return entries;
+  }
+
+  Future<bool> _isCollection(webdav.Client client, String path) async {
+    final response = await client.c.wdPropfind(
+      client,
+      path,
+      false,
+      _resourceTypePropfindXml,
+    );
+    final data = response.data;
+    if (data is! String) return false;
+    final document = XmlDocument.parse(data);
+    for (final propstat in document.findAllElements(
+      'propstat',
+      namespace: '*',
+    )) {
+      final statuses = propstat.findElements('status', namespace: '*');
+      if (statuses.isEmpty || !statuses.first.innerText.contains('200')) {
+        continue;
+      }
+      if (propstat.findAllElements('collection', namespace: '*').isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
