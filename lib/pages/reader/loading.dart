@@ -1,5 +1,12 @@
 part of 'reader.dart';
 
+int? resolveReaderInitialChapterGroup({
+  required int? initialChapter,
+  required int? historyGroup,
+}) {
+  return initialChapter == null ? historyGroup : null;
+}
+
 class ReaderWithLoading extends StatefulWidget {
   const ReaderWithLoading({
     super.key,
@@ -36,7 +43,10 @@ class _ReaderWithLoadingState
       history: data.history,
       initialChapter: widget.initialEp ?? data.history.ep,
       initialPage: widget.initialPage ?? data.history.page,
-      initialChapterGroup: data.history.group,
+      initialChapterGroup: resolveReaderInitialChapterGroup(
+        initialChapter: widget.initialEp,
+        historyGroup: data.history.group,
+      ),
       author: data.author,
       tags: data.tags,
     );
