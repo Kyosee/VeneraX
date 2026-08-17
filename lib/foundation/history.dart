@@ -12,6 +12,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/image_provider/image_favorites_provider.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/utils/channel.dart';
 import 'package:venera/utils/ext.dart';
@@ -215,6 +216,8 @@ class HistoryManager with ChangeNotifier {
 
   late String _dbPath;
 
+  late ReadingStatisticsStore _readingStatistics;
+
   bool _isCorrupted = false;
 
   void _handleCorruption(SqliteException e) {
@@ -294,6 +297,57 @@ class HistoryManager with ChangeNotifier {
     // an `insert or replace` that resets this column to NULL, un-hiding the row.
     if (!columns.any((element) => element["name"] == "hidden")) {
       _db.execute("alter table history add column hidden int;");
+    }
+    _readingStatistics = ReadingStatisticsStore(_db)..ensureSchema();
+  }
+
+  void recordReadingDuration({
+    required String id,
+    required ComicType type,
+    required String title,
+    required String subtitle,
+    required String cover,
+    required DateTime startedAt,
+    required Duration duration,
+    bool notify = false,
+  }) {
+    if (!isInitialized || _isCorrupted) return;
+    try {
+      _readingStatistics.recordDuration(
+        id: id,
+        type: type,
+        title: title,
+        subtitle: subtitle,
+        cover: cover,
+        startedAt: startedAt,
+        duration: duration,
+      );
+      if (notify) notifyListeners();
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+    }
+  }
+
+  ReadingStatisticsSummary getReadingStatistics({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    if (!isInitialized || _isCorrupted) {
+      return ReadingStatisticsSummary.empty(current);
+    }
+    try {
+      return _readingStatistics.readSummary(now: current);
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+      return ReadingStatisticsSummary.empty(current);
+    }
+  }
+
+  void clearReadingStatistics() {
+    if (!isInitialized || _isCorrupted) return;
+    try {
+      _readingStatistics.clear();
+      notifyListeners();
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
     }
   }
 
