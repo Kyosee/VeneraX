@@ -9,12 +9,23 @@ void main() {
       expect(a, b);
     });
 
-    test('normalizes case and trailing slashes so the same logical library '
-        'converges to one id across devices', () {
+    test('normalizes scheme, host, and trailing slashes so the same logical '
+        'library converges to one id across devices', () {
       final canonical = stableLibraryId('https://example.com/repo');
-      expect(stableLibraryId('https://Example.com/repo/'), canonical);
+      expect(stableLibraryId('HTTPS://Example.com/repo/'), canonical);
       expect(stableLibraryId('  https://EXAMPLE.com/repo  '), canonical);
       expect(stableLibraryId('https://example.com/repo///'), canonical);
+    });
+
+    test('preserves case-sensitive path and query components', () {
+      expect(
+        stableLibraryId('https://example.com/Repo/index.json'),
+        isNot(stableLibraryId('https://example.com/repo/index.json')),
+      );
+      expect(
+        stableLibraryId('https://example.com/index.json?branch=Main'),
+        isNot(stableLibraryId('https://example.com/index.json?branch=main')),
+      );
     });
 
     test('differs for different URLs', () {
@@ -27,6 +38,16 @@ void main() {
     test('produces a short stable-length token', () {
       expect(stableLibraryId('https://example.com/index.json').length, 12);
       expect(stableLibraryId('').length, 12);
+    });
+  });
+
+  group('allocateLibraryId', () {
+    test('uses a suffix when a stale id already occupies the URL hash', () {
+      const url = 'https://example.com/index.json';
+      final base = stableLibraryId(url);
+
+      expect(allocateLibraryId(url, [base]), '$base-2');
+      expect(allocateLibraryId(url, [base, '$base-2']), '$base-3');
     });
   });
 

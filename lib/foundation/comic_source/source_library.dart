@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
 
 /// A remote catalog of comic sources (an `index.json` URL). The app can hold
@@ -45,7 +46,9 @@ class ComicSourceLibrary {
 
   factory ComicSourceLibrary.fromJson(Map<String, dynamic> json) {
     return ComicSourceLibrary(
-      id: json['id']?.toString() ?? stableLibraryId(json['url']?.toString() ?? ''),
+      id:
+          json['id']?.toString() ??
+          stableLibraryId(json['url']?.toString() ?? ''),
       name: json['name']?.toString() ?? '',
       url: json['url']?.toString() ?? '',
       enabled: json['enabled'] != false,
@@ -93,18 +96,54 @@ class SourceProvenance {
   }
 }
 
-/// Derives a stable, cross-device id from a catalog URL. Normalizes case and a
-/// trailing slash so the same logical library produces the same id everywhere,
-/// preventing duplicate entries and orphaned provenance after sync.
+/// Normalizes the URL parts that are case-insensitive while preserving the
+/// path and query, whose casing may identify different server resources.
+String canonicalLibraryUrl(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) {
+    return 'empty';
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || uri.scheme.isEmpty || uri.host.isEmpty) {
+    var fallback = trimmed;
+    while (fallback.endsWith('/')) {
+      fallback = fallback.substring(0, fallback.length - 1);
+    }
+    return fallback.isEmpty ? 'empty' : fallback;
+  }
+  final pathSegments = uri.pathSegments.toList();
+  while (pathSegments.isNotEmpty && pathSegments.last.isEmpty) {
+    pathSegments.removeLast();
+  }
+  return uri
+      .replace(
+        scheme: uri.scheme.toLowerCase(),
+        host: uri.host.toLowerCase(),
+        pathSegments: pathSegments,
+      )
+      .toString();
+}
+
+/// Derives a stable, cross-device id from a canonical catalog URL.
 String stableLibraryId(String url) {
-  var normalized = url.trim().toLowerCase();
-  while (normalized.endsWith('/')) {
-    normalized = normalized.substring(0, normalized.length - 1);
+  return md5
+      .convert(utf8.encode(canonicalLibraryUrl(url)))
+      .toString()
+      .substring(0, 12);
+}
+
+@visibleForTesting
+String allocateLibraryId(String url, Iterable<String> usedIds) {
+  final used = usedIds.toSet();
+  final base = stableLibraryId(url);
+  if (!used.contains(base)) {
+    return base;
   }
-  if (normalized.isEmpty) {
-    normalized = 'empty';
+  var suffix = 2;
+  while (used.contains('$base-$suffix')) {
+    suffix++;
   }
-  return md5.convert(utf8.encode(normalized)).toString().substring(0, 12);
+  return '$base-$suffix';
 }
 
 /// Derives a short, readable default library name from a catalog URL so the
@@ -167,14 +206,26 @@ class ComicSourceLibraryManager {
     return null;
   }
 
+  static ComicSourceLibrary? _findByUrl(
+    List<ComicSourceLibrary> libraries,
+    String url,
+  ) {
+    final canonical = canonicalLibraryUrl(url);
+    for (final library in libraries) {
+      if (canonicalLibraryUrl(library.url) == canonical) {
+        return library;
+      }
+    }
+    return null;
+  }
+
   /// Persists [libraries], re-densifies priority to list order, mirrors the
   /// primary URL into the legacy setting, then saves (which triggers sync).
   static void save(List<ComicSourceLibrary> libraries) {
     for (var i = 0; i < libraries.length; i++) {
       libraries[i].priority = i;
     }
-    appdata.settings[_librariesKey] =
-        libraries.map((e) => e.toJson()).toList();
+    appdata.settings[_librariesKey] = libraries.map((e) => e.toJson()).toList();
     appdata.settings['comicSourceListUrl'] = _primaryUrlOf(libraries);
     appdata.saveData();
   }
@@ -188,29 +239,19 @@ class ComicSourceLibraryManager {
     return '';
   }
 
-  /// Adds a library for [url] if one with the same derived id is not already
-  /// present. Returns the (possibly pre-existing) library.
+  /// Adds a library for [url] if the current URL is not already present.
+  /// Returns the (possibly pre-existing) library.
   static ComicSourceLibrary add(String name, String url) {
     final libraries = all();
-    final id = stableLibraryId(url);
-    // Dedup by the URL's derived id, matching against each library's CURRENT
-    // url rather than its stored id: a library edited to this url has a stored
-    // id derived from its old url, so an id-only match would miss it and append
-    // a duplicate pointing at the same catalog.
-    ComicSourceLibrary? existing = _findIn(libraries, id);
-    if (existing == null) {
-      for (final l in libraries) {
-        if (stableLibraryId(l.url) == id) {
-          existing = l;
-          break;
-        }
-      }
-    }
+    // Stored ids intentionally survive URL edits because provenance references
+    // them. Deduplicate by the current URL, then allocate around any stale id.
+    final existing = _findByUrl(libraries, url);
     if (existing != null) {
       if (name.isNotEmpty) existing.name = name;
       save(libraries);
       return existing;
     }
+    final id = allocateLibraryId(url, libraries.map((library) => library.id));
     final lib = ComicSourceLibrary(
       id: id,
       name: name.isNotEmpty ? name : defaultLibraryName(url),
@@ -329,8 +370,7 @@ class ComicSourceLibraryManager {
     for (var i = 0; i < libraries.length; i++) {
       libraries[i].priority = i;
     }
-    appdata.settings[_librariesKey] =
-        libraries.map((e) => e.toJson()).toList();
+    appdata.settings[_librariesKey] = libraries.map((e) => e.toJson()).toList();
     appdata.saveData(false);
   }
 
@@ -367,14 +407,16 @@ class ComicSourceLibraryManager {
   /// URL no longer appears in `comicSourceListUrl` and is never re-folded. Uses
   /// `saveData(false)` to avoid scheduling an upload mid-initialization.
   static void migrateIfNeeded() {
-    final legacy =
-        (appdata.settings['comicSourceListUrl']?.toString() ?? '').trim();
+    final legacy = (appdata.settings['comicSourceListUrl']?.toString() ?? '')
+        .trim();
     final libraries = all();
-    final id = legacy.isEmpty ? '' : stableLibraryId(legacy);
     final alreadyPresent =
-        legacy.isEmpty ||
-        libraries.any((e) => e.url == legacy || e.id == id);
+        legacy.isEmpty || _findByUrl(libraries, legacy) != null;
     if (!alreadyPresent) {
+      final id = allocateLibraryId(
+        legacy,
+        libraries.map((library) => library.id),
+      );
       libraries.add(
         ComicSourceLibrary(
           id: id,
@@ -386,8 +428,9 @@ class ComicSourceLibraryManager {
       for (var i = 0; i < libraries.length; i++) {
         libraries[i].priority = i;
       }
-      appdata.settings[_librariesKey] =
-          libraries.map((e) => e.toJson()).toList();
+      appdata.settings[_librariesKey] = libraries
+          .map((e) => e.toJson())
+          .toList();
       appdata.settings[_migratedKey] = true;
       appdata.saveData(false);
     } else if (appdata.settings[_migratedKey] != true) {
