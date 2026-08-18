@@ -41,7 +41,6 @@ class ImportCanceledException implements Exception {
   @override
   String toString() => 'ImportCanceledException';
 }
-
 /// An import failure carrying a translation key for a user-facing message.
 class ImportException implements Exception {
   final String messageKey;
@@ -285,21 +284,14 @@ Future<File> exportAppData({
   if (await cacheFile.exists()) {
     await cacheFile.delete();
   }
-  // Both JSON snapshots exist only because [Appdata.saveData] wrote them: a
-  // profile that never changed a setting never had one, and an atomic write
-  // interrupted by a full disk (an image-pack export can fill the volume) could
-  // lose the one already there. The zip step below then failed the WHOLE backup
-  // with an opaque ZIP_ENOENT, permanently, since nothing else recreates these
-  // files. Rebuild instead. Falling back to appdata.json for a sync export is
-  // not an option — it still carries the device-local fields (WebDAV
-  // credentials, proxy, app-lock secret) that syncdata.json exists to strip.
+  // Settings callbacks persist asynchronously, so an export can start while the
+  // previous snapshot still contains old values. saveData serializes against an
+  // in-flight write, then captures the latest in-memory settings for this backup.
+  // It also recreates missing snapshots instead of letting ZIP fail opaquely.
   var appdataName = sync ? "syncdata.json" : "appdata.json";
+  await appdata.saveData(false);
   if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
-    Log.warning('Export Data', 'Missing $appdataName, rebuilding it');
-    await appdata.saveData(false);
-    if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
-      throw Exception('Cannot export: failed to rebuild $appdataName');
-    }
+    throw Exception('Cannot export: failed to rebuild $appdataName');
   }
   // Serialize the export against database restores and background-isolate
   // reads: the checkpoints below open short-lived second connections, and the
