@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.6",
+          "buildVersion": "236",
+          "date": "2026-08-18",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Added a reading statistics page showing today's reading time, the last seven days, total reading time, a seven-day trend, and comics read in the last 30 days\n- Reading time is now tracked automatically while reading\n- Added an option for WebDAV libraries to detect linked comic folders, including folders some servers report as files\n\n### Changed\n- Comic details can now be refreshed manually, including local comics whose metadata, cover, or chapters changed on disk\n- WebDAV migration now checks local chapters before upload and shows detailed failure information, including the affected comic and chapter\n\n### Fixed\n- Fixed opening a favorite chapter at a specific index incorrectly applying the saved chapter-group offset\n- Fixed notification links opening content outside the safe area on some devices\n- Fixed reader menu and system UI changes occasionally destabilizing the reading viewport or page loading\n- Fixed images and chapters occasionally getting stuck loading indefinitely\n- Fixed rapid page turns in continuous reading jumping to incorrect positions or becoming stuck\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.5...v2.2.6",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.6/VeneraX-ios-2.2.6%2B236.ipa",
+          "size": 35202180,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.5",
           "buildVersion": "234",
           "date": "2026-08-17",
@@ -204,11 +213,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.5",
-      "versionDate": "2026-08-17",
-      "versionDescription": "## What's Changed\n\n### Added\n- Added a random comic draw to pick something from your favorites when you cannot decide what to read\n- The draw can be limited by favorite folder and reading progress (not started / in progress / finished), and never repeats a comic within the same round\n- Migrating comics to an online library can now skip comics whose folder already exists there, and reports how many were skipped\n\n### Fixed\n- Fixed already translated images not showing their translation in the reader and being translated all over again\n- Fixed local comics occasionally loading a blank image; the file is now retried, and a clear error is shown when it truly cannot be read\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.4...v2.2.5",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.5/VeneraX-ios-2.2.5%2B234.ipa",
-      "size": 35150291
+      "version": "2.2.6",
+      "versionDate": "2026-08-18",
+      "versionDescription": "## What's Changed\n\n### Added\n- Added a reading statistics page showing today's reading time, the last seven days, total reading time, a seven-day trend, and comics read in the last 30 days\n- Reading time is now tracked automatically while reading\n- Added an option for WebDAV libraries to detect linked comic folders, including folders some servers report as files\n\n### Changed\n- Comic details can now be refreshed manually, including local comics whose metadata, cover, or chapters changed on disk\n- WebDAV migration now checks local chapters before upload and shows detailed failure information, including the affected comic and chapter\n\n### Fixed\n- Fixed opening a favorite chapter at a specific index incorrectly applying the saved chapter-group offset\n- Fixed notification links opening content outside the safe area on some devices\n- Fixed reader menu and system UI changes occasionally destabilizing the reading viewport or page loading\n- Fixed images and chapters occasionally getting stuck loading indefinitely\n- Fixed rapid page turns in continuous reading jumping to incorrect positions or becoming stuck\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.5...v2.2.6",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.6/VeneraX-ios-2.2.6%2B236.ipa",
+      "size": 35202180
     }
   ],
   "news": []
