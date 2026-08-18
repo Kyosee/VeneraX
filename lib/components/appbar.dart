@@ -422,24 +422,41 @@ class _AppTabBarState extends State<AppTabBar> {
   int? previousIndex;
 
   void onTabChanged() {
+    if (!mounted) {
+      return;
+    }
     final int i = _controller.index;
     if (i == previousIndex) {
       return;
     }
-    updateScrollOffset(i);
     previousIndex = i;
     bucket.writeState(context, i);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _controller.index != i) {
+        return;
+      }
+      updateScrollOffset(i);
+    });
   }
 
   void updateScrollOffset(int i) {
+    if (!mounted ||
+        i < 0 ||
+        i + 1 >= offsets.length ||
+        !scrollController.hasClients) {
+      return;
+    }
+    final tabBarContext = tabBarKey.currentContext;
+    final renderObject = tabBarContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return;
+    }
     // try to scroll to center the tab
-    final RenderBox tabBarBox =
-        tabBarKey.currentContext!.findRenderObject() as RenderBox;
     final double tabLeft = offsets[i];
     final double tabRight = offsets[i + 1];
     final double tabWidth = tabRight - tabLeft;
     final double tabCenter = tabLeft + tabWidth / 2;
-    final double tabBarWidth = tabBarBox.size.width;
+    final double tabBarWidth = renderObject.size.width;
     double scrollOffset = tabCenter - tabBarWidth / 2;
     if (scrollOffset == scrollController.offset) {
       return;
