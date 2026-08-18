@@ -24,6 +24,7 @@ import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/history_page.dart';
 import 'package:venera/pages/read_later_page.dart';
 import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
+import 'package:venera/pages/reading_statistics_page.dart';
 import 'package:venera/pages/search_page.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/import_comic.dart';
@@ -504,15 +505,15 @@ class _HistoryState extends State<_History> {
           ),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => const HistoryPage());
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(8),
+              ),
+              onTap: () => context.to(() => const HistoryPage()),
+              child: SizedBox(
                 height: 56,
                 child: Row(
                   children: [
@@ -532,36 +533,64 @@ class _HistoryState extends State<_History> {
                     const Spacer(),
                     const Icon(Icons.arrow_right),
                   ],
+                ).paddingHorizontal(16),
+              ),
+            ),
+            if (history.isNotEmpty)
+              SizedBox(
+                height: 136,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: history.length,
+                  itemBuilder: (context, index) {
+                    final heroID = history[index].id.hashCode;
+                    return SimpleComicTile(
+                      comic: history[index],
+                      heroID: heroID,
+                      onTap: () {
+                        context.to(
+                          () => ComicPage(
+                            id: history[index].id,
+                            sourceKey: history[index].type.sourceKey,
+                            cover: history[index].cover,
+                            title: history[index].title,
+                            heroID: heroID,
+                          ),
+                        );
+                      },
+                    ).paddingHorizontal(8).paddingVertical(2);
+                  },
                 ),
-              ).paddingHorizontal(16),
-              if (history.isNotEmpty)
-                SizedBox(
-                  height: 136,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: history.length,
-                    itemBuilder: (context, index) {
-                      final heroID = history[index].id.hashCode;
-                      return SimpleComicTile(
-                        comic: history[index],
-                        heroID: heroID,
-                        onTap: () {
-                          context.to(
-                            () => ComicPage(
-                              id: history[index].id,
-                              sourceKey: history[index].type.sourceKey,
-                              cover: history[index].cover,
-                              title: history[index].title,
-                              heroID: heroID,
-                            ),
-                          );
-                        },
-                      ).paddingHorizontal(8).paddingVertical(2);
-                    },
-                  ),
-                ).paddingHorizontal(8).paddingBottom(16),
-            ],
-          ),
+              ).paddingHorizontal(8).paddingBottom(16),
+            Divider(
+              height: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            InkWell(
+              key: const Key('home-reading-statistics-entry'),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(8),
+              ),
+              onTap: () => context.to(() => const ReadingStatisticsPage()),
+              child: SizedBox(
+                height: 48,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.bar_chart,
+                      size: 20,
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Reading Statistics'.tl, style: ts.s14),
+                    ),
+                    const Icon(Icons.arrow_right),
+                  ],
+                ).paddingHorizontal(16),
+              ),
+            ),
+          ],
         ),
       ),
     );
