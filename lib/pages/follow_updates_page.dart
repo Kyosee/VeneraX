@@ -88,7 +88,13 @@ class _FollowUpdatesWidgetState
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Material(
           color: context.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: context.colorScheme.outlineVariant.toOpacity(0.35),
+              width: 0.6,
+            ),
+          ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,

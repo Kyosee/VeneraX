@@ -104,6 +104,14 @@ class NaviPaneState extends State<NaviPane>
   double get bottomBarHeight =>
       _kBottomBarHeight + MediaQuery.paddingOf(context).bottom;
 
+  /// Labels need more room than the icon slot. Keep them for wide cells, but
+  /// switch to an icon-only bar when several destinations would be cramped.
+  bool get showBottomLabels {
+    final itemCount = widget.paneItems.length;
+    if (itemCount == 0) return false;
+    return MediaQuery.sizeOf(context).width / itemCount >= 112;
+  }
+
   void onNavigatorStateChange() {
     onRebuild(context);
   }
@@ -298,6 +306,7 @@ class NaviPaneState extends State<NaviPane>
   }
 
   Widget buildBottom() {
+    final showLabels = showBottomLabels;
     return Material(
       textStyle: Theme.of(context).textTheme.labelSmall,
       elevation: 0,
@@ -317,6 +326,7 @@ class NaviPaneState extends State<NaviPane>
               child: _SingleBottomNaviWidget(
                 enabled: currentPage == index,
                 entry: widget.paneItems[index],
+                showLabel: showLabels,
                 onTap: () {
                   updatePage(index);
                 },
@@ -525,6 +535,7 @@ class _SingleBottomNaviWidget extends StatefulWidget {
   const _SingleBottomNaviWidget({
     required this.enabled,
     required this.entry,
+    required this.showLabel,
     required this.onTap,
     super.key,
   });
@@ -532,6 +543,8 @@ class _SingleBottomNaviWidget extends StatefulWidget {
   final bool enabled;
 
   final PaneItemEntry entry;
+
+  final bool showLabel;
 
   final VoidCallback onTap;
 
@@ -600,55 +613,59 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
     final icon = Icon(
       widget.enabled ? widget.entry.activeIcon : widget.entry.icon,
     );
-    return Center(
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 30,
-              child: Container(
-                width: 64,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.all(Radius.circular(12)),
-                  color: isHovering
-                      ? colorScheme.surfaceContainer
-                      : Colors.transparent,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 32 + value * 32,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.all(Radius.circular(12)),
-                      color: value != 0
-                          ? colorScheme.secondaryContainer
-                          : Colors.transparent,
-                    ),
-                    child: Center(child: icon),
+    final iconSlot = SizedBox(
+      height: 30,
+      child: Container(
+        width: widget.showLabel ? 64 : 48,
+        decoration: BoxDecoration(
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+          color: isHovering ? colorScheme.surfaceContainer : Colors.transparent,
+        ),
+        child: Center(
+          child: Container(
+            width: 32 + value * 32,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.all(Radius.circular(12)),
+              color: value != 0
+                  ? colorScheme.secondaryContainer
+                  : Colors.transparent,
+            ),
+            child: Center(child: icon),
+          ),
+        ),
+      ),
+    );
+    final content = widget.showLabel
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              iconSlot,
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 18,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    widget.entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: labelStyle,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 18,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Text(
-                  widget.entry.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  softWrap: false,
-                  textAlign: TextAlign.center,
-                  style: labelStyle,
-                ),
-              ),
-            ),
-          ],
-        ),
+            ],
+          )
+        : Center(child: iconSlot);
+    return Semantics(
+      button: true,
+      label: widget.entry.label,
+      selected: widget.enabled,
+      child: Tooltip(
+        message: widget.entry.label,
+        child: SizedBox(width: double.infinity, height: 52, child: content),
       ),
     );
   }

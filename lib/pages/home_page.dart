@@ -33,7 +33,15 @@ import 'package:venera/utils/translations.dart';
 
 import 'local_comics_page.dart';
 
-const _homeContentMaxWidth = 1180.0;
+Size _homeComicTileSize(BuildContext context) {
+  final width = context.width;
+  final tileWidth = width >= 1400
+      ? 112.0
+      : width >= 900
+      ? 106.0
+      : 98.0;
+  return Size(tileWidth, tileWidth * 136 / 98);
+}
 
 TextStyle _homeSectionTitleStyle(BuildContext context) {
   return Theme.of(
@@ -65,11 +73,18 @@ class _HomeSectionSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(8);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Material(
         color: context.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: context.colorScheme.outlineVariant.toOpacity(0.35),
+            width: 0.6,
+          ),
+        ),
         clipBehavior: Clip.antiAlias,
         child: child,
       ),
@@ -284,13 +299,10 @@ class _HomePageState extends State<HomePage> {
       padding: EdgeInsets.symmetric(
         horizontal: context.width > changePoint ? 16 : 0,
       ),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _homeContentMaxWidth),
-          child: widget,
-        ),
-      ),
+      // The main pane already supplies the correct width beside the sidebar.
+      // Keep the feed fluid so wide desktop windows do not leave a centered
+      // column and a large unused area on the right.
+      child: SizedBox(width: double.infinity, child: widget),
     );
   }
 }
@@ -637,6 +649,7 @@ class _HistoryState extends State<_History> {
 
   @override
   Widget build(BuildContext context) {
+    final tileSize = _homeComicTileSize(context);
     return SliverToBoxAdapter(
       child: _HomeSectionSurface(
         child: Column(
@@ -661,7 +674,7 @@ class _HistoryState extends State<_History> {
             ),
             if (history.isNotEmpty)
               SizedBox(
-                height: 136,
+                height: tileSize.height + 4,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: history.length,
@@ -670,6 +683,8 @@ class _HistoryState extends State<_History> {
                     return SimpleComicTile(
                       comic: history[index],
                       heroID: heroID,
+                      width: tileSize.width,
+                      height: tileSize.height,
                       onTap: () {
                         context.to(
                           () => ComicPage(
@@ -772,6 +787,7 @@ class _ReadLaterState extends State<_ReadLater> {
   }
 
   Widget _readLaterInk(BuildContext context) {
+    final tileSize = _homeComicTileSize(context);
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () {
@@ -792,7 +808,7 @@ class _ReadLaterState extends State<_ReadLater> {
             ),
           ).paddingHorizontal(16),
           SizedBox(
-            height: 136,
+            height: tileSize.height + 4,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
@@ -801,6 +817,8 @@ class _ReadLaterState extends State<_ReadLater> {
                 return SimpleComicTile(
                   comic: items[index],
                   heroID: heroID,
+                  width: tileSize.width,
+                  height: tileSize.height,
                 ).paddingHorizontal(8).paddingVertical(2);
               },
             ),
@@ -845,6 +863,7 @@ class _LocalState extends State<_Local> {
 
   @override
   Widget build(BuildContext context) {
+    final tileSize = _homeComicTileSize(context);
     return SliverToBoxAdapter(
       child: _HomeSectionSurface(
         child: InkWell(
@@ -875,7 +894,7 @@ class _LocalState extends State<_Local> {
               ).paddingHorizontal(16),
               if (local.isNotEmpty)
                 SizedBox(
-                  height: 136,
+                  height: tileSize.height + 4,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: local.length,
@@ -884,6 +903,8 @@ class _LocalState extends State<_Local> {
                       return SimpleComicTile(
                         comic: local[index],
                         heroID: heroID,
+                        width: tileSize.width,
+                        height: tileSize.height,
                         onTap: () {
                           context.to(
                             () => ComicPage(
