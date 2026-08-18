@@ -36,7 +36,8 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
 
   @override
   void initState() {
-    favPage = widget.favPage ??
+    favPage =
+        widget.favPage ??
         context.findAncestorStateOfType<_FavoritesPageState>()!;
     favPage.folderList = this;
     folders = LocalFavoritesManager().folderNames;
@@ -76,10 +77,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
                   const SizedBox(width: 8),
                   const CloseButton(),
                   const SizedBox(width: 8),
-                  Text(
-                    "Folders".tl,
-                    style: ts.s18,
-                  ),
+                  Text("Folders".tl, style: ts.s18),
                 ],
               ),
             ).paddingTop(context.padding.top),
@@ -109,23 +107,28 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
                 return buildNetworkFolder(networkFolders[index]);
               },
             ),
-          )
+          ),
         ],
       ),
     );
   }
 
   Widget buildLocalTitle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return SizedBox(
+      height: 56,
       child: Row(
         children: [
           Icon(
             Icons.local_activity,
-            color: context.colorScheme.secondary,
+            color: context.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 12),
-          Text("Local".tl),
+          Text(
+            "Local".tl,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const Spacer(),
           MenuButton(
             entries: [
@@ -160,7 +163,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
 
   Widget buildNetworkTitle() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      height: 56,
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         border: Border(
@@ -172,20 +175,20 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.cloud,
-            color: context.colorScheme.secondary,
-          ),
+          Icon(Icons.cloud, color: context.colorScheme.onSurfaceVariant),
           const SizedBox(width: 12),
-          Text("Network".tl),
+          Text(
+            "Network".tl,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.settings),
+            tooltip: "Manage".tl,
             onPressed: () {
-              showPopUpWidget(
-                App.rootContext,
-                setFavoritesPagesWidget(),
-              );
+              showPopUpWidget(App.rootContext, setFavoritesPagesWidget());
             },
           ),
         ],
@@ -213,7 +216,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
         widget.onSelected?.call();
       },
       child: Container(
-        height: 42,
+        height: 48,
         alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
           color: isSelected
@@ -221,8 +224,9 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
               : null,
           border: Border(
             left: BorderSide(
-              color:
-                  isSelected ? context.colorScheme.primary : Colors.transparent,
+              color: isSelected
+                  ? context.colorScheme.primary
+                  : Colors.transparent,
               width: 2,
             ),
           ),
@@ -231,19 +235,36 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
         child: Row(
           children: [
             Expanded(
-              child: Text(folderName),
+              child: Text(
+                folderName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: isSelected
+                    ? TextStyle(
+                        color: context.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      )
+                    : null,
+              ),
             ),
-            Container(
-              margin: EdgeInsets.only(right: 8),
-              padding: EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 22),
+                child: Container(
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Text(
+                    count.toString(),
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
               ),
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(count.toString()),
             ),
           ],
         ),
@@ -266,7 +287,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
         widget.onSelected?.call();
       },
       child: Container(
-        height: 42,
+        height: 48,
         alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
           color: isSelected
@@ -274,14 +295,25 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
               : null,
           border: Border(
             left: BorderSide(
-              color:
-                  isSelected ? context.colorScheme.primary : Colors.transparent,
+              color: isSelected
+                  ? context.colorScheme.primary
+                  : Colors.transparent,
               width: 2,
             ),
           ),
         ),
         padding: const EdgeInsets.only(left: 16),
-        child: Text(data.title),
+        child: Text(
+          data.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: isSelected
+              ? TextStyle(
+                  color: context.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                )
+              : null,
+        ),
       ),
     );
   }

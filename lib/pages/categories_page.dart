@@ -165,11 +165,13 @@ class _CategoryPage extends StatelessWidget {
   Widget build(BuildContext context) {
     var children = <Widget>[];
     if (data.enableRankingPage || data.buttons.isNotEmpty) {
-      children.add(buildTitle(data.title));
+      children.add(buildTitle(context, data.title));
       children.add(
         Padding(
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               if (data.enableRankingPage)
                 buildTag("Ranking".tl, () {
@@ -192,7 +194,11 @@ class _CategoryPage extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  buildTitleWithRefresh(part.title, () => updater(() {})),
+                  buildTitleWithRefresh(
+                    context,
+                    part.title,
+                    () => updater(() {}),
+                  ),
                   buildTags(part.categories),
                 ],
               );
@@ -200,7 +206,7 @@ class _CategoryPage extends StatelessWidget {
           ),
         );
       } else {
-        children.add(buildTitle(part.title));
+        children.add(buildTitle(context, part.title));
         children.add(buildTags(part.categories));
       }
     }
@@ -212,36 +218,59 @@ class _CategoryPage extends StatelessWidget {
     );
   }
 
-  Widget buildTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
-      child: Text(
-        title.tl,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+  Widget buildTitle(BuildContext context, String title) {
+    return SizedBox(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            title.tl,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
     );
   }
 
-  Widget buildTitleWithRefresh(String title, void Function() onRefresh) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
+  Widget buildTitleWithRefresh(
+    BuildContext context,
+    String title,
+    void Function() onRefresh,
+  ) {
+    return SizedBox(
+      height: 56,
       child: Row(
         children: [
-          Text(
-            title.tl,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+          Expanded(
+            child: Text(
+              title.tl,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
           ),
-          const Spacer(),
-          IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: onRefresh,
+            tooltip: "Refresh".tl,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
-      ),
+      ).paddingLeft(16).paddingRight(8),
     );
   }
 
   Widget buildTags(List<CategoryItem> categories) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
         children: List<Widget>.generate(
           categories.length,
           (index) => buildCategory(categories[index]),
@@ -258,24 +287,30 @@ class _CategoryPage extends StatelessWidget {
   }
 
   Widget buildTag(String label, VoidCallback onClick) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      child: Builder(
-        builder: (context) {
-          return Material(
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
-            color: context.colorScheme.primaryContainer.toOpacity(0.72),
-            child: InkWell(
-              borderRadius: const BorderRadius.all(Radius.circular(8)),
-              onTap: onClick,
+    return Builder(
+      builder: (context) {
+        return Material(
+          borderRadius: const BorderRadius.all(Radius.circular(8)),
+          color: context.colorScheme.surfaceContainerHigh,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onClick,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Text(label),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Center(
+                  widthFactor: 1,
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 

@@ -33,6 +33,105 @@ import 'package:venera/utils/translations.dart';
 
 import 'local_comics_page.dart';
 
+const _homeContentMaxWidth = 1180.0;
+
+TextStyle _homeSectionTitleStyle(BuildContext context) {
+  return Theme.of(
+    context,
+  ).textTheme.titleMedium!.copyWith(fontWeight: FontWeight.w600);
+}
+
+Widget _homeSectionIcon(BuildContext context, IconData icon) {
+  return Icon(icon, size: 20, color: context.colorScheme.onSurfaceVariant);
+}
+
+Widget _homeChevron(BuildContext context) {
+  return SizedBox(
+    width: 32,
+    height: 56,
+    child: Center(
+      child: Icon(
+        Icons.chevron_right_rounded,
+        color: context.colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
+}
+
+class _HomeSectionSurface extends StatelessWidget {
+  const _HomeSectionSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Material(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _HomeCountBadge extends StatelessWidget {
+  const _HomeCountBadge(this.count);
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 22),
+      child: Container(
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: context.colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Text(
+          count.toString(),
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeSectionTitle extends StatelessWidget {
+  const _HomeSectionTitle({required this.title, this.count});
+
+  final String title;
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              title,
+              style: _homeSectionTitleStyle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (count != null) ...[
+            const SizedBox(width: 8),
+            _HomeCountBadge(count!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -88,7 +187,9 @@ class _HomePageState extends State<HomePage> {
       'history' => const _History(key: ValueKey('history')),
       'readLater' => const _ReadLater(key: ValueKey('readLater')),
       'local' => const _Local(key: ValueKey('local')),
-      'followUpdates' => const FollowUpdatesWidget(key: ValueKey('followUpdates')),
+      'followUpdates' => const FollowUpdatesWidget(
+        key: ValueKey('followUpdates'),
+      ),
       'comicSource' => const _ComicSourceWidget(key: ValueKey('comicSource')),
       'imageFavorites' => const ImageFavorites(key: ValueKey('imageFavorites')),
       'webdavLibrary' => const _WebdavLibrary(key: ValueKey('webdavLibrary')),
@@ -132,10 +233,15 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     var slivers = <Widget>[
       SliverPadding(padding: EdgeInsets.only(top: context.padding.top)),
-      const _SearchBar(),
+      _SearchBar(
+        editing: editMode,
+        onEdit: editMode ? _exitEditMode : _enterEditMode,
+      ),
     ];
     if (editMode) {
-      slivers.add(_HomeEditBanner(onDone: _exitEditMode, onReset: _resetLayout));
+      slivers.add(
+        _HomeEditBanner(onDone: _exitEditMode, onReset: _resetLayout),
+      );
       slivers.add(
         SliverReorderableList(
           itemCount: layout.length,
@@ -163,7 +269,9 @@ class _HomePageState extends State<HomePage> {
         }
       }
     }
-    slivers.add(SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)));
+    slivers.add(
+      SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
+    );
 
     Widget widget = GestureDetector(
       onLongPress: editMode ? null : _enterEditMode,
@@ -172,7 +280,18 @@ class _HomePageState extends State<HomePage> {
         slivers: slivers,
       ),
     );
-    return context.width > changePoint ? widget.paddingHorizontal(8) : widget;
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.width > changePoint ? 16 : 0,
+      ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _homeContentMaxWidth),
+          child: widget,
+        ),
+      ),
+    );
   }
 }
 
@@ -197,10 +316,7 @@ class _HomeEditBanner extends StatelessWidget {
             const Icon(Icons.edit_outlined, size: 20),
             const SizedBox(width: 12),
             Expanded(child: Text('Edit Home'.tl, style: ts.s16)),
-            TextButton(
-              onPressed: onReset,
-              child: Text('Reset to Default'.tl),
-            ),
+            TextButton(onPressed: onReset, child: Text('Reset to Default'.tl)),
             FilledButton(onPressed: onDone, child: Text('Done'.tl)),
           ],
         ),
@@ -286,7 +402,10 @@ class _AllHiddenHint extends StatelessWidget {
 }
 
 class _SearchBar extends StatelessWidget {
-  const _SearchBar();
+  const _SearchBar({required this.editing, required this.onEdit});
+
+  final bool editing;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -307,6 +426,28 @@ class _SearchBar extends StatelessWidget {
               ),
             ),
             _SyncButton(height: height),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: SizedBox.square(
+                dimension: height,
+                child: Material(
+                  color: context.colorScheme.surfaceContainerHigh,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: IconButton(
+                    onPressed: onEdit,
+                    tooltip: editing ? 'Done'.tl : 'Edit Home'.tl,
+                    style: IconButton.styleFrom(
+                      fixedSize: Size.square(height),
+                      foregroundColor: context.colorScheme.onSurfaceVariant,
+                    ),
+                    icon: Icon(
+                      editing ? Icons.check_rounded : Icons.tune_rounded,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -398,10 +539,10 @@ class _SyncButtonState extends State<_SyncButton> with WidgetsBindingObserver {
     var tooltip = syncing
         ? 'Syncing Data'.tl
         : hasError
-            ? 'Error'.tl
-            : pending
-                ? 'Changes pending upload'.tl
-                : 'Sync Data'.tl;
+        ? 'Error'.tl
+        : pending
+        ? 'Changes pending upload'.tl
+        : 'Sync Data'.tl;
 
     return Padding(
       padding: const EdgeInsets.only(left: 8),
@@ -420,8 +561,9 @@ class _SyncButtonState extends State<_SyncButton> with WidgetsBindingObserver {
                         title: "Error".tl,
                         // A background op may clear lastError between the tap
                         // and this dialog building — don't null-assert.
-                        content: Text(DataSync().lastError ?? "Error".tl)
-                            .paddingHorizontal(16),
+                        content: Text(
+                          DataSync().lastError ?? "Error".tl,
+                        ).paddingHorizontal(16),
                         actions: [
                           Button.text(
                             onPressed: context.pop,
@@ -496,15 +638,7 @@ class _HistoryState extends State<_History> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: _HomeSectionSurface(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -517,21 +651,10 @@ class _HistoryState extends State<_History> {
                 height: 56,
                 child: Row(
                   children: [
-                    Text('History'.tl, style: ts.s18),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(count.toString(), style: ts.s12),
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.arrow_right),
+                    _homeSectionIcon(context, Icons.history_rounded),
+                    const SizedBox(width: 12),
+                    _HomeSectionTitle(title: 'History'.tl, count: count),
+                    _homeChevron(context),
                   ],
                 ).paddingHorizontal(16),
               ),
@@ -585,7 +708,7 @@ class _HistoryState extends State<_History> {
                     Expanded(
                       child: Text('Reading Statistics'.tl, style: ts.s14),
                     ),
-                    const Icon(Icons.arrow_right),
+                    _homeChevron(context),
                   ],
                 ).paddingHorizontal(16),
               ),
@@ -644,17 +767,7 @@ class _ReadLaterState extends State<_ReadLater> {
 
   Widget _readLaterBody(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: _readLaterInk(context),
-      ),
+      child: _HomeSectionSurface(child: _readLaterInk(context)),
     );
   }
 
@@ -671,21 +784,10 @@ class _ReadLaterState extends State<_ReadLater> {
             height: 56,
             child: Row(
               children: [
-                Text('Read Later'.tl, style: ts.s18),
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(count.toString(), style: ts.s12),
-                ),
-                const Spacer(),
-                const Icon(Icons.arrow_right),
+                _homeSectionIcon(context, Icons.bookmark_added_outlined),
+                const SizedBox(width: 12),
+                _HomeSectionTitle(title: 'Read Later'.tl, count: count),
+                _homeChevron(context),
               ],
             ),
           ).paddingHorizontal(16),
@@ -744,15 +846,7 @@ class _LocalState extends State<_Local> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: _HomeSectionSurface(
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () {
@@ -765,32 +859,17 @@ class _LocalState extends State<_Local> {
                 height: 56,
                 child: Row(
                   children: [
-                    Center(child: Text('Local'.tl, style: ts.s18)),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(count.toString(), style: ts.s12),
-                    ),
-                    const Spacer(),
+                    _homeSectionIcon(context, Icons.folder_copy_outlined),
+                    const SizedBox(width: 12),
+                    _HomeSectionTitle(title: 'Local'.tl, count: count),
                     _LocalImportButton(onPressed: import),
                     if (LocalManager().hasComicsWithImages())
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: _LocalExportButton(
-                          onPressed: () {
-                            context.to(() => const LocalComicsPage());
-                          },
-                        ),
+                      _LocalExportButton(
+                        onPressed: () {
+                          context.to(() => const LocalComicsPage());
+                        },
                       ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_right),
+                    _homeChevron(context),
                   ],
                 ),
               ).paddingHorizontal(16),
@@ -869,35 +948,16 @@ class _LocalImportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: "Import".tl,
-      child: Material(
-        color: context.colorScheme.primary.toOpacity(0.08),
-        borderRadius: BorderRadius.circular(15),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(15),
-          onTap: onPressed,
-          child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: context.colorScheme.primary.toOpacity(0.28),
-                width: 0.6,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              "Import".tl,
-              style: TextStyle(
-                fontSize: 13,
-                color: context.colorScheme.primary,
-              ),
-            ),
-          ),
-        ),
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: "Import".tl,
+      iconSize: 22,
+      style: IconButton.styleFrom(
+        fixedSize: const Size.square(48),
+        padding: EdgeInsets.zero,
+        foregroundColor: context.colorScheme.onSurfaceVariant,
       ),
+      icon: const Icon(Icons.create_new_folder_outlined),
     );
   }
 }
@@ -909,35 +969,16 @@ class _LocalExportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: "Export".tl,
-      child: Material(
-        color: context.colorScheme.tertiary.toOpacity(0.08),
-        borderRadius: BorderRadius.circular(15),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(15),
-          onTap: onPressed,
-          child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: context.colorScheme.tertiary.toOpacity(0.28),
-                width: 0.6,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              "Export".tl,
-              style: TextStyle(
-                fontSize: 13,
-                color: context.colorScheme.tertiary,
-              ),
-            ),
-          ),
-        ),
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: "Export".tl,
+      iconSize: 22,
+      style: IconButton.styleFrom(
+        fixedSize: const Size.square(48),
+        padding: EdgeInsets.zero,
+        foregroundColor: context.colorScheme.onSurfaceVariant,
       ),
+      icon: const Icon(Icons.drive_folder_upload_outlined),
     );
   }
 }
@@ -1134,16 +1175,15 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("How should this folder be imported?".tl)
-                    .paddingHorizontal(16),
+                Text(
+                  "How should this folder be imported?".tl,
+                ).paddingHorizontal(16),
                 RadioListTile<bool>(
-                  title:
-                      Text("As a single comic (subfolders are chapters)".tl),
+                  title: Text("As a single comic (subfolders are chapters)".tl),
                   value: false,
                 ),
                 RadioListTile<bool>(
-                  title:
-                      Text("As multiple comics (each subfolder is one)".tl),
+                  title: Text("As multiple comics (each subfolder is one)".tl),
                   value: true,
                 ),
               ],
@@ -1201,16 +1241,7 @@ class _WebdavLibraryState extends State<_WebdavLibrary> {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: _HomeSectionSurface(
         child: Column(
           children: [
             for (var i = 0; i < libraries.length; i++) ...[
@@ -1244,18 +1275,18 @@ class _WebdavLibraryState extends State<_WebdavLibrary> {
         height: 56,
         child: Row(
           children: [
+            _homeSectionIcon(context, Icons.cloud_outlined),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
-                style: ts.s18,
+                style: _homeSectionTitleStyle(context),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.cloud_outlined),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_right),
+            _homeChevron(context),
           ],
         ),
       ).paddingHorizontal(16),
@@ -1303,16 +1334,7 @@ class _CollectionsState extends State<_Collections> {
     const maxRows = 4;
     final shown = collections.take(maxRows).toList();
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: _HomeSectionSurface(
         child: Column(
           children: [
             InkWell(
@@ -1321,16 +1343,16 @@ class _CollectionsState extends State<_Collections> {
                 height: 56,
                 child: Row(
                   children: [
-                    Expanded(child: Text('Collections'.tl, style: ts.s18)),
-                    const SizedBox(width: 8),
-                    Text(
-                      collections.length.toString(),
-                      style: ts.s14.copyWith(
-                        color: context.colorScheme.outline,
-                      ),
+                    _homeSectionIcon(
+                      context,
+                      Icons.collections_bookmark_outlined,
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_right),
+                    const SizedBox(width: 12),
+                    _HomeSectionTitle(
+                      title: 'Collections'.tl,
+                      count: collections.length,
+                    ),
+                    _homeChevron(context),
                   ],
                 ),
               ).paddingHorizontal(16),
@@ -1448,15 +1470,7 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: _HomeSectionSurface(
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () {
@@ -1466,24 +1480,19 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
             height: 56,
             child: Row(
               children: [
-                Expanded(
-                  child: Text(
-                    'Comic Source'.tl,
-                    style: ts.s18,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                _homeSectionIcon(context, Icons.extension_outlined),
                 const SizedBox(width: 12),
+                _HomeSectionTitle(
+                  title: 'Comic Source'.tl,
+                  count: comicSources.length,
+                ),
                 if (_availableUpdates > 0)
                   Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 2,
-                    ),
+                    height: 28,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(20),
                       color: Theme.of(context).colorScheme.primaryContainer,
                     ),
                     child: Row(
@@ -1497,24 +1506,14 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
                         const SizedBox(width: 6),
                         Text(
                           "@c updates".tlParams({'c': _availableUpdates}),
-                          style: ts.s14.withColor(context.colorScheme.primary),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: context.colorScheme.primary),
                         ),
                       ],
                     ),
                   ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(comicSources.length.toString(), style: ts.s12),
-                ),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_right),
+                if (_availableUpdates > 0) const SizedBox(width: 8),
+                _homeChevron(context),
               ],
             ),
           ).paddingHorizontal(16),
@@ -1659,15 +1658,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
     bool hasData =
         imageFavoritesCompute != null && !imageFavoritesCompute!.isEmpty;
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: _HomeSectionSurface(
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () {
@@ -1680,27 +1671,13 @@ class _ImageFavoritesState extends State<ImageFavorites> {
                 height: 56,
                 child: Row(
                   children: [
-                    Center(child: Text('Image Favorites'.tl, style: ts.s18)),
-                    if (hasData)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          imageFavoritesCompute!.count.toString(),
-                          style: ts.s12,
-                        ),
-                      ),
-                    const Spacer(),
-                    const Icon(Icons.arrow_right),
+                    _homeSectionIcon(context, Icons.photo_library_outlined),
+                    const SizedBox(width: 12),
+                    _HomeSectionTitle(
+                      title: 'Image Favorites'.tl,
+                      count: hasData ? imageFavoritesCompute!.count : null,
+                    ),
+                    _homeChevron(context),
                   ],
                 ),
               ).paddingHorizontal(16),
@@ -1779,11 +1756,11 @@ class _ImageFavoritesTabBar extends StatelessWidget {
   final void Function(String id) onTap;
 
   static String _label(String id) => switch (id) {
-        'tags' => "Tags".tl,
-        'authors' => "Authors".tl,
-        'comics' => "Comics".tl,
-        _ => id,
-      };
+    'tags' => "Tags".tl,
+    'authors' => "Authors".tl,
+    'comics' => "Comics".tl,
+    _ => id,
+  };
 
   @override
   Widget build(BuildContext context) {

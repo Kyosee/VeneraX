@@ -103,6 +103,11 @@ class _ExplorePageState extends State<ExplorePage>
     child: FloatingActionButton(
       key: const Key("FAB"),
       onPressed: refresh,
+      tooltip: "Refresh".tl,
+      elevation: 1,
+      hoverElevation: 2,
+      backgroundColor: context.colorScheme.surfaceContainerHigh,
+      foregroundColor: context.colorScheme.onSurfaceVariant,
       child: const Icon(Icons.refresh),
     ),
   );
@@ -389,7 +394,7 @@ class _MixedExplorePageState
           yield const SliverToBoxAdapter(child: Divider());
           cache.clear();
         }
-        yield* _buildExplorePagePart(part, widget.sourceKey);
+        yield* _buildExplorePagePart(context, part, widget.sourceKey);
         yield const SliverToBoxAdapter(child: Divider());
       } else {
         cache.addAll(part as List<Comic>);
@@ -427,32 +432,45 @@ class _MixedExplorePageState
 }
 
 Iterable<Widget> _buildExplorePagePart(
+  BuildContext context,
   ExplorePagePart part,
   String sourceKey,
 ) sync* {
   Widget buildTitle(ExplorePagePart part) {
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 60,
+        height: 56,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
+          padding: const EdgeInsets.only(left: 16, right: 8),
           child: Row(
             children: [
-              Text(
-                part.title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  part.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.s18.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
-              const Spacer(),
               if (part.viewMore != null)
                 TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: context.colorScheme.onSurfaceVariant,
+                  ),
                   onPressed: () {
                     var context = App.mainNavigatorKey!.currentContext!;
                     part.viewMore!.jump(context);
                   },
-                  child: Text("View more".tl),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text("View more".tl),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded, size: 18),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -589,13 +607,13 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
     return SmoothCustomScrollView(
       key: const PageStorageKey('scroll'),
       controller: widget.controller,
-      slivers: _buildPage().toList(),
+      slivers: _buildPage(context).toList(),
     );
   }
 
-  Iterable<Widget> _buildPage() sync* {
+  Iterable<Widget> _buildPage(BuildContext context) sync* {
     for (var part in parts!) {
-      yield* _buildExplorePagePart(part, widget.comicSourceKey);
+      yield* _buildExplorePagePart(context, part, widget.comicSourceKey);
     }
   }
 }

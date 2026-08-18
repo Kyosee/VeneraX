@@ -84,7 +84,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   @override
   Widget build(BuildContext context) {
     return IconTheme(
-      data: IconThemeData(color: Theme.of(context).colorScheme.secondary),
+      data: IconThemeData(color: context.colorScheme.onSurfaceVariant),
       child: Stack(
         children: [
           AnimatedPositioned(

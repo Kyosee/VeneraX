@@ -49,6 +49,13 @@ void main() {
     final entry = find.byKey(const Key('home-reading-statistics-entry'));
     expect(entry, findsOneWidget);
     expect(find.text('Reading Statistics'), findsOneWidget);
+
+    final chevrons = find.byIcon(Icons.chevron_right_rounded);
+    expect(chevrons, findsNWidgets(2));
+    expect(
+      tester.getCenter(chevrons.at(0)).dx,
+      tester.getCenter(chevrons.at(1)).dx,
+    );
     expect(tester.takeException(), isNull);
 
     await tester.tap(entry);

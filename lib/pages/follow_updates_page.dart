@@ -84,64 +84,75 @@ class _FollowUpdatesWidgetState
         : null;
 
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Material(
+          color: context.colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: () {
-                context.to(() => FollowUpdatesPage());
-              },
-              child: SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Follow Updates'.tl,
-                        style: ts.s18,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  context.to(() => FollowUpdatesPage());
+                },
+                child: SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.notifications_active_outlined,
+                        size: 20,
+                        color: context.colorScheme.onSurfaceVariant,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    if (updatesText != null)
-                      Container(
-                        constraints: const BoxConstraints(maxWidth: 180),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer,
-                        ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Text(
-                          updatesText,
-                          style: ts.s16,
+                          'Follow Updates'.tl,
+                          style: Theme.of(context).textTheme.titleMedium!
+                              .copyWith(fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-            ),
-            const FollowUpdateProgressBar(embedded: true),
-          ],
+                      const SizedBox(width: 12),
+                      if (updatesText != null)
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 180),
+                          height: 28,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: context.colorScheme.primaryContainer,
+                          ),
+                          child: Text(
+                            updatesText,
+                            style: Theme.of(context).textTheme.labelMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 32,
+                        height: 56,
+                        child: Center(
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).paddingHorizontal(16),
+              ),
+              const FollowUpdateProgressBar(embedded: true),
+            ],
+          ),
         ),
       ),
     );

@@ -92,7 +92,8 @@ class NaviPaneState extends State<NaviPane>
     _naviItemTapListeners.remove(listener);
   }
 
-  static const _kBottomBarHeight = 58.0;
+  // Leave enough room for the icon and its short navigation label.
+  static const _kBottomBarHeight = 64.0;
 
   static const _kFoldedSideBarWidth = 72.0;
 
@@ -595,29 +596,58 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
   Widget buildContent() {
     final value = controller.value;
     final colorScheme = Theme.of(context).colorScheme;
+    final labelStyle = Theme.of(context).textTheme.labelSmall;
     final icon = Icon(
       widget.enabled ? widget.entry.activeIcon : widget.entry.icon,
     );
     return Center(
-      child: Container(
-        width: 64,
-        height: 28,
-        decoration: BoxDecoration(
-          borderRadius: const BorderRadius.all(Radius.circular(12)),
-          color: isHovering ? colorScheme.surfaceContainer : Colors.transparent,
-        ),
-        child: Center(
-          child: Container(
-            width: 32 + value * 32,
-            height: 28,
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-              color: value != 0
-                  ? colorScheme.secondaryContainer
-                  : Colors.transparent,
+      child: SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 30,
+              child: Container(
+                width: 64,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
+                  color: isHovering
+                      ? colorScheme.surfaceContainer
+                      : Colors.transparent,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 32 + value * 32,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.all(Radius.circular(12)),
+                      color: value != 0
+                          ? colorScheme.secondaryContainer
+                          : Colors.transparent,
+                    ),
+                    child: Center(child: icon),
+                  ),
+                ),
+              ),
             ),
-            child: Center(child: icon),
-          ),
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 18,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  widget.entry.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: labelStyle,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
