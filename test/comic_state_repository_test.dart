@@ -9,6 +9,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/source_platform.dart';
 
 void main() {
   setUpAll(() {
@@ -82,6 +84,46 @@ void main() {
         expect(display.status, '连载中');
         expect(display.tags, contains('genre:Action'));
         expect(display.tags, isNot(contains('status:连载中')));
+      } finally {
+        domain.close();
+        tempDir.deleteSync(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'local comic display tags use the current local comic after refresh',
+    () async {
+      final tempDir = Directory.systemTemp.createTempSync(
+        'venera_domain_local_tags_',
+      );
+      final domain = DomainDatabase();
+
+      try {
+        await domain.init(tempDir.path);
+        domain.ensureComicSource(
+          platform: SourcePlatformResolver.fromSourceKey('local'),
+          sourceComicId: 'local-id',
+          title: 'Title',
+          tags: const ['genre:old', 'genre:Same'],
+        );
+        final repository = ComicStateRepository(domain: domain);
+        final localComic = LocalComic(
+          id: 'local-id',
+          title: 'Title',
+          subtitle: '',
+          tags: const ['new', 'Same'],
+          directory: tempDir.path,
+          chapters: null,
+          cover: 'cover.jpg',
+          comicType: ComicType.local,
+          downloadedChapters: const [],
+          createdAt: DateTime(2026),
+        );
+
+        final display = repository.displayInfoFor(localComic);
+
+        expect(display.tags, ['new', 'Same']);
       } finally {
         domain.close();
         tempDir.deleteSync(recursive: true);

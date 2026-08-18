@@ -208,13 +208,15 @@ class ComicStateRepository {
         ? null
         : _ComicMetadata.fromLocalComic(localComic);
     final domainTags = domain?.tags ?? const <String>[];
-    final tags = _mergeTags([
-      domainTags,
-      updateInfo?.tags ?? const <String>[],
-      favorite?.tags ?? const <String>[],
-      localComic?.tags ?? const <String>[],
-      comic.tags ?? const <String>[],
-    ]);
+    final tags = comic is LocalComic
+        ? _mergeTags([comic.tags])
+        : _mergeTags([
+            domainTags,
+            updateInfo?.tags ?? const <String>[],
+            favorite?.tags ?? const <String>[],
+            localComic?.tags ?? const <String>[],
+            comic.tags ?? const <String>[],
+          ]);
 
     final status = _pick([
       domain?.status,
