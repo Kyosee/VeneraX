@@ -1,6 +1,30 @@
 typedef ContinuousPageTurnAction<T> =
     Future<void> Function(T target, bool Function() isCurrent);
 
+double estimateContinuousTurnOffset({
+  required double currentPixels,
+  required double referenceDelta,
+  required int targetIndex,
+  required int referenceIndex,
+  required double itemExtent,
+  required double minScrollExtent,
+  required double maxScrollExtent,
+  double? maxStepExtent,
+}) {
+  var estimate =
+      currentPixels +
+      referenceDelta +
+      (targetIndex - referenceIndex) * itemExtent;
+  if (maxStepExtent != null) {
+    final delta = (estimate - currentPixels).clamp(
+      -maxStepExtent,
+      maxStepExtent,
+    );
+    estimate = currentPixels + delta;
+  }
+  return estimate.clamp(minScrollExtent, maxScrollExtent).toDouble();
+}
+
 /// Serializes continuous-reader page turns and coalesces queued requests to
 /// the latest intended target.
 class ContinuousPageTurnCoordinator<T> {

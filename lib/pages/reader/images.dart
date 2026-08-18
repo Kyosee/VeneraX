@@ -1862,10 +1862,14 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// center-keyed coordinate space (negative offsets above the pivot) which a
   /// naive idx/length * maxScrollExtent mapping got wrong (it ignored the
   /// negative region, so jumps to the first/middle pages missed).
-  Future<void> _goToEntry(int chapter, int page,
-      {required bool animate,
-      bool center = false,
-      bool Function()? isCurrent}) async {
+  Future<void> _goToEntry(
+    int chapter,
+    int page, {
+    required bool animate,
+    bool center = false,
+    bool Function()? isCurrent,
+    double? maxStepExtent,
+  }) async {
     bool isStale() => isCurrent != null && !isCurrent();
     if (!_scrollController.hasClients || isStale()) return;
 
@@ -1873,27 +1877,36 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final delta = _offsetDeltaToEntry(chapter, page);
     if (delta != null) {
       await _applyScroll(
-          _scrollController.position.pixels +
-              delta -
-              _centerAdjust(chapter, page, center),
-          animate: animate);
+        _scrollController.position.pixels +
+            delta -
+            _centerAdjust(chapter, page, center),
+        animate: animate,
+      );
       return;
     }
 
     // Iterative approach for off-screen targets.
     final targetIdx = _indexOfEntry(chapter, page);
-    for (var attempt = 0; attempt < 6; attempt++) {
+    final currentIdx = _indexOfEntry(reader.chapter, reader.page);
+    final maxAttempts = maxStepExtent == null
+        ? 6
+        : math.min(32, math.max(6, (targetIdx - currentIdx).abs() * 2));
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (!_scrollController.hasClients || !mounted || isStale()) return;
       final pos = _scrollController.position;
 
       // Find any currently laid-out image entry to use as a reference point.
       final ref = _firstLaidOutEntry();
       if (ref == null) {
-        // Nothing measurable; nudge toward an edge and retry.
-        await _applyScroll(
-          targetIdx <= _anchorIndex ? pos.minScrollExtent : pos.maxScrollExtent,
-          animate: false,
-        );
+        // Nothing measurable yet. Rapid tap turns advance gradually so an
+        // unresolved middle target cannot be mistaken for the scroll tail.
+        final targetOffset = maxStepExtent == null
+            ? (targetIdx <= _anchorIndex
+                  ? pos.minScrollExtent
+                  : pos.maxScrollExtent)
+            : pos.pixels +
+                  (targetIdx < currentIdx ? -maxStepExtent : maxStepExtent);
+        await _applyScroll(targetOffset, animate: false);
         await WidgetsBinding.instance.endOfFrame;
         if (isStale()) return;
         continue;
@@ -1903,14 +1916,23 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final refIdx = _indexOfEntry(ref.chapter, ref.page);
       if (refIdx == targetIdx) {
         await _applyScroll(
-            pos.pixels + refDelta - _centerAdjust(chapter, page, center),
-            animate: animate);
+          pos.pixels + refDelta - _centerAdjust(chapter, page, center),
+          animate: animate,
+        );
         return;
       }
       // Estimate per-entry extent from the reference item's own size.
       final unit = _entryExtent(ref) ?? (reader.size.height);
-      final estimate =
-          pos.pixels + refDelta + (targetIdx - refIdx) * unit;
+      final estimate = estimateContinuousTurnOffset(
+        currentPixels: pos.pixels,
+        referenceDelta: refDelta,
+        targetIndex: targetIdx,
+        referenceIndex: refIdx,
+        itemExtent: unit,
+        minScrollExtent: pos.minScrollExtent,
+        maxScrollExtent: pos.maxScrollExtent,
+        maxStepExtent: maxStepExtent,
+      );
       await _applyScroll(estimate, animate: false);
       await WidgetsBinding.instance.endOfFrame;
       if (isStale()) return;
@@ -1919,10 +1941,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final d = _offsetDeltaToEntry(chapter, page);
       if (d != null) {
         await _applyScroll(
-            _scrollController.position.pixels +
-                d -
-                _centerAdjust(chapter, page, center),
-            animate: animate);
+          _scrollController.position.pixels +
+              d -
+              _centerAdjust(chapter, page, center),
+          animate: animate,
+        );
         return;
       }
     }
@@ -2023,6 +2046,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
       animate: animate,
       center: center,
       isCurrent: isCurrent,
+      maxStepExtent:
+          (reader.mode == ReaderMode.continuousTopToBottom
+              ? reader.size.height
+              : reader.size.width) *
+          2,
     );
   }
 
