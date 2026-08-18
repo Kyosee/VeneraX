@@ -42,12 +42,35 @@ void main() {
   });
 
   group('allocateLibraryId', () {
-    test('uses a suffix when a stale id already occupies the URL hash', () {
-      const url = 'https://example.com/index.json';
-      final base = stableLibraryId(url);
+    test(
+      'uses a deterministic full digest when a stale id occupies the hash',
+      () {
+        const url = 'https://example.com/index.json';
+        final base = stableLibraryId(url);
+        final allocated = allocateLibraryId(url, [base]);
 
-      expect(allocateLibraryId(url, [base]), '$base-2');
-      expect(allocateLibraryId(url, [base, '$base-2']), '$base-3');
+        expect(allocated, isNot(base));
+        expect(allocated.length, 32);
+        expect(allocateLibraryId(url, ['other', base]), allocated);
+        expect(allocateLibraryId(url, [base, 'other']), allocated);
+      },
+    );
+
+    test('compares current URLs instead of an id left behind by an edit', () {
+      const oldUrl = 'https://example.com/old/index.json';
+      const currentUrl = 'https://example.com/current/index.json';
+      final editedLibrary = ComicSourceLibrary(
+        id: stableLibraryId(oldUrl),
+        name: 'Edited',
+        url: currentUrl,
+      );
+
+      expect(findLibraryByUrl([editedLibrary], oldUrl), isNull);
+      expect(findLibraryByUrl([editedLibrary], currentUrl), editedLibrary);
+      expect(
+        allocateLibraryId(oldUrl, [editedLibrary.id]),
+        isNot(editedLibrary.id),
+      );
     });
   });
 

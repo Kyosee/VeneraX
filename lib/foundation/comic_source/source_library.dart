@@ -135,15 +135,33 @@ String stableLibraryId(String url) {
 @visibleForTesting
 String allocateLibraryId(String url, Iterable<String> usedIds) {
   final used = usedIds.toSet();
-  final base = stableLibraryId(url);
-  if (!used.contains(base)) {
-    return base;
+  final canonicalBytes = utf8.encode(canonicalLibraryUrl(url));
+  final md5Digest = md5.convert(canonicalBytes).toString();
+  final candidates = [
+    md5Digest.substring(0, 12),
+    md5Digest,
+    sha256.convert(canonicalBytes).toString(),
+  ];
+  for (final candidate in candidates) {
+    if (!used.contains(candidate)) {
+      return candidate;
+    }
   }
-  var suffix = 2;
-  while (used.contains('$base-$suffix')) {
-    suffix++;
+  throw StateError('Unable to allocate a unique library id');
+}
+
+@visibleForTesting
+ComicSourceLibrary? findLibraryByUrl(
+  Iterable<ComicSourceLibrary> libraries,
+  String url,
+) {
+  final canonical = canonicalLibraryUrl(url);
+  for (final library in libraries) {
+    if (canonicalLibraryUrl(library.url) == canonical) {
+      return library;
+    }
   }
-  return '$base-$suffix';
+  return null;
 }
 
 /// Derives a short, readable default library name from a catalog URL so the
@@ -206,19 +224,6 @@ class ComicSourceLibraryManager {
     return null;
   }
 
-  static ComicSourceLibrary? _findByUrl(
-    List<ComicSourceLibrary> libraries,
-    String url,
-  ) {
-    final canonical = canonicalLibraryUrl(url);
-    for (final library in libraries) {
-      if (canonicalLibraryUrl(library.url) == canonical) {
-        return library;
-      }
-    }
-    return null;
-  }
-
   /// Persists [libraries], re-densifies priority to list order, mirrors the
   /// primary URL into the legacy setting, then saves (which triggers sync).
   static void save(List<ComicSourceLibrary> libraries) {
@@ -245,7 +250,7 @@ class ComicSourceLibraryManager {
     final libraries = all();
     // Stored ids intentionally survive URL edits because provenance references
     // them. Deduplicate by the current URL, then allocate around any stale id.
-    final existing = _findByUrl(libraries, url);
+    final existing = findLibraryByUrl(libraries, url);
     if (existing != null) {
       if (name.isNotEmpty) existing.name = name;
       save(libraries);
@@ -411,7 +416,7 @@ class ComicSourceLibraryManager {
         .trim();
     final libraries = all();
     final alreadyPresent =
-        legacy.isEmpty || _findByUrl(libraries, legacy) != null;
+        legacy.isEmpty || findLibraryByUrl(libraries, legacy) != null;
     if (!alreadyPresent) {
       final id = allocateLibraryId(
         legacy,
