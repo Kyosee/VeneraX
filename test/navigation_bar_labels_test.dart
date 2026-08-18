@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 
 void main() {
-  testWidgets('compact navigation shows labels and still changes pages', (
+  testWidgets('compact navigation is icon-only and still changes pages', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(400, 800);
@@ -38,12 +38,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Home'), findsWidgets);
-    expect(find.text('Explore'), findsOneWidget);
+    // The top bar keeps the current page title; destinations in the bottom
+    // bar are represented by icons only, matching the desktop navigation.
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Explore'), findsNothing);
+    expect(find.byIcon(Icons.explore_outlined), findsAtLeastNWidgets(1));
     expect(find.text('Page 0'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('Explore'));
+    await tester.tap(find.byIcon(Icons.explore_outlined).last);
     await tester.pumpAndSettle();
 
     expect(find.text('Page 1'), findsOneWidget);
