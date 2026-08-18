@@ -1923,8 +1923,14 @@ class __ChartLineState extends State<_ChartLine>
                       borderRadius: BorderRadius.circular(2),
                       gradient: LinearGradient(
                         colors: context.isDarkMode
-                            ? [Colors.blue.shade800, Colors.blue.shade500]
-                            : [Colors.blue.shade300, Colors.blue.shade600],
+                            ? [
+                                context.colorScheme.primary.toOpacity(0.72),
+                                context.colorScheme.primary,
+                              ]
+                            : [
+                                context.colorScheme.primaryContainer,
+                                context.colorScheme.primary,
+                              ],
                       ),
                     ),
                   ).toAlign(Alignment.centerLeft);

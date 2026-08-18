@@ -126,9 +126,9 @@ class _FollowUpdatesWidgetState
                       const SizedBox(width: 12),
                       if (updatesText != null)
                         Container(
-                          constraints: const BoxConstraints(maxWidth: 180),
+                          constraints: const BoxConstraints(maxWidth: 120),
                           height: 28,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
