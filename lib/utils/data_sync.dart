@@ -21,6 +21,7 @@ import 'package:venera/init.dart' show deferredInitCompleter;
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/sync_protocol.dart';
 import 'package:venera/utils/venera_comics.dart';
+import 'package:venera/utils/webdav_upload.dart';
 import 'package:webdav_client/webdav_client.dart' hide File;
 import 'package:venera/utils/translations.dart';
 
@@ -806,7 +807,20 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // downloadData() consults the record and reclaims the orphan instead.
         _setPendingPublish(filename, fileSize);
         try {
-          await client.writeFromFile(data.path, filename);
+          final remotePath = serverAbsoluteWebdavPath(filename);
+          final usedBufferedFallback = await uploadWithWebdav404Fallback(
+            streamUpload: () => client.writeFromFile(data!.path, remotePath),
+            // Some WebDAV providers return 404 for streamed PUTs while the
+            // same authenticated root accepts the former byte upload (#214).
+            bufferedUpload: () async =>
+                client.write(remotePath, await data!.readAsBytes()),
+          );
+          if (usedBufferedFallback) {
+            Log.warning(
+              "Upload Data",
+              "Streamed PUT returned 404; buffered compatibility upload succeeded",
+            );
+          }
         } catch (e) {
           // The PUT may have succeeded even though its response was lost.
           // Probe once: if the backup is on the server with the expected
