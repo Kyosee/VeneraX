@@ -55,6 +55,9 @@ ImageProvider? findImageProvider(Comic comic) {
       cid: comic.id,
     );
   }
+  if (comic.cover.isEmpty) {
+    return null;
+  }
   if (comic is LocalComic) {
     // A queued download task merged into the grid has no directory on disk yet,
     // so its `cover` holds the remote url carried over from the list that

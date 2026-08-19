@@ -11,6 +11,8 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/home_layout.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
@@ -26,6 +28,7 @@ import 'package:venera/pages/read_later_page.dart';
 import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
 import 'package:venera/pages/reading_statistics_page.dart';
 import 'package:venera/pages/search_page.dart';
+import 'package:venera/pages/translated_comics_page.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/import_comic.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -201,6 +204,9 @@ class _HomePageState extends State<HomePage> {
     return switch (id) {
       'history' => const _History(key: ValueKey('history')),
       'readLater' => const _ReadLater(key: ValueKey('readLater')),
+      'translatedComics' => const _TranslatedComics(
+        key: ValueKey('translatedComics'),
+      ),
       'local' => const _Local(key: ValueKey('local')),
       'followUpdates' => const FollowUpdatesWidget(
         key: ValueKey('followUpdates'),
@@ -824,6 +830,115 @@ class _ReadLaterState extends State<_ReadLater> {
             ),
           ).paddingHorizontal(8).paddingBottom(16),
         ],
+      ),
+    );
+  }
+}
+
+class _TranslatedComics extends StatefulWidget {
+  const _TranslatedComics({super.key});
+
+  @override
+  State<_TranslatedComics> createState() => _TranslatedComicsState();
+}
+
+class _TranslatedComicsState extends State<_TranslatedComics> {
+  List<StoredTranslationComic> items = const [];
+  var count = 0;
+
+  void _reload() {
+    if (!TranslationStore().isInitialized) return;
+    var all = ImageTranslationService.translatedComics;
+    if (mounted) {
+      setState(() {
+        items = all.take(20).toList();
+        count = all.length;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    var all = ImageTranslationService.translatedComics;
+    items = all.take(20).toList();
+    count = all.length;
+    TranslationStore().addListener(_reload);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    TranslationStore().removeListener(_reload);
+    super.dispose();
+  }
+
+  Comic _asComic(StoredTranslationComic item) {
+    return Comic(
+      item.title.isEmpty ? item.comicId : item.title,
+      item.cover,
+      item.comicId,
+      null,
+      const [],
+      '',
+      item.sourceKey,
+      null,
+      null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    final tileSize = _homeComicTileSize(context);
+    return SliverToBoxAdapter(
+      child: _HomeSectionSurface(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => context.to(() => const TranslatedComicsPage()),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 56,
+                child: Row(
+                  children: [
+                    _homeSectionIcon(context, Icons.translate_rounded),
+                    const SizedBox(width: 12),
+                    _HomeSectionTitle(
+                      title: 'Translated Comics'.tl,
+                      count: count,
+                    ),
+                    _homeChevron(context),
+                  ],
+                ),
+              ).paddingHorizontal(16),
+              SizedBox(
+                height: tileSize.height + 4,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    var item = items[index];
+                    return SimpleComicTile(
+                      comic: _asComic(item),
+                      heroID: Object.hash(
+                        item.sourceKey,
+                        item.comicId,
+                        item.sourceLang,
+                        item.targetLang,
+                      ),
+                      width: tileSize.width,
+                      height: tileSize.height,
+                      onTap: () => openTranslatedChaptersPage(context, item),
+                    ).paddingHorizontal(8).paddingVertical(2);
+                  },
+                ),
+              ).paddingHorizontal(8).paddingBottom(16),
+            ],
+          ),
+        ),
       ),
     );
   }

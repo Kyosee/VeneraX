@@ -25,6 +25,7 @@ import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -1787,6 +1788,72 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
 /// Chapter multi-select for background pre-translation. Mirrors
 /// [_SelectDownloadChapter] but has no "already done" disabled rows — a
 /// chapter can always be re-queued (cached pages are skipped at run time).
+void openTranslatedChaptersPage(
+  BuildContext context,
+  StoredTranslationComic comic,
+) {
+  var stored = TranslationStore().chaptersFor(
+    comic.sourceKey,
+    comic.comicId,
+    sourceLang: comic.sourceLang,
+    targetLang: comic.targetLang,
+  );
+  if (stored.isEmpty) {
+    context.showMessage(message: 'No items'.tl);
+    return;
+  }
+  var entries = [
+    for (var chapter in stored)
+      (
+        chapter.identity.chapterId,
+        chapter.identity.chapterTitle.isEmpty
+            ? chapter.identity.chapterId
+            : chapter.identity.chapterTitle,
+      ),
+  ];
+  var title = comic.title.isEmpty ? comic.comicId : comic.title;
+
+  void startJob(List<int> selected) {
+    var task = PreTranslationTaskManager.instance.start(
+      cid: comic.comicId,
+      sourceKey: comic.sourceKey,
+      comicType: ComicType.fromKey(comic.sourceKey),
+      title: title,
+      cover: comic.cover,
+      chapters: [
+        for (var index in selected)
+          PreTranslationChapter(
+            eid: entries[index].$1,
+            title: entries[index].$2,
+          ),
+      ],
+    );
+    App.rootContext.showMessage(
+      message: task == null
+          ? (ImageTranslationService.isReadyForComic(
+                  comic.comicId,
+                  comic.sourceKey,
+                )
+                ? 'A pre-translation task is already running'.tl
+                : 'Configure AI translation first'.tl)
+          : 'Pre-translation started'.tl,
+    );
+  }
+
+  context.to(
+    () => _SelectPreTranslateChapter(
+      cid: comic.comicId,
+      sourceKey: comic.sourceKey,
+      comicType: ComicType.fromKey(comic.sourceKey),
+      title: title,
+      cover: comic.cover,
+      entries: entries,
+      translatedView: true,
+      finishSelect: startJob,
+    ),
+  );
+}
+
 class _SelectPreTranslateChapter extends StatefulWidget {
   const _SelectPreTranslateChapter({
     required this.cid,
@@ -1796,6 +1863,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
     required this.cover,
     required this.entries,
     this.groups,
+    this.translatedView = false,
     required this.finishSelect,
   });
 
@@ -1813,6 +1881,8 @@ class _SelectPreTranslateChapter extends StatefulWidget {
   /// show a tab per group. Null when the comic has no groups.
   final List<(String, List<int>)>? groups;
 
+  final bool translatedView;
+
   final void Function(List<int>) finishSelect;
 
   @override
@@ -1823,6 +1893,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
 class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     with SingleTickerProviderStateMixin {
   List<int> selected = [];
+  final Set<String> _removedChapterIds = {};
 
   TabController? _tabController;
 
@@ -1859,7 +1930,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   /// inside the tab they are looking at.
   List<int> get _visibleIndices => widget.groups != null
       ? widget.groups![_tabController!.index].$2
-      : [for (int i = 0; i < widget.entries.length; i++) i];
+            .where(
+              (index) => !_removedChapterIds.contains(widget.entries[index].$1),
+            )
+            .toList()
+      : [
+          for (int i = 0; i < widget.entries.length; i++)
+            if (!_removedChapterIds.contains(widget.entries[i].$1)) i,
+        ];
 
   bool get _allVisibleSelected {
     var visible = _visibleIndices;
@@ -1907,6 +1985,13 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       App.rootContext.showMessage(
         message: "Select chapters to re-translate first".tl,
       );
+      return;
+    }
+    if (!ImageTranslationService.isReadyForComic(
+      widget.cid,
+      widget.sourceKey,
+    )) {
+      App.rootContext.showMessage(message: 'Configure AI translation first'.tl);
       return;
     }
     var picked = List<int>.from(selected)..sort();
@@ -2121,10 +2206,18 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
           {eid},
         );
         if (mounted) {
-          setState(() {});
           App.rootContext.showMessage(
             message: "Translation results cleared".tl,
           );
+          if (widget.translatedView) {
+            setState(() {
+              selected.remove(index);
+              _removedChapterIds.add(eid);
+            });
+            if (_visibleIndices.isEmpty && mounted) context.pop();
+          } else {
+            setState(() {});
+          }
         }
       },
     );
@@ -2134,6 +2227,13 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   /// just this chapter (the glossary is kept so it stays consistent with the
   /// rest of the comic).
   void _reTranslateChapter(int index) {
+    if (!ImageTranslationService.isReadyForComic(
+      widget.cid,
+      widget.sourceKey,
+    )) {
+      App.rootContext.showMessage(message: 'Configure AI translation first'.tl);
+      return;
+    }
     var eid = widget.entries[index].$1;
     var title = widget.entries[index].$2;
     showConfirmDialog(
@@ -2203,10 +2303,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
           widget.sourceKey,
         );
         if (mounted) {
-          setState(() {});
           App.rootContext.showMessage(
             message: "Translation results cleared".tl,
           );
+          if (widget.translatedView) {
+            context.pop();
+          } else {
+            setState(() {});
+          }
         }
       },
     );
@@ -2273,10 +2377,11 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   Widget _buildChapterList() {
     final groups = widget.groups;
     if (groups == null) {
+      var visible = _visibleIndices;
       return ListView.builder(
         padding: EdgeInsets.zero,
-        itemCount: widget.entries.length,
-        itemBuilder: (context, i) => _buildChapterTile(i),
+        itemCount: visible.length,
+        itemBuilder: (context, i) => _buildChapterTile(visible[i]),
       );
     }
     return Column(
@@ -2290,11 +2395,22 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
             controller: _tabController,
             children: [
               for (var g in groups)
-                ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: g.$2.length,
-                  itemBuilder: (context, index) =>
-                      _buildChapterTile(g.$2[index]),
+                Builder(
+                  builder: (context) {
+                    var visible = g.$2
+                        .where(
+                          (index) => !_removedChapterIds.contains(
+                            widget.entries[index].$1,
+                          ),
+                        )
+                        .toList();
+                    return ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) =>
+                          _buildChapterTile(visible[index]),
+                    );
+                  },
                 ),
             ],
           ),
@@ -2307,7 +2423,9 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: Appbar(
-        title: Text("Pre-translate".tl),
+        title: Text(
+          widget.translatedView ? 'Translated Chapters'.tl : "Pre-translate".tl,
+        ),
         backgroundColor: context.colorScheme.surfaceContainerLow,
         actions: [
           MenuButton(
@@ -2357,8 +2475,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
                 const SizedBox(width: 16),
                 Expanded(
                   child: FilledButton(
-                    onPressed: selected.isEmpty ? null : _confirmAndStart,
-                    child: Text("Start".tl),
+                    onPressed: selected.isEmpty
+                        ? null
+                        : widget.translatedView
+                        ? _reTranslate
+                        : _confirmAndStart,
+                    child: Text(
+                      widget.translatedView ? 'Re-translate'.tl : "Start".tl,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),

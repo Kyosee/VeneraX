@@ -374,6 +374,17 @@ class ImageTranslationService with ChangeNotifier {
     );
   }
 
+  /// Indexed translated comics whose language pair still matches the comic's
+  /// current reader settings. Older language generations remain stored, but
+  /// are not presented as directly usable results for the current config.
+  static List<StoredTranslationComic> get translatedComics {
+    return TranslationStore().comics.where((comic) {
+      var config = TranslationConfig.of(comic.comicId, comic.sourceKey);
+      return comic.sourceLang == config.sourceLang &&
+          comic.targetLang == config.targetLang;
+    }).toList();
+  }
+
   /// Renders a page purely from an already-stored text result — no OCR, no LLM,
   /// no models. This is what lets a device that received another device's
   /// translations over WebDAV show them even without any translation models
