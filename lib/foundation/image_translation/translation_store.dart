@@ -6,6 +6,7 @@ import 'package:sqlite3/common.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 
 /// Persistent store of finished per-page translation text: the recognized
@@ -112,6 +113,7 @@ class TranslationStore with ChangeNotifier {
     _db.execute(_createIndexTableSql);
     _migrateSchema();
     migrateLegacyKeys(_db);
+    _backfillChapterIndex();
     isInitialized = true;
   }
 
@@ -173,6 +175,7 @@ class TranslationStore with ChangeNotifier {
           );
         }
         migrateLegacyKeys(_db);
+        _backfillChapterIndex();
         _recountIndex();
         _db.execute("COMMIT;");
       } catch (e) {
@@ -273,6 +276,10 @@ class TranslationStore with ChangeNotifier {
   /// with no `@` at all is malformed rather than legacy and is left untouched.
   static const _isLegacyKey =
       "cache_key like '$_keyPrefix%' and $_generation glob '*[^0-9]*'";
+
+  static final _currentKeyPattern = RegExp(
+    r'^pageTranslation@2@([^@>]+)>([^@]+)@([^@]+)@([^@]+)@([^@]+)@',
+  );
 
   static const Map<String, String> _expectedColumns = {
     "cache_key": "text",
@@ -436,6 +443,54 @@ class TranslationStore with ChangeNotifier {
     return (_db.select('select changes();').first[0] as int) > 0;
   }
 
+  /// Builds the query index for translations written before the index existed.
+  /// Only the fixed chapter prefix is parsed; the remaining image key may
+  /// contain any number of `@` separators and is deliberately left untouched.
+  void _backfillChapterIndex() {
+    var grouped =
+        <
+          String,
+          ({TranslationChapterIdentity identity, int pageCount, int updatedAt})
+        >{};
+    for (var row in _db.select(
+      'select cache_key, time from translated_page;',
+    )) {
+      var cacheKey = row['cache_key'] as String? ?? '';
+      var match = _currentKeyPattern.firstMatch(cacheKey);
+      if (match == null) continue;
+      var scopePrefix = match.group(0)!;
+      var sourceKey = match.group(3)!;
+      var identity = TranslationChapterIdentity(
+        scopePrefix: scopePrefix,
+        sourceKey: sourceKey == 'null'
+            ? SourcePlatformResolver.localCanonicalKey
+            : sourceKey,
+        comicId: match.group(4)!,
+        chapterId: match.group(5)!,
+        sourceLang: match.group(1)!,
+        targetLang: match.group(2)!,
+      );
+      var updatedAt = row['time'] as int? ?? 0;
+      var previous = grouped[scopePrefix];
+      grouped[scopePrefix] = (
+        identity: identity,
+        pageCount: (previous?.pageCount ?? 0) + 1,
+        updatedAt: previous == null
+            ? updatedAt
+            : previous.updatedAt > updatedAt
+            ? previous.updatedAt
+            : updatedAt,
+      );
+    }
+    for (var entry in grouped.values) {
+      _upsertChapterRow(
+        entry.identity,
+        pageCount: entry.pageCount,
+        updatedAt: entry.updatedAt,
+      );
+    }
+  }
+
   void _recountIndex() {
     var rows = _db.select('select scope_prefix from translated_chapter_index;');
     for (var row in rows) {
@@ -520,6 +575,43 @@ class TranslationStore with ChangeNotifier {
     }
     result.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return result;
+  }
+
+  /// Fills display metadata for rows imported from an older database. The
+  /// durable page keys intentionally do not carry titles or covers, so the
+  /// detail page can supply them after resolving the comic from its source.
+  void updateComicMetadata(
+    String sourceKey,
+    String comicId, {
+    String comicTitle = '',
+    String comicCover = '',
+    Map<String, String> chapterTitles = const {},
+  }) {
+    if (!isInitialized) return;
+    var changed = false;
+    if (comicTitle.isNotEmpty || comicCover.isNotEmpty) {
+      _db.execute(
+        """
+        update translated_chapter_index set
+          comic_title = case when ? != '' then ? else comic_title end,
+          comic_cover = case when ? != '' then ? else comic_cover end
+        where source_key = ? and comic_id = ?;
+        """,
+        [comicTitle, comicTitle, comicCover, comicCover, sourceKey, comicId],
+      );
+      changed = (_db.select('select changes();').first[0] as int) > 0;
+    }
+    for (var entry in chapterTitles.entries) {
+      if (entry.value.isEmpty) continue;
+      _db.execute(
+        'update translated_chapter_index set chapter_title = ? '
+        'where source_key = ? and comic_id = ? and chapter_id = ?;',
+        [entry.value, sourceKey, comicId, entry.key],
+      );
+      changed =
+          changed || (_db.select('select changes();').first[0] as int) > 0;
+    }
+    if (changed) _notifyChanged();
   }
 
   StoredTranslationChapter _chapterFromRow(Row row) {

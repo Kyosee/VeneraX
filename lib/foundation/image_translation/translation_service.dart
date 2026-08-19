@@ -224,6 +224,18 @@ class ImageTranslationService with ChangeNotifier {
     return stored['$cid@$sourceKey'] == true;
   }
 
+  /// Stable keys for comics whose per-comic translation switch is on.
+  /// The list is intentionally exposed without titles: titles and covers are
+  /// not part of the preference store and are resolved by the UI when known.
+  static Set<String> get enabledComicKeys {
+    var stored = appdata.implicitData[_enabledComicsKey];
+    if (stored is! Map) return const {};
+    return stored.entries
+        .where((entry) => entry.value == true)
+        .map((entry) => entry.key.toString())
+        .toSet();
+  }
+
   /// Turns translation on/off for one comic only.
   static void setEnabledForComic(String cid, String sourceKey, bool enabled) {
     var stored = appdata.implicitData[_enabledComicsKey];

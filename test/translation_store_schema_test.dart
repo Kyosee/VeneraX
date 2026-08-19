@@ -342,6 +342,60 @@ void main() {
       expect(store.chapters.single.pageCount, 1);
     });
 
+    test('init backfills the chapter index from legacy page rows', () async {
+      store.close();
+      var path = '${tempDir.path}/image_translation.db';
+      var legacy = sqlite3.open(path);
+      legacy.execute('drop table translated_chapter_index;');
+      legacy.execute('insert into translated_page values (?, ?, ?);', [
+        'pageTranslation@ja>zh@null@localComic@ch1@page1',
+        '[]',
+        10,
+      ]);
+      legacy.execute('insert into translated_page values (?, ?, ?);', [
+        'pageTranslation@ja>zh@null@localComic@ch1@https://h/a@b.jpg',
+        '[]',
+        20,
+      ]);
+      legacy.dispose();
+
+      store = TranslationStore.create();
+      await store.init();
+
+      expect(store.chapters, hasLength(1));
+      var indexed = store.chapters.single;
+      expect(
+        indexed.identity.scopePrefix,
+        'pageTranslation@2@ja>zh@null@localComic@ch1@',
+      );
+      expect(indexed.identity.sourceKey, 'local');
+      expect(indexed.identity.comicId, 'localComic');
+      expect(indexed.identity.chapterId, 'ch1');
+      expect(indexed.pageCount, 2);
+      expect(indexed.updatedAt.millisecondsSinceEpoch, 20);
+      expect(store.comics, hasLength(1));
+    });
+
+    test('metadata hydration updates comic cover and chapter titles', () {
+      var identity = chapter();
+      store.put('${identity.scopePrefix}page1', const [], chapter: identity);
+
+      store.updateComicMetadata(
+        'src',
+        'comic',
+        comicTitle: 'Loaded comic',
+        comicCover: 'https://example.com/loaded.jpg',
+        chapterTitles: {'ch1': 'Loaded chapter'},
+      );
+
+      var indexed = store.chapters.single;
+      expect(indexed.identity.comicTitle, 'Loaded comic');
+      expect(indexed.identity.comicCover, 'https://example.com/loaded.jpg');
+      expect(indexed.identity.chapterTitle, 'Loaded chapter');
+      expect(store.comics.single.title, 'Loaded comic');
+      expect(store.comics.single.cover, 'https://example.com/loaded.jpg');
+    });
+
     test(
       'language pairs stay separate and filters select the requested one',
       () {
@@ -443,7 +497,13 @@ void main() {
 
         expect(await store.mergeFrom(legacyPath), 1);
         expect(store.count, 2);
-        expect(store.chapters, hasLength(1));
+        expect(store.chapters, hasLength(2));
+        expect(
+          store.chapters
+              .firstWhere((item) => item.identity.comicId == 'other')
+              .pageCount,
+          1,
+        );
       },
     );
   });

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
@@ -849,10 +851,20 @@ class _TranslatedComicsState extends State<_TranslatedComics> {
   void _reload() {
     if (!TranslationStore().isInitialized) return;
     var all = ImageTranslationService.translatedComics;
+    var translatedKeys = {
+      for (var item in all) '${item.sourceKey}\u0000${item.comicId}',
+    };
+    var enabledOnly = ImageTranslationService.enabledComicKeys.where((key) {
+      var separator = key.lastIndexOf('@');
+      if (separator <= 0 || separator == key.length - 1) return false;
+      var comicId = key.substring(0, separator);
+      var sourceKey = key.substring(separator + 1);
+      return !translatedKeys.contains('$sourceKey\u0000$comicId');
+    }).length;
     if (mounted) {
       setState(() {
         items = all.take(20).toList();
-        count = all.length;
+        count = all.length + enabledOnly;
       });
     }
   }
@@ -861,14 +873,27 @@ class _TranslatedComicsState extends State<_TranslatedComics> {
   void initState() {
     var all = ImageTranslationService.translatedComics;
     items = all.take(20).toList();
-    count = all.length;
+    var translatedKeys = {
+      for (var item in all) '${item.sourceKey}\u0000${item.comicId}',
+    };
+    var enabledOnly = ImageTranslationService.enabledComicKeys.where((key) {
+      var separator = key.lastIndexOf('@');
+      if (separator <= 0 || separator == key.length - 1) return false;
+      var comicId = key.substring(0, separator);
+      var sourceKey = key.substring(separator + 1);
+      return !translatedKeys.contains('$sourceKey\u0000$comicId');
+    }).length;
+    count = all.length + enabledOnly;
     TranslationStore().addListener(_reload);
+    ImageTranslationService.instance.addListener(_reload);
+    unawaited(hydrateTranslatedComicMetadata());
     super.initState();
   }
 
   @override
   void dispose() {
     TranslationStore().removeListener(_reload);
+    ImageTranslationService.instance.removeListener(_reload);
     super.dispose();
   }
 
@@ -888,7 +913,7 @@ class _TranslatedComicsState extends State<_TranslatedComics> {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
+    if (items.isEmpty && count == 0) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     final tileSize = _homeComicTileSize(context);
@@ -907,35 +932,36 @@ class _TranslatedComicsState extends State<_TranslatedComics> {
                     _homeSectionIcon(context, Icons.translate_rounded),
                     const SizedBox(width: 12),
                     _HomeSectionTitle(
-                      title: 'Translated Comics'.tl,
+                      title: 'Translation Library'.tl,
                       count: count,
                     ),
                     _homeChevron(context),
                   ],
                 ),
               ).paddingHorizontal(16),
-              SizedBox(
-                height: tileSize.height + 4,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    var item = items[index];
-                    return SimpleComicTile(
-                      comic: _asComic(item),
-                      heroID: Object.hash(
-                        item.sourceKey,
-                        item.comicId,
-                        item.sourceLang,
-                        item.targetLang,
-                      ),
-                      width: tileSize.width,
-                      height: tileSize.height,
-                      onTap: () => openTranslatedChaptersPage(context, item),
-                    ).paddingHorizontal(8).paddingVertical(2);
-                  },
-                ),
-              ).paddingHorizontal(8).paddingBottom(16),
+              if (items.isNotEmpty)
+                SizedBox(
+                  height: tileSize.height + 4,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      var item = items[index];
+                      return SimpleComicTile(
+                        comic: _asComic(item),
+                        heroID: Object.hash(
+                          item.sourceKey,
+                          item.comicId,
+                          item.sourceLang,
+                          item.targetLang,
+                        ),
+                        width: tileSize.width,
+                        height: tileSize.height,
+                        onTap: () => openTranslatedChaptersPage(context, item),
+                      ).paddingHorizontal(8).paddingVertical(2);
+                    },
+                  ),
+                ).paddingHorizontal(8).paddingBottom(16),
             ],
           ),
         ),

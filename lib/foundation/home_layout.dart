@@ -25,7 +25,7 @@ class HomeSectionMeta {
 const List<HomeSectionMeta> kHomeSections = [
   HomeSectionMeta('history', 'History', Icons.history),
   HomeSectionMeta('readLater', 'Read Later', Icons.watch_later_outlined),
-  HomeSectionMeta('translatedComics', 'Translated Comics', Icons.translate),
+  HomeSectionMeta('translatedComics', 'Translation Library', Icons.translate),
   HomeSectionMeta('local', 'Local', Icons.local_library_outlined),
   HomeSectionMeta('followUpdates', 'Follow Updates', Icons.dynamic_feed),
   HomeSectionMeta('comicSource', 'Comic Source', Icons.source_outlined),
