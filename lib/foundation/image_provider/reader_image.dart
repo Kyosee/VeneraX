@@ -43,6 +43,9 @@ class ReaderImageProvider
     this.translationKey,
     this.translationConfig,
     this.translated = false,
+    this.comicTitle = '',
+    this.comicCover = '',
+    this.chapterTitle = '',
   });
 
   final String imageKey;
@@ -68,6 +71,10 @@ class ReaderImageProvider
   /// change the provider identity so the reader can swap the image in place
   /// once a background translation completes.
   final bool translated;
+
+  final String comicTitle;
+  final String comicCover;
+  final String chapterTitle;
 
   @override
   final bool enableResize;
@@ -107,6 +114,15 @@ class ReaderImageProvider
     }
     if (translationKey != null) {
       var config = translationConfig ?? TranslationConfig.of(cid, sourceKey);
+      var chapter = ImageTranslationService.chapterIdentity(
+        cid: cid,
+        sourceKey: sourceKey,
+        eid: eid,
+        config: config,
+        comicTitle: comicTitle,
+        comicCover: comicCover,
+        chapterTitle: chapterTitle,
+      );
       var translatedFile = await ImageTranslationService.instance
           .findTranslated(translationKey!, config.mode);
       if (translatedFile != null) {
@@ -121,6 +137,7 @@ class ReaderImageProvider
           translationKey!,
           imageBytes!,
           config.mode,
+          chapter: chapter,
         ),
         isEngineReady: ImageTranslationService.isReadyForLang(
           config.sourceLang,
@@ -138,6 +155,7 @@ class ReaderImageProvider
             () {
               ImageTranslationService.evictImage(this);
             },
+            chapter: chapter,
           );
         },
       );

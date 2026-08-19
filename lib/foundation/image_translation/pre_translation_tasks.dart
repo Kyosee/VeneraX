@@ -100,6 +100,7 @@ class PreTranslationTask {
     required this.title,
     required this.chapters,
     required this.createdAt,
+    this.cover = '',
     this.status = PreTranslationTaskStatus.running,
     this.finishedAt,
   });
@@ -109,6 +110,7 @@ class PreTranslationTask {
   final String sourceKey;
   final ComicType comicType;
   final String title;
+  final String cover;
   final List<PreTranslationChapter> chapters;
   final DateTime createdAt;
   PreTranslationTaskStatus status;
@@ -157,6 +159,7 @@ class PreTranslationTask {
     'sourceKey': sourceKey,
     'comicType': comicType.value,
     'title': title,
+    'cover': cover,
     'createdAt': createdAt.toIso8601String(),
     'finishedAt': finishedAt?.toIso8601String(),
     'status': status.name,
@@ -170,6 +173,7 @@ class PreTranslationTask {
       sourceKey: json['sourceKey']?.toString() ?? '',
       comicType: ComicType(json['comicType'] ?? 0),
       title: json['title']?.toString() ?? '',
+      cover: json['cover']?.toString() ?? '',
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
       status: PreTranslationTaskStatus.values.firstWhere(
@@ -342,6 +346,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     required ComicType comicType,
     required String title,
     required List<PreTranslationChapter> chapters,
+    String cover = '',
   }) {
     if (!ImageTranslationService.isReadyForComic(cid, sourceKey) ||
         chapters.isEmpty) {
@@ -359,6 +364,7 @@ class PreTranslationTaskManager with ChangeNotifier {
       sourceKey: sourceKey,
       comicType: comicType,
       title: title,
+      cover: cover,
       chapters: chapters,
       createdAt: DateTime.now(),
     );
@@ -707,31 +713,32 @@ class PreTranslationTaskManager with ChangeNotifier {
       );
       activity?.groups[groupIndex] = groupActivity;
       _notifyActivity();
-      f = () async {
-        try {
-          var result = await _processGroup(
-            task,
-            chapter,
-            pageKeys,
-            range.start,
-            range.end,
-            groupActivity,
-          );
-          // A canceled/paused-out group returns null; skip committing it so
-          // counts stay at the group boundary and a resume redoes it.
-          if (result != null) commit(groupIndex, result);
-        } catch (e, s) {
-          // Never let a group future complete with an error: with groups
-          // overlapping, an errored future would make `Future.any` rethrow and
-          // abandon the other in-flight groups (and a second error would become
-          // an unhandled async error). An uncommitted group simply stays at the
-          // prefix boundary and is redone on resume.
-          Log.error('Pre-translation', 'Group task failed: $e', s);
-        }
-      }().whenComplete(() {
-        active.remove(f);
-        activity?.groups.remove(groupIndex);
-      });
+      f =
+          () async {
+            try {
+              var result = await _processGroup(
+                task,
+                chapter,
+                pageKeys,
+                range.start,
+                range.end,
+                groupActivity,
+              );
+              // A canceled/paused-out group returns null; skip committing it so
+              // counts stay at the group boundary and a resume redoes it.
+              if (result != null) commit(groupIndex, result);
+            } catch (e, s) {
+              // Never let a group future complete with an error: with groups
+              // overlapping, an errored future would make `Future.any` rethrow and
+              // abandon the other in-flight groups (and a second error would become
+              // an unhandled async error). An uncommitted group simply stays at the
+              // prefix boundary and is redone on resume.
+              Log.error('Pre-translation', 'Group task failed: $e', s);
+            }
+          }().whenComplete(() {
+            active.remove(f);
+            activity?.groups.remove(groupIndex);
+          });
       active.add(f);
     }
 
@@ -882,10 +889,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     // slot; index 0 makes this the head one, and the card keeps naming a stage
     // instead of dropping back to a bare "running" for the whole sweep.
     var activity = _activities[task.id];
-    var slot = PreTranslationGroupActivity(
-      index: 0,
-      pageCount: indices.length,
-    );
+    var slot = PreTranslationGroupActivity(index: 0, pageCount: indices.length);
     activity?.groups[0] = slot;
     _notifyActivity();
     try {
@@ -942,12 +946,22 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
     if (pending.isEmpty) return;
     try {
+      var config = task.config;
       var results = await service.translatePageGroup(
         pending
             .map((p) => (cacheKey: p.cacheKey, imageBytes: p.imageBytes))
             .toList(),
         task.comicKey,
-        task.config,
+        config,
+        chapter: ImageTranslationService.chapterIdentity(
+          cid: task.cid,
+          sourceKey: task.sourceKey,
+          eid: chapter.eid,
+          config: config,
+          comicTitle: task.title,
+          comicCover: task.cover,
+          chapterTitle: chapter.title,
+        ),
         shouldCancel: () => _canceledIds.contains(task.id),
         onStage: (stage, completed) {
           activity.stage = stage;
@@ -1013,8 +1027,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     _notifyActivity();
 
     void reportFetchPhase() {
-      activity.completedPages =
-          preSettled + pending.length * fetchedPageWeight;
+      activity.completedPages = preSettled + pending.length * fetchedPageWeight;
       _notifyActivity();
     }
 
@@ -1051,12 +1064,22 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
     if (pending.isNotEmpty) {
       try {
+        var config = task.config;
         var results = await service.translatePageGroup(
           pending
               .map((p) => (cacheKey: p.cacheKey, imageBytes: p.imageBytes))
               .toList(),
           task.comicKey,
-          task.config,
+          config,
+          chapter: ImageTranslationService.chapterIdentity(
+            cid: task.cid,
+            sourceKey: task.sourceKey,
+            eid: chapter.eid,
+            config: config,
+            comicTitle: task.title,
+            comicCover: task.cover,
+            chapterTitle: chapter.title,
+          ),
           shouldCancel: () => _canceledIds.contains(task.id),
           onStage: (stage, completed) {
             activity.stage = stage;

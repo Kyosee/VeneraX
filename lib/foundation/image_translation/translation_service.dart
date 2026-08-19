@@ -11,6 +11,7 @@ import 'package:venera/foundation/image_translation/translation_pipeline.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/utils/io.dart';
 
 /// Per-page translation state exposed to the reader UI for status feedback.
@@ -50,6 +51,7 @@ class _TranslationTask {
     this.sourceKey,
     this.imageBytes,
     this.config,
+    this.chapter,
   );
 
   final String cacheKey;
@@ -66,6 +68,7 @@ class _TranslationTask {
   /// settings change mid-queue can't translate the page with another comic's
   /// languages.
   final TranslationConfig config;
+  final TranslationChapterIdentity chapter;
   final listeners = <VoidCallback>[];
 }
 
@@ -258,6 +261,28 @@ class ImageTranslationService with ChangeNotifier {
     return '${comicScopePrefix(sourceKey, cid)}$eid@';
   }
 
+  static TranslationChapterIdentity chapterIdentity({
+    required String cid,
+    required String? sourceKey,
+    required String eid,
+    required TranslationConfig config,
+    String comicTitle = '',
+    String comicCover = '',
+    String chapterTitle = '',
+  }) {
+    return TranslationChapterIdentity(
+      scopePrefix: chapterScopePrefix(sourceKey, cid, eid),
+      sourceKey: sourceKey ?? SourcePlatformResolver.localCanonicalKey,
+      comicId: cid,
+      chapterId: eid,
+      sourceLang: config.sourceLang,
+      targetLang: config.targetLang,
+      comicTitle: comicTitle,
+      comicCover: comicCover,
+      chapterTitle: chapterTitle,
+    );
+  }
+
   /// Cache key of the translated variant of one page. It embeds the comic's
   /// language pair so changing that comic's languages re-translates instead of
   /// serving pages in the old language. Scope (source/comic/chapter) comes
@@ -327,9 +352,25 @@ class ImageTranslationService with ChangeNotifier {
   /// too). This is what lets a device show a chapter as already translated after
   /// receiving another device's translations, without needing that device's
   /// (non-synced) task records. Language-pair scoped, same as every cache key.
-  static int storedPageCount(String cid, String sourceKey, String eid) {
-    return TranslationStore().countByPrefix(
-      chapterScopePrefix(sourceKey, cid, eid),
+  static int storedPageCount(
+    String cid,
+    String sourceKey,
+    String eid, {
+    String comicTitle = '',
+    String comicCover = '',
+    String chapterTitle = '',
+  }) {
+    var config = TranslationConfig.of(cid, sourceKey);
+    return TranslationStore().recordExistingChapter(
+      chapterIdentity(
+        cid: cid,
+        sourceKey: sourceKey,
+        eid: eid,
+        config: config,
+        comicTitle: comicTitle,
+        comicCover: comicCover,
+        chapterTitle: chapterTitle,
+      ),
     );
   }
 
@@ -347,8 +388,10 @@ class ImageTranslationService with ChangeNotifier {
   Future<Uint8List?> renderStoredPage(
     String cacheKey,
     Uint8List imageBytes,
-    InpaintMode mode,
-  ) async {
+    InpaintMode mode, {
+    required TranslationChapterIdentity chapter,
+  }) async {
+    TranslationStore().recordExistingChapter(chapter);
     var renderKey = renderedKey(cacheKey, mode);
     var cached = await CacheManager().findCache(renderKey);
     if (cached != null) {
@@ -385,6 +428,7 @@ class ImageTranslationService with ChangeNotifier {
     String comicKey,
     Uint8List imageBytes,
     TranslationConfig config, {
+    required TranslationChapterIdentity chapter,
     bool Function()? shouldCancel,
   }) async {
     var outcome = await _translateToCache(
@@ -392,6 +436,7 @@ class ImageTranslationService with ChangeNotifier {
       comicKey,
       imageBytes,
       config,
+      chapter: chapter,
       shouldCancel: shouldCancel,
     );
     if (outcome == _TranslateOutcome.noContent) {
@@ -412,8 +457,10 @@ class ImageTranslationService with ChangeNotifier {
     String comicKey,
     Uint8List imageBytes,
     TranslationConfig config, {
+    required TranslationChapterIdentity chapter,
     bool Function()? shouldCancel,
   }) async {
+    TranslationStore().recordExistingChapter(chapter);
     var renderKey = renderedKey(cacheKey, config.mode);
     if (await CacheManager().findCache(renderKey) != null) {
       return _TranslateOutcome.alreadyCached;
@@ -432,7 +479,7 @@ class ImageTranslationService with ChangeNotifier {
       _updateLanguageLock(comicKey, analysis.languageVotes, config);
       _mergeGlossary(comicKey, analysis.newGlossary);
       regions = analysis.regions;
-      TranslationStore().put(cacheKey, regions);
+      TranslationStore().put(cacheKey, regions, chapter: chapter);
     }
     if (shouldCancel?.call() ?? false) {
       throw const PipelineCanceled();
@@ -471,11 +518,13 @@ class ImageTranslationService with ChangeNotifier {
     List<({String cacheKey, Uint8List imageBytes})> pages,
     String comicKey,
     TranslationConfig config, {
+    required TranslationChapterIdentity chapter,
     bool Function()? shouldCancel,
     void Function(TranslationStage stage, double completedPages)? onStage,
   }) async {
     var success = List.filled(pages.length, false);
     if (pages.isEmpty) return success;
+    TranslationStore().recordExistingChapter(chapter);
     var pipeline = _pipeline ??= PageTranslationPipeline();
     var sourceLang = _effectiveSourceFor(comicKey, config);
 
@@ -614,7 +663,7 @@ class ImageTranslationService with ChangeNotifier {
       onStage?.call(TranslationStage.rendering, completedPages());
       try {
         if (freshOcr[i]) {
-          TranslationStore().put(p.cacheKey, regions);
+          TranslationStore().put(p.cacheKey, regions, chapter: chapter);
         }
         if (regions.isEmpty) {
           _noContent.add(p.cacheKey);
@@ -662,8 +711,9 @@ class ImageTranslationService with ChangeNotifier {
     String? sourceKey,
     Uint8List imageBytes,
     TranslationConfig config,
-    VoidCallback onTranslated,
-  ) {
+    VoidCallback onTranslated, {
+    required TranslationChapterIdentity chapter,
+  }) {
     if (_noContent.contains(cacheKey)) {
       return;
     }
@@ -690,7 +740,7 @@ class ImageTranslationService with ChangeNotifier {
       _queue.remove(oldest);
     }
     _queue.add(
-      _TranslationTask(cacheKey, cid, sourceKey, imageBytes, config)
+      _TranslationTask(cacheKey, cid, sourceKey, imageBytes, config, chapter)
         ..listeners.add(onTranslated),
     );
     _releaseTimer?.cancel();
@@ -722,6 +772,7 @@ class ImageTranslationService with ChangeNotifier {
         task.comicKey,
         task.imageBytes,
         task.config,
+        chapter: task.chapter,
       );
       _errors.remove(renderKey);
       if (outcome != _TranslateOutcome.noContent) {
@@ -784,9 +835,7 @@ class ImageTranslationService with ChangeNotifier {
     }
     var total = votes.values.fold(0, (a, b) => a + b);
     if (total < 4) return;
-    var dominant = votes.entries.reduce(
-      (a, b) => a.value >= b.value ? a : b,
-    );
+    var dominant = votes.entries.reduce((a, b) => a.value >= b.value ? a : b);
     if (dominant.value / total < 0.75) return;
     var locks = _langLocks;
     locks[comicKey] = dominant.key;
@@ -890,7 +939,8 @@ class ImageTranslationService with ChangeNotifier {
     var comicKey = '$cid@$sourceKey';
     var all = _allGlossaries;
     var glossary = all.putIfAbsent(comicKey, () => <String, String>{});
-    if (!glossary.containsKey(source) && glossary.length >= _maxGlossaryEntries) {
+    if (!glossary.containsKey(source) &&
+        glossary.length >= _maxGlossaryEntries) {
       return false;
     }
     glossary[source] = translation;

@@ -386,7 +386,9 @@ class _GalleryModeState extends State<_GalleryMode>
         }
       },
       child: PhotoViewGallery.builder(
-        backgroundDecoration: BoxDecoration(color: reader.readerBackgroundColor),
+        backgroundDecoration: BoxDecoration(
+          color: reader.readerBackgroundColor,
+        ),
         reverse: reader.mode == ReaderMode.galleryRightToLeft,
         scrollDirection: reader.mode == ReaderMode.galleryTopToBottom
             ? Axis.vertical
@@ -413,8 +415,7 @@ class _GalleryModeState extends State<_GalleryMode>
             photoViewControllers[index] ??= PhotoViewController();
 
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
-              final fillScreen =
-                  appdata.settings['galleryFillScreen'] == true;
+              final fillScreen = appdata.settings['galleryFillScreen'] == true;
               return PhotoViewGalleryPageOptions(
                 filterQuality: FilterQuality.medium,
                 controller: photoViewControllers[index],
@@ -598,8 +599,7 @@ class _GalleryModeState extends State<_GalleryMode>
   bool turnPage(bool forward) => false; // gallery 用默认按页码翻页
 
   @override
-  bool jumpToChapter(int chapter, {bool toLastPage = false}) =>
-      false; // gallery keyed by chapter; uses the default remount path
+  bool jumpToChapter(int chapter, {bool toLastPage = false}) => false; // gallery keyed by chapter; uses the default remount path
 
   @override
   bool get isImageZoomed {
@@ -853,7 +853,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
   final _continuousChapterErrors = <int, String>{};
   final _continuousCachedImages = <String>{};
   late final ContinuousPageTurnCoordinator<_ContinuousReaderEntry>
-      _pageTurnCoordinator;
+  _pageTurnCoordinator;
   int _turnInteractionGeneration = 0;
   int? _boundaryTurnChapter;
 
@@ -1212,7 +1212,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // the previous one, so the next tap re-centers the same target and the
     // reader looks stuck one page in (issue #117-2 regression). Probe the
     // center instead so the centered page resolves as current.
-    final center = vertical &&
+    final center =
+        vertical &&
         appdata.settings.getReaderSetting(
               reader.cid,
               reader.type.sourceKey,
@@ -1444,8 +1445,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final title = !entry.hasNext
         ? 'No next chapter'.tl
         : isPrevChapterSeparator
-            ? 'Previous Chapter'.tl
-            : 'Next Chapter'.tl;
+        ? 'Previous Chapter'.tl
+        : 'Next Chapter'.tl;
     final subtitle = entry.hasNext && entry.nextChapter != null
         ? _chapterTitle(entry.nextChapter!)
         : reader.widget.name;
@@ -1480,8 +1481,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
                     !entry.hasNext
                         ? Icons.done_all_rounded
                         : isPrevChapterSeparator
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
                     size: 42,
                     color: context.colorScheme.primary,
                   ),
@@ -1562,11 +1563,13 @@ class _ContinuousModeState extends State<_ContinuousMode>
     Widget child = _buildImageEntry(entry);
     // 相邻图片之间的可选间隙(issue #117-3)。沿主轴在图片后加内边距，间隙区域
     // 由外层 ColoredBox 背景色填充。仅图片条目加，衔接页不受影响。
-    final spacing = (appdata.settings.getReaderSetting(
-              reader.cid,
-              reader.type.sourceKey,
-              'readerPageSpacing',
-            ) as num?)
+    final spacing =
+        (appdata.settings.getReaderSetting(
+                  reader.cid,
+                  reader.type.sourceKey,
+                  'readerPageSpacing',
+                )
+                as num?)
             ?.toDouble() ??
         0.0;
     if (spacing > 0) {
@@ -1577,7 +1580,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     return child;
   }
 
-  ScrollPhysics get _physics => isCTRLPressed || _isMouseScrolling || disableScroll
+  ScrollPhysics get _physics =>
+      isCTRLPressed || _isMouseScrolling || disableScroll
       ? const NeverScrollableScrollPhysics()
       : isZoomedIn
       ? const ClampingScrollPhysics()
@@ -1614,8 +1618,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // 并设 2 屏下限，使后续若干长图在进入视口前已解码就绪。continuous 模式
     // enableResize=true 已降采样，单张解码成本可控，放大提前量代价主要是内存，
     // 由 imageCache 的 LRU(按可用RAM 100~500MB)约束。
-    final viewExtent =
-        _axis == Axis.vertical ? reader.size.height : reader.size.width;
+    final viewExtent = _axis == Axis.vertical
+        ? reader.size.height
+        : reader.size.width;
     final cacheExtent = viewExtent * preCacheCount.clamp(2, 6).toDouble();
     return CustomScrollView(
       controller: _scrollController,
@@ -2316,9 +2321,9 @@ ImageProvider _createImageProviderFromKey(
   int? chapter,
 }) {
   var reader = context.reader;
-  final eid = chapter == null
-      ? reader.eid
-      : reader.widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
+  final chapterNumber = chapter ?? reader.chapter;
+  final eid =
+      reader.widget.chapters?.ids.elementAtOrNull(chapterNumber - 1) ?? '0';
   String? translationKey;
   TranslationConfig? translationConfig;
   var translated = false;
@@ -2358,6 +2363,11 @@ ImageProvider _createImageProviderFromKey(
     translationKey: translationKey,
     translationConfig: translationConfig,
     translated: translated,
+    comicTitle: reader.widget.name,
+    comicCover: reader.widget.history.cover,
+    chapterTitle:
+        reader.widget.chapters?.titles.elementAtOrNull(chapterNumber - 1) ??
+        reader.widget.name,
   );
 }
 

@@ -121,15 +121,17 @@ abstract mixin class _ComicPageActions {
       update();
       App.rootContext.showMessage(message: "Removed from read later".tl);
     } else {
-      await ReadLaterManager().addItem(ReadLaterItem(
-        id: comic.id,
-        title: comic.title,
-        subtitle: comic.subTitle,
-        cover: comic.cover,
-        type: comic.comicType,
-        tags: comic.plainTags,
-        time: DateTime.now(),
-      ));
+      await ReadLaterManager().addItem(
+        ReadLaterItem(
+          id: comic.id,
+          title: comic.title,
+          subtitle: comic.subTitle,
+          cover: comic.cover,
+          type: comic.comicType,
+          tags: comic.plainTags,
+          time: DateTime.now(),
+        ),
+      );
       update();
       App.rootContext.showMessage(message: "Added to read later".tl);
     }
@@ -196,9 +198,7 @@ abstract mixin class _ComicPageActions {
     // Treating that as chapter-less would wrongly start a whole-comic job and
     // skip the picker, so wait for the fetch instead.
     if (isDetailsLoading && comic.chapters == null) {
-      App.rootContext.showMessage(
-        message: "Loading chapters, please wait".tl,
-      );
+      App.rootContext.showMessage(message: "Loading chapters, please wait".tl);
       return;
     }
     // Ordered (id, title) list of chapters; a chapter-less comic is one job.
@@ -218,9 +218,10 @@ abstract mixin class _ComicPageActions {
         var indices = <int>[];
         for (var entry in chapters.getGroup(groupName).entries) {
           indices.add(entries.length);
-          entries.add(
-            (entry.key, entry.value.isEmpty ? 'E$index' : entry.value),
-          );
+          entries.add((
+            entry.key,
+            entry.value.isEmpty ? 'E$index' : entry.value,
+          ));
           index++;
         }
         groups.add((groupName, indices));
@@ -244,6 +245,7 @@ abstract mixin class _ComicPageActions {
         sourceKey: comic.sourceKey,
         comicType: comic.comicType,
         title: comic.title,
+        cover: comic.cover,
         chapters: picked,
       );
       App.rootContext.showMessage(
@@ -273,6 +275,7 @@ abstract mixin class _ComicPageActions {
         sourceKey: comic.sourceKey,
         comicType: comic.comicType,
         title: comic.title,
+        cover: comic.cover,
         entries: entries,
         groups: groups,
         finishSelect: startJob,
@@ -648,22 +651,19 @@ abstract mixin class _ComicPageActions {
           icon: Icons.library_books_outlined,
           text: "Add to collection".tl,
           onClick: () {
-            showAddToCollectionDialog(
-              context,
-              [
-                Comic(
-                  comic.title,
-                  comic.cover,
-                  comic.id,
-                  comic.subTitle,
-                  comic.plainTags,
-                  comic.description ?? '',
-                  comic.sourceKey,
-                  comic.maxPage,
-                  null,
-                ),
-              ],
-            );
+            showAddToCollectionDialog(context, [
+              Comic(
+                comic.title,
+                comic.cover,
+                comic.id,
+                comic.subTitle,
+                comic.plainTags,
+                comic.description ?? '',
+                comic.sourceKey,
+                comic.maxPage,
+                null,
+              ),
+            ]);
           },
         ),
       // Not offered for a collection: it has no upstream source to link to or
@@ -709,11 +709,7 @@ abstract mixin class _ComicPageActions {
             startWebdavMigrationFlow([_localDownloadedComic()!]);
           },
         ),
-      MenuEntry(
-        icon: Icons.block,
-        text: "Block".tl,
-        onClick: blockThisComic,
-      ),
+      MenuEntry(icon: Icons.block, text: "Block".tl, onClick: blockThisComic),
     ]);
   }
 

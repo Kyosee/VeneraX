@@ -399,11 +399,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.block,
-              size: 48,
-              color: context.colorScheme.outline,
-            ),
+            Icon(Icons.block, size: 48, color: context.colorScheme.outline),
             const SizedBox(height: 16),
             Text("Blocked comic".tl, style: ts.s18),
             const SizedBox(height: 8),
@@ -1797,6 +1793,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
     required this.sourceKey,
     required this.comicType,
     required this.title,
+    required this.cover,
     required this.entries,
     this.groups,
     required this.finishSelect,
@@ -1806,6 +1803,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
   final String sourceKey;
   final ComicType comicType;
   final String title;
+  final String cover;
 
   /// Ordered list of chapter entries (eid, display title).
   final List<(String, String)> entries;
@@ -1822,8 +1820,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
       _SelectPreTranslateChapterState();
 }
 
-class _SelectPreTranslateChapterState
-    extends State<_SelectPreTranslateChapter>
+class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     with SingleTickerProviderStateMixin {
   List<int> selected = [];
 
@@ -1925,14 +1922,13 @@ class _SelectPreTranslateChapterState
         for (var i in picked) {
           var eid = widget.entries[i].$1;
           eids.add(eid);
-          await service.retranslate(
-            widget.cid,
-            widget.sourceKey,
-            eid: eid,
-          );
+          await service.retranslate(widget.cid, widget.sourceKey, eid: eid);
         }
-        PreTranslationTaskManager.instance
-            .resetChapterStatus(widget.cid, widget.sourceKey, eids);
+        PreTranslationTaskManager.instance.resetChapterStatus(
+          widget.cid,
+          widget.sourceKey,
+          eids,
+        );
         widget.finishSelect(picked);
         if (mounted) {
           context.pop();
@@ -1962,6 +1958,9 @@ class _SelectPreTranslateChapterState
         widget.cid,
         widget.sourceKey,
         eid,
+        comicTitle: widget.title,
+        comicCover: widget.cover,
+        chapterTitle: widget.entries[index].$2,
       );
       if (stored <= 0) return null;
       return Row(
@@ -2067,9 +2066,10 @@ class _SelectPreTranslateChapterState
     showConfirmDialog(
       context: context,
       title: "Start pre-translation?".tl,
-      content: "About to translate @count chapters. If your configured LLM "
-              "endpoint is paid, this may cost money."
-          .tlParams({'count': selected.length}),
+      content:
+          "About to translate @count chapters. If your configured LLM "
+                  "endpoint is paid, this may cost money."
+              .tlParams({'count': selected.length}),
       onConfirm: start,
     );
   }
@@ -2089,6 +2089,9 @@ class _SelectPreTranslateChapterState
           widget.cid,
           widget.sourceKey,
           eid,
+          comicTitle: widget.title,
+          comicCover: widget.cover,
+          chapterTitle: widget.entries[index].$2,
         ) >
         0;
   }
@@ -2112,8 +2115,11 @@ class _SelectPreTranslateChapterState
           widget.sourceKey,
           eid: eid,
         );
-        PreTranslationTaskManager.instance
-            .resetChapterStatus(widget.cid, widget.sourceKey, {eid});
+        PreTranslationTaskManager.instance.resetChapterStatus(
+          widget.cid,
+          widget.sourceKey,
+          {eid},
+        );
         if (mounted) {
           setState(() {});
           App.rootContext.showMessage(
@@ -2142,8 +2148,11 @@ class _SelectPreTranslateChapterState
           widget.sourceKey,
           eid: eid,
         );
-        PreTranslationTaskManager.instance
-            .resetChapterStatus(widget.cid, widget.sourceKey, {eid});
+        PreTranslationTaskManager.instance.resetChapterStatus(
+          widget.cid,
+          widget.sourceKey,
+          {eid},
+        );
         widget.finishSelect([index]);
         if (mounted) setState(() {});
       },
@@ -2161,9 +2170,7 @@ class _SelectPreTranslateChapterState
     manager.cancelChapter(task.id, eid);
     if (mounted) {
       setState(() {});
-      App.rootContext.showMessage(
-        message: "Chapter translation canceled".tl,
-      );
+      App.rootContext.showMessage(message: "Chapter translation canceled".tl);
     }
   }
 
@@ -2180,8 +2187,10 @@ class _SelectPreTranslateChapterState
       onConfirm: () async {
         // Stop any running job for this comic first, so it doesn't keep
         // repopulating the cache we're about to clear.
-        var running = PreTranslationTaskManager.instance
-            .runningTaskFor(widget.cid, widget.sourceKey);
+        var running = PreTranslationTaskManager.instance.runningTaskFor(
+          widget.cid,
+          widget.sourceKey,
+        );
         if (running != null) {
           PreTranslationTaskManager.instance.cancel(running.id);
         }
@@ -2208,17 +2217,17 @@ class _SelectPreTranslateChapterState
     var title = widget.entries[i].$2;
     var eid = widget.entries[i].$1;
     var progress = _buildChapterStatus(i);
-    var isActive = PreTranslationTaskManager.instance
-        .isChapterActive(widget.cid, widget.sourceKey, eid);
+    var isActive = PreTranslationTaskManager.instance.isChapterActive(
+      widget.cid,
+      widget.sourceKey,
+      eid,
+    );
     var hasIdleTranslation = _chapterHasIdleTranslation(i);
     return CheckboxListTile(
       title: Row(
         children: [
           Expanded(child: Text(title)),
-          if (progress != null) ...[
-            const SizedBox(width: 8),
-            progress,
-          ],
+          if (progress != null) ...[const SizedBox(width: 8), progress],
           if (isActive)
             IconButton(
               icon: const Icon(Icons.close_rounded),
@@ -2284,7 +2293,8 @@ class _SelectPreTranslateChapterState
                 ListView.builder(
                   padding: EdgeInsets.zero,
                   itemCount: g.$2.length,
-                  itemBuilder: (context, index) => _buildChapterTile(g.$2[index]),
+                  itemBuilder: (context, index) =>
+                      _buildChapterTile(g.$2[index]),
                 ),
             ],
           ),
@@ -2340,9 +2350,7 @@ class _SelectPreTranslateChapterState
                   child: TextButton(
                     onPressed: _toggleSelectVisible,
                     child: Text(
-                      _allVisibleSelected
-                          ? "Deselect All".tl
-                          : "Select All".tl,
+                      _allVisibleSelected ? "Deselect All".tl : "Select All".tl,
                     ),
                   ),
                 ),
