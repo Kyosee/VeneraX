@@ -39,6 +39,65 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Issue #72: open comic links in the app.
+                 Custom scheme (venerax://open?url=<encoded> or venerax://<host>/<path>)
+                 plus the fixed comic-site domains declared by built-in sources.
+                 One intent-filter per host: multiple <data> inside a single filter
+                 are AND-ed, so they must stay separate to match each domain. -->
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="venerax" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nhentai.net" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="e-hentai.org" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="exhentai.org" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="h-comic.com" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="hitomi.la" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="jcomic.net" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="mangadex.org" />
+            </intent-filter>
+            <intent-filter android:label="Open in VeneraX">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="mycomic.com" />
+            </intent-filter>
         </activity>
         <!-- Launcher icon presets. One alias enabled at a time; plugin applies
              the switch on onTaskRemoved (takes effect next cold start). Default
