@@ -51,6 +51,51 @@ class ComicReadingStatistics {
   );
 }
 
+enum ReadingStatisticsSortType {
+  lastRead("last_read"),
+  durationDesc("duration_desc"),
+  durationAsc("duration_asc"),
+  nameAsc("name_asc"),
+  nameDesc("name_desc");
+
+  const ReadingStatisticsSortType(this.value);
+
+  final String value;
+
+  static ReadingStatisticsSortType fromString(String? value) {
+    for (var type in values) {
+      if (type.value == value) {
+        return type;
+      }
+    }
+    return lastRead;
+  }
+}
+
+/// Orders the per-comic rows for display. Ties fall back to last-read time so
+/// the order stays stable when durations or titles match.
+List<ComicReadingStatistics> sortComicReadingStatistics(
+  List<ComicReadingStatistics> comics,
+  ReadingStatisticsSortType sortType,
+) {
+  final result = comics.toList();
+  int byLastRead(ComicReadingStatistics a, ComicReadingStatistics b) =>
+      b.lastReadAt.compareTo(a.lastReadAt);
+  result.sort((a, b) {
+    final primary = switch (sortType) {
+      ReadingStatisticsSortType.lastRead => byLastRead(a, b),
+      ReadingStatisticsSortType.durationDesc => b.duration.compareTo(
+        a.duration,
+      ),
+      ReadingStatisticsSortType.durationAsc => a.duration.compareTo(b.duration),
+      ReadingStatisticsSortType.nameAsc => a.title.compareTo(b.title),
+      ReadingStatisticsSortType.nameDesc => b.title.compareTo(a.title),
+    };
+    return primary != 0 ? primary : byLastRead(a, b);
+  });
+  return result;
+}
+
 class ReadingStatisticsSummary {
   const ReadingStatisticsSummary({
     required this.today,

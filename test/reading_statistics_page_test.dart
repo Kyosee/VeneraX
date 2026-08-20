@@ -11,7 +11,10 @@ void main() {
     await AppTranslation.init();
   });
 
-  ReadingStatisticsSummary summary({bool withData = true}) {
+  ReadingStatisticsSummary summary({
+    bool withData = true,
+    List<ComicReadingStatistics>? comics,
+  }) {
     final today = DateTime(2026, 8, 17);
     return ReadingStatisticsSummary(
       today: withData ? const Duration(minutes: 5) : Duration.zero,
@@ -29,22 +32,39 @@ void main() {
         ),
       ),
       recentComics: withData
-          ? [
-              ComicReadingStatistics(
-                id: 'comic-1',
-                // A non-local type avoids requiring LocalManager just to
-                // render the list tile in this isolated widget test.
-                type: ComicType(1),
-                title: 'A long comic title that must fit on a narrow screen',
-                subtitle: 'Subtitle',
-                cover: '',
-                duration: const Duration(hours: 1, minutes: 2),
-                lastReadAt: today,
-              ),
-            ]
+          ? comics ??
+                [
+                  ComicReadingStatistics(
+                    id: 'comic-1',
+                    // A non-local type avoids requiring LocalManager just to
+                    // render the list tile in this isolated widget test.
+                    type: ComicType(1),
+                    title:
+                        'A long comic title that must fit on a narrow screen',
+                    subtitle: 'Subtitle',
+                    cover: '',
+                    duration: const Duration(hours: 1, minutes: 2),
+                    lastReadAt: today,
+                  ),
+                ]
           : const [],
     );
   }
+
+  ComicReadingStatistics comic(
+    String id, {
+    required String title,
+    required Duration duration,
+    required DateTime lastReadAt,
+  }) => ComicReadingStatistics(
+    id: id,
+    type: ComicType(1),
+    title: title,
+    subtitle: '',
+    cover: '',
+    duration: duration,
+    lastReadAt: lastReadAt,
+  );
 
   Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -121,5 +141,152 @@ void main() {
       formatReadingDuration(const Duration(hours: 1, minutes: 1)),
       '1 h 1 min',
     );
+  });
+
+  testWidgets('content fills a wide window instead of a fixed body width', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrap(ReadingStatisticsPage(summary: summary())));
+    await tester.pump();
+
+    // 1600 minus the section's 20px horizontal padding on both sides.
+    expect(
+      tester.getSize(find.byKey(const Key('reading-statistics-summary'))).width,
+      1560,
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('reading-statistics-trend'))).width,
+      1560,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sort entry is offered only when statistics exist', (
+    tester,
+  ) async {
+    useNarrowViewport(tester);
+    await tester.pumpWidget(
+      wrap(ReadingStatisticsPage(summary: summary(withData: false))),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('sort-reading-statistics')), findsNothing);
+
+    await tester.pumpWidget(wrap(ReadingStatisticsPage(summary: summary())));
+    await tester.pump();
+    expect(find.byKey(const Key('sort-reading-statistics')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('sort-reading-statistics')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reading Time Desc'), findsOneWidget);
+    expect(find.text('Name Asc'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('list is rendered in sorted order, not source order', (
+    tester,
+  ) async {
+    final comics = [
+      comic(
+        'a',
+        title: 'Bravo',
+        duration: const Duration(hours: 3),
+        lastReadAt: DateTime(2026, 8, 10),
+      ),
+      comic(
+        'b',
+        title: 'Alpha',
+        duration: const Duration(minutes: 30),
+        lastReadAt: DateTime(2026, 8, 17),
+      ),
+    ];
+    await tester.pumpWidget(
+      wrap(ReadingStatisticsPage(summary: summary(comics: comics))),
+    );
+    await tester.pump();
+
+    // Default sort is last read first, so 'b' must precede 'a' even though the
+    // source list holds the opposite order.
+    final recent = tester
+        .getTopLeft(find.byKey(const ValueKey('reading-comic-1-b')))
+        .dy;
+    final older = tester
+        .getTopLeft(find.byKey(const ValueKey('reading-comic-1-a')))
+        .dy;
+    expect(recent, lessThan(older));
+  });
+
+  group('sortComicReadingStatistics', () {
+    final longAgo = comic(
+      'a',
+      title: 'Bravo',
+      duration: const Duration(hours: 3),
+      lastReadAt: DateTime(2026, 8, 10),
+    );
+    final recent = comic(
+      'b',
+      title: 'Alpha',
+      duration: const Duration(minutes: 30),
+      lastReadAt: DateTime(2026, 8, 17),
+    );
+    final items = [longAgo, recent];
+
+    List<String> idsOf(ReadingStatisticsSortType type) =>
+        sortComicReadingStatistics(items, type).map((e) => e.id).toList();
+
+    test('orders by last read, duration and title', () {
+      expect(idsOf(ReadingStatisticsSortType.lastRead), ['b', 'a']);
+      expect(idsOf(ReadingStatisticsSortType.durationDesc), ['a', 'b']);
+      expect(idsOf(ReadingStatisticsSortType.durationAsc), ['b', 'a']);
+      expect(idsOf(ReadingStatisticsSortType.nameAsc), ['b', 'a']);
+      expect(idsOf(ReadingStatisticsSortType.nameDesc), ['a', 'b']);
+    });
+
+    test('keeps the source list untouched', () {
+      sortComicReadingStatistics(items, ReadingStatisticsSortType.nameAsc);
+      expect(items.map((e) => e.id), ['a', 'b']);
+    });
+
+    test('breaks ties by last read time', () {
+      final tied = [
+        comic(
+          'old',
+          title: 'Same',
+          duration: const Duration(hours: 1),
+          lastReadAt: DateTime(2026, 8, 1),
+        ),
+        comic(
+          'new',
+          title: 'Same',
+          duration: const Duration(hours: 1),
+          lastReadAt: DateTime(2026, 8, 15),
+        ),
+      ];
+      expect(
+        sortComicReadingStatistics(
+          tied,
+          ReadingStatisticsSortType.durationDesc,
+        ).map((e) => e.id),
+        ['new', 'old'],
+      );
+    });
+
+    test('unknown stored value falls back to last read', () {
+      expect(
+        ReadingStatisticsSortType.fromString('nonsense'),
+        ReadingStatisticsSortType.lastRead,
+      );
+      expect(
+        ReadingStatisticsSortType.fromString(null),
+        ReadingStatisticsSortType.lastRead,
+      );
+      expect(
+        ReadingStatisticsSortType.fromString('name_desc'),
+        ReadingStatisticsSortType.nameDesc,
+      );
+    });
   });
 }
