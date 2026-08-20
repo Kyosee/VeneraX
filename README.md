@@ -45,9 +45,14 @@ VeneraX 是一个 Fork 自 Venera 并在原版基础上进行维护与增强，�
 
 各功能的配置步骤与操作方式详见 **[使用说明](doc/guide.zh.md)**。应用内亦可查阅：设置 → 关于 → 使用说明。
 
-## 快速开始
+## 构建
 
-### 原生应用
+<details>
+<summary><b>本地构建</b></summary>
+
+1. 安装 [Flutter](https://flutter.dev/docs/get-started/install)
+2. 克隆仓库，执行 `flutter pub get`
+3. 按平台构建：
 
 ```bash
 flutter build apk        # Android
@@ -56,10 +61,68 @@ flutter build linux      # Linux
 flutter build macos      # macOS
 ```
 
-## 从源码构建
+Android 需要先准备签名密钥，见下一节的「Android 签名」。
 
-1. 克隆仓库
-2. 安装 [Flutter](https://flutter.dev/docs/get-started/install)
+</details>
+
+<details>
+<summary><b>在自己的 GitHub 上构建</b></summary>
+
+fork 本仓库后可以直接用 GitHub Actions 出安装包，不必配置本地环境。
+
+**1. 启用 Actions**
+
+fork 出来的仓库默认停用工作流，进 Actions 页点一下按钮启用。
+
+**2. 构建单个平台**
+
+Actions → **Build ALL** → Run workflow → 在 platform 里选 `windows` / `linux` / `macos` / `ios` / `android`，跑完在这次 run 的 Artifacts 里下载。
+
+Windows、Linux、macOS、iOS 不需要任何配置就能构建，但产物没有签名：
+
+- iOS 是未签名 ipa，需要自行签名后侧载。
+- macOS 是未签名、未公证的 dmg，首次打开要右键 → 打开。
+
+**3. Android 签名**
+
+Android 必须自己准备签名密钥，否则构建会直接失败。生成密钥：
+
+```bash
+keytool -genkey -v -keystore venera.jks -keyalg RSA -keysize 2048 -validity 10000 -alias venera
+base64 -w0 venera.jks    # macOS 用 base64 -i venera.jks
+```
+
+在仓库 Settings → Secrets and variables → Actions 添加 4 个 secret：
+
+| 名称 | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 上一步 base64 的输出 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_ALIAS` | 别名，上例为 `venera` |
+| `ANDROID_KEY_PASSWORD` | key 密码 |
+
+本地构建则把同样的信息写进 `android/key.properties`（该文件不会被提交）：
+
+```properties
+storeFile=/绝对路径/venera.jks
+storePassword=你的 keystore 密码
+keyAlias=venera
+keyPassword=你的 key 密码
+```
+
+**注意：** 自己签名的 APK 与本仓库发布版签名不同，无法覆盖安装，需要先卸载。卸载会清除应用数据，请先在应用内导出备份。
+
+**4. 打 tag 自动发布（可选）**
+
+推送 `v*` tag 会触发全平台构建并创建 Release，fork 后需要先处理三处：
+
+- `release-notes/<tag>.en.md` 和 `release-notes/<tag>.zh-CN.md` 必须存在且非空。
+- tag 必须等于 `v` 加 `pubspec.yaml` 里的版本号（不含 `+` 之后的部分）。
+- Android 构建里的 `Verify Android signature continuity` 会比对上一个 Release 的 APK 签名。fork 仓库没有历史 Release，这一步必然失败，而 Release 依赖全部平台构建成功，一个失败就不会产出任何文件——首次发布前请删掉这一步。
+
+另外，两个 `Update_AltStore_*` 任务会把 AltStore 清单自动提交回 master，不需要可以删除；私有仓库可能拿不到 `ubuntu-22.04-arm` runner 而一直排队，可删除 `Build_Linux_ARM64`。
+
+</details>
 
 ## 迁移提示
 
