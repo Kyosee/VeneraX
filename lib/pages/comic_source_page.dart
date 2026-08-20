@@ -640,11 +640,6 @@ class _BodyState extends State<_Body> {
                   label: Text("Use a config file".tl),
                   onPressed: _selectFile,
                 ),
-                FilledButton.tonalIcon(
-                  icon: const Icon(Icons.help_outline),
-                  label: Text("Help".tl),
-                  onPressed: help,
-                ),
                 _CheckUpdatesButton(),
               ],
             ),
@@ -666,12 +661,6 @@ class _BodyState extends State<_Body> {
       App.rootContext.showMessage(message: e.toString());
       Log.error("Add comic source", "$e\n$s");
     }
-  }
-
-  void help() {
-    launchUrlString(
-      "https://github.com/Kyosee/VeneraX/blob/master/doc/comic_source.md",
-    );
   }
 
   Future<void> handleAddSource(String url, [String? originLibraryId]) async {
