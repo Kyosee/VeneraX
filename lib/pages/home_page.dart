@@ -1267,7 +1267,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
             GuidePage.openDocument(
               context,
               assetPath: 'doc/import_comic.md',
-              title: "Import Comic".tl,
+              title: "Import Comics".tl,
             );
           },
         ).fixWidth(90).paddingRight(8),
