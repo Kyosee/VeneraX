@@ -56,7 +56,17 @@ const List<(String, List<String>)> kDisclaimerSections = [
     ],
   ),
   (
-    "7. Miscellaneous",
+    "7. Derivative Work and Redistribution",
+    [
+      "This project is a modified version of Venera, independently developed and published by this project's maintainers; the upstream project and its maintainers bear no responsibility for this project's code, builds, or conduct. The allocation of responsibility in this section runs both ways and applies equally to any version derived from this project.",
+      "Any version modified, built, or distributed from this project's source code (including forks, private builds, and self-signed installers) is the sole responsibility of whoever publishes that version. This project's maintainers do not review, endorse, or support such versions, and bear no responsibility for their code, builds, conduct, or any consequences thereof.",
+      "A modified version should be published under a distinguishable name and state prominently that it is a modified version of this project; it must not claim authorization or endorsement from this project, or any affiliation with it.",
+      "Only the builds provided on this repository's Release page are published by this project. Installers obtained through other channels, and any build that ships preset extension scripts, extension repository addresses, or content-source lists, are unrelated to this project; their integrity, security, and compliance are the responsibility of whoever provides them.",
+      "Whoever publishes a modified version shall fulfill the obligations in the LICENSE themselves and comply with the laws and regulations of their own jurisdiction, bearing the resulting responsibility.",
+    ],
+  ),
+  (
+    "8. Miscellaneous",
     [
       "Do not promote or advertise this project on any public or official platforms or official account areas (including but not limited to Weibo, WeChat Official Accounts, X, etc.).",
       "This software is licensed and distributed under the license set out in the LICENSE file at the root of the repository; this disclaimer does not modify or limit the rights granted by that license, and the license prevails in case of conflict.",
