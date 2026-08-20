@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Venera supports importing comics from local files.
+VeneraX supports importing comics from local files.
 However, the comic files must be in a specific format.
 
 ## Restore Local Downloads
@@ -63,9 +63,9 @@ The name of directory will be used as comic title. And the name of chapter direc
 
 ## Archive
 
-Venera supports importing comics from archive files.
+VeneraX supports importing comics from archive files.
 
-Currently, Venera supports the following archive formats:
+Currently, VeneraX supports the following archive formats:
 - `.cbz`
 - `.cb7`
 - `.zip`

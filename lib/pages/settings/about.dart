@@ -278,16 +278,6 @@ List<String> _parseChangelogLines(String markdown) {
   return lines;
 }
 
-Future<bool> checkUpdate() async {
-  try {
-    var value = await _checkUpdateDetails();
-    return value.hasUpdate;
-  } catch (e, s) {
-    Log.error("Check Update", e.toString(), s);
-    return false;
-  }
-}
-
 Future<void> checkUpdateUi([
   bool showMessageIfNoUpdate = true,
   bool delay = false,

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/background_keepalive.dart';
@@ -25,6 +24,7 @@ import 'package:venera/pages/webdav_library_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
+import 'package:venera/pages/guide_page.dart';
 import 'package:venera/pages/history_page.dart';
 import 'package:venera/pages/read_later_page.dart';
 import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
@@ -1264,8 +1264,10 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
             ],
           ),
           onPressed: () {
-            launchUrlString(
-              "https://github.com/Kyosee/VeneraX/blob/master/doc/import_comic.md",
+            GuidePage.openDocument(
+              context,
+              assetPath: 'doc/import_comic.md',
+              title: "Import Comic".tl,
             );
           },
         ).fixWidth(90).paddingRight(8),

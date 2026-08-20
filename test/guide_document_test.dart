@@ -85,6 +85,63 @@ void main() {
       expect(blocks.every((b) => b.type == GuideBlockType.paragraph), isTrue);
       expect(blocks.length, 2);
     });
+
+    test('keeps a fenced block verbatim, including leading spaces', () {
+      var blocks = parseGuideMarkdown('before\n```\nroot\n  child\n```\nafter');
+      expect(blocks.map((b) => b.type), [
+        GuideBlockType.paragraph,
+        GuideBlockType.codeBlock,
+        GuideBlockType.paragraph,
+      ]);
+      // Indent survives: outside a fence these two spaces would be nesting.
+      expect(blocks[1].text, 'root\n  child');
+    });
+
+    test('reads no markup inside a fence', () {
+      var blocks = parseGuideMarkdown('```\n- **a** `b` | c |\n```');
+      expect(blocks.single.type, GuideBlockType.codeBlock);
+      expect(blocks.single.text, '- **a** `b` | c |');
+    });
+
+    test('closes a fence left open at the end of the file', () {
+      var blocks = parseGuideMarkdown('```\nkept\n');
+      expect(blocks.single.type, GuideBlockType.codeBlock);
+      expect(blocks.single.text, 'kept');
+    });
+
+    test('drops a fence holding nothing but blank lines', () {
+      var blocks = parseGuideMarkdown('a\n```\n\n```\nb');
+      expect(blocks.map((b) => b.type), [
+        GuideBlockType.paragraph,
+        GuideBlockType.paragraph,
+      ]);
+    });
+  });
+
+  group('shipped import doc', () {
+    // Bundled as an asset, so a parse failure here is a blank in-app help page.
+    final blocks = parseGuideMarkdown(
+      File('doc/import_comic.md').readAsStringSync(),
+    );
+
+    test('parses into headings and body text', () {
+      expect(blocks.first.type, GuideBlockType.heading1);
+      expect(blocks.any((b) => b.type == GuideBlockType.bullet), isTrue);
+      for (final block in blocks) {
+        expect(block.text, isNot(contains('```')));
+        expect(block.text, isNot(contains('**')));
+      }
+    });
+
+    test('keeps its directory trees as code blocks', () {
+      var code = blocks
+          .where((b) => b.type == GuideBlockType.codeBlock)
+          .toList();
+      expect(code, hasLength(2));
+      // The tree only reads correctly if its own spacing survived parsing.
+      expect(code.last.text, contains('│   ├── '));
+      expect(code.every((b) => b.text.contains('\n')), isTrue);
+    });
   });
 
   group('shipped guides', () {

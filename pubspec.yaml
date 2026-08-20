@@ -146,6 +146,8 @@ flutter:
     # User guide, authored once and read both here and on the repo page.
     - doc/guide.zh.md
     - doc/guide.en.md
+    # Bundled so the import help works offline and outlives the repo page.
+    - doc/import_comic.md
   shaders:
     - shaders/image_enhance.frag
 # fonts:

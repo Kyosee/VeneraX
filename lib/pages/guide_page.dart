@@ -17,13 +17,29 @@ export 'package:venera/foundation/guide_document.dart' show GuideAnchor;
 /// [anchor] scrolls to a section on open, so a feature's own screen can link
 /// straight into its part of the guide.
 class GuidePage extends StatefulWidget {
-  const GuidePage({super.key, this.anchor});
+  const GuidePage({super.key, this.anchor, this.assetPath, this.title});
 
   final GuideAnchor? anchor;
+
+  /// Markdown asset to read instead of the localized user guide.
+  final String? assetPath;
+
+  /// Appbar title; defaults to the guide's own.
+  final String? title;
 
   /// Opens the guide, optionally at one section.
   static void open(BuildContext context, {GuideAnchor? anchor}) {
     context.to(() => GuidePage(anchor: anchor));
+  }
+
+  /// Opens another markdown doc shipped under `doc/`. Bundling them keeps the
+  /// in-app help readable offline and independent of the repository staying up.
+  static void openDocument(
+    BuildContext context, {
+    required String assetPath,
+    required String title,
+  }) {
+    context.to(() => GuidePage(assetPath: assetPath, title: title));
   }
 
   @override
@@ -60,8 +76,10 @@ class _GuidePageState extends State<GuidePage> {
   }
 
   /// Chinese locales read the Chinese guide; everything else falls back to
-  /// English.
-  static String _assetPath() {
+  /// English. An explicit [GuidePage.assetPath] overrides both.
+  String _assetPath() {
+    var override = widget.assetPath;
+    if (override != null) return override;
     return App.locale.languageCode == 'zh'
         ? 'doc/guide.zh.md'
         : 'doc/guide.en.md';
@@ -122,7 +140,7 @@ class _GuidePageState extends State<GuidePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: Appbar(title: Text("Guide".tl)),
+      appBar: Appbar(title: Text(widget.title ?? "Guide".tl)),
       body: _buildBody(),
     );
   }
@@ -169,7 +187,29 @@ class _GuidePageState extends State<GuidePage> {
       GuideBlockType.bullet => _buildListItem(block, "•"),
       GuideBlockType.numbered => _buildListItem(block, "${block.number}."),
       GuideBlockType.tableRow => _buildTableRow(block),
+      GuideBlockType.codeBlock => _buildCodeBlock(block),
     };
+  }
+
+  /// Fenced blocks keep their own whitespace, so they render monospaced and
+  /// scroll sideways rather than wrapping — a wrapped directory tree is
+  /// unreadable.
+  Widget _buildCodeBlock(GuideBlock block) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerHighest.toOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Text(
+          block.text,
+          style: ts.s12.copyWith(fontFamily: 'monospace', height: 1.45),
+        ),
+      ),
+    );
   }
 
   /// A table row renders as term over description: the guides use tables only

@@ -45,6 +45,10 @@ enum GuideBlockType {
   /// A `key | value` row. The guides use tables only as two-column term/effect
   /// lists, so they render as definition rows rather than a real grid.
   tableRow,
+
+  /// A fenced block, kept verbatim: leading spaces carry meaning (directory
+  /// trees) and inline markers inside it are content, not markup.
+  codeBlock,
 }
 
 enum GuideSpanStyle { plain, bold, code, link }
@@ -110,8 +114,8 @@ final _inlinePattern = RegExp(r'\*\*(.+?)\*\*|`(.+?)`|\[([^\]]+)\]\(#[^)]*\)');
 final _tableDividerPattern = RegExp(r'^\|[\s|:-]+\|$');
 
 /// Parses the guide's markdown subset: ATX headings with an optional
-/// `{#anchor}`, `-` bullets (nested by two-space indent), `1.` numbered items
-/// and paragraphs, with `**bold**` and `` `code` `` inline.
+/// `{#anchor}`, `-` bullets (nested by two-space indent), `1.` numbered items,
+/// fenced code blocks and paragraphs, with `**bold**` and `` `code` `` inline.
 List<GuideBlock> parseGuideMarkdown(String markdown) {
   var blocks = <GuideBlock>[];
   // Set by an anchor comment and consumed by the next block, so the marker sits
@@ -123,7 +127,49 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
     pendingAnchor = null;
   }
 
+  // Lines collected inside an open fence; null while outside one.
+  List<String>? fenced;
+
+  // Emits the collected fence body, dropping blank lines at either end so the
+  // rendered block has no empty first/last row. An entirely blank fence yields
+  // no block at all.
+  void flushFence() {
+    var lines = fenced!;
+    fenced = null;
+    while (lines.isNotEmpty && lines.first.trim().isEmpty) {
+      lines.removeAt(0);
+    }
+    while (lines.isNotEmpty && lines.last.trim().isEmpty) {
+      lines.removeLast();
+    }
+    if (lines.isEmpty) return;
+    add(
+      GuideBlock(
+        type: GuideBlockType.codeBlock,
+        spans: [GuideSpan(lines.join('\n'), GuideSpanStyle.plain)],
+      ),
+    );
+  }
+
   for (var raw in markdown.replaceAll('\r\n', '\n').split('\n')) {
+    // Fences are handled before indent stripping below: inside one, leading
+    // spaces are content (directory trees) rather than list nesting.
+    if (raw.trimLeft().startsWith('```')) {
+      if (fenced == null) {
+        fenced = [];
+      } else {
+        flushFence();
+      }
+      continue;
+    }
+    // A local copy promotes to non-null; `fenced` itself cannot, because
+    // [flushFence] captures and reassigns it.
+    var open = fenced;
+    if (open != null) {
+      open.add(raw);
+      continue;
+    }
+
     var indent = 0;
     var line = raw;
     // Two spaces per nesting level; a tab counts as one level.
@@ -221,6 +267,8 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
       ),
     );
   }
+  // A fence left open at the end of the file still reaches the reader.
+  if (fenced != null) flushFence();
   return blocks;
 }
 
