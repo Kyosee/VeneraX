@@ -113,7 +113,20 @@ keyPassword=your key password
 
 **Note:** an APK you sign yourself has a different certificate from the released build, so it cannot be installed over it — you must uninstall first. Uninstalling erases app data, so export a backup from inside the app beforehand.
 
-**4. Tag-triggered releases (optional)**
+**4. Repoint the update check**
+
+If you intend to distribute your builds, you must first edit the two constants at the top of [`lib/pages/settings/about.dart`](lib/pages/settings/about.dart):
+
+```dart
+const kUpdateRepoOwner = 'Kyosee';
+const kUpdateRepoName = 'VeneraX';
+```
+
+Change them to your own username and repository name. The update check, update-package download, changelog fetch, and the repository link on the About page all resolve through these.
+
+Leaving them unchanged has two consequences: on startup ("Check for updates on startup" is on by default) the app queries this repository's latest release, so your own releases are never detected; and on Windows, clicking "Update Now" installs this repository's build over yours, replacing your version with ours.
+
+**5. Tag-triggered releases (optional)**
 
 Pushing a `v*` tag builds every platform and creates a Release. Three things need attention in a fork:
 

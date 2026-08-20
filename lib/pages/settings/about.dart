@@ -1,5 +1,13 @@
 ﻿part of 'settings_page.dart';
 
+/// GitHub repository this build belongs to. Single edit point for a fork: the
+/// update check, the update package download, the changelog fetch and the
+/// repository link all resolve through these. Left pointing upstream, a fork
+/// would compare against upstream releases and offer the upstream build as its
+/// own update.
+const kUpdateRepoOwner = 'Kyosee';
+const kUpdateRepoName = 'VeneraX';
+
 class AboutSettings extends StatefulWidget {
   const AboutSettings({super.key});
 
@@ -9,9 +17,6 @@ class AboutSettings extends StatefulWidget {
 
 class _AboutSettingsState extends State<AboutSettings> {
   bool isCheckingUpdate = false;
-
-  static const _repoOwner = 'Kyosee';
-  static const _repoName = 'VeneraX';
 
   @override
   Widget build(BuildContext context) {
@@ -71,10 +76,10 @@ class _AboutSettingsState extends State<AboutSettings> {
         ).toSliver(),
         ListTile(
           title: Text("Repository".tl),
-          subtitle: const Text("$_repoOwner/$_repoName"),
+          subtitle: const Text("$kUpdateRepoOwner/$kUpdateRepoName"),
           trailing: const Icon(Icons.open_in_new),
           onTap: () {
-            launchUrlString("https://github.com/$_repoOwner/$_repoName");
+            launchUrlString("https://github.com/$kUpdateRepoOwner/$kUpdateRepoName");
           },
         ).toSliver(),
         ListTile(
@@ -144,8 +149,8 @@ class _UpdateCheckResult {
 
 _GithubUpdateConfig _readGithubUpdateConfig() {
   return const _GithubUpdateConfig(
-    owner: 'Kyosee',
-    repo: 'VeneraX',
+    owner: kUpdateRepoOwner,
+    repo: kUpdateRepoName,
   );
 }
 
