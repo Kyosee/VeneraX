@@ -303,14 +303,22 @@ class _HomePageState extends State<HomePage> {
         slivers: slivers,
       ),
     );
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.width > changePoint ? 16 : 0,
+    return PopScope(
+      canPop: !editMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && editMode) {
+          _exitEditMode();
+        }
+      },
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.width > changePoint ? 16 : 0,
+        ),
+        // The main pane already supplies the correct width beside the sidebar.
+        // Keep the feed fluid so wide desktop windows do not leave a centered
+        // column and a large unused area on the right.
+        child: SizedBox(width: double.infinity, child: widget),
       ),
-      // The main pane already supplies the correct width beside the sidebar.
-      // Keep the feed fluid so wide desktop windows do not leave a centered
-      // column and a large unused area on the right.
-      child: SizedBox(width: double.infinity, child: widget),
     );
   }
 }
