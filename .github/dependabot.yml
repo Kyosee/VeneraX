@@ -31,6 +31,10 @@ updates:
       - dependency-name: "flutter_rust_bridge"
         versions:
           - ">=2.12.0"
+      # Version 0.5.x adds a second Cargokit plugin that races rhttp's rustup setup.
+      - dependency-name: "syntax_highlight"
+        versions:
+          - ">=0.5.0"
       # Keep the Xcode 16.4 compatibility pin documented in pubspec.yaml.
       - dependency-name: "connectivity_plus"
         update-types:
