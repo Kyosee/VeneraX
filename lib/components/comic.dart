@@ -55,9 +55,6 @@ ImageProvider? findImageProvider(Comic comic) {
       cid: comic.id,
     );
   }
-  if (comic.cover.isEmpty) {
-    return null;
-  }
   if (comic is LocalComic) {
     // A queued download task merged into the grid has no directory on disk yet,
     // so its `cover` holds the remote url carried over from the list that
@@ -80,11 +77,18 @@ ImageProvider? findImageProvider(Comic comic) {
     }
     image = LocalComicImageProvider(localComic);
   } else {
+    // Only this branch cannot recover from an empty cover: the downloader has
+    // no url to fetch. Every branch above self-heals (local dir scan, history
+    // re-fetch), so the check must not be hoisted out of here.
+    final fallbackToLocalCover = comic is FavoriteItem;
+    if (comic.cover.isEmpty && !fallbackToLocalCover) {
+      return null;
+    }
     image = CachedImageProvider(
       comic.cover,
       sourceKey: comic.sourceKey,
       cid: comic.id,
-      fallbackToLocalCover: comic is FavoriteItem,
+      fallbackToLocalCover: fallbackToLocalCover,
     );
   }
   return image;

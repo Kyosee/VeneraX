@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/foundation/image_provider/history_image_provider.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
 import 'package:venera/foundation/local.dart';
 
@@ -17,6 +19,9 @@ import 'package:venera/foundation/local.dart';
 /// The empty-directory guard from issue #53 must stay intact: a placeholder
 /// without any cover url still has to be refused rather than scanned for out of
 /// the downloads root.
+///
+/// These only assert which provider is chosen. Never drive `load()` here: real
+/// async dart:io in a provider hangs the test isolate.
 void main() {
   LocalComic comic({required String directory, required String cover}) =>
       LocalComic(
@@ -54,6 +59,37 @@ void main() {
     final provider = findImageProvider(
       comic(directory: 'T', cover: 'cover.jpg'),
     );
+    expect(provider, isA<LocalComicImageProvider>());
+  });
+
+  // An empty cover is not the same as "no cover to show". These two branches
+  // recover on their own — a blanket empty-cover early return in
+  // findImageProvider silently disabled both.
+  test('history with no recorded cover still reaches its provider', () {
+    final provider = findImageProvider(
+      History.fromMap({
+        'type': 1,
+        'time': 0,
+        'title': 'Comic',
+        'subtitle': '',
+        'cover': '',
+        'ep': 1,
+        'page': 1,
+        'id': 'comic',
+        'readEpisode': '',
+        'max_page': null,
+        'chapter_group': null,
+      }),
+    );
+    // HistoryImageProvider re-fetches the cover from the source (and delegates
+    // to the local provider's directory scan for local comics, issue #38).
+    expect(provider, isA<HistoryImageProvider>());
+  });
+
+  test('local comic with no cover file name still scans its directory', () {
+    // Imported comics keep a real directory but an unknown cover file name;
+    // LocalComicImageProvider scans that directory for the first image.
+    final provider = findImageProvider(comic(directory: 'T', cover: ''));
     expect(provider, isA<LocalComicImageProvider>());
   });
 }
