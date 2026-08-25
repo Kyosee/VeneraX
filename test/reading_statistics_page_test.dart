@@ -55,13 +55,14 @@ void main() {
   ComicReadingStatistics comic(
     String id, {
     required String title,
+    String subtitle = '',
     required Duration duration,
     required DateTime lastReadAt,
   }) => ComicReadingStatistics(
     id: id,
     type: ComicType(1),
     title: title,
-    subtitle: '',
+    subtitle: subtitle,
     cover: '',
     duration: duration,
     lastReadAt: lastReadAt,
@@ -218,6 +219,45 @@ void main() {
         .getTopLeft(find.byKey(const ValueKey('reading-comic-1-a')))
         .dy;
     expect(recent, lessThan(older));
+  });
+
+  testWidgets('hides comics whose author matches a blocked word', (
+    tester,
+  ) async {
+    final previous = appdata.settings['blockedWords'];
+    appdata.settings['blockedWords'] = ['Blocked Author'];
+    addTearDown(() {
+      appdata.settings['blockedWords'] = previous;
+    });
+    final comics = [
+      comic(
+        'blocked',
+        title: 'Blocked Comic',
+        subtitle: 'Blocked Author',
+        duration: const Duration(minutes: 30),
+        lastReadAt: DateTime(2026, 8, 17),
+      ),
+      comic(
+        'visible',
+        title: 'Visible Comic',
+        subtitle: 'Visible Author',
+        duration: const Duration(minutes: 20),
+        lastReadAt: DateTime(2026, 8, 16),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      wrap(ReadingStatisticsPage(summary: summary(comics: comics))),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('reading-comic-1-blocked')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('reading-comic-1-visible')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('reading-statistics-summary')), findsOneWidget);
+    expect(find.byKey(const Key('reading-statistics-trend')), findsOneWidget);
   });
 
   testWidgets('loads the sort preference from synced settings', (tester) async {

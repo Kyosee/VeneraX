@@ -13,6 +13,18 @@ import 'package:venera/utils/translations.dart';
 
 const _sortKey = 'reading_statistics_sort';
 
+Comic _readingStatisticsComic(ComicReadingStatistics comic) => Comic(
+  comic.title,
+  comic.cover,
+  comic.id,
+  comic.subtitle,
+  null,
+  '',
+  comic.type.sourceKey,
+  null,
+  null,
+);
+
 class ReadingStatisticsPage extends StatefulWidget {
   const ReadingStatisticsPage({super.key, this.summary, this.onClear});
 
@@ -54,7 +66,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
 
   Widget _buildPage(BuildContext context, ReadingStatisticsSummary data) {
     final hasData = data.total > Duration.zero;
-    final comics = sortComicReadingStatistics(data.recentComics, sortType);
+    final comics = sortComicReadingStatistics(
+      data.recentComics
+          .where((comic) => isBlocked(_readingStatisticsComic(comic)) == null)
+          .toList(),
+      sortType,
+    );
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -491,17 +508,7 @@ class _RecentComicTile extends StatelessWidget {
 
   final ComicReadingStatistics comic;
 
-  Comic get _displayComic => Comic(
-    comic.title,
-    comic.cover,
-    comic.id,
-    comic.subtitle,
-    null,
-    '',
-    comic.type.sourceKey,
-    null,
-    null,
-  );
+  Comic get _displayComic => _readingStatisticsComic(comic);
 
   @override
   Widget build(BuildContext context) {
