@@ -83,7 +83,7 @@ jobs:
             echo "$off  ->  $SYM"
           done
       - name: Upload dSYM for future crash reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-dsym-${{ github.event.inputs.ref }}
           path: ${{ env.DSYM }}
