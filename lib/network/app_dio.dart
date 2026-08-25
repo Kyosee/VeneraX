@@ -11,7 +11,7 @@ import 'cookie_jar.dart';
 
 export 'package:dio/dio.dart';
 
-class MyLogInterceptor implements Interceptor {
+class MyLogInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     Log.error(

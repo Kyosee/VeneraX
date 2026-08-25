@@ -24,7 +24,9 @@ class NetworkCache {
   });
 }
 
-class NetworkCacheManager implements Interceptor {
+// Must extend, not implement: Dio's pipeline invokes library-private
+// _invoke{Request,Response,Error} on the interceptor instance.
+class NetworkCacheManager extends Interceptor {
   NetworkCacheManager._();
 
   static final NetworkCacheManager instance = NetworkCacheManager._();
