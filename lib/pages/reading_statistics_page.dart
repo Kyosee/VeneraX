@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -28,9 +29,13 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
 
   @override
   void initState() {
-    sortType = ReadingStatisticsSortType.fromString(
-      appdata.implicitData[_sortKey]?.toString(),
-    );
+    final syncedValue = appdata.settings[_sortKey];
+    final storedValue = syncedValue ?? appdata.implicitData[_sortKey];
+    sortType = ReadingStatisticsSortType.fromString(storedValue?.toString());
+    if (syncedValue == null && storedValue != null) {
+      appdata.settings[_sortKey] = sortType.value;
+      unawaited(appdata.saveData());
+    }
     super.initState();
   }
 
@@ -202,8 +207,8 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     setState(() {
       sortType = value;
     });
-    appdata.implicitData[_sortKey] = value.value;
-    appdata.writeImplicitData();
+    appdata.settings[_sortKey] = value.value;
+    unawaited(appdata.saveData());
   }
 
   void _confirmClear(BuildContext context) {

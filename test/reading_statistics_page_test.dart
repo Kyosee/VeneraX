@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/pages/reading_statistics_page.dart';
@@ -217,6 +218,45 @@ void main() {
         .getTopLeft(find.byKey(const ValueKey('reading-comic-1-a')))
         .dy;
     expect(recent, lessThan(older));
+  });
+
+  testWidgets('loads the sort preference from synced settings', (tester) async {
+    final previous = appdata.settings['reading_statistics_sort'];
+    appdata.settings['reading_statistics_sort'] = 'name_asc';
+    addTearDown(() {
+      appdata.settings['reading_statistics_sort'] = previous;
+    });
+    final comics = [
+      comic(
+        'a',
+        title: 'Bravo',
+        duration: const Duration(hours: 3),
+        lastReadAt: DateTime(2026, 8, 10),
+      ),
+      comic(
+        'b',
+        title: 'Alpha',
+        duration: const Duration(minutes: 30),
+        lastReadAt: DateTime(2026, 8, 17),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      wrap(ReadingStatisticsPage(summary: summary(comics: comics))),
+    );
+    await tester.pump();
+
+    final alpha = tester
+        .getTopLeft(find.byKey(const ValueKey('reading-comic-1-b')))
+        .dy;
+    final bravo = tester
+        .getTopLeft(find.byKey(const ValueKey('reading-comic-1-a')))
+        .dy;
+    expect(alpha, lessThan(bravo));
+    expect(
+      (appdata.toJson()['settings'] as Map)['reading_statistics_sort'],
+      'name_asc',
+    );
   });
 
   group('sortComicReadingStatistics', () {
