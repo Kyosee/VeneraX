@@ -28,7 +28,7 @@ jobs:
   symbolicate:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref }}
       - uses: subosito/flutter-action@v2
