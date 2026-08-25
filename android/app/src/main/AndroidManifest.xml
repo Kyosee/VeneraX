@@ -39,6 +39,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Accept web links without embedding any comic-site domain in the
+                 app. After launch, installed source scripts decide whether a URL
+                 is supported through comic.link.domains and comic.link.linkToId. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
         </activity>
         <!-- Launcher icon presets. One alias enabled at a time; plugin applies
              the switch on onTaskRemoved (takes effect next cold start). Default

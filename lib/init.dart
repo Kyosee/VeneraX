@@ -44,6 +44,9 @@ extension _FutureInit<T> on Future<T> {
 /// Only includes what's needed for theme, locale, and basic app state.
 Future<void> init() async {
   await App.init().wait();
+  if (App.isAndroid) {
+    startAppLinkCapture();
+  }
   await appdata.init().wait();
   await AppTranslation.init().wait();
   if (App.isWindows) {
