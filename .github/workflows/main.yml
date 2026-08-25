@@ -437,7 +437,7 @@ jobs:
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
       - name: Create draft release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
