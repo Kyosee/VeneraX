@@ -260,6 +260,40 @@ void main() {
     expect(find.byKey(const Key('reading-statistics-trend')), findsOneWidget);
   });
 
+  testWidgets('left swipe exposes single-comic delete action', (tester) async {
+    useNarrowViewport(tester);
+    ComicReadingStatistics? deleted;
+    final target = comic(
+      'delete-me',
+      title: 'Delete Me',
+      duration: const Duration(minutes: 30),
+      lastReadAt: DateTime(2026, 8, 17),
+    );
+    await tester.pumpWidget(
+      wrap(
+        ReadingStatisticsPage(
+          summary: summary(comics: [target]),
+          onDelete: (comic) => deleted = comic,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tile = find.byKey(const ValueKey('reading-comic-1-delete-me'));
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    await tester.drag(
+      tile,
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Delete'), findsOneWidget);
+
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(deleted, same(target));
+  });
+
   testWidgets('loads the sort preference from synced settings', (tester) async {
     final previous = appdata.settings['reading_statistics_sort'];
     appdata.settings['reading_statistics_sort'] = 'name_asc';

@@ -329,6 +329,13 @@ class ReadingStatisticsStore {
     );
   }
 
+  void remove(String id, ComicType type) {
+    db.execute('delete from reading_statistics where id = ? and type = ?;', [
+      id,
+      type.value,
+    ]);
+  }
+
   void clear() => db.execute('delete from reading_statistics;');
 }
 

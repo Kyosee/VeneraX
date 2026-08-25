@@ -26,11 +26,17 @@ Comic _readingStatisticsComic(ComicReadingStatistics comic) => Comic(
 );
 
 class ReadingStatisticsPage extends StatefulWidget {
-  const ReadingStatisticsPage({super.key, this.summary, this.onClear});
+  const ReadingStatisticsPage({
+    super.key,
+    this.summary,
+    this.onClear,
+    this.onDelete,
+  });
 
   /// Test seam for rendering the page without opening the history database.
   final ReadingStatisticsSummary? summary;
   final VoidCallback? onClear;
+  final ValueChanged<ComicReadingStatistics>? onDelete;
 
   @override
   State<ReadingStatisticsPage> createState() => _ReadingStatisticsPageState();
@@ -147,7 +153,11 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 itemBuilder: (context, index) {
                   return _PageSection(
                     horizontal: 16,
-                    child: _RecentComicTile(comic: comics[index]),
+                    child: _RecentComicTile(
+                      comic: comics[index],
+                      onDelete:
+                          widget.onDelete ?? _removeReadingStatisticsForComic,
+                    ),
                   );
                 },
               ),
@@ -237,6 +247,10 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       btnColor: context.colorScheme.error,
       onConfirm: widget.onClear ?? HistoryManager().clearReadingStatistics,
     );
+  }
+
+  void _removeReadingStatisticsForComic(ComicReadingStatistics comic) {
+    HistoryManager().removeReadingStatistics(comic.id, comic.type);
   }
 }
 
@@ -504,9 +518,10 @@ class _ReadingBar extends StatelessWidget {
 }
 
 class _RecentComicTile extends StatelessWidget {
-  const _RecentComicTile({required this.comic});
+  const _RecentComicTile({required this.comic, required this.onDelete});
 
   final ComicReadingStatistics comic;
+  final ValueChanged<ComicReadingStatistics> onDelete;
 
   Comic get _displayComic => _readingStatisticsComic(comic);
 
@@ -514,77 +529,92 @@ class _RecentComicTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final displayComic = _displayComic;
     final image = comic.cover.isEmpty ? null : findImageProvider(displayComic);
-    return InkWell(
-      key: ValueKey('reading-comic-${comic.type.value}-${comic.id}'),
-      onTap: () {
-        context.to(
-          () => ComicPage(
-            id: comic.id,
-            sourceKey: comic.type.sourceKey,
-            cover: comic.cover,
-            title: comic.title,
+    return SwipeActionTile(
+      key: ValueKey('reading-statistics-swipe-${comic.type.value}-${comic.id}'),
+      groupTag: 'reading-statistics',
+      endPane: SwipePane(
+        dismissOnFullSwipe: true,
+        onFullSwipe: () => onDelete(comic),
+        actions: [
+          SwipeAction(
+            icon: Icons.delete_outline,
+            label: 'Delete'.tl,
+            onPressed: () => onDelete(comic),
           ),
-        );
-      },
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 78),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: context.colorScheme.outlineVariant),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 60,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: image == null
-                  ? const Icon(Icons.menu_book_outlined)
-                  : AnimatedImage(image: image, fit: BoxFit.cover),
+        ],
+      ),
+      child: InkWell(
+        key: ValueKey('reading-comic-${comic.type.value}-${comic.id}'),
+        onTap: () {
+          context.to(
+            () => ComicPage(
+              id: comic.id,
+              sourceKey: comic.type.sourceKey,
+              cover: comic.cover,
+              title: comic.title,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    comic.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  if (comic.subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 4),
+          );
+        },
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 78),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: context.colorScheme.outlineVariant),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 60,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: context.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: image == null
+                    ? const Icon(Icons.menu_book_outlined)
+                    : AnimatedImage(image: image, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      comic.subtitle,
+                      comic.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
+                    if (comic.subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        comic.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 84,
-              child: Text(
-                formatReadingDuration(comic.duration),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: context.colorScheme.primary,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 84,
+                child: Text(
+                  formatReadingDuration(comic.duration),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: context.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

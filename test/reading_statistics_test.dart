@@ -91,6 +91,28 @@ void main() {
       expect(db.select('select count(*) from reading_statistics;').first[0], 0);
       expect(db.select('select id from history;').first['id'], 'keep');
     });
+
+    test('remove deletes every day for only the matching comic and type', () {
+      final now = DateTime(2026, 8, 17, 10);
+      record('target', now, const Duration(minutes: 2));
+      record(
+        'target',
+        now.subtract(const Duration(days: 1)),
+        const Duration(minutes: 3),
+      );
+      record('target', now, const Duration(minutes: 4), type: ComicType(2));
+      record('keep', now, const Duration(minutes: 5));
+
+      store.remove('target', ComicType(1));
+
+      final summary = store.readSummary(now: now);
+      expect(summary.total, const Duration(minutes: 9));
+      expect(summary.recentComics, hasLength(2));
+      expect(
+        summary.recentComics.map((comic) => (comic.id, comic.type.value)),
+        containsAll([('target', 2), ('keep', 1)]),
+      );
+    });
   });
 
   group('ReadingTimeTracker', () {

@@ -351,6 +351,17 @@ class HistoryManager with ChangeNotifier {
     }
   }
 
+  void removeReadingStatistics(String id, ComicType type) {
+    if (!isInitialized || _isCorrupted) return;
+    try {
+      _readingStatistics.remove(id, type);
+      // DataSync listens to this manager, so WebDAV receives the deletion too.
+      notifyListeners();
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+    }
+  }
+
   /// Replaces this store's content with the database file at [sourcePath] by
   /// closing the connection, swapping the file, and reopening — see
   /// [restoreDatabaseFiles]. The dispose→replace→reopen sequence runs with no
