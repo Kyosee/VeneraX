@@ -20,6 +20,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Version 0.6.0+eol is an empty marker for sqlite3 3.x migrations.
+      - dependency-name: "sqlite3_flutter_libs"
+        versions:
+          - ">=0.6.0"
       # Keep the Xcode 16.4 compatibility pin documented in pubspec.yaml.
       - dependency-name: "connectivity_plus"
         update-types:
