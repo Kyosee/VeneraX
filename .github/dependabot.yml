@@ -24,6 +24,13 @@ updates:
       - dependency-name: "sqlite3_flutter_libs"
         versions:
           - ">=0.6.0"
+      # Keep the native HTTP stack on its tested bridge and Rust toolchain pair.
+      - dependency-name: "rhttp"
+        versions:
+          - ">=0.16.0"
+      - dependency-name: "flutter_rust_bridge"
+        versions:
+          - ">=2.12.0"
       # Keep the Xcode 16.4 compatibility pin documented in pubspec.yaml.
       - dependency-name: "connectivity_plus"
         update-types:
