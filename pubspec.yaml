@@ -11,9 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  path_provider: any
+  path_provider: 2.1.6
   intl: any
-  window_manager: ^0.5.1
+  window_manager: ^0.5.2
   sqlite3: ^2.7.4
   sqlite3_flutter_libs: ^0.5.30
   flutter_qjs:
@@ -21,7 +21,7 @@ dependencies:
       url: https://github.com/venera-app/flutter_qjs
       ref: 8feae95df7fb00455df129ad7a0dfec1d0e8d8e4
   crypto: ^3.0.6
-  dio: ^5.9.2
+  dio: ^5.11.0
   html: ^0.15.6
   xml: ^6.6.1
   pointycastle: ^4.0.0
@@ -38,8 +38,8 @@ dependencies:
       url: https://github.com/venera-app/flutter.widgets
       ref: 09e756b1f1b04e6298318d99ec20a787fb360f59
       path: packages/scrollable_positioned_list
-  flutter_reorderable_grid_view: ^5.4.0
-  uuid: ^4.5.1
+  flutter_reorderable_grid_view: ^5.7.0
+  uuid: ^4.6.0
   desktop_webview_window:
     git:
       url: https://github.com/venera-app/flutter_desktop_webview
@@ -50,28 +50,28 @@ dependencies:
       url: https://github.com/venera-app/flutter_inappwebview
       path: flutter_inappwebview
       ref: 3ef899b3db57c911b080979f1392253b835f98ab
-  app_links: ^7.0.0
+  app_links: ^7.2.1
   sliver_tools: ^0.2.12
-  flutter_file_dialog: ^3.0.3
+  flutter_file_dialog: ^3.3.2
   file_selector: ^1.1.0
   zip_flutter: ^0.0.13
   lodepng_flutter:
     git:
       url: https://github.com/venera-app/lodepng_flutter
       ref: ac7d05dde32e8d728102a9ff66e6b55f05d94ba1
-  flutter_rust_bridge: 2.11.1
-  rhttp: ^0.15.1
+  flutter_rust_bridge: 2.13.0
+  rhttp: ^0.18.0
   webdav_client:
     git:
       url: https://github.com/venera-app/webdav_client
       ref: 2f669c98fb81cff1c64fee93466a1475c77e4273
-  battery_plus: ^7.0.0
+  battery_plus: ^7.1.1
   # Pinned to 7.0.0: 7.1.x references NWPath.isUltraConstrained, an iOS/macOS 26
   # SDK symbol guarded only at runtime, so it fails to compile on the Xcode 16.4
   # toolchain our CI uses. Stay below 7.1.0 until the build toolchain ships the
   # iOS 26 SDK.
   connectivity_plus: 7.0.0
-  local_auth: ^3.0.1
+  local_auth: ^3.0.2
   flutter_saf:
     git: 
       url: https://github.com/venera-app/flutter_saf
@@ -79,7 +79,7 @@ dependencies:
   dynamic_color: ^1.8.1
   shimmer_animation: ^2.1.0
   flutter_memory_info: ^0.0.3
-  syntax_highlight: ^0.4.0
+  syntax_highlight: ^0.5.0
   flutter_7zip:
     git:
       url: https://github.com/venera-app/flutter_7zip
