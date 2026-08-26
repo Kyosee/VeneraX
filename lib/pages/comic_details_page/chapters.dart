@@ -266,9 +266,25 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
   @override
   set history(History? value) => _history = value;
 
+  /// Original flat indices actually rendered, in list order. Hiding duplicates
+  /// only removes entries here — the indices themselves keep their original
+  /// values, because [_ComicPageActions.read] and the download picker address
+  /// chapters by flat index.
+  late List<int> visible;
+
   @override
   Set<String> get selectableKeys =>
-      List.generate(chapters.length, (i) => (i + 1).toString()).toSet();
+      visible.map((i) => (i + 1).toString()).toSet();
+
+  void _computeVisible() {
+    final hidden = state.hideDuplicateChapters
+        ? state.duplicateChapterIndices
+        : const <int>{};
+    visible = [
+      for (var i = 0; i < chapters.length; i++)
+        if (!hidden.contains(i)) i,
+    ];
+  }
 
   @override
   void initState() {
@@ -281,6 +297,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
   void didChangeDependencies() {
     state = context.findAncestorStateOfType<_ComicPageState>()!;
     chapters = state.comic.chapters!;
+    _computeVisible();
     super.didChangeDependencies();
   }
 
@@ -295,6 +312,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
     if (!selectMode) {
       setState(() {
         chapters = state.comic.chapters!;
+        _computeVisible();
         _history = widget.history;
       });
     }
@@ -302,9 +320,13 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
 
   @override
   Widget build(BuildContext context) {
+    // The duplicate switch is toggled from the page menu, which only calls
+    // update() on the page state — recompute here so the change lands without
+    // waiting for a details refresh.
+    _computeVisible();
     return SliverLayoutBuilder(
       builder: (context, constrains) {
-        int length = chapters.length;
+        int length = visible.length;
         bool canShowAll = showAll || selectMode;
         if (!canShowAll) {
           var width = constrains.crossAxisExtent - 16;
@@ -313,7 +335,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
             crossItems += 1;
           }
           length = math.min(length, crossItems * 8);
-          if (length == chapters.length) {
+          if (length == visible.length) {
             canShowAll = true;
           }
         }
@@ -332,11 +354,15 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
             SliverGrid(
               delegate: SliverChildBuilderDelegate(childCount: length, (
                 context,
-                i,
+                slot,
               ) {
                 if (reverse) {
-                  i = chapters.length - i - 1;
+                  slot = visible.length - slot - 1;
                 }
+                // Display slot -> original flat index. Every consumer downstream
+                // (read(), history keys, download) addresses chapters by that
+                // index, so hiding must never renumber them.
+                var i = visible[slot];
                 var key = chapters.ids.elementAt(i);
                 var value = chapters[key]!;
                 var epKey = (i + 1).toString();
@@ -399,7 +425,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
                         showAll = true;
                       });
                     },
-                    label: Text("${"Show all".tl} (${chapters.length})"),
+                    label: Text("${"Show all".tl} (${visible.length})"),
                   ).paddingTop(12),
                 ),
               ),
@@ -534,13 +560,35 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
     return offset;
   }
 
-  /// Selectable keys = ONLY the current group's chapters, in reader format
-  /// "group-chapter" (both 1-based).
-  @override
-  Set<String> get selectableKeys {
+  /// Indices WITHIN the current group that are actually rendered, in list order.
+  /// Hiding duplicates only removes entries; the values keep their original
+  /// within-group position, which is what the reader/history keys are built from.
+  late List<int> visible;
+
+  /// Within-group indices to hide for the current tab. Duplicates are detected
+  /// per group, so a title repeated across tabs ("英文版"/"西班牙语" both having
+  /// "第一话") is never touched.
+  void _computeVisible() {
+    if (chapters.groupCount == 0) {
+      visible = const [];
+      return;
+    }
     final group = chapters.getGroupByIndex(index);
-    return List.generate(group.length, (i) => "${index + 1}-${i + 1}").toSet();
+    final hidden = state.hideDuplicateChapters
+        ? state.duplicateChapterIndices
+        : const <int>{};
+    final offset = _groupOffset;
+    visible = [
+      for (var i = 0; i < group.length; i++)
+        if (!hidden.contains(offset + i)) i,
+    ];
   }
+
+  /// Selectable keys = ONLY the current group's visible chapters, in reader
+  /// format "group-chapter" (both 1-based).
+  @override
+  Set<String> get selectableKeys =>
+      visible.map((i) => "${index + 1}-${i + 1}").toSet();
 
   @override
   void initState() {
@@ -559,6 +607,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
     state = context.findAncestorStateOfType<_ComicPageState>()!;
     chapters = state.comic.chapters!;
     _syncTabController();
+    _computeVisible();
     super.didChangeDependencies();
   }
 
@@ -589,6 +638,8 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
       setState(() {
         index = tabController.index;
         showAll = false;
+        // Duplicates are scoped per group, so the visible set is per tab.
+        _computeVisible();
         // Selection is scoped to a group; leaving the group clears it.
         selected.clear();
       });
@@ -608,6 +659,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
     if (!selectMode) {
       chapters = state.comic.chapters!;
       _syncTabController();
+      _computeVisible();
       setState(() {
         _history = widget.history;
       });
@@ -666,10 +718,14 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
     if (chapters.groupCount == 0 || !_hasTabController) {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
+    // The duplicate switch is toggled from the page menu, which only calls
+    // update() on the page state — recompute here so the change lands without
+    // waiting for a details refresh.
+    _computeVisible();
     return SliverLayoutBuilder(
       builder: (context, constrains) {
         var group = chapters.getGroupByIndex(index);
-        int length = group.length;
+        int length = visible.length;
         bool canShowAll = showAll || selectMode;
         if (!canShowAll) {
           var width = constrains.crossAxisExtent - 16;
@@ -678,7 +734,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
             crossItems += 1;
           }
           length = math.min(length, crossItems * 8);
-          if (length == group.length) {
+          if (length == visible.length) {
             canShowAll = true;
           }
         }
@@ -718,11 +774,15 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
             SliverGrid(
               delegate: SliverChildBuilderDelegate(childCount: length, (
                 context,
-                i,
+                slot,
               ) {
                 if (reverse) {
-                  i = group.length - i - 1;
+                  slot = visible.length - slot - 1;
                 }
+                // Display slot -> original within-group index. The reader and
+                // the history keys are built from that index, so hiding must
+                // never renumber it.
+                var i = visible[slot];
                 var key = group.keys.elementAt(i);
                 var value = group[key]!;
                 var chapterIndex = _groupOffset + i;
@@ -791,7 +851,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
                         showAll = true;
                       });
                     },
-                    label: Text("${"Show all".tl} (${group.length})"),
+                    label: Text("${"Show all".tl} (${visible.length})"),
                   ).paddingTop(12),
                 ),
               ),

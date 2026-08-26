@@ -11,6 +11,7 @@ import 'package:venera/components/related_sources_dialog.dart';
 import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/chapter_duplicates.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_details_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -1697,11 +1698,22 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _SelectDownloadChapter extends StatefulWidget {
-  const _SelectDownloadChapter(this.eps, this.finishSelect, this.downloadedEps);
+  const _SelectDownloadChapter(
+    this.eps,
+    this.finishSelect,
+    this.downloadedEps, {
+    this.hiddenEps = const {},
+  });
 
   final List<String> eps;
   final void Function(List<int>) finishSelect;
   final List<int> downloadedEps;
+
+  /// Indices collapsed by the comic's "hide duplicate chapters" switch. They are
+  /// dropped from the list AND from "Download All": the picker returns indices
+  /// into [eps], so a hidden entry left in the result would silently download a
+  /// chapter the user cannot see.
+  final Set<int> hiddenEps;
 
   @override
   State<_SelectDownloadChapter> createState() => _SelectDownloadChapterState();
@@ -1710,8 +1722,15 @@ class _SelectDownloadChapter extends StatefulWidget {
 class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
   List<int> selected = [];
 
+  /// Original indices into [widget.eps] that are rendered, in list order.
+  List<int> get _visible => [
+    for (int i = 0; i < widget.eps.length; i++)
+      if (!widget.hiddenEps.contains(i)) i,
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final visible = _visible;
     return Scaffold(
       appBar: Appbar(
         title: Text("Download".tl),
@@ -1723,8 +1742,9 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
           Expanded(
             child: ListView.builder(
               padding: EdgeInsets.zero,
-              itemCount: widget.eps.length,
-              itemBuilder: (context, i) {
+              itemCount: visible.length,
+              itemBuilder: (context, slot) {
+                final i = visible[slot];
                 return CheckboxListTile(
                   title: Text(widget.eps[i]),
                   value:
@@ -1758,7 +1778,7 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
                   child: TextButton(
                     onPressed: () {
                       var res = <int>[];
-                      for (int i = 0; i < widget.eps.length; i++) {
+                      for (final i in visible) {
                         if (!widget.downloadedEps.contains(i)) {
                           res.add(i);
                         }
@@ -2026,6 +2046,13 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   final Set<String> _removedChapterIds = {};
   late final Set<String> _translatedChapterIds;
 
+  /// Entry indices hidden because their title repeats an earlier entry of the
+  /// SAME group, and the comic's "hide duplicate chapters" switch is on. Scoping
+  /// by group matches the detail page: separate editions may each carry a
+  /// "第一话". Computed once — the switch lives in the detail page menu, which
+  /// cannot be reached while this picker is on top.
+  late final Set<int> _hiddenEntryIndices;
+
   late final TabController? _statusTabController;
   TabController? _groupTabController;
 
@@ -2034,10 +2061,25 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   bool get _showTranslated =>
       !_hasStatusTabs || _statusTabController!.index == 0;
 
+  /// Whether entry [index] is offered to the user at all: not deleted this
+  /// session, not hidden as a duplicate, and matching the active status tab.
+  bool _isVisible(int index) =>
+      !_removedChapterIds.contains(widget.entries[index].$1) &&
+      !_hiddenEntryIndices.contains(index) &&
+      _matchesStatus(index);
+
   @override
   void initState() {
     super.initState();
     _translatedChapterIds = {...widget.translatedChapterIds};
+    _hiddenEntryIndices =
+        ChapterDuplicatePrefs.isHidden(widget.cid, widget.sourceKey)
+        ? findDuplicateTitleIndices(
+            count: widget.entries.length,
+            titleOf: (i) => widget.entries[i].$2,
+            scopes: widget.groups?.map((g) => g.$2).toList(),
+          )
+        : const {};
     _statusTabController = _hasStatusTabs
         ? (TabController(length: 2, vsync: this)
             ..addListener(_onStatusTabChanged))
@@ -2079,12 +2121,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     if (groups == null) return const [];
     return [
       for (var group in groups)
-        if (group.$2.any(
-          (index) =>
-              !_removedChapterIds.contains(widget.entries[index].$1) &&
-              _matchesStatus(index),
-        ))
-          group,
+        if (group.$2.any(_isVisible)) group,
     ];
   }
 
@@ -2113,19 +2150,11 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       ? _displayGroups.isEmpty
             ? const []
             : _displayGroups[_groupTabController!.index].$2
-                  .where(
-                    (index) =>
-                        !_removedChapterIds.contains(
-                          widget.entries[index].$1,
-                        ) &&
-                        _matchesStatus(index),
-                  )
+                  .where(_isVisible)
                   .toList()
       : [
           for (int i = 0; i < widget.entries.length; i++)
-            if (!_removedChapterIds.contains(widget.entries[i].$1) &&
-                _matchesStatus(i))
-              i,
+            if (_isVisible(i)) i,
         ];
 
   bool _matchesStatus(int index) {
@@ -2620,15 +2649,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
               for (var g in groups)
                 Builder(
                   builder: (context) {
-                    var visible = g.$2
-                        .where(
-                          (index) =>
-                              !_removedChapterIds.contains(
-                                widget.entries[index].$1,
-                              ) &&
-                              _matchesStatus(index),
-                        )
-                        .toList();
+                    var visible = g.$2.where(_isVisible).toList();
                     return visible.isEmpty
                         ? _emptyChapterMessage()
                         : ListView.builder(

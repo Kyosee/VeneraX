@@ -24,6 +24,19 @@ abstract mixin class _ComicPageActions {
   /// completes, so pre-translate must wait rather than treat it as chapter-less.
   bool get isDetailsLoading;
 
+  /// Whether this comic's chapter list is currently rendered with same-title
+  /// repeats collapsed. Display-only: every consumer (reader, download,
+  /// pre-translate) still addresses chapters by their original flat index.
+  bool get hideDuplicateChapters =>
+      ChapterDuplicatePrefs.isHidden(comic.id, comic.sourceKey);
+
+  /// Flat indices this comic would hide, computed per group so that two editions
+  /// each having a "第一话" is not treated as a repeat.
+  Set<int> get duplicateChapterIndices =>
+      comic.chapters?.duplicateTitleIndices() ?? const {};
+
+  int get _duplicateChapterCount => duplicateChapterIndices.length;
+
   bool isLiking = false;
 
   bool isLiked = false;
@@ -531,6 +544,12 @@ abstract mixin class _ComicPageActions {
           details.chapters!.titles.toList(),
           (v) => selected = v,
           downloaded,
+          // Chapters collapsed on the detail page stay out of the picker, and
+          // out of "Download All": the indices here are the ones the task
+          // downloads, so a hidden row must not slip in through select-all.
+          hiddenEps: hideDuplicateChapters
+              ? details.chapters!.duplicateTitleIndices()
+              : const {},
         ),
       );
       if (selected == null) return;
@@ -594,6 +613,30 @@ abstract mixin class _ComicPageActions {
           );
         },
       ),
+      // Only offered when this comic actually has repeats: a chapter list
+      // without any would show a switch that visibly does nothing.
+      if (_duplicateChapterCount > 0)
+        MenuEntry(
+          icon: hideDuplicateChapters
+              ? Icons.filter_alt_rounded
+              : Icons.filter_alt_off_rounded,
+          text: hideDuplicateChapters
+              ? "Show duplicate chapters".tl
+              : "Hide duplicate chapters".tl,
+          color: hideDuplicateChapters ? context.colorScheme.primary : null,
+          onClick: () {
+            final next = !hideDuplicateChapters;
+            ChapterDuplicatePrefs.setHidden(comic.id, comic.sourceKey, next);
+            update();
+            context.showMessage(
+              message: next
+                  ? "Hid @count duplicate chapters".tlParams({
+                      'count': _duplicateChapterCount,
+                    })
+                  : "Showing all chapters".tl,
+            );
+          },
+        ),
       MenuEntry(
         icon: Icons.copy,
         text: "Copy Title".tl,
