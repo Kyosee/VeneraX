@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.9",
+          "buildVersion": "239",
+          "date": "2026-08-25",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Reading Statistics now supports swiping a comic left to delete its record\n\n### Changed\n- The Reading Statistics sort choice is now saved with your synced data\n\n### Fixed\n- Fixed some comic covers not showing\n- Fixed the app crashing when a network request failed\n- Fixed pressing back while editing the home layout leaving the app instead of exiting edit mode\n- Fixed Reading Statistics still listing blocked comics\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.8...v2.2.9",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.9/VeneraX-ios-2.2.9%2B239.ipa",
+          "size": 35242955,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.8",
           "buildVersion": "238",
           "date": "2026-08-20",
@@ -231,11 +240,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.8",
-      "versionDate": "2026-08-20",
-      "versionDescription": "## What's Changed\n\n### Added\n- New Translation Library page that lists comics by translated / not translated\n- Opening a comic from the library shows its chapters split into translated and pending\n- Clear every translation result of a comic in one action from the library\n- Translation Library can be added as a home page section for quick access\n- Reading Statistics can now be sorted by last read, reading time, or name\n- Import help is now an in-app document instead of an external web page\n\n### Changed\n- Home, the main pane and Reading Statistics now fill a wide window instead of keeping a fixed width with empty margins\n- The bottom navigation bar now shows icons only\n- Refined the look of the update notice on the home page\n- The disclaimer now covers derivative work and redistribution\n\n### Fixed\n- Fixed the import help title showing untranslated text in some languages\n\n### Removed\n- Removed a help entry that pointed to content no longer available\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.7...v2.2.8",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.8/VeneraX-ios-2.2.8%2B238.ipa",
-      "size": 35245357
+      "version": "2.2.9",
+      "versionDate": "2026-08-25",
+      "versionDescription": "## What's Changed\n\n### Added\n- Reading Statistics now supports swiping a comic left to delete its record\n\n### Changed\n- The Reading Statistics sort choice is now saved with your synced data\n\n### Fixed\n- Fixed some comic covers not showing\n- Fixed the app crashing when a network request failed\n- Fixed pressing back while editing the home layout leaving the app instead of exiting edit mode\n- Fixed Reading Statistics still listing blocked comics\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.8...v2.2.9",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.9/VeneraX-ios-2.2.9%2B239.ipa",
+      "size": 35242955
     }
   ],
   "news": []
