@@ -47,7 +47,6 @@ part 'translation_models_settings.dart';
 part 'llm_providers_settings.dart';
 part 'explore_settings.dart';
 part 'setting_components.dart';
-part 'appearance.dart';
 part 'launcher_icon_settings.dart';
 part 'home_layout.dart';
 part 'local_favorites.dart';
@@ -63,27 +62,25 @@ part 'settings_search.dart';
 /// category page. Keep in sync with [_settingsCategoryIcons] and the page
 /// switch in [_SettingsPageState._buildSettingsContent].
 const _settingsCategories = <String>[
-  "Explore",
-  "Reading",
-  "Appearance",
+  "App",
+  "Reading settings",
   "Local Favorites",
   "Data & Sync",
-  "APP",
+  "Explore",
   "Network",
-  "About",
   "Debug",
+  "About",
 ];
 
 const _settingsCategoryIcons = <IconData>[
-  Icons.explore,
+  Icons.apps,
   Icons.book,
-  Icons.color_lens,
   Icons.collections_bookmark_rounded,
   Icons.cloud_sync_outlined,
-  Icons.apps,
+  Icons.explore,
   Icons.public,
-  Icons.info,
   Icons.bug_report,
+  Icons.info,
 ];
 
 class SettingsPage extends StatefulWidget {
@@ -259,8 +256,9 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             Icon(_settingsCategoryIcons[id]),
             const SizedBox(width: 16),
-            Text(name, style: ts.s16),
-            const Spacer(),
+            Expanded(
+              child: Text(name, style: ts.s16, overflow: TextOverflow.ellipsis),
+            ),
             if (selected) const Icon(Icons.arrow_right),
           ],
         ),
@@ -303,15 +301,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildSettingsContent(int pageIndex) {
     return switch (pageIndex) {
-      0 => const ExploreSettings(),
+      0 => const AppSettings(),
       1 => const ReaderSettings(),
-      2 => const AppearanceSettings(),
-      3 => const LocalFavoritesSettings(),
-      4 => const DataSyncSettings(),
-      5 => const AppSettings(),
-      6 => const NetworkSettings(),
+      2 => const LocalFavoritesSettings(),
+      3 => const DataSyncSettings(),
+      4 => const ExploreSettings(),
+      5 => const NetworkSettings(),
+      6 => const DebugPage(),
       7 => const AboutSettings(),
-      8 => const DebugPage(),
       _ => throw UnimplementedError(),
     };
   }
@@ -329,15 +326,14 @@ class _SettingsDetailPage extends StatelessWidget {
 
   Widget _buildPage() {
     return switch (pageIndex) {
-      0 => const ExploreSettings(),
+      0 => const AppSettings(),
       1 => const ReaderSettings(),
-      2 => const AppearanceSettings(),
-      3 => const LocalFavoritesSettings(),
-      4 => const DataSyncSettings(),
-      5 => const AppSettings(),
-      6 => const NetworkSettings(),
+      2 => const LocalFavoritesSettings(),
+      3 => const DataSyncSettings(),
+      4 => const ExploreSettings(),
+      5 => const NetworkSettings(),
+      6 => const DebugPage(),
       7 => const AboutSettings(),
-      8 => const DebugPage(),
       _ => throw UnimplementedError(),
     };
   }

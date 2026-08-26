@@ -23,6 +23,86 @@ class _AppSettingsState extends State<AppSettings> {
       scrollbarTopPadding: context.padding.top + 56,
       slivers: [
         SliverAppbar(title: Text("App".tl)),
+        _SettingsExpansionTile(
+          expansionKey: const PageStorageKey('appAppearanceGroup'),
+          initiallyExpanded: true,
+          icon: Icons.color_lens,
+          title: "Appearance".tl,
+          children: [
+            SelectSetting(
+              title: "Theme Mode".tl,
+              settingKey: "theme_mode",
+              optionTranslation: {
+                "system": "System".tl,
+                "light": "Light".tl,
+                "dark": "Dark".tl,
+              },
+              onChanged: () async {
+                App.forceRebuild();
+              },
+            ),
+            SelectSetting(
+              title: "Theme Color".tl,
+              settingKey: "color",
+              optionTranslation: {
+                "system": "System".tl,
+                "red": "Red".tl,
+                "pink": "Pink".tl,
+                "purple": "Purple".tl,
+                "green": "Green".tl,
+                "orange": "Orange".tl,
+                "blue": "Blue".tl,
+              },
+              onChanged: () async {
+                await App.init();
+                App.forceRebuild();
+              },
+            ),
+            if (App.isAndroid)
+              _SwitchSetting(
+                title: "Predictive Back Animation".tl,
+                subtitle: "Page follows the back gesture as you drag".tl,
+                settingKey: "enablePredictiveBack",
+                onChanged: () {
+                  App.forceRebuild();
+                },
+              ),
+            ListTile(
+              title: Text("Home Page Layout".tl),
+              subtitle: Text("Reorder or hide home sections".tl),
+              leading: const Icon(Icons.dashboard_customize_outlined),
+              trailing: const Icon(Icons.arrow_right),
+              onTap: () {
+                context.to(() => const HomeLayoutSettings());
+              },
+            ),
+            ListTile(
+              title: Text("Image Favorites Tabs".tl),
+              subtitle: Text(
+                "Reorder or hide the Tags / Authors / Comics tabs".tl,
+              ),
+              leading: const Icon(Icons.tab_outlined),
+              trailing: const Icon(Icons.arrow_right),
+              onTap: () {
+                context.to(() => const ImageFavoritesTabsSettings());
+              },
+            ),
+            if (LauncherIconService.isSupported)
+              ListTile(
+                title: Text("App Icon".tl),
+                subtitle: Text(
+                  LauncherIconService.isWindowIconOnly
+                      ? "Choose the window and taskbar icon".tl
+                      : "Choose the home screen icon".tl,
+                ),
+                leading: const Icon(Icons.apps_outlined),
+                trailing: const Icon(Icons.arrow_right),
+                onTap: () {
+                  context.to(() => const LauncherIconSettings());
+                },
+              ),
+          ],
+        ).toSliver(),
         if (App.isAndroid)
           _SettingsExpansionTile(
             expansionKey: const PageStorageKey('appBackgroundGroup'),

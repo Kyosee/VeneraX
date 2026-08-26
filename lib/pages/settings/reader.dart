@@ -269,7 +269,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     return SmoothCustomScrollView(
       scrollbarTopPadding: context.padding.top + 56,
       slivers: [
-        SliverAppbar(title: Text("Reading".tl)),
+        SliverAppbar(title: Text("Reading settings".tl)),
         if (comicId != null && sourceKey != null)
           SliverMainAxisGroup(
             slivers: [

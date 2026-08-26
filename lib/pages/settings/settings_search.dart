@@ -3,8 +3,8 @@ part of 'settings_page.dart';
 /// Searchable index of all settings (issue #75).
 ///
 /// IMPORTANT: this list mirrors the settings rendered by the category pages
-/// (explore_settings.dart, reader.dart, appearance.dart, local_favorites.dart,
-/// data_sync.dart, app.dart, network.dart, about.dart, debug.dart). When you add, rename, or
+/// (explore_settings.dart, reader.dart, local_favorites.dart, data_sync.dart,
+/// app.dart, network.dart, about.dart, debug.dart). When you add, rename, or
 /// remove a setting on those pages, update the matching entry here so it stays
 /// searchable.
 ///
@@ -39,26 +39,26 @@ class _SettingsSearchEntry {
 /// The full index. Built once; `visible` guards are evaluated lazily at match
 /// time so this is safe to construct before [App] is initialized.
 final _settingsSearchIndex = <_SettingsSearchEntry>[
-  // --- 0: Explore ---
-  _SettingsSearchEntry("Display mode of comic tile", 0),
-  _SettingsSearchEntry("Size of comic tile", 0),
-  _SettingsSearchEntry("Explore Pages", 0),
-  _SettingsSearchEntry("Category Pages", 0),
-  _SettingsSearchEntry("Network Favorite Pages", 0),
-  _SettingsSearchEntry("Search Sources", 0),
-  _SettingsSearchEntry("Show favorite status on comic tile", 0),
-  _SettingsSearchEntry("Show history on comic tile", 0),
-  _SettingsSearchEntry("Show read later status on comic tile", 0),
-  _SettingsSearchEntry("Reverse default chapter order", 0),
-  _SettingsSearchEntry("Keyword blocking", 0, keywords: ["block", "filter"]),
-  _SettingsSearchEntry("Tag blocking", 0, keywords: ["block", "filter", "tag"]),
-  _SettingsSearchEntry("Comment keyword blocking", 0, keywords: ["block"]),
-  _SettingsSearchEntry("Default Search Target", 0, keywords: ["search"]),
-  _SettingsSearchEntry("Auto Language Filters", 0, keywords: ["language"]),
-  _SettingsSearchEntry("Initial Page", 0),
-  _SettingsSearchEntry("Display mode of comic list", 0),
+  // --- 4: Explore ---
+  _SettingsSearchEntry("Display mode of comic tile", 4),
+  _SettingsSearchEntry("Size of comic tile", 4),
+  _SettingsSearchEntry("Explore Pages", 4),
+  _SettingsSearchEntry("Category Pages", 4),
+  _SettingsSearchEntry("Network Favorite Pages", 4),
+  _SettingsSearchEntry("Search Sources", 4),
+  _SettingsSearchEntry("Show favorite status on comic tile", 4),
+  _SettingsSearchEntry("Show history on comic tile", 4),
+  _SettingsSearchEntry("Show read later status on comic tile", 4),
+  _SettingsSearchEntry("Reverse default chapter order", 4),
+  _SettingsSearchEntry("Keyword blocking", 4, keywords: ["block", "filter"]),
+  _SettingsSearchEntry("Tag blocking", 4, keywords: ["block", "filter", "tag"]),
+  _SettingsSearchEntry("Comment keyword blocking", 4, keywords: ["block"]),
+  _SettingsSearchEntry("Default Search Target", 4, keywords: ["search"]),
+  _SettingsSearchEntry("Auto Language Filters", 4, keywords: ["language"]),
+  _SettingsSearchEntry("Initial Page", 4),
+  _SettingsSearchEntry("Display mode of comic list", 4),
 
-  // --- 1: Reading ---
+  // --- 1: Reading settings ---
   _SettingsSearchEntry(
     "Enable device specific settings",
     1,
@@ -131,71 +131,77 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Text removal", 1, keywords: ["erase", "inpaint"]),
   _SettingsSearchEntry("Translation models", 1, keywords: ["OCR", "download"]),
 
-  // --- 2: Appearance ---
-  _SettingsSearchEntry("Theme Mode", 2, keywords: ["dark", "light"]),
-  _SettingsSearchEntry("Theme Color", 2, keywords: ["accent", "color"]),
+  // --- 0: App / Appearance ---
+  _SettingsSearchEntry("Theme Mode", 0, keywords: ["dark", "light"]),
+  _SettingsSearchEntry("Theme Color", 0, keywords: ["accent", "color"]),
   _SettingsSearchEntry(
     "Predictive Back Animation",
-    2,
+    0,
     keywords: ["back", "gesture", "animation"],
     visible: () => App.isAndroid,
   ),
-  _SettingsSearchEntry("Home Page Layout", 2, keywords: ["home", "layout"]),
-  _SettingsSearchEntry("Image Favorites Tabs", 2, keywords: ["tabs"]),
+  _SettingsSearchEntry("Home Page Layout", 0, keywords: ["home", "layout"]),
+  _SettingsSearchEntry("Image Favorites Tabs", 0, keywords: ["tabs"]),
+  _SettingsSearchEntry(
+    "App Icon",
+    0,
+    keywords: ["launcher", "icon"],
+    visible: () => LauncherIconService.isSupported,
+  ),
 
-  // --- 3: Local Favorites ---
-  _SettingsSearchEntry("Show local favorites before network favorites", 3),
-  _SettingsSearchEntry("Auto close favorite panel after operation", 3),
-  _SettingsSearchEntry("Add new favorite to", 3),
-  _SettingsSearchEntry("Move favorite after reading", 3),
-  _SettingsSearchEntry("Quick Favorite", 3),
-  _SettingsSearchEntry("Delete all unavailable local favorite items", 3),
-  _SettingsSearchEntry("Click favorite", 3),
+  // --- 2: Local Favorites ---
+  _SettingsSearchEntry("Show local favorites before network favorites", 2),
+  _SettingsSearchEntry("Auto close favorite panel after operation", 2),
+  _SettingsSearchEntry("Add new favorite to", 2),
+  _SettingsSearchEntry("Move favorite after reading", 2),
+  _SettingsSearchEntry("Quick Favorite", 2),
+  _SettingsSearchEntry("Delete all unavailable local favorite items", 2),
+  _SettingsSearchEntry("Click favorite", 2),
 
-  // --- 4: Data & Sync ---
-  _SettingsSearchEntry("Storage Path for local comics", 4, keywords: ["path"]),
-  _SettingsSearchEntry("Set New Storage Path", 4, keywords: ["path"]),
-  _SettingsSearchEntry("Cache Size", 4, keywords: ["cache"]),
-  _SettingsSearchEntry("Clear Cache", 4, keywords: ["cache"]),
-  _SettingsSearchEntry("Cache Limit", 4, keywords: ["cache"]),
-  _SettingsSearchEntry("Auto clean reading history", 4),
-  _SettingsSearchEntry("Export App Data", 4, keywords: ["backup", "export"]),
-  _SettingsSearchEntry("Import App Data", 4, keywords: ["restore", "import"]),
+  // --- 3: Data & Sync ---
+  _SettingsSearchEntry("Storage Path for local comics", 3, keywords: ["path"]),
+  _SettingsSearchEntry("Set New Storage Path", 3, keywords: ["path"]),
+  _SettingsSearchEntry("Cache Size", 3, keywords: ["cache"]),
+  _SettingsSearchEntry("Clear Cache", 3, keywords: ["cache"]),
+  _SettingsSearchEntry("Cache Limit", 3, keywords: ["cache"]),
+  _SettingsSearchEntry("Auto clean reading history", 3),
+  _SettingsSearchEntry("Export App Data", 3, keywords: ["backup", "export"]),
+  _SettingsSearchEntry("Import App Data", 3, keywords: ["restore", "import"]),
   _SettingsSearchEntry(
     "Data Sync",
-    4,
+    3,
     keywords: ["webdav", "backup", "sync", "cloud"],
   ),
-  _SettingsSearchEntry("Sync Logs", 4, keywords: ["webdav", "log"]),
+  _SettingsSearchEntry("Sync Logs", 3, keywords: ["webdav", "log"]),
   _SettingsSearchEntry(
     "WebDAV Comic Library",
-    4,
+    3,
     keywords: ["webdav", "library", "comic", "remote", "nas", "cloud"],
   ),
 
-  // --- 5: APP ---
-  _SettingsSearchEntry("Language", 5, keywords: ["locale", "language"]),
+  // --- 0: App ---
+  _SettingsSearchEntry("Language", 0, keywords: ["locale", "language"]),
   _SettingsSearchEntry(
     "Authorization Required",
-    5,
+    0,
     keywords: ["password", "lock", "biometric", "fingerprint", "privacy"],
     visible: () => !App.isLinux,
   ),
   _SettingsSearchEntry(
     "Minimize to tray",
-    5,
+    0,
     keywords: ["tray", "window"],
     visible: () => App.isWindows,
   ),
 
-  // --- 6: Network ---
-  _SettingsSearchEntry("Proxy", 6, keywords: ["vpn", "socks", "http"]),
-  _SettingsSearchEntry("DNS Overrides", 6, keywords: ["dns", "hosts", "sni"]),
-  _SettingsSearchEntry("Download Threads", 6, keywords: ["download"]),
-  _SettingsSearchEntry("Parallel Downloads", 6, keywords: ["download"]),
+  // --- 5: Network ---
+  _SettingsSearchEntry("Proxy", 5, keywords: ["vpn", "socks", "http"]),
+  _SettingsSearchEntry("DNS Overrides", 5, keywords: ["dns", "hosts", "sni"]),
+  _SettingsSearchEntry("Download Threads", 5, keywords: ["download"]),
+  _SettingsSearchEntry("Parallel Downloads", 5, keywords: ["download"]),
   _SettingsSearchEntry(
     "Download on WiFi Only",
-    6,
+    5,
     keywords: ["wifi", "wlan", "download", "data"],
   ),
 
@@ -210,17 +216,17 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Repository", 7, keywords: ["github", "source"]),
   _SettingsSearchEntry("User Agreement & Disclaimer", 7),
 
-  // --- 8: Debug ---
-  _SettingsSearchEntry("Reload Configs", 8),
-  _SettingsSearchEntry("Open Log", 8, keywords: ["log", "logs"]),
+  // --- 6: Debug ---
+  _SettingsSearchEntry("Reload Configs", 6),
+  _SettingsSearchEntry("Open Log", 6, keywords: ["log", "logs"]),
   _SettingsSearchEntry(
     "Ignore Certificate Errors",
-    8,
+    6,
     keywords: ["ssl", "tls"],
   ),
   _SettingsSearchEntry(
     "JS Evaluator",
-    8,
+    6,
     keywords: ["javascript", "js", "eval"],
   ),
 ];
