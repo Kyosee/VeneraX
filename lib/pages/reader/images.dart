@@ -841,7 +841,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// Image width as a fraction of the viewport height, applied when
   /// `limitImageWidth` is on. Replaces the old fixed 0.7 so a tall strip can be
   /// sized between the two former extremes instead of only fit-to-width or
-  /// unconstrained (#244). At the top of the range the cap exceeds the window's
+  /// unconstrained. At the top of the range the cap exceeds the window's
   /// own ratio and stops applying, which is the unconstrained case.
   double get _imageWidthRatio {
     var value = appdata.settings.getReaderSetting(
@@ -1686,7 +1686,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
     // Pointer handling wraps PhotoView instead of living inside its child:
     // capping the image width letterboxes that child, and handlers confined to
-    // it leave the margins dead to the wheel and trackpad (#244).
+    // it leave the margins dead to the wheel and trackpad.
     Widget buildPointerLayer(Widget child) => Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {

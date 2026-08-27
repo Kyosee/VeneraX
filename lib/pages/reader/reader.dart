@@ -270,7 +270,7 @@ class _ReaderState extends State<Reader>
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
       // Opening the reader is the point the comic stops being "later" — history
-      // tracks it from here on (#244).
+      // tracks it from here on.
       if (appdata.settings['autoRemoveFromReadLater'] == true &&
           ReadLaterManager().isExist(cid, type)) {
         ReadLaterManager().remove(cid, type);
@@ -985,7 +985,7 @@ mixin class _ReaderWindow {
     }
   }
 
-  /// Enter fullscreen as the reader opens (#244). A window the user already put
+  /// Enter fullscreen as the reader opens. A window the user already put
   /// in fullscreen is left alone: [fullscreen] toggles, and toggling here would
   /// make leaving the reader drop them out of their own fullscreen.
   void _autoFullscreen() async {

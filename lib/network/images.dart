@@ -104,8 +104,7 @@ abstract class ImageDownloader {
     }
 
     // Matches the comic-image path below: an async hook must be awaited, and an
-    // unchecked return would cache a Future/JS object as if it were image bytes
-    // (#244).
+    // unchecked return would cache a Future/JS object as if it were image bytes.
     if (configs['onResponse'] is JSInvokable) {
       dynamic result = (configs['onResponse'] as JSInvokable)([
         Uint8List.fromList(buffer),
