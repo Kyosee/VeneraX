@@ -39,7 +39,7 @@ ComicSource buildWebdavComicSource(WebdavLibraryConfig config) {
     // Supplies the Basic-auth header for the direct image GET.
     (imageKey, comicId, epId) async => client().imageLoadingConfig(),
     // Covers/thumbnails need the same auth header.
-    (imageKey) => client().imageLoadingConfig(),
+    (imageKey, comicId) async => client().imageLoadingConfig(),
     "", // filePath — none; this is a built-in source, not a script on disk
     "", // url
     "1.0.0", // version

@@ -52,7 +52,8 @@ abstract class ImageDownloader {
     var configs = <String, dynamic>{};
     if (sourceKey != null) {
       var comicSource = ComicSource.find(sourceKey);
-      configs = comicSource?.getThumbnailLoadingConfig?.call(url) ?? {};
+      configs =
+          (await comicSource?.getThumbnailLoadingConfig?.call(url, cid)) ?? {};
     }
     configs['headers'] ??= {};
     if (configs['headers']['user-agent'] == null &&
@@ -102,9 +103,21 @@ abstract class ImageDownloader {
       }
     }
 
+    // Matches the comic-image path below: an async hook must be awaited, and an
+    // unchecked return would cache a Future/JS object as if it were image bytes
+    // (#244).
     if (configs['onResponse'] is JSInvokable) {
-      final uint8List = Uint8List.fromList(buffer);
-      buffer = (configs['onResponse'] as JSInvokable)([uint8List]);
+      dynamic result = (configs['onResponse'] as JSInvokable)([
+        Uint8List.fromList(buffer),
+      ]);
+      if (result is Future) {
+        result = await result;
+      }
+      if (result is List<int>) {
+        buffer = result;
+      } else {
+        throw "Error: Invalid onResponse result.";
+      }
       (configs['onResponse'] as JSInvokable).free();
     }
 

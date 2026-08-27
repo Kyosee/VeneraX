@@ -46,7 +46,7 @@ ComicSource buildComicCollectionSource(ComicCollection collection) {
     // come from the member's own source rather than from this one.
     (imageKey, comicId, epId) async =>
         collectionImageLoadingConfig(id, imageKey, epId),
-    (imageKey) => collectionThumbnailLoadingConfig(id, imageKey),
+    (imageKey, comicId) => collectionThumbnailLoadingConfig(id, imageKey),
     "", // filePath — built-in source, not a script on disk
     "", // url
     "1.0.0", // version
@@ -467,13 +467,19 @@ Future<Map<String, dynamic>> collectionImageLoadingConfig(
 /// A collection's cover is usually borrowed from a member, and fetching it may
 /// need that member's headers (a WebDAV library cover needs Basic auth). Only
 /// the borrowed case forwards: a cover the user picked is loaded plainly.
-Map<String, dynamic> collectionThumbnailLoadingConfig(
+Future<Map<String, dynamic>> collectionThumbnailLoadingConfig(
   String collectionId,
   String imageKey,
-) {
+) async {
   final collection = ComicCollectionStore.find(collectionId);
   final owner = collection?.coverOwner;
   if (owner == null) return {};
   final source = ComicSource.find(owner.sourceKey);
-  return source?.getThumbnailLoadingConfig?.call(imageKey) ?? {};
+  // The member's own id, not the collection's: the hook is the member source's
+  // and only its own ids mean anything to it.
+  return await source?.getThumbnailLoadingConfig?.call(
+        imageKey,
+        owner.comicId,
+      ) ??
+      {};
 }

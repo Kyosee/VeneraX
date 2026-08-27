@@ -1121,15 +1121,19 @@ class ComicSourceParser {
     if (!_checkExists("comic.onThumbnailLoad")) {
       return null;
     }
-    return (imageKey) {
+    return (imageKey, comicId) async {
       var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.onThumbnailLoad(${jsonEncode(imageKey)})
+          ComicSource.sources.$_key.comic.onThumbnailLoad(
+            ${jsonEncode(imageKey)}, ${jsonEncode(comicId)})
         """);
+      if (res is Future) {
+        res = await res;
+      }
       if (res is! Map) {
         Log.error("Network", "function onThumbnailLoad return invalid data");
         throw "function onThumbnailLoad return invalid data";
       }
-      return res as Map<String, dynamic>;
+      return Map<String, dynamic>.from(res);
     };
   }
 

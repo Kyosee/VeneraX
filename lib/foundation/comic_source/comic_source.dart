@@ -503,8 +503,7 @@ class ComicSource {
 
   final GetImageLoadingConfigFunc? getImageLoadingConfig;
 
-  final Map<String, dynamic> Function(String imageKey)?
-  getThumbnailLoadingConfig;
+  final GetThumbnailLoadingConfigFunc? getThumbnailLoadingConfig;
 
   var data = <String, dynamic>{};
 
