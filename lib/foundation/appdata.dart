@@ -387,6 +387,15 @@ class Settings with ChangeNotifier {
     'checkUpdateOnStart': true,
     'autoCleanHistoryDays': '0', // retention days; '0' keeps history forever
     'limitImageWidth': true,
+    // Image width as a percentage of viewport height when limitImageWidth is on
+    // (40 - 100). 100 effectively removes the cap. Stored as an int percent so
+    // the settings slider's steps land on exact values.
+    'imageWidthPercent': 70,
+    // Desktop only: enter fullscreen automatically when the reader opens.
+    'autoFullscreenOnRead': false,
+    // Drop a comic from "Read Later" once reading it starts; history takes over
+    // from there.
+    'autoRemoveFromReadLater': false,
     'webdav': [], // empty means not configured
     // Whether the local comic library manifest (local.db) is included in
     // WebDAV data sync. Device-local (see _disableSync). Off lets a device

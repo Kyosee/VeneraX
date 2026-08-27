@@ -838,6 +838,21 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   int get preCacheCount => appdata.settings["preloadImageCount"];
 
+  /// Image width as a fraction of the viewport height, applied when
+  /// `limitImageWidth` is on. Between the old two extremes (fit-to-width and
+  /// unconstrained), so a tall strip can be sized without being blown up (#244).
+  double get _imageWidthRatio {
+    var value = appdata.settings.getReaderSetting(
+      reader.cid,
+      reader.type.sourceKey,
+      'imageWidthPercent',
+    );
+    if (value is num) {
+      return (value.toDouble() / 100).clamp(0.4, 1.0);
+    }
+    return 0.7;
+  }
+
   /// Whether the user was scrolling the page.
   /// The gesture detector has a delay to detect tap event.
   /// To handle the tap event, we need to know if the user was scrolling before the delay.
@@ -1667,7 +1682,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
       ],
     );
 
-    widget = Listener(
+    // Pointer handling wraps PhotoView instead of living inside its child:
+    // capping the image width letterboxes that child, and handlers confined to
+    // it leave the margins dead to the wheel and trackpad (#244).
+    Widget buildPointerLayer(Widget child) => Listener(
+      behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {
         _increaseFingers();
         if (fingers > 1 && !disableScroll) {
@@ -1738,7 +1757,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
         );
       },
       onPointerSignal: onPointerSignal,
-      child: widget,
+      child: child,
     );
 
     widget = NotificationListener<ScrollNotification>(
@@ -1799,21 +1818,34 @@ class _ContinuousModeState extends State<_ContinuousMode>
     );
     var width = reader.size.width;
     var height = reader.size.height;
-    if (appdata.settings['limitImageWidth'] &&
-        width / height > 0.7 &&
+    // The ratio drives both the trigger and the cap: comparing against a fixed
+    // 0.7 while capping at a larger ratio would widen the image past the
+    // viewport it was meant to narrow.
+    final widthRatio = _imageWidthRatio;
+    if (appdata.settings.getReaderSetting(
+              reader.cid,
+              reader.type.sourceKey,
+              'limitImageWidth',
+            ) ==
+            true &&
+        width / height > widthRatio &&
         reader.mode == ReaderMode.continuousTopToBottom) {
-      width = height * 0.7;
+      width = height * widthRatio;
     }
 
-    return PhotoView.customChild(
-      backgroundDecoration: BoxDecoration(color: reader.readerBackgroundColor),
-      childSize: Size(width, height),
-      minScale: 1.0,
-      maxScale: 2.5,
-      strictScale: true,
-      controller: photoViewController,
-      onScaleUpdate: onScaleUpdate,
-      child: SizedBox(width: width, height: height, child: widget),
+    return buildPointerLayer(
+      PhotoView.customChild(
+        backgroundDecoration: BoxDecoration(
+          color: reader.readerBackgroundColor,
+        ),
+        childSize: Size(width, height),
+        minScale: 1.0,
+        maxScale: 2.5,
+        strictScale: true,
+        controller: photoViewController,
+        onScaleUpdate: onScaleUpdate,
+        child: SizedBox(width: width, height: height, child: widget),
+      ),
     );
   }
 

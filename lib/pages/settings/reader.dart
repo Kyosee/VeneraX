@@ -42,6 +42,18 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     widget.onChanged?.call(key);
   }
 
+  /// The value of [key] in this page's scope: the comic's own when opened for a
+  /// specific comic with per-comic settings on, then this device's, else global.
+  /// Used by conditional rows so they follow the same value the reader reads.
+  dynamic _effectiveSetting(String key) {
+    final comicId = widget.comicId;
+    final sourceKey = widget.comicSource;
+    if (comicId != null && sourceKey != null) {
+      return appdata.settings.getReaderSetting(comicId, sourceKey, key);
+    }
+    return appdata.settings.getDeviceReaderSetting(key);
+  }
+
   bool _isChapterCommentsAtEndSupported() {
     String? readerMode;
     bool? showChapterComments;
@@ -523,6 +535,21 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
+            if (App.isDesktop)
+              _SwitchSetting(
+                title: 'Enter fullscreen when reading starts'.tl,
+                settingKey: 'autoFullscreenOnRead',
+                onChanged: () {
+                  widget.onChanged?.call('autoFullscreenOnRead');
+                },
+              ),
+            _SwitchSetting(
+              title: 'Remove from read later when reading starts'.tl,
+              settingKey: 'autoRemoveFromReadLater',
+              onChanged: () {
+                widget.onChanged?.call('autoRemoveFromReadLater');
+              },
+            ),
             _SliderSetting(
               title: "Number of images preloaded".tl,
               settingsIndex: "preloadImageCount",
@@ -695,6 +722,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               subtitle: 'When using Continuous(Top to Bottom) mode'.tl,
               settingKey: 'limitImageWidth',
               onChanged: () {
+                setState(() {});
                 widget.onChanged?.call('limitImageWidth');
               },
               comicId: isEnabledSpecificSettings ? widget.comicId : null,
@@ -703,6 +731,31 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
+            if ((comicId != null
+                    ? appdata.settings.getReaderSetting(
+                        comicId,
+                        sourceKey!,
+                        'limitImageWidth',
+                      )
+                    : appdata.settings.getDeviceReaderSetting(
+                        'limitImageWidth',
+                      )) ==
+                true)
+              _SliderSetting(
+                title: "Image width (% of screen height)".tl,
+                settingsIndex: 'imageWidthPercent',
+                interval: 5,
+                min: 40,
+                max: 100,
+                onChanged: () {
+                  widget.onChanged?.call('imageWidthPercent');
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
             _CallbackSetting(
               title: "Custom Image Processing".tl,
               callback: () => context.to(() => _CustomImageProcessing()),

@@ -34,6 +34,7 @@ import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
@@ -268,6 +269,12 @@ class _ReaderState extends State<Reader>
     setImageCacheSize();
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
+      // Opening the reader is the point the comic stops being "later" — history
+      // tracks it from here on (#244).
+      if (appdata.settings['autoRemoveFromReadLater'] == true &&
+          ReadLaterManager().isExist(cid, type)) {
+        ReadLaterManager().remove(cid, type);
+      }
     });
     ImageTranslationService.instance.addListener(_onPageTranslated);
     super.initState();
@@ -973,6 +980,17 @@ mixin class _ReaderWindow {
     windowFrame = WindowFrame.of(App.rootContext);
     windowFrame.addCloseListener(onWindowClose);
     _isInit = true;
+    if (appdata.settings['autoFullscreenOnRead'] == true) {
+      _autoFullscreen();
+    }
+  }
+
+  /// Enter fullscreen as the reader opens (#244). A window the user already put
+  /// in fullscreen is left alone: [fullscreen] toggles, and toggling here would
+  /// make leaving the reader drop them out of their own fullscreen.
+  void _autoFullscreen() async {
+    if (await windowManager.isFullScreen()) return;
+    fullscreen();
   }
 
   void fullscreen() async {
