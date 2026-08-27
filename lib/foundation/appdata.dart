@@ -388,8 +388,9 @@ class Settings with ChangeNotifier {
     'autoCleanHistoryDays': '0', // retention days; '0' keeps history forever
     'limitImageWidth': true,
     // Image width as a percentage of viewport height when limitImageWidth is on
-    // (40 - 100). 100 effectively removes the cap. Stored as an int percent so
-    // the settings slider's steps land on exact values.
+    // (40 - 150). Above the window's own width/height ratio the cap stops
+    // applying, so the top of the range behaves like "unlimited". Stored as an
+    // int percent so the settings slider's steps land on exact values.
     'imageWidthPercent': 70,
     // Desktop only: enter fullscreen automatically when the reader opens.
     'autoFullscreenOnRead': false,

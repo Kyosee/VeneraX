@@ -746,7 +746,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 settingsIndex: 'imageWidthPercent',
                 interval: 5,
                 min: 40,
-                max: 100,
+                max: 150,
                 onChanged: () {
                   widget.onChanged?.call('imageWidthPercent');
                 },

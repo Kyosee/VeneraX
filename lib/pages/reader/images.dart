@@ -839,8 +839,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
   int get preCacheCount => appdata.settings["preloadImageCount"];
 
   /// Image width as a fraction of the viewport height, applied when
-  /// `limitImageWidth` is on. Between the old two extremes (fit-to-width and
-  /// unconstrained), so a tall strip can be sized without being blown up (#244).
+  /// `limitImageWidth` is on. Replaces the old fixed 0.7 so a tall strip can be
+  /// sized between the two former extremes instead of only fit-to-width or
+  /// unconstrained (#244). At the top of the range the cap exceeds the window's
+  /// own ratio and stops applying, which is the unconstrained case.
   double get _imageWidthRatio {
     var value = appdata.settings.getReaderSetting(
       reader.cid,
@@ -848,7 +850,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       'imageWidthPercent',
     );
     if (value is num) {
-      return (value.toDouble() / 100).clamp(0.4, 1.0);
+      return (value.toDouble() / 100).clamp(0.4, 1.5);
     }
     return 0.7;
   }
