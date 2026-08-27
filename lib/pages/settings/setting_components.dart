@@ -46,6 +46,16 @@ class _SwitchSettingState extends State<_SwitchSetting> {
         : appdata.settings[widget.settingKey];
 
     assert(value is bool);
+    // The assert only fires in debug; a release build would pass null straight
+    // into Switch and crash on the implicit cast. Same cause as the slider above.
+    if (value is! bool) {
+      Log.error(
+        "Settings",
+        "Switch setting '${widget.settingKey}' resolved to "
+            "${value == null ? 'null' : value.runtimeType}; using false",
+      );
+      value = false;
+    }
 
     return ListTile(
       title: Text(widget.title),
@@ -510,19 +520,27 @@ class _SliderSetting extends StatefulWidget {
 class _SliderSettingState extends State<_SliderSetting> {
   @override
   Widget build(BuildContext context) {
-    var value =
-        (widget.comicId != null
-                ? appdata.settings.getReaderSetting(
-                    widget.comicId!,
-                    widget.comicSource!,
-                    widget.settingsIndex,
-                  )
-                : widget.useDeviceSettings
-                ? appdata.settings.getDeviceReaderSetting(widget.settingsIndex)
-                : appdata.settings[widget.settingsIndex])
-            .toDouble()
-            .clamp(widget.min, widget.max)
-            .toDouble();
+    var raw = widget.comicId != null
+        ? appdata.settings.getReaderSetting(
+            widget.comicId!,
+            widget.comicSource!,
+            widget.settingsIndex,
+          )
+        : widget.useDeviceSettings
+        ? appdata.settings.getDeviceReaderSetting(widget.settingsIndex)
+        : appdata.settings[widget.settingsIndex];
+    // A key absent from the defaults (renamed setting, or a null copied in by
+    // syncData, which doesn't filter them) used to throw here and take the whole
+    // settings page down with it. Fall back instead.
+    if (raw is! num) {
+      Log.error(
+        "Settings",
+        "Slider setting '${widget.settingsIndex}' resolved to "
+            "${raw == null ? 'null' : raw.runtimeType}; using min",
+      );
+      raw = widget.min;
+    }
+    var value = raw.toDouble().clamp(widget.min, widget.max).toDouble();
     // Decimal places needed to show the current step without float noise,
     // derived from the interval (0.1 -> 1 digit, 0.05 -> 2 digits, 1 -> 0).
     final fractionDigits = widget.interval >= 1
