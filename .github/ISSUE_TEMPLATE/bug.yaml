@@ -17,6 +17,10 @@ body:
         This project is a comic reader that allows users write their own config files. And there is no built-in comic source.
         
         本项目是一个漫画阅读器，允许用户编写自己的配置文件，并且没有内置漫画源。
+
+        **Issues are public. Please describe the problem itself, without including site names, addresses, keys, or parsing code.**
+
+        **Issue 内容是公开的。请描述问题本身，不要附带站点名称、地址、密钥或解析代码。**
   - type: dropdown
     id: bugType
     attributes:
