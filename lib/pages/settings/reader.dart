@@ -731,16 +731,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
-            if ((comicId != null
-                    ? appdata.settings.getReaderSetting(
-                        comicId,
-                        sourceKey!,
-                        'limitImageWidth',
-                      )
-                    : appdata.settings.getDeviceReaderSetting(
-                        'limitImageWidth',
-                      )) ==
-                true)
+            if (_effectiveSetting('limitImageWidth') == true)
               _SliderSetting(
                 title: "Image width (% of screen height)".tl,
                 settingsIndex: 'imageWidthPercent',
