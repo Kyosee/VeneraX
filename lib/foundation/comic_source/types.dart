@@ -53,9 +53,9 @@ typedef GetImageLoadingConfigFunc =
       String epId,
     )?;
 
-/// Mirrors [GetImageLoadingConfigFunc] so a source that has to post-process
-/// obfuscated image bytes can treat covers and page images the same way: the
-/// config may be built asynchronously, and its `onResponse` may return a Future.
+/// Mirrors [GetImageLoadingConfigFunc] so covers and page images offer the same
+/// post-processing surface: the config may be built asynchronously, and its
+/// `onResponse` may return a Future.
 typedef GetThumbnailLoadingConfigFunc =
     Future<Map<String, dynamic>> Function(String imageKey, String? comicId)?;
 
