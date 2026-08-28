@@ -111,6 +111,9 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
       }
 
       if (data!.isEmpty) {
+        // Zero bytes are as unusable as undecodable ones and equally sticky:
+        // a truncated write stays cached and every later load replays it.
+        await evictCorruptedCache();
         throw Exception("Empty image data: ${this.key}");
       }
 
@@ -121,7 +124,7 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
           getTargetSize: enableResize ? _getTargetSize : null,
         );
       } catch (e) {
-        await CacheManager().delete(this.key);
+        await evictCorruptedCache();
         if (data.length < 2 * 1024) {
           // data is too short, it's likely that the data is text, not image
           try {
@@ -153,6 +156,21 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
   );
 
   String get key;
+
+  /// Key of the on-disk [CacheManager] entry, when it differs from [key].
+  ///
+  /// [key] is this provider's identity in Flutter's in-memory image cache and
+  /// must not be repurposed: several providers build it from fields that never
+  /// reach the disk cache key. Override this wherever the two diverge, or a
+  /// corrupted entry can never be evicted.
+  String get diskCacheKey => key;
+
+  /// Drop every cached copy that could have produced undecodable bytes, so the
+  /// next load re-fetches instead of replaying the same failure forever.
+  ///
+  /// A provider with its own sidecar cache must override this: that copy is
+  /// read before [CacheManager] and would keep serving the bad bytes.
+  Future<void> evictCorruptedCache() => CacheManager().delete(diskCacheKey);
 
   @override
   bool operator ==(Object other) {

@@ -68,4 +68,13 @@ class HistoryImageProvider
 
   @override
   String get key => "history${history.id}${history.type.value}";
+
+  /// [load] resolves a missing cover and writes it back to [History.cover]
+  /// before downloading, so this matches what was actually fetched.
+  @override
+  String get diskCacheKey => ImageDownloader.thumbnailCacheKey(
+    history.cover,
+    history.type.sourceKey,
+    history.id,
+  );
 }

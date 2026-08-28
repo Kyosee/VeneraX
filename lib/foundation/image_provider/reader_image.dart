@@ -233,6 +233,12 @@ class ReaderImageProvider
   String get key =>
       "$imageKey@$sourceKey@$cid@$eid@$enableResize"
       "${translationKey == null ? '' : '@tr:$translated'}";
+
+  /// [key] carries resize/translation state that never reaches the disk entry,
+  /// so it cannot double as the eviction key.
+  @override
+  String get diskCacheKey =>
+      ImageDownloader.imageCacheKey(imageKey, sourceKey, cid, eid);
 }
 
 /// Reads one page file from the local library.

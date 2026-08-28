@@ -153,4 +153,21 @@ class ImageFavoritesProvider
   @override
   String get key =>
       "ImageFavorites ${imageFavorite.imageKey}@${imageFavorite.sourceKey}@${imageFavorite.id}@${imageFavorite.eid}@${imageFavorite.page}";
+
+  @override
+  String get diskCacheKey => ImageDownloader.imageCacheKey(
+    imageFavorite.imageKey,
+    sourceKey,
+    cid,
+    eid,
+  );
+
+  /// The sidecar copy is read before [CacheManager], so it has to go too.
+  /// [imageFavorite.imageKey] may be empty or stale — [load] then re-resolves
+  /// the real page url — which makes the [CacheManager] delete best-effort.
+  @override
+  Future<void> evictCorruptedCache() async {
+    await ImageFavoritesProvider.deleteFromCache(imageFavorite);
+    await super.evictCorruptedCache();
+  }
 }

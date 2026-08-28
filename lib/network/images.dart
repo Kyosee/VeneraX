@@ -15,6 +15,26 @@ import 'app_dio.dart';
 const _imageStreamIdleTimeout = Duration(seconds: 30);
 
 abstract class ImageDownloader {
+  /// Disk cache key for a thumbnail/cover. Callers that may need to evict a
+  /// corrupted entry must build the key through this, not by hand: a key that
+  /// differs from the one used to write makes eviction a no-op, and bad bytes
+  /// then survive forever because [loadThumbnail] serves the cache first.
+  static String thumbnailCacheKey(
+    String url,
+    String? sourceKey, [
+    String? cid,
+  ]) => "$url@$sourceKey${cid != null ? '@$cid' : ''}";
+
+  /// Disk cache key for a comic page. Same contract as [thumbnailCacheKey].
+  /// Deliberately excludes resize/translation state: those change the provider
+  /// identity, not the bytes stored on disk.
+  static String imageCacheKey(
+    String imageKey,
+    String? sourceKey,
+    String cid,
+    String eid,
+  ) => "$imageKey@$sourceKey@$cid@$eid";
+
   static Stream<ImageDownloadProgress> loadThumbnail(
     String url,
     String? sourceKey, [
@@ -37,7 +57,7 @@ abstract class ImageDownloader {
       return;
     }
 
-    final cacheKey = "$url@$sourceKey${cid != null ? '@$cid' : ''}";
+    final cacheKey = thumbnailCacheKey(url, sourceKey, cid);
     final cache = await CacheManager().findCache(cacheKey);
 
     if (cache != null) {
@@ -148,7 +168,7 @@ abstract class ImageDownloader {
     String eid, {
     void Function(Duration? retryAfter)? onRateLimited,
   }) {
-    final cacheKey = "$imageKey@$sourceKey@$cid@$eid";
+    final cacheKey = imageCacheKey(imageKey, sourceKey, cid, eid);
     if (_loadingImages.containsKey(cacheKey)) {
       return _loadingImages[cacheKey]!.stream;
     }
@@ -181,7 +201,7 @@ abstract class ImageDownloader {
     bool forDownload = false,
     void Function(Duration? retryAfter)? onRateLimited,
   ]) async* {
-    final cacheKey = "$imageKey@$sourceKey@$cid@$eid";
+    final cacheKey = imageCacheKey(imageKey, sourceKey, cid, eid);
     final cache = await CacheManager().findCache(cacheKey);
 
     if (cache != null) {

@@ -89,4 +89,8 @@ class CachedImageProvider
 
   @override
   String get key => url + (sourceKey ?? "") + (cid ?? "");
+
+  @override
+  String get diskCacheKey =>
+      ImageDownloader.thumbnailCacheKey(url, sourceKey, cid);
 }

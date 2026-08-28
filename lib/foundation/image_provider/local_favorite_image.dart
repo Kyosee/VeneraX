@@ -23,7 +23,8 @@ class LocalFavoriteImageProvider
     var fileName = (id + intKey.toString()).hashCode.toString();
     var file = File(FilePath.join(App.dataPath, 'favorite_cover', fileName));
     if (file.existsSync()) {
-      file.delete();
+      // Sync: callers are void, and an eviction must land before the retry.
+      file.deleteSync();
     }
   }
 
@@ -61,4 +62,17 @@ class LocalFavoriteImageProvider
 
   @override
   String get key => id + intKey.toString();
+
+  @override
+  String get diskCacheKey => ImageDownloader.thumbnailCacheKey(
+    url,
+    ComicSource.fromIntKey(intKey)?.key,
+  );
+
+  /// The sidecar copy is read before [CacheManager], so it has to go too.
+  @override
+  Future<void> evictCorruptedCache() async {
+    LocalFavoriteImageProvider.delete(id, intKey);
+    await super.evictCorruptedCache();
+  }
 }
