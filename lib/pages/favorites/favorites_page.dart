@@ -46,6 +46,34 @@ class FavoritesPage extends StatefulWidget {
   State<FavoritesPage> createState() => _FavoritesPageState();
 }
 
+/// The local "All" entry, exposed for tests.
+@visibleForTesting
+const localAllFolderLabel = _localAllFolderLabel;
+
+/// Restores the persisted favorites selection.
+///
+/// A stale local folder (deleted on this or another device) falls back to
+/// "unselected", but the "All" entry is a sentinel rather than a real folder
+/// table, so it never appears in [LocalFavoritesManager.folderNames] and must
+/// be exempt from that check.
+@visibleForTesting
+({String? folder, bool isNetwork}) restoreFavoriteFolder(
+  dynamic persisted,
+  bool Function(String folder) localFolderExists,
+) {
+  if (persisted is! Map) return (folder: null, isNetwork: false);
+  var name = persisted['name'];
+  var folder = name is String ? name : null;
+  var isNetwork = persisted['isNetwork'] == true;
+  if (folder != null &&
+      !isNetwork &&
+      folder != _localAllFolderLabel &&
+      !localFolderExists(folder)) {
+    return (folder: null, isNetwork: false);
+  }
+  return (folder: folder, isNetwork: isNetwork);
+}
+
 class _FavoritesPageState extends State<FavoritesPage> {
   String? folder;
 
@@ -68,16 +96,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   @override
   void initState() {
-    var data = appdata.implicitData['favoriteFolder'];
-    if (data != null) {
-      folder = data['name'];
-      isNetwork = data['isNetwork'] ?? false;
-    }
-    if (folder != null &&
-        !isNetwork &&
-        !LocalFavoritesManager().existsFolder(folder!)) {
-      folder = null;
-    }
+    var restored = restoreFavoriteFolder(
+      appdata.implicitData['favoriteFolder'],
+      LocalFavoritesManager().existsFolder,
+    );
+    folder = restored.folder;
+    isNetwork = restored.isNetwork;
     super.initState();
   }
 
