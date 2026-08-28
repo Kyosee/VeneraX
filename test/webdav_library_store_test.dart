@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
 
 void main() {
@@ -283,5 +284,72 @@ void main() {
         expect(moved.detectLinkedFolders, isFalse);
       },
     );
+  });
+
+  // add/remove/reorder read all() and mutate that list in place, so an
+  // unmodifiable result throws before anything is written. Persisting is not
+  // exercised here: _write goes through appdata.saveData, which does real IO.
+  group('WebdavLibraryStore list mutability', () {
+    setUp(() {
+      appdata.settings[WebdavLibraryStore.settingsKey] = null;
+      appdata.settings['webdav'] = null;
+    });
+
+    tearDown(() {
+      appdata.settings[WebdavLibraryStore.settingsKey] = null;
+      appdata.settings['webdav'] = null;
+    });
+
+    WebdavLibraryConfig sample(String id) => WebdavLibraryConfig(
+      id: id,
+      sourceKey: 'webdav_library_$id',
+      name: '',
+      url: 'https://nas.example.com/dav',
+      user: 'me',
+      pass: 'secret',
+      root: '',
+    );
+
+    test('all() is growable when nothing is configured yet', () {
+      // The first add on a device that never had a library landed here.
+      final list = WebdavLibraryStore.all();
+      expect(list, isEmpty);
+      expect(() => list.add(sample('a')), returnsNormally);
+      expect(() => list.removeWhere((e) => e.id == 'a'), returnsNormally);
+    });
+
+    test('all() is growable when the setting holds no usable record', () {
+      appdata.settings[WebdavLibraryStore.settingsKey] = [
+        {'url': '   '},
+        'not a map',
+      ];
+      final list = WebdavLibraryStore.all();
+      expect(list, isEmpty);
+      expect(() => list.add(sample('a')), returnsNormally);
+    });
+
+    test('all() is growable when records exist', () {
+      appdata.settings[WebdavLibraryStore.settingsKey] = [
+        sample('a').toJson(),
+      ];
+      final list = WebdavLibraryStore.all();
+      expect(list, hasLength(1));
+      expect(() => list.add(sample('b')), returnsNormally);
+      expect(() => list.removeWhere((e) => e.id == 'a'), returnsNormally);
+    });
+
+    test('effective() is growable with no library and no sync account', () {
+      final list = WebdavLibraryStore.effective();
+      expect(list, isEmpty);
+      expect(() => list.add(sample('a')), returnsNormally);
+    });
+
+    test('effective() is growable when it falls back to the sync account', () {
+      appdata.settings['webdav'] = ['https://nas.example.com/dav', 'me', 'pw'];
+      final list = WebdavLibraryStore.effective();
+      expect(list, hasLength(1));
+      expect(list.first.isInherited, isTrue);
+      expect(() => list.add(sample('a')), returnsNormally);
+    });
   });
 }

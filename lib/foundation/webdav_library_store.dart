@@ -239,9 +239,15 @@ abstract class WebdavLibraryStore {
       key == legacySourceKey || key.startsWith(sourceKeyPrefix);
 
   /// The libraries the user explicitly configured, in display order.
+  ///
+  /// Always growable: the mutating helpers below edit this list in place. The
+  /// empty branch is reachable on a device that never had a library — there is
+  /// no `webdavComicLibraries` default, and the legacy fold only writes the key
+  /// when an old single-library value exists — so returning an unmodifiable
+  /// list here made the very first add throw instead of saving.
   static List<WebdavLibraryConfig> all() {
     final raw = appdata.settings[settingsKey];
-    if (raw is! List) return const [];
+    if (raw is! List) return [];
     final result = <WebdavLibraryConfig>[];
     final seenKeys = <String>{};
     final seenIds = <String>{};
@@ -269,7 +275,7 @@ abstract class WebdavLibraryStore {
     final own = all();
     if (own.isNotEmpty) return own;
     final inherited = inheritedFromSync();
-    return inherited == null ? const [] : [inherited];
+    return inherited == null ? [] : [inherited];
   }
 
   /// Libraries offered in the browse entry points (configured and enabled).
