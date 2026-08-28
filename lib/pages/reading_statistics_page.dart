@@ -601,13 +601,14 @@ class _RecentComicTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              SizedBox(
-                width: 84,
+              // Sized to the text so values like "2 h 6 min" stay on one line;
+              // the cap only stops an outlier from squeezing out the title.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
                 child: Text(
                   formatReadingDuration(comic.duration),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: context.colorScheme.primary,
                   ),

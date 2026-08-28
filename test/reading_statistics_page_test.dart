@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -164,6 +165,23 @@ void main() {
       tester.getSize(find.byKey(const Key('reading-statistics-trend'))).width,
       1560,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('duration stays on one line and is not clipped', (tester) async {
+    useNarrowViewport(tester);
+    await tester.pumpWidget(wrap(ReadingStatisticsPage(summary: summary())));
+    await tester.pump();
+
+    final label = formatReadingDuration(const Duration(hours: 1, minutes: 2));
+    final duration = find.text(label);
+    expect(duration, findsOneWidget);
+    expect(tester.widget<Text>(duration).maxLines, 1);
+
+    // The tile used to pin the duration to a fixed 84px, which wrapped values
+    // like "2 h 6 min" even with room to spare.
+    final paragraph = tester.renderObject<RenderParagraph>(duration);
+    expect(paragraph.didExceedMaxLines, isFalse);
     expect(tester.takeException(), isNull);
   });
 
