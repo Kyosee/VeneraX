@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.12",
+          "buildVersion": "242",
+          "date": "2026-08-29",
+          "localizedDescription": "## What's Changed\n\n### Fixed\n- Fix proxy and certificate settings not applying to downloads\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.11...v2.2.12",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.12/VeneraX-ios-2.2.12%2B242.ipa",
+          "size": 35251387,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.11",
           "buildVersion": "241",
           "date": "2026-08-28",
@@ -258,11 +267,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.11",
-      "versionDate": "2026-08-28",
-      "versionDescription": "## What's Changed\n\n### Fixed\n- Chewed through a few bugs\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.10...v2.2.11",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.11/VeneraX-ios-2.2.11%2B241.ipa",
-      "size": 35251962
+      "version": "2.2.12",
+      "versionDate": "2026-08-29",
+      "versionDescription": "## What's Changed\n\n### Fixed\n- Fix proxy and certificate settings not applying to downloads\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.11...v2.2.12",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.12/VeneraX-ios-2.2.12%2B242.ipa",
+      "size": 35251387
     }
   ],
   "news": []
