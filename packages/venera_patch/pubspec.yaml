@@ -1,0 +1,19 @@
+name: venera_patch
+description: Hot-update runtime for Venera — kill switches, config overlays, patch loading.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  crypto: ^3.0.6
+  path: ^1.9.0
+  pointycastle: ^4.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
