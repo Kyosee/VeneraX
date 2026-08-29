@@ -14,7 +14,11 @@ import 'stmt.dart';
 /// Slots are assigned by the compiler: parameters occupy the low indices in
 /// declaration order (required positional, then optional positional, then
 /// named), locals follow. Nothing looks up a variable by name at runtime.
-final class VmFunction {
+// `implements VmInvokable` is load-bearing, not documentation: Dart's `is` test
+// is nominal, so [VmCall] rejecting a target that merely *has* a matching
+// `invoke` signature would fail every interpreted-to-interpreted call. The
+// differential tests caught exactly that.
+final class VmFunction implements VmInvokable {
   VmFunction({
     required this.name,
     required this.slotCount,
@@ -62,6 +66,7 @@ final class VmFunction {
   /// counter. A native stack overflow cannot be caught in Dart and takes the
   /// process down, which on a user's device is indistinguishable from the crashes
   /// this whole mechanism exists to fix.
+  @override
   Object? invoke(
     List<Object?> positional, [
     Map<String, Object?>? named,
@@ -126,7 +131,7 @@ final class VmFunction {
 /// Implements [Function] via `call` so a host binding can accept it wherever a
 /// Dart callback is expected — which is what lets a patch supply, say, a
 /// `Comparator` to `List.sort` without the binding knowing about the VM.
-final class VmClosure {
+final class VmClosure implements VmInvokable {
   VmClosure(this.function, this.depth, [this.captured]);
 
   final VmFunction function;
@@ -154,8 +159,20 @@ final class VmClosure {
 
   /// Invocation with an explicit argument list, used by the VM's own call sites
   /// where arity is known from the IR.
-  Object? apply(List<Object?> positional, [Map<String, Object?>? named]) =>
-      function.invoke(positional, named, depth + 1);
+  ///
+  /// The declared [depth] argument is ignored in favour of the capture depth:
+  /// a closure invoked from shallow code must still count against the budget of
+  /// the recursion it was created inside, or a closure handed outward would
+  /// reset the depth counter and defeat the limit.
+  @override
+  Object? invoke(
+    List<Object?> positional, [
+    Map<String, Object?>? named,
+    int callerDepth = 0,
+  ]) {
+    final d = callerDepth > depth ? callerDepth : depth;
+    return function.invoke(positional, named, d + 1);
+  }
 
   @override
   String toString() => 'VmClosure(${function.name})';

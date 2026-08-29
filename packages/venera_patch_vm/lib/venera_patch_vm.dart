@@ -17,4 +17,5 @@ export 'src/expr.dart';
 export 'src/frame.dart';
 export 'src/function.dart';
 export 'src/host.dart';
+export 'src/loader.dart';
 export 'src/stmt.dart';

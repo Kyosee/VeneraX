@@ -468,7 +468,7 @@ void main() {
         requiredCount: 0,
         body: () => BlockStmt([
           VarDecl(0, ListLiteral([lit(1), lit(2), lit(3)])),
-          ExprStmt(IndexSet(local(0), lit(1), lit(99))),
+          AssignStmt(IndexGet(local(0), lit(1)), lit(99)),
           ret(IndexGet(local(0), lit(1))),
         ]),
       );
@@ -721,7 +721,14 @@ void main() {
         ]),
       );
       expect(fn.invoke([5]), 'ok');
-      expect(fn.invoke([-1]), isNot('ok'), skip: 'throws instead');
+      // A failed assert surfaces as a PatchThrow carrying the message, so the
+      // seam reports which invariant the patch believed and the log names it.
+      expect(
+        () => fn.invoke([-1]),
+        throwsA(
+          isA<PatchThrow>().having((e) => e.value, 'value', 'must be positive'),
+        ),
+      );
     });
   });
 
@@ -759,14 +766,22 @@ void main() {
       expect(fn.invoke(['nodash']), null);
     });
 
-    test('an unbound member is a fault, never a silent null', () {
-      final fn = buildFn(
-        name: 'unbound',
-        slotCount: 0,
-        requiredCount: 0,
-        body: () => ret(const HostCall(999)),
+    test('an unbound member is rejected at load time, not mid-operation', () {
+      // The rejection happens while compiling, so a manifest/binary mismatch
+      // can never surface halfway through a patched operation with side effects
+      // already applied. That ordering is the point: a load failure means the
+      // seam falls back before anything ran.
+      expect(
+        () => buildFn(
+          name: 'unbound',
+          slotCount: 0,
+          requiredCount: 0,
+          body: () => ret(const HostCall(999)),
+        ),
+        throwsA(
+          isA<UnboundMemberFault>().having((e) => e.memberId, 'memberId', 999),
+        ),
       );
-      expect(() => fn.invoke([]), throwsA(isA<UnboundMemberFault>()));
     });
 
     test('named arguments reach the binding', () {

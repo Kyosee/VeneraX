@@ -39,6 +39,14 @@ abstract interface class HostBridge {
   /// Routing type tests through the same boundary as calls keeps the audit
   /// surface a single file: a patch cannot name a type it was not given.
   bool isInstanceOf(int typeId, Object? value);
+
+  /// Whether [typeId] is bound, for load-time validation.
+  ///
+  /// Without this the loader can parse a type id but not check it, and an
+  /// unbound one surfaces from [isInstanceOf] *during exception handling* —
+  /// precisely the "fails with side effects already applied" case load-time
+  /// validation exists to prevent.
+  bool isBoundType(int typeId);
 }
 
 /// A bridge with nothing bound.
@@ -67,6 +75,9 @@ final class EmptyHostBridge implements HostBridge {
   @override
   bool isInstanceOf(int typeId, Object? value) =>
       throw UnboundMemberFault(typeId, 'no binding for type #$typeId');
+
+  @override
+  bool isBoundType(int typeId) => false;
 }
 
 /// A bridge assembled from closures, for tests and for the small hand-written
@@ -113,6 +124,9 @@ final class MapHostBridge implements HostBridge {
     }
     return test(value);
   }
+
+  @override
+  bool isBoundType(int typeId) => _types.containsKey(typeId);
 }
 
 typedef HostInvoke = Object? Function(
