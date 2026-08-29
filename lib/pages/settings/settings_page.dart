@@ -15,6 +15,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/download_network_guard.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/home_layout.dart';
+import 'package:venera/foundation/hot_update.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';

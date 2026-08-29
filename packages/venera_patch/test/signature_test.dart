@@ -32,8 +32,8 @@ class _Signer {
     final gen = ECKeyGenerator()
       ..init(ParametersWithRandom(ECKeyGeneratorParameters(domain), rnd));
     final pair = gen.generateKeyPair();
-    _private = pair.privateKey as ECPrivateKey;
-    _public = pair.publicKey as ECPublicKey;
+    _private = pair.privateKey;
+    _public = pair.publicKey;
     _random = rnd;
   }
 

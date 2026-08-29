@@ -68,6 +68,41 @@ class _AboutSettingsState extends State<AboutSettings> {
           title: "Check for updates on startup".tl,
           settingKey: "checkUpdateOnStart",
         ).toSliver(),
+        // Only shown where the mechanism actually works: release builds of a
+        // signed app. Rendering the controls in a debug build would offer
+        // switches that silently do nothing.
+        if (HotUpdate.isSupported) ...[
+          _SwitchSetting(
+            title: "Hot updates".tl,
+            subtitle: "Apply small fixes without reinstalling".tl,
+            settingKey: "enableHotUpdate",
+          ).toSliver(),
+          _EndSelectorSelectSetting(
+            title: "Update channel".tl,
+            settingKey: "hotUpdateTrack",
+            optionTranslation: {
+              "stable": "Stable".tl,
+              "beta": "Beta".tl,
+            },
+          ).toSliver(),
+          ListTile(
+            title: Text("Roll back hot updates".tl),
+            subtitle: Text("Discard all patches and use the built-in version".tl),
+            trailing: const Icon(Icons.restore),
+            // The user-facing escape hatch: someone hitting a bad patch must
+            // never be stuck waiting for us to publish a fix.
+            onTap: () => showConfirmDialog(
+              context: context,
+              title: "Roll back hot updates".tl,
+              content: "All downloaded patches will be removed.".tl,
+              onConfirm: () async {
+                await HotUpdate.instance.resetToBuiltin();
+                if (!context.mounted) return;
+                context.showMessage(message: "Rolled back".tl);
+              },
+            ),
+          ).toSliver(),
+        ],
         ListTile(
           title: Text("Guide".tl),
           subtitle: Text("How to use the main features".tl),
