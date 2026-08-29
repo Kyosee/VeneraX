@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi' show Abi;
 
 import 'package:flutter/foundation.dart';
@@ -183,12 +184,59 @@ class HotUpdate {
     ConfigOverlay.instance.apply(track.config);
   }
 
-  /// Loads code overrides carried by an installed bundle. Stage 2 fills this in
-  /// once the VM lands; a bundle currently contributes only manifest-level
-  /// effects, which [_applyCachedManifest] handles.
+  /// Loads the code overrides carried by an installed bundle.
+  ///
+  /// Failure here is deliberately quiet: the app keeps running its built-in
+  /// implementations. A patch that cannot load is a patch that does nothing,
+  /// which is the correct outcome — the alternative is refusing to start.
   Future<void> _applyLocal(PatchSlotEntry? entry) async {
     if (entry == null) return;
+    try {
+      final file = File(
+        FilePath.join(_ensureStore().patchDir(entry), 'bundle.vpatch'),
+      );
+      if (!await file.exists()) return;
+      final bytes = await file.readAsBytes();
+
+      // Re-check the digest recorded when the bundle was staged. The signature
+      // authenticated it on arrival; this catches storage corruption since —
+      // a truncated file would otherwise reach the loader as a malformed
+      // payload and read as a tooling bug rather than a damaged download.
+      final digest = PatchSignature.sha256Hex(bytes);
+      if (digest != entry.sha256) {
+        Log.error('HotUpdate', 'bundle digest mismatch; ignoring patch');
+        return;
+      }
+
+      final program = VirLoader(host: _hostBridge()).loadJson(
+        utf8.decode(bytes),
+      );
+      final table = VmOverrideBinder.bind(program);
+      if (table.isEmpty) return;
+
+      PatchRegistry.onOverrideFailed = (id, error) {
+        Log.error('HotUpdate', 'override #$id quarantined: $error');
+      };
+      PatchRegistry.installOverrides(table);
+      Log.info(
+        'HotUpdate',
+        'patch v${entry.patchVersion} active (${table.length} override(s))',
+      );
+    } catch (e, s) {
+      // Includes PatchLoadFault: a payload built against a different surface
+      // than this binary. Falling back to built-in behaviour is right, and the
+      // dual-slot rollback handles the case where it keeps happening.
+      Log.error('HotUpdate', 'patch load failed: $e\n$s');
+      PatchRegistry.clear();
+    }
   }
+
+  /// The sandbox boundary handed to the interpreter.
+  ///
+  /// Core `dart:core` bindings only, for now. Stage 3 layers the app's own
+  /// generated surface on top via [LayeredHostBridge]; until then a patch can
+  /// reach exactly what [CoreBindings] exposes and nothing else.
+  HostBridge _hostBridge() => const CoreBindings();
 
   PatchStore _ensureStore() {
     return _store ??= PatchStore(

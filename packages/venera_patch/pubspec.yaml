@@ -12,6 +12,11 @@ dependencies:
   crypto: ^3.0.6
   path: ^1.9.0
   pointycastle: ^4.0.0
+  # The interpreter. Kept a separate package so its audit surface stays small
+  # and readable: it is the only part of this stack that executes payload-shaped
+  # input, and it deliberately has no dependencies of its own.
+  venera_patch_vm:
+    path: ../venera_patch_vm
 
 dev_dependencies:
   flutter_test:
