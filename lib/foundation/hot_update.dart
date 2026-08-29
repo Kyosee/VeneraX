@@ -93,6 +93,10 @@ class HotUpdate {
     }
     try {
       final store = _ensureStore();
+      // Cached kills/config first, before the slot bookkeeping and before any
+      // subsystem initialises. This is the earliest point in the process where
+      // a rule can still prevent the crash it was published to prevent.
+      await _applyCachedManifest(store);
       final entry = await store.beginLaunch();
       await _applyLocal(entry);
     } catch (e, s) {
@@ -159,14 +163,31 @@ class HotUpdate {
     ConfigOverlay.instance.clear();
   }
 
-  /// Applies the kills/config carried by an already-installed patch, so the
-  /// previous cycle's decisions hold offline instead of lapsing until the next
-  /// successful network check.
+  /// Replays the last verified manifest from disk.
+  ///
+  /// This is what makes the kill switch actually work. A rule has to be in
+  /// force *before* the subsystem it protects runs, and the network check
+  /// cannot meet that deadline: it lands seconds into the session, and a
+  /// startup crash beats it outright — which is precisely the crash loop the
+  /// kill switch exists to break (a device that dies during startup auto-import
+  /// would never reach the check, so the rule would never apply).
+  Future<void> _applyCachedManifest(PatchStore store) async {
+    final manifest = await store.cachedManifest();
+    if (manifest == null) return;
+    // A manifest retired by this build must not be replayed: after a full
+    // update, its kill rules describe a version that no longer exists.
+    if (manifest.patchVersion <= kBuiltinPatchVersion) return;
+    final track = manifest.tracks[_track];
+    if (track == null) return;
+    KillSwitches.instance.apply(track.kills);
+    ConfigOverlay.instance.apply(track.config);
+  }
+
+  /// Loads code overrides carried by an installed bundle. Stage 2 fills this in
+  /// once the VM lands; a bundle currently contributes only manifest-level
+  /// effects, which [_applyCachedManifest] handles.
   Future<void> _applyLocal(PatchSlotEntry? entry) async {
     if (entry == null) return;
-    // Stage 2 installs interpreted overrides here. Until the VM lands, an
-    // installed bundle contributes only its manifest-level effects, which the
-    // check() path already applied and persisted.
   }
 
   PatchStore _ensureStore() {

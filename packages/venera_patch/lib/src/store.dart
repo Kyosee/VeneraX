@@ -90,6 +90,15 @@ class PatchStore {
 
   String get _statePath => p.join(rootDir, 'state.json');
 
+  /// Last signature-verified manifest body, kept verbatim.
+  ///
+  /// Kill rules have to be in force *before* the subsystem they protect gets a
+  /// chance to run, and a network check cannot meet that deadline: it finishes
+  /// seconds after launch, and a startup crash beats it outright — leaving the
+  /// device in the crash loop the kill switch exists to break. So the manifest
+  /// is cached on disk and replayed at launch.
+  String get _manifestCachePath => p.join(rootDir, 'manifest.cache.json');
+
   String patchDir(PatchSlotEntry entry) => p.join(rootDir, entry.dirName);
 
   Future<void> load() async {
@@ -118,6 +127,49 @@ class PatchStore {
     final tmp = File('$_statePath.tmp');
     await tmp.writeAsString(jsonEncode(_slots.toJson()), flush: true);
     await tmp.rename(_statePath);
+  }
+
+  /// Replays the last verified manifest from disk.
+  ///
+  /// No re-verification: the file was written by us, only after its signature
+  /// passed, into the app's private directory. Re-checking here would mean
+  /// shipping the verified body *and* trusting the local copy anyway — the
+  /// signature's job is to authenticate what arrives over the network, and it
+  /// already did that.
+  ///
+  /// Returns null when nothing is cached or the cache is unreadable. Callers
+  /// must treat that as "no rules", never as "disable everything": a wiped
+  /// cache must not take features down.
+  Future<PatchManifest?> cachedManifest() async {
+    try {
+      final f = File(_manifestCachePath);
+      if (!await f.exists()) return null;
+      return PatchManifest.parse(await f.readAsString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _cacheManifest(String body) async {
+    try {
+      final dir = Directory(rootDir);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final tmp = File('$_manifestCachePath.tmp');
+      await tmp.writeAsString(body, flush: true);
+      await tmp.rename(_manifestCachePath);
+    } catch (_) {
+      // A failed cache write costs us the pre-network kill window on the next
+      // launch, which is bad — but failing the whole check over it is worse.
+    }
+  }
+
+  Future<void> _clearManifestCache() async {
+    try {
+      final f = File(_manifestCachePath);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
   }
 
   /// Resolves what to load this launch, applying rollback when the previous
@@ -153,6 +205,10 @@ class PatchStore {
 
   /// Discards everything and returns to the built-in implementation. Wired to
   /// the user-facing "roll back to built-in version" action.
+  ///
+  /// Clearing the manifest cache is part of "everything": leaving it behind
+  /// would let the next launch replay the kill rules the user just rolled back,
+  /// so features would stay disabled with no patch left to explain why.
   Future<void> resetToBuiltin() async {
     await load();
     for (final e in [_slots.current, _slots.next]) {
@@ -160,6 +216,7 @@ class PatchStore {
     }
     _slots = PatchSlots(disabledVersions: _slots.disabledVersions);
     await _saveState();
+    await _clearManifestCache();
   }
 
   Future<void> _deleteEntry(PatchSlotEntry entry) async {
@@ -247,17 +304,28 @@ class PatchStore {
         detail: 'version banned after failed launch',
       );
     }
-    if (manifest.patchVersion <= _slots.highestVersion) {
-      return PatchCheckResult(
-        PatchFetchOutcome.upToDate,
-        manifest: manifest,
-      );
-    }
+    // Range-checked before the "already installed" test so an out-of-range
+    // manifest is never cached — a cached body is replayed at every launch
+    // without re-validation, so anything we would reject now must not be
+    // written.
     if (!_appVersionInRange(manifest)) {
       return PatchCheckResult(
         PatchFetchOutcome.rejected,
         manifest: manifest,
         detail: 'app version $appVersion out of range',
+      );
+    }
+
+    // The manifest is authentic and applicable to this build: persist it now,
+    // before deciding whether a payload needs downloading. Every path below
+    // this line is an accept, and the kills/config the body carries have to
+    // survive a restart to be worth anything.
+    await _cacheManifest(envelope.body);
+
+    if (manifest.patchVersion <= _slots.highestVersion) {
+      return PatchCheckResult(
+        PatchFetchOutcome.upToDate,
+        manifest: manifest,
       );
     }
 
