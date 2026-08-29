@@ -14,6 +14,7 @@ library;
 export 'package:venera_patch_vm/venera_patch_vm.dart'
     show
         HostBridge,
+        PatchLoadFault,
         PatchVmFault,
         UnboundMemberFault,
         ResourceLimitFault,
