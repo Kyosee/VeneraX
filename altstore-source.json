@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.2.11",
+          "buildVersion": "241",
+          "date": "2026-08-28",
+          "localizedDescription": "## What's Changed\n\n### Fixed\n- Chewed through a few bugs\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.10...v2.2.11",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.11/VeneraX-ios-2.2.11%2B241.ipa",
+          "size": 35251962,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.10",
           "buildVersion": "240",
           "date": "2026-08-27",
@@ -249,11 +258,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.10",
-      "versionDate": "2026-08-27",
-      "versionDescription": "## What's Changed\n\n### Added\n- Comic details now lets you hide duplicate chapters for each comic, keeping chapter, download, and pre-translation lists consistent\n- Desktop now offers an option to enter fullscreen automatically when reading starts\n- Added an option to remove a comic from Read Later automatically when reading starts\n\n### Changed\n- Continuous reading now lets you adjust image width from 40% to 150% of screen height\n- Reorganized Settings and moved Appearance options into App\n- `comic.onThumbnailLoad` now matches `comic.onImageLoad`: configuration functions may be async, Promise results from `onResponse` are awaited, response types are validated, and `comicId` is passed as the second argument\n\n### Fixed\n- Fixed mouse wheel and touchpad scrolling not working over blank side margins when image width was limited in continuous reading\n- Fixed per-comic image width limits not being applied correctly in continuous reading\n- Fixed Settings sometimes crashing when a saved setting value was empty\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.9...v2.2.10",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.10/VeneraX-ios-2.2.10%2B240.ipa",
-      "size": 35250462
+      "version": "2.2.11",
+      "versionDate": "2026-08-28",
+      "versionDescription": "## What's Changed\n\n### Fixed\n- Chewed through a few bugs\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.10...v2.2.11",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.11/VeneraX-ios-2.2.11%2B241.ipa",
+      "size": 35251962
     }
   ],
   "news": []
