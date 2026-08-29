@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/io.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/ext.dart';
 
@@ -172,10 +173,7 @@ class FileDownloader {
     try {
       var proxy = await getProxy();
       _dio.httpClientAdapter = IOHttpClientAdapter(
-        createHttpClient: () {
-          return HttpClient()
-            ..findProxy = (uri) => proxy == null ? "DIRECT" : "PROXY $proxy";
-        },
+        createHttpClient: () => createIOHttpClient(proxy: proxy),
       );
 
       // determine file size + range support

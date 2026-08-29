@@ -6,6 +6,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_worker.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/utils/io.dart';
 
 /// A single downloadable file of a model component. [urls] is a fallback
@@ -243,9 +244,12 @@ class TranslationModelStore with ChangeNotifier {
     return 'https://huggingface.co';
   }
 
-  /// Model downloads are large one-shot transfers; a bare [Dio] client
-  /// (no total timeout, default adapter) matches how the app handles other
-  /// large file downloads.
+  /// Model downloads are large one-shot transfers, so this stays a bare [Dio]
+  /// (no shared cache / cookie / log interceptors, no total timeout) rather
+  /// than [AppDio]. The adapter is still the app's: dio's default `dart:io`
+  /// one honored none of the proxy / DNS / certificate settings, which made
+  /// every download fail behind a TLS-intercepting proxy while the rest of the
+  /// app kept working.
   Dio _createDio() {
     return Dio(
       BaseOptions(
@@ -254,7 +258,7 @@ class TranslationModelStore with ChangeNotifier {
         followRedirects: true,
         maxRedirects: 10,
       ),
-    );
+    )..httpClientAdapter = createAppHttpClientAdapter();
   }
 
   Future<void> download(ModelComponent component) async {

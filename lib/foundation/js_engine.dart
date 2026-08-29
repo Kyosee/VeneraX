@@ -26,6 +26,7 @@ import 'package:venera/components/js_ui.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/js_pool.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/init.dart';
@@ -242,10 +243,7 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
         );
         var proxy = await getProxy();
         dio.httpClientAdapter = IOHttpClientAdapter(
-          createHttpClient: () {
-            return HttpClient()
-              ..findProxy = (uri) => proxy == null ? "DIRECT" : "PROXY $proxy";
-          },
+          createHttpClient: () => createIOHttpClient(proxy: proxy),
         );
         dio.interceptors.add(
           CookieManagerSql(SingleInstanceCookieJar.instance!),

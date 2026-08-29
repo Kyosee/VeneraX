@@ -51,6 +51,22 @@ HttpClientAdapter createRHttpAdapter({
 HttpClientAdapter createIOAdapter({bool enableProxy = true}) =>
     _IOProxyAdapter(enableProxy: enableProxy);
 
+/// A `dart:io` client wired to the app's network settings.
+///
+/// Paths that deliberately bypass [AppDio] (ranged file downloads, scripts
+/// asking for `http_client: dart:io`) must still go through this: `dart:io`
+/// trusts only Flutter's built-in root list, never the system store, so a
+/// MITM proxy's own root — which the rhttp path accepts — otherwise fails
+/// on those paths alone.
+HttpClient createIOHttpClient({String? proxy}) {
+  final client = HttpClient();
+  client.findProxy = (uri) => proxy == null ? 'DIRECT' : 'PROXY $proxy';
+  if (appdata.settings['ignoreBadCertificate'] == true) {
+    client.badCertificateCallback = (_, __, ___) => true;
+  }
+  return client;
+}
+
 Map<String, List<String>> buildRhttpDnsOverrides({
   required bool enabled,
   required Object? config,
@@ -158,11 +174,21 @@ class RHttpAdapter implements HttpClientAdapter {
       options.headers['User-Agent'] = 'venera/v${App.version}';
     }
 
+    // dio only reports the cancellation to its own caller; without forwarding
+    // it the Rust side keeps streaming the body to completion. Harmless for a
+    // small response, wasteful for a cancelled multi-hundred-MB download.
+    rhttp.CancelToken? cancelToken;
+    if (cancelFuture != null) {
+      cancelToken = rhttp.CancelToken();
+      cancelFuture.whenComplete(() => cancelToken!.cancel());
+    }
+
     final res = await rhttp.Rhttp.request(
       method: rhttp.HttpMethod(options.method),
       url: options.uri.toString(),
       settings: await settings,
       expectBody: rhttp.HttpExpectBody.stream,
+      cancelToken: cancelToken,
       body: requestStream == null ? null : rhttp.HttpBody.stream(requestStream),
       headers: rhttp.HttpHeaders.rawMap(
         Map.fromEntries(
@@ -228,14 +254,7 @@ class _IOProxyAdapter implements HttpClientAdapter {
   ) async {
     final proxy = enableProxy ? await getProxy() : null;
     final adapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final client = HttpClient();
-        if (proxy != null) client.findProxy = (uri) => 'PROXY $proxy';
-        if (appdata.settings['ignoreBadCertificate'] == true) {
-          client.badCertificateCallback = (_, __, ___) => true;
-        }
-        return client;
-      },
+      createHttpClient: () => createIOHttpClient(proxy: proxy),
     );
     return adapter.fetch(options, requestStream, cancelFuture);
   }
