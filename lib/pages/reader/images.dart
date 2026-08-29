@@ -1818,8 +1818,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
       },
       child: widget,
     );
-    var width = reader.size.width;
-    var height = reader.size.height;
+    final viewportSize = MediaQuery.sizeOf(context);
+    var width = viewportSize.width;
+    var height = viewportSize.height;
     // The ratio drives both the trigger and the cap: comparing against a fixed
     // 0.7 while capping at a larger ratio would widen the image past the
     // viewport it was meant to narrow.
