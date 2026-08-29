@@ -26,6 +26,7 @@ export 'src/manifest.dart';
 export 'src/kill_switch.dart';
 export 'src/overlay.dart';
 export 'src/registry.dart';
+export 'src/seam.dart';
 export 'src/signature.dart';
 export 'src/slot.dart';
 export 'src/store.dart';

@@ -25,6 +25,11 @@
 ///   from the server's history.
 library;
 
+// The hot-update runtime. Not app state: it is a leaf package holding the seam
+// gate (a static bool) and the override table, so importing it here keeps this
+// file's "pure decision logic, no app state" rule intact.
+import 'package:venera_patch/venera_patch.dart';
+
 /// The version number to stamp on a freshly uploaded WebDAV backup.
 ///
 /// It must beat BOTH the local version and the highest version already on the
@@ -287,6 +292,21 @@ class RemoteBackupInfo {
   /// only when the value is small enough to be a real day count, otherwise treat
   /// it as milliseconds, and clamp so the constructor can never throw.
   static DateTime _dateFromLeadingSegment(int value) {
+    // Seam. Hand-written for now; build_runner generates these in stage 3.
+    //
+    // This function is the first seam because it is the shape the mechanism is
+    // for: pure, int in / DateTime out, and the site of a real field bug (#51)
+    // whose fix was a one-line change to a numeric guard. Re-running the
+    // original after a machinery failure is harmless, which is what makes the
+    // fallback in [patched] safe here.
+    return patched(
+      SeamIds.backupDateFromLeadingSegment,
+      [value],
+      () => _dateFromLeadingSegmentOrig(value),
+    );
+  }
+
+  static DateTime _dateFromLeadingSegmentOrig(int value) {
     var ms =
         value.abs() <= _maxValidMs ~/ _msPerDay ? value * _msPerDay : value;
     if (ms > _maxValidMs) ms = _maxValidMs;
