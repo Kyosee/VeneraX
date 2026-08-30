@@ -4,6 +4,7 @@ import 'package:display_mode/display_mode.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_saf/flutter_saf.dart';
+import 'package:venera/components/patch_prompt.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -184,7 +185,14 @@ Future<void> _checkAppUpdates() async {
   // Patch check runs on every startup, independent of the full-update setting:
   // a user who declines app updates still wants a crash fix, and the manifest
   // is a few hundred bytes off a CDN.
-  unawaited(HotUpdate.instance.check());
+  //
+  // The prompt is chained rather than fired alongside: code overrides only bind
+  // at startup, so the user has to be told the fix lands next launch. Telling
+  // them it is already applied would be a lie they discover by finding the bug
+  // still there.
+  unawaited(
+    HotUpdate.instance.check().then((_) => showPatchPromptIfNeeded()),
+  );
 
   // App update check runs on each startup when enabled.
   if (appdata.settings['checkUpdateOnStart'] == true) {

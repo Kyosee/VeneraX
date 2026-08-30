@@ -58,6 +58,50 @@ class HotUpdate {
   PatchStore? _store;
   bool _confirmScheduled = false;
 
+  /// Revision number of the bundle whose overrides are running right now.
+  ///
+  /// Zero means built-in code only. Surfaced in the about page because a bug
+  /// report from a device running revision 4 and one from a stock build are
+  /// different bugs, and without this every report costs a round of "which
+  /// build are you on" before triage can even start.
+  int _activeRevision = 0;
+
+  /// Revision staged on disk, active from the next launch.
+  ///
+  /// Kept separate from [_activeRevision] because the difference *is* the
+  /// message to the user: code overrides only bind at startup, so telling
+  /// someone a fix is applied when it lands next launch would be a lie they
+  /// discover by finding the bug still there.
+  int _pendingRevision = 0;
+
+  /// Release notes for [_pendingRevision], as published in the manifest.
+  String? _pendingNotes;
+
+  /// Whether this session already showed the pending-revision prompt, so a
+  /// second check in the same session does not nag.
+  bool _promptShown = false;
+
+  int get activeRevision => _activeRevision;
+
+  int get pendingRevision => _pendingRevision;
+
+  String? get pendingNotes => _pendingNotes;
+
+  /// A pending revision the user has not been told about yet.
+  bool get hasUnannouncedPending =>
+      _pendingRevision > 0 && _pendingRevision != _activeRevision;
+
+  void markPromptShown() => _promptShown = true;
+
+  bool get promptShown => _promptShown;
+
+  /// Display suffix for the version string: `2.2.12 (r3)`.
+  ///
+  /// Deliberately opaque. The mechanism is a first-party maintenance channel,
+  /// and naming it in the UI invites the reading that the app ships code around
+  /// store review — which is not what it does, but a label cannot argue.
+  String get revisionSuffix => _activeRevision > 0 ? ' (r$_activeRevision)' : '';
+
   /// Whether hot-update is compiled in and usable at all.
   ///
   /// Release-only, mirroring Shorebird: in debug the developer's own source is
@@ -149,6 +193,21 @@ class HotUpdate {
         if (track != null) {
           KillSwitches.instance.apply(track.kills);
           ConfigOverlay.instance.apply(track.config);
+          // Record what is now on disk, for the about page and the prompt.
+          // Only a track carrying a code bundle counts: kills and config take
+          // effect immediately and need no restart, so announcing them as
+          // "restart to apply" would send the user to relaunch for nothing.
+          if (track.payload != null &&
+              manifest.patchVersion > kBuiltinPatchVersion) {
+            _pendingRevision = manifest.patchVersion;
+            // Same locale key shape the app's own translations use, so a
+            // manifest written for `zh_CN` reaches a zh_CN reader rather than
+            // falling through to English.
+            final locale = App.locale;
+            _pendingNotes = track.noteFor(
+              '${locale.languageCode}_${locale.countryCode}',
+            );
+          }
         }
       }
       if (result.detail != null) {
@@ -173,6 +232,12 @@ class HotUpdate {
     PatchRegistry.clear();
     KillSwitches.instance.clear();
     ConfigOverlay.instance.clear();
+    // The about page reads these directly, so a rollback that left them set
+    // would keep displaying a revision the user just discarded.
+    _activeRevision = 0;
+    _pendingRevision = 0;
+    _pendingNotes = null;
+    _promptShown = false;
   }
 
   /// Replays the last verified manifest from disk.
@@ -229,6 +294,12 @@ class HotUpdate {
         Log.error('HotUpdate', 'override #$id quarantined: $error');
       };
       PatchRegistry.installOverrides(table);
+      // Recorded only after the overrides are actually bound. Setting it any
+      // earlier — on the slot entry, say — would report a revision as running
+      // when its payload had been rejected, which is the one thing the about
+      // page must never do: a bug report claiming revision 4 from a device
+      // running built-in code sends triage down a path that does not exist.
+      _activeRevision = entry.patchVersion;
       Log.info(
         'HotUpdate',
         'patch v${entry.patchVersion} active (${table.length} override(s))',

@@ -43,7 +43,15 @@ class _AboutSettingsState extends State<AboutSettings> {
         Column(
           children: [
             const SizedBox(height: 8),
-            Text("V${App.version}", style: const TextStyle(fontSize: 16)),
+            // The revision suffix appears only when a maintenance revision is
+            // actually running, so a stock build reads exactly as before. It is
+            // here because a report from a device on revision 4 and one from a
+            // stock build are different bugs, and without it every report costs
+            // a round of "which build are you on" before triage can start.
+            Text(
+              "V${App.version}${HotUpdate.instance.revisionSuffix}",
+              style: const TextStyle(fontSize: 16),
+            ),
             Text(
               "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original.".tl,
               textAlign: TextAlign.center,
@@ -72,9 +80,15 @@ class _AboutSettingsState extends State<AboutSettings> {
         // signed app. Rendering the controls in a debug build would offer
         // switches that silently do nothing.
         if (HotUpdate.isSupported) ...[
+          // Wording throughout this block avoids "hot update" / "patch".
+          // The mechanism is a first-party maintenance channel, but those terms
+          // read, to a store reviewer or a passing screenshot, as shipping code
+          // around review — which is not what it does, and a label cannot
+          // argue its own case. "Fixes and adjustments" describes the effect,
+          // which is all a user needs.
           _SwitchSetting(
-            title: "Hot updates".tl,
-            subtitle: "Apply small fixes without reinstalling".tl,
+            title: "Fixes and adjustments".tl,
+            subtitle: "Receive small fixes without reinstalling".tl,
             settingKey: "enableHotUpdate",
           ).toSliver(),
           _EndSelectorSelectSetting(
@@ -85,19 +99,48 @@ class _AboutSettingsState extends State<AboutSettings> {
               "beta": "Beta".tl,
             },
           ).toSliver(),
+          // Shown only once something is actually installed, so a stock build
+          // carries no trace of the mechanism in its UI.
+          if (HotUpdate.instance.activeRevision > 0 ||
+              HotUpdate.instance.pendingRevision > 0)
+            ListTile(
+              title: Text("Applied revision".tl),
+              subtitle: Text(
+                HotUpdate.instance.pendingRevision >
+                        HotUpdate.instance.activeRevision
+                    ? "r@a, r@b takes effect after restart".tlParams({
+                        "a": "${HotUpdate.instance.activeRevision}",
+                        "b": "${HotUpdate.instance.pendingRevision}",
+                      })
+                    : "r@a".tlParams({
+                        "a": "${HotUpdate.instance.activeRevision}",
+                      }),
+              ),
+              trailing: HotUpdate.instance.pendingNotes == null
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.info_outline),
+                      onPressed: () => showDialogMessage(
+                        context,
+                        "What's new".tl,
+                        HotUpdate.instance.pendingNotes!,
+                      ),
+                    ),
+            ).toSliver(),
           ListTile(
-            title: Text("Roll back hot updates".tl),
-            subtitle: Text("Discard all patches and use the built-in version".tl),
+            title: Text("Roll back fixes".tl),
+            subtitle: Text("Return to the version built into this app".tl),
             trailing: const Icon(Icons.restore),
             // The user-facing escape hatch: someone hitting a bad patch must
             // never be stuck waiting for us to publish a fix.
             onTap: () => showConfirmDialog(
               context: context,
-              title: "Roll back hot updates".tl,
-              content: "All downloaded patches will be removed.".tl,
+              title: "Roll back fixes".tl,
+              content: "All downloaded fixes will be removed.".tl,
               onConfirm: () async {
                 await HotUpdate.instance.resetToBuiltin();
                 if (!context.mounted) return;
+                setState(() {});
                 context.showMessage(message: "Rolled back".tl);
               },
             ),

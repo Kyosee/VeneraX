@@ -89,6 +89,7 @@ class PatchTrack {
     required this.kills,
     required this.config,
     required this.payload,
+    this.notes = const {},
   });
 
   final List<KillRule> kills;
@@ -98,6 +99,40 @@ class PatchTrack {
 
   /// Code payload descriptor, absent for a config/kill-only manifest.
   final PatchPayload? payload;
+
+  /// What changed, by locale tag, for the notice shown after a fix installs.
+  ///
+  /// Keyed by locale (`zh_CN`, `en`, …) rather than being a single string,
+  /// because it is user-facing text and the app is used in several languages;
+  /// a fix that explains itself only in English is a fix most users cannot
+  /// read. Absent, empty or unmatched falls back to a generic message rather
+  /// than showing nothing — a change the user cannot see explained reads as
+  /// unexplained behaviour drift.
+  final Map<String, String> notes;
+
+  /// Note text for [locale], falling back to English, then any entry present.
+  ///
+  /// Locale matching is exact first (`zh_CN`), then by language (`zh`), so a
+  /// manifest written for `zh_CN` still reaches a `zh_TW` reader rather than
+  /// silently degrading to English.
+  String? noteFor(String locale) {
+    if (notes.isEmpty) return null;
+    final exact = notes[locale];
+    if (exact != null && exact.isNotEmpty) return exact;
+    final language = locale.split(RegExp('[_-]')).first;
+    for (final entry in notes.entries) {
+      if (entry.key.split(RegExp('[_-]')).first == language &&
+          entry.value.isNotEmpty) {
+        return entry.value;
+      }
+    }
+    final english = notes['en'];
+    if (english != null && english.isNotEmpty) return english;
+    for (final value in notes.values) {
+      if (value.isNotEmpty) return value;
+    }
+    return null;
+  }
 
   static PatchTrack _parse(Map<String, dynamic> json) {
     final kills = <KillRule>[];
@@ -117,10 +152,26 @@ class PatchTrack {
         config[e.key.toString()] = e.value;
       }
     }
+    final notes = <String, String>{};
+    final rawNotes = json['notes'];
+    if (rawNotes is Map) {
+      for (final e in rawNotes.entries) {
+        final value = e.value?.toString();
+        if (value != null && value.isNotEmpty) {
+          notes[e.key.toString()] = value;
+        }
+      }
+    } else if (rawNotes is String && rawNotes.isNotEmpty) {
+      // A bare string is accepted as the English note, so a hand-written
+      // manifest for a quick fix does not need the locale map. Rejecting it
+      // would make the common case the awkward one.
+      notes['en'] = rawNotes;
+    }
     final rawPayload = json['payload'];
     return PatchTrack(
       kills: kills,
       config: config,
+      notes: notes,
       payload: rawPayload is Map
           ? PatchPayload._parse(Map<String, dynamic>.from(rawPayload))
           : null,
