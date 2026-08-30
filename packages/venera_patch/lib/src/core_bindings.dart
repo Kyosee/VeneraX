@@ -222,6 +222,21 @@ abstract final class CoreIds {
   static const stateErrorNew = 0x0B10;
   static const argumentErrorNew = 0x0B11;
 
+  // --- Future combinators (0x0C00) ---
+  //
+  // The interpreter can await, but only something that returns a Future. These
+  // are the platform-neutral combinators; the app's own async surface (network,
+  // storage, database) belongs in the generated app bindings, not here.
+  //
+  // `dart:io` is deliberately absent from this file. Adding it would drag a
+  // platform dependency into the one binding table that is otherwise portable,
+  // and it would widen the reachable surface with filesystem access that most
+  // patches have no business holding.
+  static const futureValue = 0x0C00;
+  static const futureDelayedMs = 0x0C01;
+  static const futureWait = 0x0C02;
+  static const futureError = 0x0C03;
+
   // --- Type predicates (0x1000) ---
   static const typeString = 0x1000;
   static const typeInt = 0x1001;
@@ -260,7 +275,7 @@ final class CoreBindings implements HostBridge {
       // Every id this file answers falls in the ranges below. Checked by range
       // rather than by a set literal so adding a member needs one edit, not two
       // that can drift apart.
-      (memberId >= 0x0100 && memberId <= 0x0BFF) ||
+      (memberId >= 0x0100 && memberId <= 0x0CFF) ||
       (memberId >= 0x1000 && memberId <= 0x10FF);
 
   @override
@@ -695,6 +710,31 @@ final class CoreBindings implements HostBridge {
         return StateError(a[0] as String);
       case CoreIds.argumentErrorNew:
         return ArgumentError(a.isEmpty ? null : a[0]);
+
+      // --- Future combinators ---
+      //
+      // These return Futures into interpreted code, which awaits them through
+      // the host's own async machinery. No signature change was needed for that:
+      // `invoke` returns Object?, and a Future is an Object.
+      case CoreIds.futureValue:
+        return Future<Object?>.value(a.isEmpty ? null : a[0]);
+      case CoreIds.futureDelayedMs:
+        return Future<Object?>.delayed(
+          Duration(milliseconds: a[0] as int),
+          a.length > 1 ? () => a[1] : null,
+        );
+      case CoreIds.futureWait:
+        // Accepts the list of futures a patch built up, e.g. one per download.
+        // Non-futures pass through, matching `Future.wait`'s tolerance for
+        // already-resolved values.
+        final items = a[0] as Iterable;
+        return Future.wait(
+          items.map((e) => e is Future ? e : Future<Object?>.value(e)),
+        );
+      case CoreIds.futureError:
+        return Future<Object?>.error(
+          a.isEmpty ? StateError('patch raised an async error') : a[0]!,
+        );
     }
     throw UnboundMemberFault(memberId);
   }

@@ -39,21 +39,42 @@ class VmOverrideBinder {
 
   static OverrideFn _wrap(int id, VmFunction fn) {
     return (args, orig) {
+      final Object? result;
       try {
-        return fn.invoke(args);
+        result = fn.invoke(args);
       } on PatchVmFault catch (e, s) {
-        // Machinery failure. Quarantine so later calls skip straight to the
-        // original instead of re-entering a broken override, then re-raise as
-        // the host-side type the seam knows how to fall back from.
-        PatchRegistry.quarantine(id, e);
-        Error.throwWithStackTrace(
-          PatchVmError(id, e.detail, e),
-          s,
+        _quarantineAndRethrow(id, e, s);
+      }
+      // An async override returns its Future *here*, before the body has run, so
+      // a fault inside it arrives long after the try/catch above has exited. A
+      // synchronous catch alone would let it escape as an unhandled async error:
+      // no quarantine, no fallback, and the seam would go on calling a broken
+      // override forever. So the same handling is attached to the Future.
+      if (result is Future) {
+        return result.catchError(
+          (Object e, StackTrace s) => _quarantineAndRethrow(id, e, s),
+          test: (e) => e is PatchVmFault,
         );
       }
-      // A non-fault exception is deliberately NOT caught: it is the patched
-      // code's own throw and must reach the caller exactly as the original
-      // implementation's would.
+      return result;
+      // A non-fault exception is deliberately NOT caught on either path: it is
+      // the patched code's own throw and must reach the caller exactly as the
+      // original implementation's would.
     };
+  }
+
+  /// Quarantines [id] and re-raises as the host-side type the seam falls back
+  /// from. Shared by the sync and async paths so they cannot drift apart —
+  /// which is precisely how the async path came to be missing this originally.
+  static Never _quarantineAndRethrow(int id, Object fault, StackTrace s) {
+    PatchRegistry.quarantine(id, fault);
+    Error.throwWithStackTrace(
+      PatchVmError(
+        id,
+        fault is PatchVmFault ? fault.detail : fault.toString(),
+        fault,
+      ),
+      s,
+    );
   }
 }
