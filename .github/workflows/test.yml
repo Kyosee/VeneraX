@@ -1,0 +1,85 @@
+name: "test"
+
+# The repository analyzed on every PR but never ran a single test. Analysis
+# catches a misspelled identifier; it cannot catch a comparator that returns the
+# wrong sign, and this codebase's tests exist precisely because several such bugs
+# reached users. Running them here is the cheapest safety this repo can buy.
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - "feat/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: "app (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform's failure must not hide another's. Several tests in this
+      # suite are path- and line-ending-sensitive (backup file names, atomic
+      # writes), which is exactly the class of bug a single-OS run misses.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+      - run: flutter pub get
+      - run: flutter test
+
+  packages:
+    name: "hot-update packages"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+
+      # venera_patch depends on flutter_test; the other two are pure Dart and
+      # deliberately have no Flutter dependency at all, since the interpreter
+      # must stay auditable in isolation.
+      - name: venera_patch
+        working-directory: packages/venera_patch
+        run: |
+          flutter pub get
+          flutter test
+
+      - name: venera_patch_vm
+        working-directory: packages/venera_patch_vm
+        run: |
+          dart pub get
+          dart test
+
+      - name: venera_patch_compiler
+        working-directory: packages/venera_patch_compiler
+        run: |
+          dart pub get
+          dart test
+
+      # The interpreter is the only component that executes payload-shaped
+      # input, so its own package must not acquire dependencies. A transitive
+      # dependency arriving here would widen the audit surface silently.
+      - name: the interpreter stays dependency-free
+        run: |
+          set -euo pipefail
+          deps=$(sed -n '/^dependencies:/,/^dev_dependencies:/p' \
+            packages/venera_patch_vm/pubspec.yaml | grep -c '^  [a-z]' || true)
+          if [ "$deps" != "0" ]; then
+            echo "venera_patch_vm gained $deps runtime dependency(ies)."
+            echo "The interpreter must stay dependency-free — it is the one"
+            echo "component that runs untrusted input."
+            sed -n '/^dependencies:/,/^dev_dependencies:/p' \
+              packages/venera_patch_vm/pubspec.yaml
+            exit 1
+          fi
+          echo "venera_patch_vm has no runtime dependencies."
