@@ -136,17 +136,31 @@ void main() {
     // a re-runnable function — the safety rule the fallback in patched() rests
     // on, and the one thing no automated check can verify.
     //
-    // Both entries below were checked against it by hand:
+    // Every entry below was checked against that rule by hand:
     //
     // * `backupDateFromLeadingSegment` — int in, DateTime out, arithmetic only.
     // * `compareAppVersions` — two strings in, bool out, parses and compares.
+    // * `nextSyncVersion` — two ints in, int out, a max and an increment.
+    // * `shouldSkipStaleUpload` — bool + two ints in, bool out, one comparison.
+    // * `mergeIncomingDataVersion` — two ints in, int out, a range check.
+    // * `isOwnPendingPublish` — names and sizes in, bool out, equality only.
     //
-    // Neither writes a file, touches the database, or fires a request, so the
+    // None writes a file, touches the database, or fires a request, so the
     // fallback re-running the original after a mid-call fault costs nothing but
-    // time.
+    // time. Every one of them also lives in `sync_protocol.dart`'s "pure
+    // decision logic" layer or is a comparable predicate — which is exactly the
+    // shape the mechanism is for, and where this app's worst bugs (#80, #86,
+    // #133, #51) actually were.
     expect(
       SeamIds.installed.keys.toList(),
-      ['backupDateFromLeadingSegment', 'compareAppVersions'],
+      [
+        'backupDateFromLeadingSegment',
+        'compareAppVersions',
+        'nextSyncVersion',
+        'shouldSkipStaleUpload',
+        'mergeIncomingDataVersion',
+        'isOwnPendingPublish',
+      ],
       reason: 'Seam set changed. Confirm the new seam sits on a function where '
           're-running the original after a mid-call fault is harmless (pure '
           'computation, no side effects), then update this list.',

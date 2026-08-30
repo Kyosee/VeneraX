@@ -38,7 +38,13 @@ import 'package:venera_patch/venera_patch.dart';
 /// foreign archive carrying an unrelated lower `dataVersion` — upload a backup
 /// that the numeric version-based sync direction treated as "older", so other
 /// devices never pulled it (issue #80). Pure function, easy to unit-test.
-int nextSyncVersion(int localVersion, int remoteMaxVersion) =>
+int nextSyncVersion(int localVersion, int remoteMaxVersion) => patched(
+      SeamIds.nextSyncVersion,
+      [localVersion, remoteMaxVersion],
+      () => _nextSyncVersionOrig(localVersion, remoteMaxVersion),
+    );
+
+int _nextSyncVersionOrig(int localVersion, int remoteMaxVersion) =>
     (localVersion > remoteMaxVersion ? localVersion : remoteMaxVersion) + 1;
 
 /// Whether an automatic upload must be skipped because this device is behind
@@ -55,6 +61,24 @@ int nextSyncVersion(int localVersion, int remoteMaxVersion) =>
 /// (manual upload button, local-file import, headless CLI) and intentionally
 /// bypass the guard, preserving the #80 "always wins" behavior. Pure function.
 bool shouldSkipStaleUpload({
+  required bool force,
+  required int localVersion,
+  required int remoteMaxVersion,
+}) =>
+    // Named parameters arrive at the override as a positional list, in the
+    // declaration order above. The compiler and the surface manifest agree on
+    // that order; a patch author writes an ordinary positional function.
+    patched(
+      SeamIds.shouldSkipStaleUpload,
+      [force, localVersion, remoteMaxVersion],
+      () => _shouldSkipStaleUploadOrig(
+        force: force,
+        localVersion: localVersion,
+        remoteMaxVersion: remoteMaxVersion,
+      ),
+    );
+
+bool _shouldSkipStaleUploadOrig({
   required bool force,
   required int localVersion,
   required int remoteMaxVersion,
@@ -78,7 +102,13 @@ const int maxReasonableDataVersion = 10000000;
 /// stale-overwrite loop. Additionally, an incoming version beyond
 /// [maxReasonableDataVersion] is treated as foreign garbage and ignored (the
 /// local version is kept). Pure function.
-int mergeIncomingDataVersion(int localVersion, int incomingVersion) {
+int mergeIncomingDataVersion(int localVersion, int incomingVersion) => patched(
+      SeamIds.mergeIncomingDataVersion,
+      [localVersion, incomingVersion],
+      () => _mergeIncomingDataVersionOrig(localVersion, incomingVersion),
+    );
+
+int _mergeIncomingDataVersionOrig(int localVersion, int incomingVersion) {
   if (incomingVersion < 0 || incomingVersion > maxReasonableDataVersion) {
     return localVersion;
   }
@@ -118,6 +148,23 @@ int maxBackupVersion(Iterable<String?> fileNames) {
 /// content must NOT be claimed) lets the device adopt the orphan's version
 /// instead of downloading it. Pure function.
 bool isOwnPendingPublish({
+  required String? claimedFileName,
+  required int? claimedSize,
+  required String remoteFileName,
+  required int? remoteSize,
+}) =>
+    patched(
+      SeamIds.isOwnPendingPublish,
+      [claimedFileName, claimedSize, remoteFileName, remoteSize],
+      () => _isOwnPendingPublishOrig(
+        claimedFileName: claimedFileName,
+        claimedSize: claimedSize,
+        remoteFileName: remoteFileName,
+        remoteSize: remoteSize,
+      ),
+    );
+
+bool _isOwnPendingPublishOrig({
   required String? claimedFileName,
   required int? claimedSize,
   required String remoteFileName,

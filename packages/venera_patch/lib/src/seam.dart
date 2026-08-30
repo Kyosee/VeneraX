@@ -111,6 +111,34 @@ abstract final class SeamIds {
   /// that would fix it.
   static const int compareAppVersions = 0x0003;
 
+  /// `nextSyncVersion` — the version stamped on a fresh WebDAV backup.
+  ///
+  /// Site of #80: deriving it from the local version alone let a device whose
+  /// version trailed the server upload a backup everyone else read as "older"
+  /// and never pulled.
+  static const int nextSyncVersion = 0x0004;
+
+  /// `shouldSkipStaleUpload` — whether an automatic upload must stand down.
+  ///
+  /// Site of #86: a device holding older data uploading it stamped as newest,
+  /// making the whole fleet pull the stale snapshot back and revert real reads.
+  /// The worst class of bug this app has, and a pure predicate.
+  static const int shouldSkipStaleUpload = 0x0005;
+
+  /// `mergeIncomingDataVersion` — folding a restored backup's version into ours.
+  ///
+  /// Guards the sanity ceiling that keeps a foreign millisecond timestamp from
+  /// inflating the fleet's whole version lineage, and keeps `nextSyncVersion`
+  /// from overflowing into a negative that inverts every later direction call.
+  static const int mergeIncomingDataVersion = 0x0006;
+
+  /// `isOwnPendingPublish` — "is the newest remote file the one we just PUT".
+  ///
+  /// Site of #133: an upload that succeeded server-side but reported failure
+  /// left an orphan the device then pulled back, reverting every read since the
+  /// export and re-uploading the rollback to everyone.
+  static const int isOwnPendingPublish = 0x0007;
+
   /// Seam name to id — **only** for seams with a live [patched] call site.
   ///
   /// This is what the surface manifest publishes, and the distinction is
@@ -122,5 +150,9 @@ abstract final class SeamIds {
   static const Map<String, int> installed = {
     'backupDateFromLeadingSegment': backupDateFromLeadingSegment,
     'compareAppVersions': compareAppVersions,
+    'nextSyncVersion': nextSyncVersion,
+    'shouldSkipStaleUpload': shouldSkipStaleUpload,
+    'mergeIncomingDataVersion': mergeIncomingDataVersion,
+    'isOwnPendingPublish': isOwnPendingPublish,
   };
 }
