@@ -10,6 +10,7 @@
 //   dart tool/patch_tool.dart keygen [--out <dir>]
 //   dart tool/patch_tool.dart sign --key <pem> --body <file> [--out <file>]
 //   dart tool/patch_tool.dart manifest --spec <file> --key <pem> [--out <file>]
+//   dart tool/patch_tool.dart surface [--out <file>]
 //   dart tool/patch_tool.dart verify --manifest <file> --pub <base64>
 
 import 'dart:convert';
@@ -26,7 +27,8 @@ import 'package:pointycastle/key_generators/ec_key_generator.dart';
 import 'package:pointycastle/macs/hmac.dart';
 import 'package:pointycastle/random/fortuna_random.dart';
 import 'package:pointycastle/signers/ecdsa_signer.dart';
-import 'package:venera_patch/venera_patch.dart' show PatchSignature;
+import 'package:venera_patch/venera_patch.dart'
+    show CoreSurface, PatchSignature, SeamIds;
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
@@ -41,6 +43,8 @@ Future<void> main(List<String> args) async {
         _sign(_flags(args.skip(1)));
       case 'manifest':
         _manifest(_flags(args.skip(1)));
+      case 'surface':
+        _surface(_flags(args.skip(1)));
       case 'verify':
         _verify(_flags(args.skip(1)));
       default:
@@ -200,6 +204,97 @@ void _manifest(Map<String, String> flags) {
   stdout.writeln('signed manifest -> $out');
   stdout.writeln('patchVersion ${body['patchVersion']}, '
       'tracks ${tracks.keys.join(", ")}');
+}
+
+// ---------------------------------------------------------------------------
+// surface
+// ---------------------------------------------------------------------------
+
+/// Emits the surface manifest the patch compiler compiles against.
+///
+/// Built from the *same tables the app runs on* — [CoreSurface.members],
+/// [CoreSurface.types], [SeamIds.installed] — rather than from a separate
+/// description of them. A hand-maintained manifest would drift, and it would
+/// drift in the worst direction: toward promising a binding the binary does not
+/// have, so a patch compiles cleanly and then faults on a device.
+///
+/// [SeamIds.installed] deliberately lists only seams with a live `patched()`
+/// call site. An id that is declared but not installed would let a patch
+/// compile, sign, install, and report success while overriding nothing at all.
+void _surface(Map<String, String> flags) {
+  final appVersion = flags['app-version'] ?? _pubspecVersion();
+  final builtin = flags['builtin-patch-version'] == null
+      ? _builtinPatchVersion()
+      : int.parse(flags['builtin-patch-version']!);
+
+  final manifest = <String, Object?>{
+    'schema': 1,
+    'appVersion': appVersion,
+    'builtinPatchVersion': builtin,
+    'members': CoreSurface.members,
+    'types': CoreSurface.types,
+    'seams': SeamIds.installed,
+  };
+
+  final out = flags['out'] ?? 'build/patch/surface.json';
+  File(out).parent.createSync(recursive: true);
+  File(out).writeAsStringSync('${jsonEncode(manifest)}\n');
+
+  stdout.writeln('surface manifest -> $out');
+  stdout.writeln('  appVersion          $appVersion');
+  stdout.writeln('  builtinPatchVersion $builtin');
+  stdout.writeln('  members             ${CoreSurface.members.length}');
+  stdout.writeln('  types               ${CoreSurface.types.length}');
+  stdout.writeln('  seams               ${SeamIds.installed.length} '
+      '(${SeamIds.installed.keys.join(", ")})');
+  if (SeamIds.installed.isEmpty) {
+    stdout.writeln('\nNOTE: no seams are installed, so a patch built against '
+        'this manifest\ncan override nothing. Add a patched() call site first.');
+  }
+}
+
+/// Reads `version:` from the app's pubspec, minus the build number.
+///
+/// Parsed textually rather than via a YAML dependency: this is one line in a
+/// file we control, and the tool's dependency list is part of what has to stay
+/// auditable.
+String _pubspecVersion() {
+  final file = File('pubspec.yaml');
+  if (!file.existsSync()) {
+    throw _ToolError(
+      'pubspec.yaml not found — run this from the repository root, or pass '
+      '--app-version explicitly',
+    );
+  }
+  for (final line in file.readAsLinesSync()) {
+    if (!line.startsWith('version:')) continue;
+    final value = line.substring('version:'.length).trim();
+    // `2.2.12+242` — the build number is not part of the version the manifest
+    // range checks compare against.
+    return value.split('+').first.trim();
+  }
+  throw _ToolError('pubspec.yaml has no version: line');
+}
+
+/// Reads `kBuiltinPatchVersion` out of the app source.
+///
+/// Read from source rather than accepted as a flag by default, because getting
+/// it wrong is silent: stamp a patch at or below the floor and every device
+/// ignores it, with no error anywhere.
+int _builtinPatchVersion() {
+  final file = File('lib/foundation/hot_update.dart');
+  if (!file.existsSync()) {
+    throw _ToolError(
+      'lib/foundation/hot_update.dart not found — run this from the repository '
+      'root, or pass --builtin-patch-version explicitly',
+    );
+  }
+  final match = RegExp(r'kBuiltinPatchVersion\s*=\s*(\d+)')
+      .firstMatch(file.readAsStringSync());
+  if (match == null) {
+    throw _ToolError('could not find kBuiltinPatchVersion in hot_update.dart');
+  }
+  return int.parse(match.group(1)!);
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +468,15 @@ Venera patch tool.
       file. Spec fields: patchVersion (int, required), minApp, maxApp,
       tracks{<name>: {kills[], config{}, payload{file, url}}}.
 
+  surface [--out <file>] [--app-version <v>] [--builtin-patch-version <n>]
+      Emit the surface manifest the patch compiler compiles against: which
+      host members a patch may call, and which seams it may override. Built
+      from the same tables the app runs on, so the two cannot drift.
+      Defaults to build/patch/surface.json.
+
   verify --manifest <file> --pub <base64>
-      Verify exactly as the app does. Run this in CI before publishing: a
-      manifest the app rejects looks identical to no manifest at all.
+      Verify exactly as the app does — this calls the app's own verifier, not
+      a copy. Run it in CI before publishing: a manifest the app rejects looks
+      identical to no manifest at all.
 ''');
 }
