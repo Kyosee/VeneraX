@@ -265,8 +265,14 @@ abstract final class CoreIds {
 /// interpreted code reaches the host constantly, and the interpreter is already
 /// ~23x native.
 ///
-/// Callbacks arrive as [VmClosure], which implements `Function`, so `where`/`map`
-/// and friends work without this file knowing anything about the VM's internals.
+/// Callbacks arrive as a plain Dart function — the VM hands out a tear-off of
+/// its closure's `call`, not the closure object — so `where`/`map` and friends
+/// work without this file knowing anything about the VM's internals.
+///
+/// That indirection is not incidental. A Dart class with a `call` method is
+/// *callable* but is not a subtype of `Function`: `x as Function` throws. Casting
+/// a callback here is therefore only safe because the VM hands over a real
+/// function; the closure tests caught this the one time it did not.
 final class CoreBindings implements HostBridge {
   const CoreBindings();
 
@@ -450,8 +456,9 @@ final class CoreBindings implements HostBridge {
       case CoreIds.listReversed:
         return (receiver as List).reversed.toList();
       case CoreIds.listSort:
-        // The comparator is a VmClosure, which is a Function — so `sort` calls
-        // back into interpreted code without knowing it.
+        // The comparator is a real Dart function (a tear-off of the VM
+        // closure's `call`), so `sort` calls back into interpreted code without
+        // knowing it.
         if (a.isEmpty || a[0] == null) {
           (receiver as List).sort();
         } else {

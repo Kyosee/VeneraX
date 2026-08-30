@@ -1,6 +1,7 @@
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:path/path.dart' as p;
@@ -109,17 +110,25 @@ class PatchCompiler {
     final names = declarations.keys.toList(growable: false);
     final indexOf = {for (var i = 0; i < names.length; i++) names[i]: i};
 
-    final functions = <Map<String, Object?>>[];
+    // Top-level functions own indices 0..n-1; anything lifted out of a closure
+    // is appended after them. Reserving the leading slots up front matters:
+    // appending as we go would give the first lifted closure index 1, which is
+    // already the second top-level function, and every `vmCall` to it would
+    // silently reach the wrong body.
+    final functions = List<Map<String, Object?>?>.filled(names.length, null);
+    final lifted = <Map<String, Object?>>[];
     final overrides = <String, int>{};
 
     for (var i = 0; i < names.length; i++) {
       final decl = declarations[names[i]]!;
-      final fn = _FunctionCompiler(
+      functions[i] = _FunctionCompiler(
         surface: surface,
         functionIndex: indexOf,
-        declaration: decl,
+        name: decl.name.lexeme,
+        expression: decl.functionExpression,
+        lifted: lifted,
+        liftedBase: names.length,
       ).compile();
-      functions.add(fn);
 
       final seam = _seamName(decl);
       if (seam != null) {
@@ -137,7 +146,10 @@ class PatchCompiler {
 
     return {
       'version': 1,
-      'functions': functions,
+      'functions': [
+        for (final f in functions) f!,
+        ...lifted,
+      ],
       'overrides': overrides,
     };
   }
@@ -177,12 +189,40 @@ class _FunctionCompiler {
   _FunctionCompiler({
     required this.surface,
     required this.functionIndex,
-    required this.declaration,
+    required this.name,
+    required this.expression,
+    required this.lifted,
+    required this.liftedBase,
+    this.captured = const [],
   });
 
   final SurfaceManifest surface;
   final Map<String, int> functionIndex;
-  final FunctionDeclaration declaration;
+
+  /// Name for diagnostics and for the emitted function's `name` field.
+  final String name;
+
+  /// The parameters and body to compile. A [FunctionExpression] rather than a
+  /// [FunctionDeclaration] so a lifted closure — which has no declaration —
+  /// compiles through exactly the same path as a top-level function.
+  final FunctionExpression expression;
+
+  /// Shared sink for functions lifted out of closures, appended to the payload
+  /// after every top-level function.
+  final List<Map<String, Object?>> lifted;
+
+  /// Payload index of `lifted[0]`.
+  final int liftedBase;
+
+  /// Variables this function captured from an enclosing scope, declared as its
+  /// leading parameters.
+  ///
+  /// Capture is by *value*, resolved by lambda lifting: the enclosing compiler
+  /// evaluates each of these where the closure is created and the runtime
+  /// prepends them to every call. So a closure body never reads another frame,
+  /// and the interpreter needs no frame chain — which keeps a branch off the
+  /// hottest operation it has.
+  final List<String> captured;
 
   /// Lexical scopes of name to slot. A nested block shadows by pushing a map;
   /// distinct slots mean shadowing needs no runtime support.
@@ -195,14 +235,23 @@ class _FunctionCompiler {
   List<Map<String, Object?>>? _prelude;
 
   Map<String, Object?> compile() {
-    final name = declaration.name.lexeme;
-    final expression = declaration.functionExpression;
     final params = expression.parameters?.parameters ?? const [];
 
     var required = 0;
     var optional = 0;
     final namedSlots = <String, int>{};
     final defaults = <String, Map<String, Object?>>{};
+
+    // Captured variables occupy the LEADING slots, before the closure's own
+    // parameters, because the runtime prepends the captured values to every
+    // call. The two orders are one agreement: if they disagreed, a closure would
+    // read its arguments shifted by the capture count — a plausible wrong answer
+    // rather than a visible failure, which is the worst shape of bug this
+    // codebase can produce.
+    for (final name in captured) {
+      _declare(name);
+      required++;
+    }
 
     for (final param in params) {
       final pname = param.name?.lexeme;
@@ -945,12 +994,7 @@ class _FunctionCompiler {
     }
     if (e is InstanceCreationExpression) return _construct(e);
 
-    if (e is FunctionExpression) {
-      throw PatchCompileError(
-        'closures are not supported yet (line ${_lineOf(e)}); extract a '
-        'top-level function',
-      );
-    }
+    if (e is FunctionExpression) return _closure(e);
 
     if (e is CascadeExpression) {
       throw PatchCompileError(
@@ -1205,6 +1249,91 @@ class _FunctionCompiler {
     };
   }
 
+  /// Lifts a closure into its own top-level function and yields a node that
+  /// constructs it.
+  ///
+  /// Lambda lifting rather than a frame chain. The body becomes an ordinary
+  /// function whose leading parameters are the variables it captured; the values
+  /// are evaluated *here*, where the closure is created, and the runtime
+  /// prepends them to every call.
+  ///
+  /// Two reasons that beats the obvious alternative of giving each frame a
+  /// pointer to its enclosing one:
+  ///
+  /// 1. A slot read is the single hottest operation in the interpreter. Chain
+  ///    walking would put a branch on all of them to serve a feature most
+  ///    patches never use.
+  /// 2. Capture-by-value is what Dart already does for a loop variable, so a
+  ///    closure made inside a loop captures that iteration's value with no
+  ///    special case here.
+  Map<String, Object?> _closure(FunctionExpression e) {
+    final body = e.body;
+    if (body.isGenerator) {
+      throw PatchCompileError(
+        'a generator closure (sync*/async*) is not supported (line '
+        '${_lineOf(e)}); build and return a List instead',
+      );
+    }
+
+    // Which enclosing variables the body reads. Determined from resolved
+    // elements, never from names: `s.length` contains an identifier `length`
+    // that resolves to a getter, so a local also called `length` cannot be
+    // confused for it — and shadowing resolves correctly for free.
+    final captures = <String>[];
+    for (final name in _freeVariables(e)) {
+      if (_lookup(name) != null) captures.add(name);
+    }
+
+    // Reserve the payload index BEFORE compiling the body. A closure nested
+    // inside this one appends to the same list while we are compiling, so
+    // claiming the index afterwards would hand it our slot and every `vmCall`
+    // to either would reach the wrong body.
+    final index = liftedBase + lifted.length;
+    lifted.add(const <String, Object?>{});
+
+    lifted[index - liftedBase] = _FunctionCompiler(
+      surface: surface,
+      functionIndex: functionIndex,
+      name: '$name#closure${index - liftedBase}',
+      expression: e,
+      lifted: lifted,
+      liftedBase: liftedBase,
+      captured: captures,
+    ).compile();
+
+    return {
+      'k': 'closure',
+      'fn': index,
+      // `caps`, not `captures` — the loader's key. Worth stating because the
+      // first version of this emitted `captures` and the loader read `caps`,
+      // which does not fail at load: an absent key reads as "no captures", so
+      // the closure was built with an empty environment and the mismatch only
+      // surfaced as an arity TypeFault on the first call.
+      if (captures.isNotEmpty)
+        'caps': [
+          for (final c in captures) {'k': 'local', 'slot': _lookup(c)!},
+        ],
+    };
+  }
+
+  /// Names the closure reads from an enclosing scope, in first-use order.
+  ///
+  /// Order is deterministic because it becomes the lifted function's parameter
+  /// order, which the runtime relies on when prepending captured values.
+  List<String> _freeVariables(FunctionExpression closure) {
+    final collector = _FreeVariables();
+    closure.accept(collector);
+    final out = <String>[];
+    final seen = <String>{};
+    for (final element in collector.used) {
+      if (collector.declared.contains(element)) continue;
+      final name = collector.names[element];
+      if (name == null || !seen.add(name)) continue;
+      out.add(name);
+    }
+    return out;
+  }
+
   Map<String, Object?> _construct(InstanceCreationExpression e) {
     final typeName = e.constructorName.type.type?.element?.name;
     if (typeName == null) {
@@ -1243,6 +1372,57 @@ class _FunctionCompiler {
     final unit = node.thisOrAncestorOfType<CompilationUnit>();
     if (unit == null) return 0;
     return unit.lineInfo.getLocation(node.offset).lineNumber;
+  }
+}
+
+/// Collects the local variables a subtree reads, and those it declares itself.
+///
+/// The difference is the set of captures. Keyed on resolved [Element]s rather
+/// than names, which is what makes the answer trustworthy: an identifier in
+/// `s.length` resolves to a getter, a named argument's label is a plain token
+/// rather than an identifier, and a shadowed name is a distinct element from the
+/// one it shadows. A name-based version of this would get all three wrong, and
+/// would get them wrong *quietly* — the closure would read a slot that exists
+/// and holds the wrong value.
+class _FreeVariables extends UnifyingAstVisitor<void> {
+  /// Elements declared inside the subtree: parameters (including a nested
+  /// closure's), locals, loop variables, catch clause bindings.
+  final Set<Element> declared = {};
+
+  /// Local elements read anywhere in the subtree, in encounter order.
+  final List<Element> used = [];
+
+  final Map<Element, String> names = {};
+
+  @override
+  void visitNode(AstNode node) {
+    switch (node) {
+      case FormalParameter():
+        _declare(node.declaredFragment?.element);
+      case VariableDeclaration():
+        _declare(node.declaredFragment?.element);
+      case DeclaredIdentifier():
+        _declare(node.declaredFragment?.element);
+      case CatchClauseParameter():
+        _declare(node.declaredFragment?.element);
+      case SimpleIdentifier():
+        final element = node.element;
+        // `LocalElement` covers exactly locals and formal parameters — the only
+        // things a frame slot can hold. Anything else (getter, method, class,
+        // top-level function) is reached through the host bridge instead and is
+        // not a capture.
+        if (element is LocalElement) {
+          used.add(element);
+          names[element] = node.name;
+        }
+      default:
+        break;
+    }
+    node.visitChildren(this);
+  }
+
+  void _declare(Element? element) {
+    if (element != null) declared.add(element);
   }
 }
 

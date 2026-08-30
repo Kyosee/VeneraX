@@ -31,6 +31,14 @@ const _idListAdd = 0x0201;
 const _idIntParse = 0x0300;
 const _idIntTryParse = 0x0301;
 const _idMathMax = 0x0400;
+// Closure-taking members. These are why closures matter at all: the core
+// surface advertises 15 of them, and without lambda lifting a patch could name
+// none of them.
+const _idListWhere = 0x0410;
+const _idListMap = 0x0411;
+const _idListFold = 0x0412;
+const _idListAny = 0x0413;
+const _idListToList = 0x0414;
 const _idFetch = 0x0500;
 const _idDelayed = 0x0501;
 const _idTypeString = 0x1000;
@@ -56,6 +64,33 @@ HostBridge _bridge() => MapHostBridge(
         _idIntParse: (r, a, n) => int.parse(a[0] as String),
         _idIntTryParse: (r, a, n) => int.tryParse(a[0] as String),
         _idMathMax: (r, a, n) => (a[0] as num) > (a[1] as num) ? a[0] : a[1],
+        // Closure-taking members. The callback arrives as a VmClosure, which
+        // implements Function via `call`, so these bindings are written exactly
+        // as they would be for a native callback — the binding never learns a
+        // VM is involved.
+        _idListWhere: (r, a, n) {
+          final f = a[0] as Function;
+          return (r as Iterable).where((e) => f(e) as bool).toList();
+        },
+        _idListMap: (r, a, n) {
+          final f = a[0] as Function;
+          return (r as Iterable).map<Object?>((e) => f(e)).toList();
+        },
+        _idListFold: (r, a, n) {
+          final f = a[1] as Function;
+          var acc = a[0];
+          for (final e in r as Iterable) {
+            acc = f(acc, e);
+          }
+          return acc;
+        },
+        _idListAny: (r, a, n) {
+          final f = a[0] as Function;
+          return (r as Iterable).any((e) => f(e) as bool);
+        },
+        // `where`/`map` return a lazy Iterable; a patch that indexes or stores
+        // the result needs it materialised, exactly as in ordinary Dart.
+        _idListToList: (r, a, n) => (r as Iterable).toList(),
         // Async members: the whole point of await lowering.
         _idFetch: (r, a, n) async {
           await Future<void>.delayed(const Duration(milliseconds: 1));
@@ -88,6 +123,23 @@ SurfaceManifest _surface({Map<String, int> seams = const {'target': 1}}) =>
         'String.trim': _idStringTrim,
         'List.length': _idListLength,
         'List.add': _idListAdd,
+        'List.toList': _idListToList,
+        // `Iterable.*` aliases, mirroring what `CoreSurface` does. The compiler
+        // keys a member on the receiver's *static* type, and `where`/`map`
+        // return `Iterable`, so `xs.where(...).length` asks for
+        // `Iterable.length` — a different key reaching the same binding.
+        // Omitting these aliases makes a working API look unreachable.
+        'Iterable.length': _idListLength,
+        'Iterable.toList': _idListToList,
+        'List.where': _idListWhere,
+        'Iterable.where': _idListWhere,
+        'List.map': _idListMap,
+        'Iterable.map': _idListMap,
+        'List.fold': _idListFold,
+        'Iterable.fold': _idListFold,
+        'List.any': _idListAny,
+        'Iterable.any': _idListAny,
+        'math.max': _idMathMax,
         'int.parse': _idIntParse,
         'int.tryParse': _idIntTryParse,
         'fetch': _idFetch,
@@ -113,11 +165,22 @@ Future<VmProgram> _compile(
   SurfaceManifest? surface,
   HostBridge? host,
 }) async {
+  final payload = await _payload(source, surface: surface);
+  return VirLoader(host: host ?? _bridge()).load(payload);
+}
+
+/// Compiles [source] and returns the raw payload, without loading it.
+///
+/// Used by the few tests that assert on payload *shape* rather than on the
+/// answer it computes — function-table layout, for instance, where a wrong index
+/// would still load and run, just against the wrong body.
+Future<Map<String, Object?>> _payload(
+  String source, {
+  SurfaceManifest? surface,
+}) async {
   final file = File('${_tmp.path}/patch_${source.hashCode}.dart');
   file.writeAsStringSync('${_preamble()}\n$source\n');
-  final payload = await PatchCompiler(surface ?? _surface())
-      .compileFiles([file.path]);
-  return VirLoader(host: host ?? _bridge()).load(payload);
+  return PatchCompiler(surface ?? _surface()).compileFiles([file.path]);
 }
 
 /// Writes the declarations a patch imports, and returns the import line.
@@ -653,6 +716,173 @@ int helperOnly(int n) => n + 1;
 '''),
         throwsA(isA<Object>()),
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Closures, via lambda lifting.
+  //
+  // A closure body is compiled as an ordinary lifted function whose leading
+  // parameters are the variables it captured; the values are evaluated where the
+  // closure is created and prepended to every call. So the interpreter needs no
+  // frame chain, and capture is by value — which is the property these tests are
+  // really for. An earlier draft carried an enclosing-frame pointer that was
+  // never read, meaning a closure reading an outer variable would have read its
+  // own frame's slot of the same index: a plausible wrong answer.
+  // -------------------------------------------------------------------------
+  group('closures', () {
+    test('a closure with no captures runs through a host callback', () async {
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs) => xs.where((x) => x > 2).length;
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3, 4]]), 2);
+    });
+
+    test('a captured parameter reaches the closure body', () async {
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs, int floor) => xs.where((x) => x > floor).length;
+''');
+      final fn = program.overrideFor(1)!;
+      expect(fn.invoke([<int>[1, 2, 3, 4], 2]), 2);
+      expect(fn.invoke([<int>[1, 2, 3, 4], 0]), 4);
+      expect(fn.invoke([<int>[1, 2, 3, 4], 9]), 0);
+    });
+
+    test('a captured local reaches the closure body', () async {
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs) {
+  var floor = 2;
+  return xs.where((x) => x > floor).length;
+}
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3, 4]]), 2);
+    });
+
+    test('two captures keep their order', () async {
+      // Order is load-bearing: captures become the lifted function's leading
+      // parameters, and the runtime prepends the values positionally. If the two
+      // orders disagreed the closure would read its arguments transposed, which
+      // is a wrong answer rather than a visible failure.
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs, int lo, int hi) =>
+    xs.where((x) => x > lo && x < hi).length;
+''');
+      final fn = program.overrideFor(1)!;
+      expect(fn.invoke([<int>[1, 2, 3, 4, 5], 1, 5]), 3);
+      expect(fn.invoke([<int>[1, 2, 3, 4, 5], 3, 9]), 2);
+    });
+
+    test('a member name is not mistaken for a capture', () async {
+      // `s.length` contains an identifier `length` that resolves to a getter,
+      // not a local. A name-based free-variable pass would treat it as a capture
+      // of the enclosing `length` and silently pass the wrong value.
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<String> xs) {
+  var length = 100;
+  return xs.where((s) => s.length < 3).length + length;
+}
+''');
+      expect(program.overrideFor(1)!.invoke([<String>['a', 'bb', 'cccc']]), 102);
+    });
+
+    test('a closure parameter shadows an enclosing local', () async {
+      // The shadowed `x` is a distinct element from the outer one, so the outer
+      // must NOT be captured — the closure sees its own parameter.
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs) {
+  var x = 1000;
+  return xs.where((x) => x > 2).length + x;
+}
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3, 4]]), 1002);
+    });
+
+    test('map with a capture transforms every element', () async {
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs, int k) {
+  var doubled = xs.map((x) => x * k);
+  var total = 0;
+  for (var v in doubled) {
+    total = total + v;
+  }
+  return total;
+}
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3], 10]), 60);
+    });
+
+    test('a two-parameter closure works through fold', () async {
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs) => xs.fold(0, (acc, x) => acc + x);
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3, 4]]), 10);
+    });
+
+    test('a closure can call a function the patch declares', () async {
+      final program = await _compile('''
+bool big(int x) => x > 2;
+
+@PatchOverride('target')
+int target(List<int> xs) => xs.where((x) => big(x)).length;
+''');
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3, 4]]), 2);
+    });
+
+    test('nested closures each capture correctly', () async {
+      // The inner closure captures `k` from the outer closure's own capture,
+      // which is where index bookkeeping goes wrong if a nested lift claims an
+      // already-reserved payload slot.
+      final program = await _compile('''
+@PatchOverride('target')
+bool target(List<int> xs, int k) =>
+    xs.any((x) => xs.any((y) => x + y == k));
+''');
+      final fn = program.overrideFor(1)!;
+      expect(fn.invoke([<int>[1, 2, 3], 5]), isTrue);
+      expect(fn.invoke([<int>[1, 2, 3], 99]), isFalse);
+    });
+
+    test('a closure created per iteration captures that iteration', () async {
+      // Capture is evaluated where the closure is created, so each iteration's
+      // closure sees its own value — matching Dart's rule for a loop variable.
+      final program = await _compile('''
+@PatchOverride('target')
+int target(List<int> xs) {
+  var total = 0;
+  for (var i = 0; i < 3; i++) {
+    total = total + xs.where((x) => x > i).length;
+  }
+  return total;
+}
+''');
+      // i=0 -> 3 (1,2,3), i=1 -> 2 (2,3), i=2 -> 1 (3). Total 6.
+      expect(program.overrideFor(1)!.invoke([<int>[1, 2, 3]]), 6);
+    });
+
+    test('the lifted function is a real payload entry, not inlined', () async {
+      // The closure must appear as its own function in the table, after every
+      // top-level one. Overlapping indices would make a `vmCall` reach the wrong
+      // body — silently, since arity often matches.
+      final payload = await _payload('''
+int helper(int n) => n + 1;
+
+@PatchOverride('target')
+int target(List<int> xs) => xs.where((x) => x > 1).length;
+''');
+      final functions = payload['functions'] as List;
+      expect(functions.length, 3,
+          reason: 'two top-level functions plus one lifted closure');
+      // Overrides still point at the top-level entry, not the lifted one.
+      final overrides = payload['overrides'] as Map;
+      expect(overrides['1'], lessThan(2));
     });
   });
 

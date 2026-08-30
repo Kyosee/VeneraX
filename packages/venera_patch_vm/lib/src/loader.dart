@@ -240,6 +240,21 @@ final class VirLoader {
           named: _exprMap(json['named'], '$path.named', slotCount),
         );
 
+      case 'closure':
+        // A lambda the compiler lifted into its own function. The index is
+        // range-checked when the node compiles, alongside every other function
+        // reference, so a payload pointing past the table fails at load.
+        //
+        // `caps` are the captured values, evaluated where the closure is created
+        // and passed as the lifted function's leading arguments. Arity agreement
+        // between this list and the target's parameters is not checked here: the
+        // callee checks it on every call, so a mismatch is a clean TypeFault
+        // rather than a silent misbind.
+        return ClosureExpr(
+          _int(json['fn'], '$path.fn'),
+          captures: _exprList(json['caps'], '$path.caps', slotCount),
+        );
+
       case 'list':
         return ListLiteral(
           _exprList(json['items'], '$path.items', slotCount),

@@ -152,11 +152,25 @@ final class VmFunction implements VmInvokable {
 /// A callable that interpreted code can pass around: a tear-off, a closure, or
 /// a function-typed argument handed to a host API.
 ///
-/// Implements [Function] via `call` so a host binding can accept it wherever a
-/// Dart callback is expected — which is what lets a patch supply, say, a
-/// `Comparator` to `List.sort` without the binding knowing about the VM.
+/// ## Why callers receive `closure.call`, never the closure itself
+///
+/// A Dart object with a `call` method is *invocable* — `c(1)` compiles — but it
+/// is **not** a subtype of `Function`: `c is Function` is false and
+/// `c as Function` throws. Every closure-taking host binding casts its callback
+/// that way (`a[0] as Function` in `CoreBindings`), so handing out the object
+/// made `list.where((x) => ...)` throw a `TypeError` at the boundary, which the
+/// seam then read as a machinery fault: quarantined, silently fallen back to the
+/// original. A patch that looked installed and did nothing.
+///
+/// `implements Function` cannot fix it — `Function` is a final class. So
+/// [ClosureExpr] hands out the **tear-off** `closure.call`, which is a real
+/// `Function` object, and the cast succeeds.
+///
+/// Same nominal-typing trap that made every interpreted-to-interpreted call fail
+/// until [VmFunction] declared `implements VmInvokable`. Dart's `is` never infers
+/// structural conformance; it has to be arranged deliberately.
 final class VmClosure implements VmInvokable {
-  VmClosure(this.function, this.depth, [this.captured]);
+  VmClosure(this.function, this.depth, [this.bound = const []]);
 
   final VmFunction function;
 
@@ -164,8 +178,23 @@ final class VmClosure implements VmInvokable {
   /// recursion still counts against the same budget.
   final int depth;
 
-  /// Enclosing frame for a nested function. Null for a top-level tear-off.
-  final Frame? captured;
+  /// Values captured from the enclosing scope, prepended to every call.
+  ///
+  /// Capture is resolved by *lambda lifting* in the compiler, not by a frame
+  /// chain here: a closure body is compiled as an ordinary top-level function
+  /// whose leading parameters are the variables it captured, and the values are
+  /// evaluated once, where the closure is created. So this list is the whole of
+  /// the closure's environment.
+  ///
+  /// The alternative — giving each frame a pointer to its enclosing one and
+  /// walking the chain on a slot read — would put a branch on the single hottest
+  /// operation in the interpreter to support a feature most patches never use.
+  /// Worse, an earlier draft of this class carried exactly that pointer and
+  /// *never read it*, which meant a closure reading an enclosing variable would
+  /// have quietly read its own frame's slot instead: the same index, a different
+  /// frame, a plausible wrong answer. Values, evaluated once, cannot fail that
+  /// way.
+  final List<Object?> bound;
 
   Object? call([
     Object? a0 = _absent,
@@ -173,7 +202,7 @@ final class VmClosure implements VmInvokable {
     Object? a2 = _absent,
     Object? a3 = _absent,
   ]) {
-    final args = <Object?>[];
+    final args = <Object?>[...bound];
     if (!identical(a0, _absent)) args.add(a0);
     if (!identical(a1, _absent)) args.add(a1);
     if (!identical(a2, _absent)) args.add(a2);
@@ -195,13 +224,100 @@ final class VmClosure implements VmInvokable {
     int callerDepth = 0,
   ]) {
     final d = callerDepth > depth ? callerDepth : depth;
-    return function.invoke(positional, named, d + 1);
+    // Captured values lead, exactly as in [call]. Both entry points must agree:
+    // a closure reached through the host (`call`) and one reached from
+    // interpreted code (`invoke`) are the same closure, and a disagreement here
+    // would shift every parameter by the number of captures — silently, and
+    // only for closures that capture anything.
+    final args = bound.isEmpty ? positional : <Object?>[...bound, ...positional];
+    return function.invoke(args, named, d + 1);
   }
 
   @override
   String toString() => 'VmClosure(${function.name})';
 
   static const Object _absent = Object();
+}
+
+/// Builds a [VmClosure] over the function at [functionIndex].
+///
+/// Lives here rather than in `expr.dart` because it constructs a [VmClosure],
+/// and `expr.dart` deliberately does not import this file — its [VmFunctionRef]
+/// keeps its target as `Object?` for exactly that reason.
+///
+/// ## Non-capturing only, deliberately
+///
+/// The closure body gets a fresh frame from [VmFunction.invoke], so it can reach
+/// its own parameters and nothing else. A body referring to a local of the
+/// enclosing function would need that frame threaded through, and slots are
+/// per-frame indices — there is no representation for "slot 2 of my parent".
+///
+/// That is not as limiting as it sounds: `where((x) => x > 3)`,
+/// `map((x) => x * 2)`, `fold(0, (a, b) => a + b)` capture nothing. What the
+/// compiler must do is *reject* a capturing lambda with an actionable message
+/// rather than compile one that silently reads a null slot — a wrong answer from
+/// a patch is worse than a patch that would not build.
+class ClosureExpr extends Expr {
+  const ClosureExpr(this.functionIndex, {this.captures = const []});
+
+  final int functionIndex;
+
+  /// Expressions for the values the closure captures, in the order the lifted
+  /// function declares them as leading parameters.
+  ///
+  /// Evaluated **here**, when the closure is created — not when it is called.
+  /// That is what makes capture-by-value correct rather than merely convenient:
+  /// a `for` loop creating a closure per iteration captures each iteration's
+  /// value, which is what Dart itself does for a loop variable.
+  final List<Expr> captures;
+
+  @override
+  ExprFn compile(CompileContext ctx) {
+    if (functionIndex < 0 || functionIndex >= ctx.functions.length) {
+      throw PatchLoadFault(
+        'closure names function $functionIndex, but the payload defines '
+        '${ctx.functions.length}',
+      );
+    }
+    final ref = ctx.functions[functionIndex];
+    final caps = <ExprFn>[for (final c in captures) c.compile(ctx)];
+
+    // The VALUE handed out is `closure.call` — a tear-off — not the [VmClosure]
+    // itself.
+    //
+    // Having a `call` method makes an object callable but does NOT make it a
+    // subtype of `Function`: `x is Function` is false and `x as Function`
+    // throws. Every closure-taking binding casts its callback exactly that way
+    // (`a[0] as Function` in `CoreBindings`), so passing the object would throw
+    // a TypeError at the host boundary — reported as a machinery fault,
+    // quarantined, and silently fallen back to the original. A tear-off *is* a
+    // real `Function`, so the cast succeeds and `where`/`map`/`sort` work.
+    //
+    // `implements Function` is not an option: `Function` is a final class. This
+    // is the same nominal-typing trap that broke every interpreted-to-
+    // interpreted call until [VmFunction] declared `implements VmInvokable` —
+    // Dart never infers structural conformance, and the round-trip tests caught
+    // both.
+    if (caps.isEmpty) {
+      return (f) {
+        final target = ref.target;
+        if (target is! VmFunction) {
+          throw PatchLoadFault('closure #$functionIndex unresolved');
+        }
+        // Depth carried from the creating frame so a closure handed to a host
+        // callback still counts against the recursion budget of the code that
+        // made it, instead of resetting the counter on the way out.
+        return VmClosure(target, f.depth).call;
+      };
+    }
+    return (f) {
+      final target = ref.target;
+      if (target is! VmFunction) {
+        throw PatchLoadFault('closure #$functionIndex unresolved');
+      }
+      return VmClosure(target, f.depth, [for (final c in caps) c(f)]).call;
+    };
+  }
 }
 
 /// A loaded bundle: the functions it defines plus the override ids it claims.
