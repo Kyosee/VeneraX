@@ -41,7 +41,7 @@ const int kBuiltinPatchVersion = 0;
 /// generated; while empty, verification always fails and no patch can load.
 /// That is the intended fail-closed default: an unsigned build must not accept
 /// unsigned patches.
-const String kPatchPublicKeyB64 = '';
+const String kPatchPublicKeyB64 = 'BF43sJ5N3FkOiVlghM1TsBj94Yd/XDiZmfCrukToET5YLDaJ9tSzUCacNgeCs/K3lHKUWiECL4+E2E5hiUc6Thg=';
 
 /// Host-side wiring for the hot-update runtime.
 ///
