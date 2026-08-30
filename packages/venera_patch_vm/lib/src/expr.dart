@@ -52,7 +52,31 @@ abstract class Expr {
   const Expr();
 
   ExprFn compile(CompileContext ctx);
+
+  /// Whether this node, or anything beneath it, awaits.
+  ///
+  /// Structural and computed at load time, so the compiler can keep await-free
+  /// subtrees on the fast synchronous path even inside an async body.
+  bool get hasAwait => false;
+
+  /// Compiles for a context where evaluation may suspend.
+  ///
+  /// The default is correct only for await-free nodes; a node that can *contain*
+  /// an await must override this to thread Futures through its children. See the
+  /// discussion above [AwaitExpr] for why a missed override fails loudly at load
+  /// rather than silently returning a Future where a value was expected.
+  ExprAsyncFn compileAsync(CompileContext ctx) {
+    final sync = compile(ctx);
+    return (f) => Future.value(sync(f));
+  }
+
+  /// Picks the cheaper path: sync closure for an await-free subtree, the async
+  /// path only where an await actually lives.
+  ExprAsyncFn compileAsyncOrWrap(CompileContext ctx) =>
+      hasAwait ? compileAsync(ctx) : _liftSync(compile(ctx));
 }
+
+ExprAsyncFn _liftSync(ExprFn sync) => (f) => Future.value(sync(f));
 
 /// An expression that can also be assigned to.
 abstract class Assignable extends Expr {
@@ -61,6 +85,74 @@ abstract class Assignable extends Expr {
   /// Compiles the store side. The returned closure takes the frame and the new
   /// value.
   void Function(Frame, Object?) compileStore(CompileContext ctx);
+}
+
+/// An expression compiled for an async body: produces a Future.
+typedef ExprAsyncFn = Future<Object?> Function(Frame);
+
+/// Async compilation, and why it is a *separate* path.
+///
+/// A patch that cannot await is a patch that cannot touch most of this app —
+/// downloads, storage, WebDAV, imports are all async. But making every node
+/// return a Future so that a handful of them can await would put an allocation
+/// and a microtask on every arithmetic operation in every patch, on top of an
+/// interpreter already ~23x native.
+///
+/// So the two paths coexist and the compiler picks per subtree:
+///
+/// * [Expr.hasAwait] is a structural property — true only if this node or one of
+///   its descendants awaits.
+/// * [Expr.compileAsync] defaults to wrapping the ordinary sync closure, which
+///   is what an await-free subtree inside an async function gets. It runs at
+///   full synchronous speed and the enclosing async code simply does not await
+///   it.
+/// * Nodes that can *contain* an await override [compileAsync] to thread
+///   Futures through their children.
+///
+/// The safety property that makes this tractable: [AwaitExpr.compile] — the
+/// *sync* path — throws. So if a composite node forgets to override
+/// [Expr.compileAsync] while holding an await somewhere beneath it, the await
+/// lands on the sync path and fails at **load** time with a clear diagnostic. A
+/// missed override can therefore never produce silently wrong results, which is
+/// the only failure mode that would actually be dangerous here.
+///
+/// `await e` inside an async function body.
+///
+/// Awaiting is delegated to the host's own async machinery rather than to a
+/// scheduler of our own: the compiled async body *is* a Dart `async` closure, so
+/// `await` here is a real `await`. A hand-written scheduler would be the most
+/// likely place in this whole interpreter to get subtly wrong — and it would be
+/// wrong on user devices, asynchronously, where it is hardest to diagnose.
+class AwaitExpr extends Expr {
+  const AwaitExpr(this.operand);
+
+  final Expr operand;
+
+  @override
+  bool get hasAwait => true;
+
+  @override
+  ExprFn compile(CompileContext ctx) {
+    // The sync path. Reaching it means either the payload put an await in a
+    // non-async function, or a composite node above failed to override
+    // compileAsync. Both are tooling bugs, and both must surface at load time
+    // rather than as a Future leaking out where a value was expected.
+    throw const PatchLoadFault(
+      'await appears outside an async function body (or inside a node that '
+      'does not support await)',
+    );
+  }
+
+  @override
+  ExprAsyncFn compileAsync(CompileContext ctx) {
+    final v = operand.compileAsyncOrWrap(ctx);
+    return (f) async {
+      final awaited = await v(f);
+      // `await` on a non-Future is legal Dart and yields the value itself, so a
+      // patch awaiting something already resolved behaves as it would natively.
+      return awaited is Future ? await awaited : awaited;
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------

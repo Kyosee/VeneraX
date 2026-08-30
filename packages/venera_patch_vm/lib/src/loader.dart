@@ -79,8 +79,15 @@ final class VirLoader {
         }
       }
 
-      fn.body = _stmt(json['body'], 'functions[$i].body', slotCount)
-          .compile(ctx);
+      final bodyNode = _stmt(json['body'], 'functions[$i].body', slotCount);
+      if (fn.isAsync) {
+        fn.asyncBody = bodyNode.compileAsyncOrWrap(ctx);
+      } else {
+        // The sync path. An `await` reached from here throws PatchLoadFault, so
+        // a payload marked sync while containing an await is rejected now rather
+        // than leaking a Future where a value was expected.
+        fn.body = bodyNode.compile(ctx);
+      }
     }
 
     final overrides = <int, int>{};
@@ -281,6 +288,14 @@ final class VirLoader {
 
       case 'notNull':
         return NotNull(_expr(json['v'], '$path.v', slotCount));
+
+      case 'await':
+        // Whether this is legal depends on the enclosing function: an await in a
+        // function not marked `isAsync` reaches AwaitExpr.compile(), which
+        // throws. Rejecting it here instead would need the loader to track async
+        // context through every nesting level, and the sync path already refuses
+        // it at exactly the right moment.
+        return AwaitExpr(_expr(json['v'], '$path.v', slotCount));
 
       default:
         throw PatchLoadFault('$path has unknown expression kind "$kind"');

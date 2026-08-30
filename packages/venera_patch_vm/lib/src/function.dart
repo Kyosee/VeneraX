@@ -56,11 +56,23 @@ final class VmFunction implements VmInvokable {
 
   /// Compiled body. Assigned by the loader after every function in the bundle
   /// has been constructed, so mutual recursion resolves.
+  ///
+  /// Set only when [isAsync] is false; an async function carries [asyncBody]
+  /// instead. Keeping them as separate fields rather than one `FutureOr`-typed
+  /// field is what keeps a synchronous call free of async bookkeeping.
   late final StmtFn body;
+
+  /// Compiled body for an async function.
+  late final StmtAsyncFn asyncBody;
 
   int get maxPositional => requiredCount + optionalCount;
 
-  /// Calls the function synchronously.
+  /// Calls the function.
+  ///
+  /// An async function returns a `Future<Object?>` here, exactly as calling a
+  /// Dart `async` function does. That symmetry is deliberate: it means [VmCall]
+  /// needs no special case, and an interpreted `await` on the result behaves the
+  /// way the same source would natively.
   ///
   /// [depth] is threaded so runaway recursion is caught by the interpreter's own
   /// counter. A native stack overflow cannot be caught in Dart and takes the
@@ -74,7 +86,19 @@ final class VmFunction implements VmInvokable {
   ]) {
     limits.checkDepth(depth);
     final frame = bindFrame(positional, named, depth);
+    if (isAsync) return _runAsync(frame);
     body(frame);
+    return frame.returnValue;
+  }
+
+  /// Awaits the async body, then reads the return slot.
+  ///
+  /// The body is a real Dart `async` closure chain, so suspension is the host's
+  /// own — there is no scheduler of ours to get wrong. That was the single
+  /// riskiest thing this design could have contained, and delegating it removes
+  /// the risk entirely rather than managing it.
+  Future<Object?> _runAsync(Frame frame) async {
+    await asyncBody(frame);
     return frame.returnValue;
   }
 

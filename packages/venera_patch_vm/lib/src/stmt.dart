@@ -5,11 +5,40 @@ import 'frame.dart';
 /// A compiled statement: takes a frame, returns a [Flow] signal.
 typedef StmtFn = int Function(Frame);
 
+/// A compiled statement on the async path: the [Flow] signal arrives later.
+typedef StmtAsyncFn = Future<int> Function(Frame);
+
 /// A statement in the IR. Compiles once, at load time — see [Expr].
+///
+/// The sync/async split mirrors [Expr]'s exactly, and for the same reason: an
+/// `await` anywhere in a function must not make every statement in it allocate a
+/// Future. [hasAwait] is structural, so only the statements actually on an await
+/// path take the async path; the rest keep running at full synchronous speed
+/// inside the same async body.
 abstract class Stmt {
   const Stmt();
 
   StmtFn compile(CompileContext ctx);
+
+  /// Whether this statement, or anything beneath it, awaits.
+  bool get hasAwait => false;
+
+  /// Compiles for an async body. Await-free statements keep the sync path.
+  StmtAsyncFn compileAsyncOrWrap(CompileContext ctx) {
+    if (!hasAwait) {
+      final sync = compile(ctx);
+      return (f) => Future.value(sync(f));
+    }
+    return compileAsync(ctx);
+  }
+
+  /// Threads Futures through children. Only statements that can contain an
+  /// await override this; the default is unreachable for them because
+  /// [compileAsyncOrWrap] short-circuits on [hasAwait].
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final sync = compile(ctx);
+    return (f) => Future.value(sync(f));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +89,24 @@ class BlockStmt extends Stmt {
         };
     }
   }
+
+  @override
+  bool get hasAwait => body.any((s) => s.hasAwait);
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    // Per-statement, not per-block: an await-free statement inside an awaiting
+    // block still compiles to the sync closure and runs without suspending.
+    final fns = <StmtAsyncFn>[for (final s in body) s.compileAsyncOrWrap(ctx)];
+    final n = fns.length;
+    return (f) async {
+      for (var i = 0; i < n; i++) {
+        final s = await fns[i](f);
+        if (s != Flow.next) return s;
+      }
+      return Flow.next;
+    };
+  }
 }
 
 /// Evaluates an expression for its effect and discards the value.
@@ -73,6 +120,18 @@ class ExprStmt extends Stmt {
     final e = expr.compile(ctx);
     return (f) {
       e(f);
+      return Flow.next;
+    };
+  }
+
+  @override
+  bool get hasAwait => expr.hasAwait;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final e = expr.compileAsyncOrWrap(ctx);
+    return (f) async {
+      await e(f);
       return Flow.next;
     };
   }
@@ -103,6 +162,19 @@ class VarDecl extends Stmt {
       return Flow.next;
     };
   }
+
+  @override
+  bool get hasAwait => init?.hasAwait ?? false;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final s = slot;
+    final i = init!.compileAsyncOrWrap(ctx);
+    return (f) async {
+      f.slots[s] = await i(f);
+      return Flow.next;
+    };
+  }
 }
 
 /// Assignment to any [Assignable] target: local, index, or host field.
@@ -118,6 +190,22 @@ class AssignStmt extends Stmt {
     final v = value.compile(ctx);
     return (f) {
       store(f, v(f));
+      return Flow.next;
+    };
+  }
+
+  // Only the value side can await. An assignable target is a slot, an index, or
+  // a host field; awaiting inside the *target* expression is lowered by the
+  // patch compiler into a temporary before it ever reaches the VM.
+  @override
+  bool get hasAwait => value.hasAwait;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final store = target.compileStore(ctx);
+    final v = value.compileAsyncOrWrap(ctx);
+    return (f) async {
+      store(f, await v(f));
       return Flow.next;
     };
   }
@@ -143,6 +231,21 @@ class IfStmt extends Stmt {
       return (f) => asBool(c(f)) ? t(f) : Flow.next;
     }
     return (f) => asBool(c(f)) ? t(f) : e(f);
+  }
+
+  @override
+  bool get hasAwait =>
+      condition.hasAwait || then.hasAwait || (otherwise?.hasAwait ?? false);
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final c = condition.compileAsyncOrWrap(ctx);
+    final t = then.compileAsyncOrWrap(ctx);
+    final e = otherwise?.compileAsyncOrWrap(ctx);
+    if (e == null) {
+      return (f) async => asBool(await c(f)) ? await t(f) : Flow.next;
+    }
+    return (f) async => asBool(await c(f)) ? await t(f) : await e(f);
   }
 }
 
@@ -230,6 +333,28 @@ class WhileStmt extends Stmt {
       return Flow.next;
     };
   }
+
+  @override
+  bool get hasAwait => condition.hasAwait || body.hasAwait;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final c = condition.compileAsyncOrWrap(ctx);
+    final b = body.compileAsyncOrWrap(ctx);
+    final max = ctx.limits.maxLoopIterations;
+    return (f) async {
+      var iterations = 0;
+      while (asBool(await c(f))) {
+        if (++iterations > max) {
+          throw ResourceLimitFault('while loop exceeded $max iterations');
+        }
+        final s = await b(f);
+        if (s == Flow.brk) break;
+        if (s == Flow.ret) return s;
+      }
+      return Flow.next;
+    };
+  }
 }
 
 class DoWhileStmt extends Stmt {
@@ -253,6 +378,28 @@ class DoWhileStmt extends Stmt {
         if (s == Flow.brk) break;
         if (s == Flow.ret) return s;
       } while (asBool(c(f)));
+      return Flow.next;
+    };
+  }
+
+  @override
+  bool get hasAwait => body.hasAwait || condition.hasAwait;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final b = body.compileAsyncOrWrap(ctx);
+    final c = condition.compileAsyncOrWrap(ctx);
+    final max = ctx.limits.maxLoopIterations;
+    return (f) async {
+      var iterations = 0;
+      do {
+        if (++iterations > max) {
+          throw ResourceLimitFault('do-while loop exceeded $max iterations');
+        }
+        final s = await b(f);
+        if (s == Flow.brk) break;
+        if (s == Flow.ret) return s;
+      } while (asBool(await c(f)));
       return Flow.next;
     };
   }
@@ -297,6 +444,39 @@ class ForStmt extends Stmt {
       return Flow.next;
     };
   }
+
+  @override
+  bool get hasAwait =>
+      body.hasAwait ||
+      (init?.hasAwait ?? false) ||
+      (condition?.hasAwait ?? false) ||
+      update.any((s) => s.hasAwait);
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final i = init?.compileAsyncOrWrap(ctx);
+    final c = condition?.compileAsyncOrWrap(ctx);
+    final u = <StmtAsyncFn>[for (final s in update) s.compileAsyncOrWrap(ctx)];
+    final b = body.compileAsyncOrWrap(ctx);
+    final max = ctx.limits.maxLoopIterations;
+    final un = u.length;
+    return (f) async {
+      if (i != null) await i(f);
+      var iterations = 0;
+      while (c == null || asBool(await c(f))) {
+        if (++iterations > max) {
+          throw ResourceLimitFault('for loop exceeded $max iterations');
+        }
+        final s = await b(f);
+        if (s == Flow.brk) break;
+        if (s == Flow.ret) return s;
+        for (var k = 0; k < un; k++) {
+          await u[k](f);
+        }
+      }
+      return Flow.next;
+    };
+  }
 }
 
 /// `for (x in iterable)`.
@@ -331,6 +511,36 @@ class ForInStmt extends Stmt {
       return Flow.next;
     };
   }
+
+  @override
+  bool get hasAwait => iterable.hasAwait || body.hasAwait;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final s = slot;
+    final it = iterable.compileAsyncOrWrap(ctx);
+    final b = body.compileAsyncOrWrap(ctx);
+    final max = ctx.limits.maxLoopIterations;
+    return (f) async {
+      final source = await it(f);
+      if (source is! Iterable) {
+        throw TypeFault(
+          'for-in requires an Iterable, got ${source.runtimeType}',
+        );
+      }
+      var iterations = 0;
+      for (final item in source) {
+        if (++iterations > max) {
+          throw ResourceLimitFault('for-in loop exceeded $max iterations');
+        }
+        f.slots[s] = item;
+        final flow = await b(f);
+        if (flow == Flow.brk) break;
+        if (flow == Flow.ret) return flow;
+      }
+      return Flow.next;
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +563,18 @@ class ReturnStmt extends Stmt {
     }
     return (f) {
       f.returnValue = v(f);
+      return Flow.ret;
+    };
+  }
+
+  @override
+  bool get hasAwait => value?.hasAwait ?? false;
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final v = value!.compileAsyncOrWrap(ctx);
+    return (f) async {
+      f.returnValue = await v(f);
       return Flow.ret;
     };
   }
@@ -466,6 +688,72 @@ class TryStmt extends Stmt {
       }
     };
   }
+
+  @override
+  bool get hasAwait =>
+      body.hasAwait ||
+      (finallyBlock?.hasAwait ?? false) ||
+      catches.any((c) => c.body.hasAwait);
+
+  @override
+  StmtAsyncFn compileAsync(CompileContext ctx) {
+    final b = body.compileAsyncOrWrap(ctx);
+    final handlers = <_AsyncCatch>[
+      for (final c in catches)
+        _AsyncCatch(
+          typeId: c.typeId,
+          exceptionSlot: c.exceptionSlot,
+          stackSlot: c.stackSlot,
+          body: c.body.compileAsyncOrWrap(ctx),
+        ),
+    ];
+    final fin = finallyBlock?.compileAsyncOrWrap(ctx);
+    final host = ctx.host;
+    final hn = handlers.length;
+
+    // Structurally identical to the sync path, including the rule that matters
+    // most: a machinery fault is never catchable by interpreted code. An async
+    // patch that swallowed one would leave the seam believing its override works
+    // while it silently produces wrong answers — and asynchronously, which is
+    // the hardest version of that failure to trace back.
+    return (f) async {
+      try {
+        try {
+          return await b(f);
+        } catch (e, st) {
+          if (e is PatchVmFault) rethrow;
+          final value = e is PatchThrow ? e.value : e;
+          for (var i = 0; i < hn; i++) {
+            final h = handlers[i];
+            if (h.typeId != null && !host.isInstanceOf(h.typeId!, value)) {
+              continue;
+            }
+            if (h.exceptionSlot != null) f.slots[h.exceptionSlot!] = value;
+            if (h.stackSlot != null) f.slots[h.stackSlot!] = st;
+            return await h.body(f);
+          }
+          rethrow;
+        }
+      } finally {
+        if (fin != null) await fin(f);
+      }
+    };
+  }
+}
+
+/// Compiled catch clause on the async path.
+final class _AsyncCatch {
+  const _AsyncCatch({
+    required this.typeId,
+    required this.exceptionSlot,
+    required this.stackSlot,
+    required this.body,
+  });
+
+  final int? typeId;
+  final int? exceptionSlot;
+  final int? stackSlot;
+  final StmtAsyncFn body;
 }
 
 class CatchClause {
