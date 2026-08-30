@@ -12,7 +12,17 @@ import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/io.dart';
 
 export 'package:venera_patch/venera_patch.dart'
-    show KillSwitches, ConfigOverlay, PatchFetchOutcome;
+    show
+        KillSwitches,
+        ConfigOverlay,
+        PatchFetchOutcome,
+        // Re-exported so a seam site imports this file and nothing else. Seams
+        // are scattered across the app by nature, and a second import line in
+        // every one of them is a second thing to get wrong — and to keep
+        // consistent — for no benefit.
+        SeamIds,
+        patched,
+        patchedAsync;
 
 /// Distribution root: a dedicated `patch` branch read through raw
 /// githubusercontent. Not the GitHub API — unauthenticated API calls are capped

@@ -103,9 +103,12 @@ abstract final class SeamIds {
   /// stays declared here rather than being freed for reuse.
   static const int backupInfoFromFileName = 0x0002;
 
-  /// Numeric dotted-version comparison used by the update check.
+  /// `_compareVersion` in the About page — "is this release newer than us".
   ///
-  /// RESERVED, as [backupInfoFromFileName].
+  /// Pure, two strings in, bool out, and re-running it is free. It also gates
+  /// whether the update prompt appears at all, so a bug here is invisible in the
+  /// worst way: users simply stop being offered updates, including the update
+  /// that would fix it.
   static const int compareAppVersions = 0x0003;
 
   /// Seam name to id — **only** for seams with a live [patched] call site.
@@ -118,5 +121,6 @@ abstract final class SeamIds {
   /// applied and isn't — so an id becomes nameable only once its seam exists.
   static const Map<String, int> installed = {
     'backupDateFromLeadingSegment': backupDateFromLeadingSegment,
+    'compareAppVersions': compareAppVersions,
   };
 }

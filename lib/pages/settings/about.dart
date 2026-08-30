@@ -840,7 +840,21 @@ String _normalizeVersion(String version) {
 }
 
 /// return true if version1 > version2
+///
+/// Seam. This function decides whether the user is offered an update at all, so
+/// a bug here is invisible and self-perpetuating: the app stops prompting, and
+/// the fix cannot arrive through the channel the bug disabled. Being pure —
+/// two strings in, a bool out, no side effects — it is safe to re-run after a
+/// machinery fault, which is what [patched]'s fallback requires.
 bool _compareVersion(String version1, String version2) {
+  return patched(
+    SeamIds.compareAppVersions,
+    [version1, version2],
+    () => _compareVersionOrig(version1, version2),
+  );
+}
+
+bool _compareVersionOrig(String version1, String version2) {
   var v1 = _normalizeVersion(version1).split(".");
   var v2 = _normalizeVersion(version2).split(".");
   final length = v1.length > v2.length ? v1.length : v2.length;

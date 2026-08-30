@@ -106,13 +106,11 @@ void main() {
     expect(
       publishedIds.contains(SeamIds.backupInfoFromFileName),
       isFalse,
-      reason: 'backupInfoFromFileName is RESERVED (no call site). Publishing '
-          'it would offer patch authors a seam that overrides nothing.',
-    );
-    expect(
-      publishedIds.contains(SeamIds.compareAppVersions),
-      isFalse,
-      reason: 'compareAppVersions is RESERVED (no call site).',
+      reason: 'backupInfoFromFileName is RESERVED, and for a second reason '
+          'beyond having no call site: it returns a RemoteBackupInfo, and the '
+          'host surface binds no constructor for that type. A patch overriding '
+          'it could not build its own return value, so publishing the seam '
+          'would advertise something unusable.',
     );
   });
 
@@ -132,14 +130,23 @@ void main() {
     expect(clashes, isEmpty, reason: clashes.join('\n'));
   });
 
-  test('the one installed seam is the one we expect', () {
+  test('the installed seams are the ones we expect', () {
     // Pins the current state so growth is deliberate. When a seam is added this
     // test fails, which is the prompt to check the new seam actually belongs on
     // a re-runnable function — the safety rule the fallback in patched() rests
     // on, and the one thing no automated check can verify.
+    //
+    // Both entries below were checked against it by hand:
+    //
+    // * `backupDateFromLeadingSegment` — int in, DateTime out, arithmetic only.
+    // * `compareAppVersions` — two strings in, bool out, parses and compares.
+    //
+    // Neither writes a file, touches the database, or fires a request, so the
+    // fallback re-running the original after a mid-call fault costs nothing but
+    // time.
     expect(
       SeamIds.installed.keys.toList(),
-      ['backupDateFromLeadingSegment'],
+      ['backupDateFromLeadingSegment', 'compareAppVersions'],
       reason: 'Seam set changed. Confirm the new seam sits on a function where '
           're-running the original after a mid-call fault is harmless (pure '
           'computation, no side effects), then update this list.',
