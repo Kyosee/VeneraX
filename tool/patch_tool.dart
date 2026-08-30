@@ -26,6 +26,7 @@ import 'package:pointycastle/key_generators/ec_key_generator.dart';
 import 'package:pointycastle/macs/hmac.dart';
 import 'package:pointycastle/random/fortuna_random.dart';
 import 'package:pointycastle/signers/ecdsa_signer.dart';
+import 'package:venera_patch/venera_patch.dart' show PatchSignature;
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
@@ -222,26 +223,17 @@ void _verify(Map<String, String> flags) {
     throw _ToolError('manifest needs string "body" and "sig" fields');
   }
 
-  final point = base64Decode(pubB64);
-  if (point.length != 65 || point[0] != 0x04) {
-    throw _ToolError('public key is not an uncompressed SEC1 point');
-  }
-  final domain = ECCurve_secp256r1();
-  final q = domain.curve.decodePoint(point);
-  if (q == null) throw _ToolError('public key is not on the curve');
-
-  final sigBytes = base64Decode(sig);
-  if (sigBytes.length != 64) {
-    throw _ToolError('signature is not 64 bytes (r||s)');
-  }
-  final r = _toBigInt(sigBytes.sublist(0, 32));
-  final s = _toBigInt(sigBytes.sublist(32, 64));
-
-  final signer = ECDSASigner(SHA256Digest(), HMac(SHA256Digest(), 64))
-    ..init(false, PublicKeyParameter<ECPublicKey>(ECPublicKey(q, domain)));
-  final ok = signer.verifySignature(
-    Uint8List.fromList(utf8.encode(body)),
-    ECSignature(r, s),
+  // Deliberately the app's own verifier, not a second implementation here.
+  //
+  // The entire value of this command is the claim "the app would accept this".
+  // A copy of the verification logic living in the tool can drift from the one
+  // that actually runs on devices — and it would drift silently, in the
+  // direction of the tool being more permissive, because that is the direction
+  // nobody notices until a published manifest is rejected in the field.
+  final ok = PatchSignature.verifyBase64(
+    message: body,
+    signatureB64: sig,
+    publicKeyB64: pubB64,
   );
 
   if (!ok) {
@@ -325,14 +317,6 @@ String _sha256Hex(Uint8List data) {
     sb.write(b.toRadixString(16).padLeft(2, '0'));
   }
   return sb.toString();
-}
-
-BigInt _toBigInt(Uint8List bytes) {
-  var r = BigInt.zero;
-  for (final b in bytes) {
-    r = (r << 8) | BigInt.from(b);
-  }
-  return r;
 }
 
 void _writeBigInt(BigInt v, Uint8List out, int offset) {

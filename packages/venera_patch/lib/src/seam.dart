@@ -95,8 +95,28 @@ abstract final class SeamIds {
   static const int backupDateFromLeadingSegment = 0x0001;
 
   /// `RemoteBackupInfo.fromFileName` — the whole file-name parser.
+  ///
+  /// RESERVED: the id is taken, but no [patched] call site exists yet, so it is
+  /// absent from [installed] and a patch cannot name it. An id that once meant
+  /// one function must never come to mean another — a patch built against the
+  /// older meaning would install cleanly and override the wrong code — so it
+  /// stays declared here rather than being freed for reuse.
   static const int backupInfoFromFileName = 0x0002;
 
   /// Numeric dotted-version comparison used by the update check.
+  ///
+  /// RESERVED, as [backupInfoFromFileName].
   static const int compareAppVersions = 0x0003;
+
+  /// Seam name to id — **only** for seams with a live [patched] call site.
+  ///
+  /// This is what the surface manifest publishes, and the distinction is
+  /// load-bearing. A declared-but-uninstalled id would let a patch compile,
+  /// sign, install and report success while overriding nothing at all: the
+  /// registry would hold an entry no code ever looks up. That is the exact
+  /// failure this whole mechanism is supposed to avoid — a fix that appears
+  /// applied and isn't — so an id becomes nameable only once its seam exists.
+  static const Map<String, int> installed = {
+    'backupDateFromLeadingSegment': backupDateFromLeadingSegment,
+  };
 }
