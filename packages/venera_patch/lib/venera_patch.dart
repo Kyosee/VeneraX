@@ -23,6 +23,7 @@ export 'package:venera_patch_vm/venera_patch_vm.dart'
         VmProgram;
 
 export 'src/core_bindings.dart';
+export 'src/core_surface.dart';
 export 'src/manifest.dart';
 export 'src/kill_switch.dart';
 export 'src/overlay.dart';
