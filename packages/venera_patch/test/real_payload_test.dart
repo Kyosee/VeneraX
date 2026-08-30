@@ -167,17 +167,27 @@ void main() {
       // from the manifest. This pins that division of labour, because the
       // failure it prevents — an override installed where nothing looks it up —
       // is silent by nature.
+      // Uses a RESERVED id — one whose number is taken but which has no
+      // `patched()` call site. `backupInfoFromFileName` is reserved on purpose:
+      // it returns a user class the surface binds no constructor for, so a patch
+      // overriding it could not build a return value.
+      //
+      // Picking a *currently unpublished* id matters. This test named
+      // `compareAppVersions` until a seam was installed on it, at which point the
+      // assertion below started failing — the test was pinning "this id is
+      // unpublished" rather than "an unpublished id reaches nothing", and the two
+      // stop agreeing the moment the seam set grows.
       final orphan = payload();
-      orphan['overrides'] = {'${SeamIds.compareAppVersions}': 0};
+      orphan['overrides'] = {'${SeamIds.backupInfoFromFileName}': 0};
 
       final program = VirLoader(host: const CoreBindings()).load(orphan);
       PatchRegistry.installOverrides(VmOverrideBinder.bind(program));
 
       expect(
         SeamIds.installed.values,
-        isNot(contains(SeamIds.compareAppVersions)),
-        reason: 'compareAppVersions has no patched() call site, so it must not '
-            'be published in the surface manifest',
+        isNot(contains(SeamIds.backupInfoFromFileName)),
+        reason: 'backupInfoFromFileName is RESERVED (no patched() call site), '
+            'so it must not appear in the published surface manifest',
       );
       // The installed seam is untouched by the orphan override.
       expect(
