@@ -8,6 +8,7 @@ import 'package:venera_patch/venera_patch.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/patch_bindings.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/io.dart';
 
@@ -246,7 +247,13 @@ class HotUpdate {
   /// Core `dart:core` bindings only, for now. Stage 3 layers the app's own
   /// generated surface on top via [LayeredHostBridge]; until then a patch can
   /// reach exactly what [CoreBindings] exposes and nothing else.
-  HostBridge _hostBridge() => const CoreBindings();
+  /// The sandbox boundary handed to the interpreter.
+  ///
+  /// The app's own surface layered over `dart:core`. Id ranges never overlap —
+  /// core owns `0x0100..0x10FF`, the app starts at `0x2000` — so the layering
+  /// order is a formality rather than a precedence rule.
+  HostBridge _hostBridge() =>
+      const LayeredHostBridge(AppPatchBindings(), CoreBindings());
 
   PatchStore _ensureStore() {
     return _store ??= PatchStore(

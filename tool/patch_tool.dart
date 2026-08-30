@@ -27,6 +27,14 @@ import 'package:pointycastle/key_generators/ec_key_generator.dart';
 import 'package:pointycastle/macs/hmac.dart';
 import 'package:pointycastle/random/fortuna_random.dart';
 import 'package:pointycastle/signers/ecdsa_signer.dart';
+// The app's own binding surface — the TABLES only.
+//
+// Deliberately `patch_surface.dart` and not `patch_bindings.dart`: the dispatch
+// half imports `Log`, which transitively reaches `dart:ffi`'s `NativeCallable`
+// and crashes kernel compilation under plain `dart run` (the FFI transformer
+// throws `InvalidType is not a subtype of FunctionType`). The tables import
+// nothing, which is what makes them readable from a tool.
+import 'package:venera/foundation/patch_surface.dart';
 import 'package:venera_patch/venera_patch.dart'
     show CoreSurface, PatchSignature, SeamIds;
 
@@ -231,8 +239,11 @@ void _surface(Map<String, String> flags) {
     'schema': 1,
     'appVersion': appVersion,
     'builtinPatchVersion': builtin,
-    'members': CoreSurface.members,
-    'types': CoreSurface.types,
+    // Core surface plus the app's own, exactly as `_hostBridge` layers them at
+    // run time. Emitting only the core half would tell a patch author that every
+    // Venera API is unreachable when the binary in fact binds them.
+    'members': {...CoreSurface.members, ...AppPatchSurface.members},
+    'types': {...CoreSurface.types, ...AppPatchSurface.types},
     'seams': SeamIds.installed,
   };
 
@@ -243,8 +254,12 @@ void _surface(Map<String, String> flags) {
   stdout.writeln('surface manifest -> $out');
   stdout.writeln('  appVersion          $appVersion');
   stdout.writeln('  builtinPatchVersion $builtin');
-  stdout.writeln('  members             ${CoreSurface.members.length}');
-  stdout.writeln('  types               ${CoreSurface.types.length}');
+  stdout.writeln('  members             '
+      '${CoreSurface.members.length + AppPatchSurface.members.length} '
+      '(${CoreSurface.members.length} core + '
+      '${AppPatchSurface.members.length} app)');
+  stdout.writeln('  types               '
+      '${CoreSurface.types.length + AppPatchSurface.types.length}');
   stdout.writeln('  seams               ${SeamIds.installed.length} '
       '(${SeamIds.installed.keys.join(", ")})');
   if (SeamIds.installed.isEmpty) {
