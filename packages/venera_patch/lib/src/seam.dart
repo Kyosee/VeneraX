@@ -212,23 +212,18 @@ abstract final class SeamIds {
   /// which surfaces as one particular English message. Matching a vendor's error
   /// text is exactly the kind of rule that breaks on a new OS version and needs
   /// correcting without a release — the retry path hangs off this answer.
-  ///
-  /// RESERVED: the id is claimed but no [patched] call site exists yet. The
-  /// predicate is a private method on the export task, so seaming it means
-  /// deciding whether an override may see the raw platform error string; until
-  /// that call site lands the id stays unnameable, because a nameable id without
-  /// a seam lets a patch install and report success while overriding nothing.
   static const int exportCreateFailure = 0x000F;
 
-  /// `sanitizedBackupRetention` — clamps the per-platform retention count.
+  /// `clampBackupRetention` — clamps the per-platform retention count.
   ///
   /// The value syncs fleet-wide, so a foreign or corrupt number must not be able
   /// to rotate away the rollback margin (floor) or hoard junk (cap). Both bounds
   /// are judgement calls that may need revising against real server behaviour.
   ///
-  /// RESERVED: the id is claimed but no [patched] call site exists yet. The
-  /// function takes `dynamic`, which the IR cannot type, so installing it needs
-  /// the signature narrowed to a String first.
+  /// Takes `int` rather than the caller's `dynamic`: the coercion from a synced
+  /// settings value stays outside the seam, so what an override sees is a number
+  /// and what it returns is a number. A seam typed `dynamic` would be one the IR
+  /// cannot express — patchable on paper only.
   static const int sanitizedBackupRetention = 0x0010;
 
   /// Seam name to id — **only** for seams with a live [patched] call site.
@@ -252,5 +247,7 @@ abstract final class SeamIds {
     'sourceCompareSemVer': sourceCompareSemVer,
     'readerContinuousTurnOffset': readerContinuousTurnOffset,
     'collectionUpdateSortKey': collectionUpdateSortKey,
+    'exportCreateFailure': exportCreateFailure,
+    'sanitizedBackupRetention': sanitizedBackupRetention,
   };
 }

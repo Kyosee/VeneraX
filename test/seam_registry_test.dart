@@ -166,6 +166,14 @@ void main() {
     //   Decides the date a collection reports to follow-updates; the comparison
     //   downstream is on strings, so the padding is what keeps `2026-9-1` from
     //   sorting below `2026-10-1`.
+    // * `exportCreateFailure` — one nullable string in, bool out, a substring
+    //   test. Matches a vendor's own error text, which is the kind of rule a new
+    //   OS version breaks; the export retry path hangs off the answer, and the
+    //   retry itself is outside the seam.
+    // * `sanitizedBackupRetention` — int in, int out, two bounds. Deliberately
+    //   narrowed from the `dynamic` the public wrapper still takes: the IR has no
+    //   way to express `dynamic`, so the parse stays native and only the clamp is
+    //   patchable.
     //
     // None writes a file, touches the database, or fires a request, so the
     // fallback re-running the original after a mid-call fault costs nothing but
@@ -187,6 +195,8 @@ void main() {
         'sourceCompareSemVer',
         'readerContinuousTurnOffset',
         'collectionUpdateSortKey',
+        'exportCreateFailure',
+        'sanitizedBackupRetention',
       ],
       reason: 'Seam set changed. Confirm the new seam sits on a function where '
           're-running the original after a mid-call fault is harmless (pure '

@@ -231,9 +231,27 @@ int sanitizedBackupRetention(dynamic value) {
   final v = value is num
       ? value.toInt()
       : int.tryParse(value?.toString() ?? '') ?? backupRetentionPerPlatform;
-  if (v < 3) return 3;
-  if (v > 100) return 100;
-  return v;
+  return clampBackupRetention(v);
+}
+
+/// Clamps a retention count into the safe range.
+///
+/// The seam sits here rather than on [sanitizedBackupRetention] because that
+/// function takes `dynamic`, and the patch IR can pass strings, numbers and
+/// lists but not an arbitrary object — a seam whose signature a patch cannot
+/// satisfy only looks patchable. The coercion stays native; the bounds, which
+/// are the judgement call that may need revising against real server behaviour,
+/// are what a patch can change. Int in, int out.
+int clampBackupRetention(int value) => patched(
+  SeamIds.sanitizedBackupRetention,
+  [value],
+  () => _clampBackupRetentionOrig(value),
+);
+
+int _clampBackupRetentionOrig(int value) {
+  if (value < 3) return 3;
+  if (value > 100) return 100;
+  return value;
 }
 
 /// Backups to delete so every platform keeps at most [keepPerPlatform] of its
