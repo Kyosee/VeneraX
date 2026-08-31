@@ -155,6 +155,17 @@ void main() {
     //   caller does the localization lookup, which is not bound to the patch
     //   surface; what a patch can change is the matching rule, which is the part
     //   people ask about (substring vs exact, case, namespace handling).
+    // * `sourceCompareSemVer` — two version strings in, bool out. A source author
+    //   writes these strings, and the original `int.parse` throws on anything but
+    //   `major.minor.patch[-tag]`; that throw escapes into the update scan, so one
+    //   malformed version stops every source from updating.
+    // * `readerContinuousTurnOffset` — six doubles and two ints in, double out.
+    //   Pure arithmetic, and called per page turn rather than per frame, so an
+    //   interpreted override cannot become a scroll-performance defect.
+    // * `collectionUpdateSortKey` — one string in, one out, split and pad only.
+    //   Decides the date a collection reports to follow-updates; the comparison
+    //   downstream is on strings, so the padding is what keeps `2026-9-1` from
+    //   sorting below `2026-10-1`.
     //
     // None writes a file, touches the database, or fires a request, so the
     // fallback re-running the original after a mid-call fault costs nothing but
@@ -173,6 +184,9 @@ void main() {
         'disclaimerGate',
         'comicIsBlocked',
         'blockedTagOf',
+        'sourceCompareSemVer',
+        'readerContinuousTurnOffset',
+        'collectionUpdateSortKey',
       ],
       reason: 'Seam set changed. Confirm the new seam sits on a function where '
           're-running the original after a mid-call fault is harmless (pure '

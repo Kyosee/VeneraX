@@ -166,6 +166,27 @@ abstract final class SeamIds {
   /// substring rather than equality, and the localized tag text participates.
   static const int blockedTagOf = 0x000A;
 
+  /// `compareSemVer` — "is source version A newer than B".
+  ///
+  /// Gates whether a comic source update is offered at all, and whether a source
+  /// declaring `minAppVersion` is allowed to load. Two strings in, bool out.
+  ///
+  /// It is also the shape that breaks on real input: `int.parse(v1[i])` throws
+  /// outright on a version with fewer than three segments or a non-numeric one,
+  /// and a source author controls that string. A throw here is not contained —
+  /// it aborts the update scan for every source, so one malformed version stops
+  /// the whole list from updating.
+  static const int sourceCompareSemVer = 0x000C;
+
+  /// `estimateContinuousTurnOffset` — the scroll offset a continuous-reader page
+  /// turn aims for.
+  ///
+  /// All doubles and ints in, one double out, so a patch can express it fully.
+  /// Per gesture rather than per frame, which is what makes it acceptable at
+  /// interpreter speed: the rule against seaming render paths is about work that
+  /// repeats 60 times a second, and a page turn does not.
+  static const int readerContinuousTurnOffset = 0x000D;
+
   /// `historySourceLabel` — the display name for a source key in history.
   ///
   /// Feeds the filter chips, the keyword match, and the chip ordering, so one
@@ -176,6 +197,39 @@ abstract final class SeamIds {
   /// on one copy would silently leave the other unpatched — worse than no seam,
   /// because the fix would look applied. Deduplicate first, then install.
   static const int historySourceLabel = 0x000B;
+
+  /// `collectionUpdateSortKey` — zero-pads a `y-m-d` string so it sorts.
+  ///
+  /// A collection reports the newest date among its members, and the comparison
+  /// is on strings: `2026-9-1` sorts *below* `2026-10-1` without the padding, so
+  /// a slip here makes follow-updates report a stale date for the whole
+  /// collection and quietly stop offering the chapter that did arrive.
+  static const int collectionUpdateSortKey = 0x000E;
+
+  /// `looksLikeExportCreateFailure` — is this error the folder refusing writes?
+  ///
+  /// Site of #130: some Android SAF providers return null from createDocument,
+  /// which surfaces as one particular English message. Matching a vendor's error
+  /// text is exactly the kind of rule that breaks on a new OS version and needs
+  /// correcting without a release — the retry path hangs off this answer.
+  ///
+  /// RESERVED: the id is claimed but no [patched] call site exists yet. The
+  /// predicate is a private method on the export task, so seaming it means
+  /// deciding whether an override may see the raw platform error string; until
+  /// that call site lands the id stays unnameable, because a nameable id without
+  /// a seam lets a patch install and report success while overriding nothing.
+  static const int exportCreateFailure = 0x000F;
+
+  /// `sanitizedBackupRetention` — clamps the per-platform retention count.
+  ///
+  /// The value syncs fleet-wide, so a foreign or corrupt number must not be able
+  /// to rotate away the rollback margin (floor) or hoard junk (cap). Both bounds
+  /// are judgement calls that may need revising against real server behaviour.
+  ///
+  /// RESERVED: the id is claimed but no [patched] call site exists yet. The
+  /// function takes `dynamic`, which the IR cannot type, so installing it needs
+  /// the signature narrowed to a String first.
+  static const int sanitizedBackupRetention = 0x0010;
 
   /// Seam name to id — **only** for seams with a live [patched] call site.
   ///
@@ -195,5 +249,8 @@ abstract final class SeamIds {
     'disclaimerGate': disclaimerGate,
     'comicIsBlocked': comicIsBlocked,
     'blockedTagOf': blockedTagOf,
+    'sourceCompareSemVer': sourceCompareSemVer,
+    'readerContinuousTurnOffset': readerContinuousTurnOffset,
+    'collectionUpdateSortKey': collectionUpdateSortKey,
   };
 }
