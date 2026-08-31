@@ -1472,11 +1472,14 @@ class _ContinuousModeState extends State<_ContinuousMode>
         : entry.isLoading
         ? 'Loading'.tl
         : null;
+    // Not reader.size: that reads the RenderBox during build, so it returns the
+    // previous layout's size and stays stale after a rotation.
+    final viewportSize = MediaQuery.sizeOf(context);
     return ColoredBox(
       color: reader.readerBackgroundColor,
       child: SizedBox(
-        width: reader.size.width,
-        height: reader.size.height,
+        width: viewportSize.width,
+        height: viewportSize.height,
         child: Center(
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
