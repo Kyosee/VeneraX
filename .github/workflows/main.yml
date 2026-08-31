@@ -151,7 +151,7 @@ jobs:
               printf 'keyAlias=%s\n' "$KEY_ALIAS"
               printf 'keyPassword=%s\n' "$KEY_PASSWORD"
             } > android/key.properties
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: 'oracle'
           java-version: '17'
