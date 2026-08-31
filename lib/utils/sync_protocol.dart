@@ -25,6 +25,11 @@
 ///   from the server's history.
 library;
 
+// The hot-update runtime. Not app state: it is a leaf package holding the seam
+// gate (a static bool) and the override table, so importing it here keeps this
+// file's "pure decision logic, no app state" rule intact.
+import 'package:venera_patch/venera_patch.dart';
+
 /// The version number to stamp on a freshly uploaded WebDAV backup.
 ///
 /// It must beat BOTH the local version and the highest version already on the
@@ -33,7 +38,13 @@ library;
 /// foreign archive carrying an unrelated lower `dataVersion` — upload a backup
 /// that the numeric version-based sync direction treated as "older", so other
 /// devices never pulled it (issue #80). Pure function, easy to unit-test.
-int nextSyncVersion(int localVersion, int remoteMaxVersion) =>
+int nextSyncVersion(int localVersion, int remoteMaxVersion) => patched(
+      SeamIds.nextSyncVersion,
+      [localVersion, remoteMaxVersion],
+      () => _nextSyncVersionOrig(localVersion, remoteMaxVersion),
+    );
+
+int _nextSyncVersionOrig(int localVersion, int remoteMaxVersion) =>
     (localVersion > remoteMaxVersion ? localVersion : remoteMaxVersion) + 1;
 
 /// Whether an automatic upload must be skipped because this device is behind
@@ -50,6 +61,24 @@ int nextSyncVersion(int localVersion, int remoteMaxVersion) =>
 /// (manual upload button, local-file import, headless CLI) and intentionally
 /// bypass the guard, preserving the #80 "always wins" behavior. Pure function.
 bool shouldSkipStaleUpload({
+  required bool force,
+  required int localVersion,
+  required int remoteMaxVersion,
+}) =>
+    // Named parameters arrive at the override as a positional list, in the
+    // declaration order above. The compiler and the surface manifest agree on
+    // that order; a patch author writes an ordinary positional function.
+    patched(
+      SeamIds.shouldSkipStaleUpload,
+      [force, localVersion, remoteMaxVersion],
+      () => _shouldSkipStaleUploadOrig(
+        force: force,
+        localVersion: localVersion,
+        remoteMaxVersion: remoteMaxVersion,
+      ),
+    );
+
+bool _shouldSkipStaleUploadOrig({
   required bool force,
   required int localVersion,
   required int remoteMaxVersion,
@@ -73,7 +102,13 @@ const int maxReasonableDataVersion = 10000000;
 /// stale-overwrite loop. Additionally, an incoming version beyond
 /// [maxReasonableDataVersion] is treated as foreign garbage and ignored (the
 /// local version is kept). Pure function.
-int mergeIncomingDataVersion(int localVersion, int incomingVersion) {
+int mergeIncomingDataVersion(int localVersion, int incomingVersion) => patched(
+      SeamIds.mergeIncomingDataVersion,
+      [localVersion, incomingVersion],
+      () => _mergeIncomingDataVersionOrig(localVersion, incomingVersion),
+    );
+
+int _mergeIncomingDataVersionOrig(int localVersion, int incomingVersion) {
   if (incomingVersion < 0 || incomingVersion > maxReasonableDataVersion) {
     return localVersion;
   }
@@ -113,6 +148,23 @@ int maxBackupVersion(Iterable<String?> fileNames) {
 /// content must NOT be claimed) lets the device adopt the orphan's version
 /// instead of downloading it. Pure function.
 bool isOwnPendingPublish({
+  required String? claimedFileName,
+  required int? claimedSize,
+  required String remoteFileName,
+  required int? remoteSize,
+}) =>
+    patched(
+      SeamIds.isOwnPendingPublish,
+      [claimedFileName, claimedSize, remoteFileName, remoteSize],
+      () => _isOwnPendingPublishOrig(
+        claimedFileName: claimedFileName,
+        claimedSize: claimedSize,
+        remoteFileName: remoteFileName,
+        remoteSize: remoteSize,
+      ),
+    );
+
+bool _isOwnPendingPublishOrig({
   required String? claimedFileName,
   required int? claimedSize,
   required String remoteFileName,
@@ -179,9 +231,27 @@ int sanitizedBackupRetention(dynamic value) {
   final v = value is num
       ? value.toInt()
       : int.tryParse(value?.toString() ?? '') ?? backupRetentionPerPlatform;
-  if (v < 3) return 3;
-  if (v > 100) return 100;
-  return v;
+  return clampBackupRetention(v);
+}
+
+/// Clamps a retention count into the safe range.
+///
+/// The seam sits here rather than on [sanitizedBackupRetention] because that
+/// function takes `dynamic`, and the patch IR can pass strings, numbers and
+/// lists but not an arbitrary object — a seam whose signature a patch cannot
+/// satisfy only looks patchable. The coercion stays native; the bounds, which
+/// are the judgement call that may need revising against real server behaviour,
+/// are what a patch can change. Int in, int out.
+int clampBackupRetention(int value) => patched(
+  SeamIds.sanitizedBackupRetention,
+  [value],
+  () => _clampBackupRetentionOrig(value),
+);
+
+int _clampBackupRetentionOrig(int value) {
+  if (value < 3) return 3;
+  if (value > 100) return 100;
+  return value;
 }
 
 /// Backups to delete so every platform keeps at most [keepPerPlatform] of its
@@ -287,6 +357,21 @@ class RemoteBackupInfo {
   /// only when the value is small enough to be a real day count, otherwise treat
   /// it as milliseconds, and clamp so the constructor can never throw.
   static DateTime _dateFromLeadingSegment(int value) {
+    // Seam. Hand-written for now; build_runner generates these in stage 3.
+    //
+    // This function is the first seam because it is the shape the mechanism is
+    // for: pure, int in / DateTime out, and the site of a real field bug (#51)
+    // whose fix was a one-line change to a numeric guard. Re-running the
+    // original after a machinery failure is harmless, which is what makes the
+    // fallback in [patched] safe here.
+    return patched(
+      SeamIds.backupDateFromLeadingSegment,
+      [value],
+      () => _dateFromLeadingSegmentOrig(value),
+    );
+  }
+
+  static DateTime _dateFromLeadingSegmentOrig(int value) {
     var ms =
         value.abs() <= _maxValidMs ~/ _msPerDay ? value * _msPerDay : value;
     if (ms > _maxValidMs) ms = _maxValidMs;

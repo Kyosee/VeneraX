@@ -1,7 +1,52 @@
+import 'package:venera/foundation/hot_update.dart';
+
 typedef ContinuousPageTurnAction<T> =
     Future<void> Function(T target, bool Function() isCurrent);
 
+/// Seamed: the arithmetic that decides where a continuous-reader turn lands.
+///
+/// Every input and the result are numbers, so a patch can express this one
+/// completely — unlike most UI-layer logic, which needs a widget or a model
+/// object the IR cannot construct.
+///
+/// Runs once per gesture, not once per frame. The rule against seaming render
+/// paths exists because the interpreter is ~23x native and work repeating 60
+/// times a second would turn a fix into a visible stutter; a page turn is a
+/// discrete user action, so that cost never accumulates.
 double estimateContinuousTurnOffset({
+  required double currentPixels,
+  required double referenceDelta,
+  required int targetIndex,
+  required int referenceIndex,
+  required double itemExtent,
+  required double minScrollExtent,
+  required double maxScrollExtent,
+  double? maxStepExtent,
+}) => patched(
+  SeamIds.readerContinuousTurnOffset,
+  [
+    currentPixels,
+    referenceDelta,
+    targetIndex,
+    referenceIndex,
+    itemExtent,
+    minScrollExtent,
+    maxScrollExtent,
+    maxStepExtent,
+  ],
+  () => _estimateContinuousTurnOffsetOrig(
+    currentPixels: currentPixels,
+    referenceDelta: referenceDelta,
+    targetIndex: targetIndex,
+    referenceIndex: referenceIndex,
+    itemExtent: itemExtent,
+    minScrollExtent: minScrollExtent,
+    maxScrollExtent: maxScrollExtent,
+    maxStepExtent: maxStepExtent,
+  ),
+);
+
+double _estimateContinuousTurnOffsetOrig({
   required double currentPixels,
   required double referenceDelta,
   required int targetIndex,

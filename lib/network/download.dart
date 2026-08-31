@@ -6,6 +6,7 @@ import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/feature_flags.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -257,8 +258,18 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   var tasks = <int, _ImageDownloadWrapper>{};
 
-  int get _maxConcurrentTasks =>
-      (appdata.settings["downloadThreads"] as num).toInt();
+  /// Concurrent image downloads per chapter.
+  ///
+  /// The overlay shadows the *default*, never the user's own choice: a value
+  /// they set in settings wins, because remote tuning exists to correct a bad
+  /// default for a fleet, not to overrule a person who already made a decision.
+  /// A source that starts rate-limiting aggressively needs this lowered, and
+  /// that is a number, not a code change.
+  int get _maxConcurrentTasks => configInt(
+        ConfigKeys.downloadThreads,
+        (appdata.settings["downloadThreads"] as num).toInt(),
+        ConfigDefaults.downloadThreads,
+      );
 
   /// Resolves a chapter's page list for downloading.
   ///
@@ -275,6 +286,18 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   void _scheduleTasks() {
     if (!_isRunning) return;
+    // Kill switch. Downloading is the app's heaviest native path — image decode,
+    // archive writes, SAF on Android — and a fault there has repeatedly taken
+    // the process down rather than failing one item. Closing the scheduler stops
+    // new work without touching what is already on disk, so browsing downloaded
+    // comics keeps working while the fault is out of reach of a code patch.
+    if (!featureEnabled(KillIds.downloads)) {
+      Log.warning(
+        'Download',
+        'disabled remotely: ${featureDisabledReason(KillIds.downloads)}',
+      );
+      return;
+    }
     var images = _images![_images!.keys.elementAt(_chapter)]!;
     var downloading = 0;
     for (var i = _index; i < images.length; i++) {

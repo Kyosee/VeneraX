@@ -2,8 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/hot_update.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/utils/translations.dart';
+
+/// Whether the consent page must be shown before the app is usable.
+///
+/// Both inputs are read from settings by the caller rather than in here, which
+/// is what makes this a seam: two bools in, one bool out, no state touched, and
+/// re-running it after a fault costs nothing.
+///
+/// The gate is deliberately two-part. `required` is the policy — whether this
+/// build asks for consent at all — and `consented` is the record of the user's
+/// answer. Collapsing them into one flag would lose the difference between "we
+/// never asked" and "they said no", and only the second may keep someone out of
+/// the app.
+bool shouldRequireDisclaimerConsent(bool required, bool consented) => patched(
+  SeamIds.disclaimerGate,
+  [required, consented],
+  () => _shouldRequireDisclaimerConsentOrig(required, consented),
+);
+
+bool _shouldRequireDisclaimerConsentOrig(bool required, bool consented) =>
+    required && !consented;
 
 /// Disclaimer content as ordered sections of (title, paragraphs). Titles and
 /// paragraphs are translation keys resolved via `.tl`; English falls back to

@@ -100,6 +100,8 @@ dependencies:
   flutter_onnxruntime: ^1.8.3
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
+  venera_patch:
+    path: packages/venera_patch
 
 dev_dependencies:
   flutter_test:

@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "name": "fixedDate",
+      "slotCount": 4,
+      "requiredCount": 1,
+      "optionalCount": 0,
+      "body": {
+        "k": "block",
+        "body": [
+          {
+            "k": "var",
+            "slot": 1,
+            "init": {
+              "k": "lit",
+              "v": 86400000
+            }
+          },
+          {
+            "k": "var",
+            "slot": 2,
+            "init": {
+              "k": "lit",
+              "v": 8640000000000000
+            }
+          },
+          {
+            "k": "var",
+            "slot": 3,
+            "init": {
+              "k": "cond",
+              "c": {
+                "k": "bin",
+                "op": "lte",
+                "l": {
+                  "k": "hostCall",
+                  "id": 512,
+                  "recv": {
+                    "k": "local",
+                    "slot": 0
+                  }
+                },
+                "r": {
+                  "k": "bin",
+                  "op": "truncDiv",
+                  "l": {
+                    "k": "local",
+                    "slot": 2
+                  },
+                  "r": {
+                    "k": "local",
+                    "slot": 1
+                  }
+                }
+              },
+              "t": {
+                "k": "bin",
+                "op": "mul",
+                "l": {
+                  "k": "local",
+                  "slot": 0
+                },
+                "r": {
+                  "k": "local",
+                  "slot": 1
+                }
+              },
+              "e": {
+                "k": "local",
+                "slot": 0
+              }
+            }
+          },
+          {
+            "k": "if",
+            "c": {
+              "k": "bin",
+              "op": "gt",
+              "l": {
+                "k": "local",
+                "slot": 3
+              },
+              "r": {
+                "k": "local",
+                "slot": 2
+              }
+            },
+            "then": {
+              "k": "assign",
+              "target": {
+                "k": "local",
+                "slot": 3
+              },
+              "value": {
+                "k": "local",
+                "slot": 2
+              }
+            }
+          },
+          {
+            "k": "if",
+            "c": {
+              "k": "bin",
+              "op": "lt",
+              "l": {
+                "k": "local",
+                "slot": 3
+              },
+              "r": {
+                "k": "un",
+                "op": "neg",
+                "v": {
+                  "k": "local",
+                  "slot": 2
+                }
+              }
+            },
+            "then": {
+              "k": "assign",
+              "target": {
+                "k": "local",
+                "slot": 3
+              },
+              "value": {
+                "k": "un",
+                "op": "neg",
+                "v": {
+                  "k": "local",
+                  "slot": 2
+                }
+              }
+            }
+          },
+          {
+            "k": "return",
+            "v": {
+              "k": "local",
+              "slot": 3
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "overrides": {
+    "1": 0
+  }
+}

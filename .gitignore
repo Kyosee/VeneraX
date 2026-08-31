@@ -68,3 +68,5 @@ app_chapters_raw.json
 
 # Icon generation scratch dir (scripts, source images, build log)
 .icon_work/
+packages/*/build/
+packages/*/.dart_tool/

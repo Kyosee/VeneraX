@@ -1,5 +1,6 @@
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/feature_flags.dart';
 
 enum TranslationPerformancePreset { saver, balanced, fast, custom }
 
@@ -61,9 +62,14 @@ abstract final class TranslationPerformanceConfig {
         'imageTranslationPreBatchPages',
         1,
       ).clamp(1, isDesktop ? 20 : 8),
-      ocrWorkers: _intSetting(
-        'imageTranslationOcrWorkers',
-        0,
+      // Overlay shadows the default (0 = automatic) only. Oversubscribing the
+      // CPU makes translation slower rather than faster and the right number is
+      // device-shaped, which is exactly the kind of bad default worth
+      // correcting remotely — but never over a user's explicit pick.
+      ocrWorkers: configInt(
+        ConfigKeys.ocrWorkers,
+        _intSetting('imageTranslationOcrWorkers', 0),
+        ConfigDefaults.ocrWorkers,
       ).clamp(0, isDesktop ? 6 : 2),
       imageConcurrency: _intSetting(
         'imageTranslationImageConcurrency',

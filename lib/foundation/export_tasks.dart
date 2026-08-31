@@ -5,6 +5,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/hot_update.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/cbz.dart';
@@ -491,7 +492,13 @@ class ExportTaskManager with ChangeNotifier {
   /// creation (as opposed to a per-comic build error). Some Android SAF
   /// providers return null from createDocument for certain trees, which
   /// flutter_saf surfaces as "Cannot create file specified" (#130).
-  bool _looksLikeCreateFailure(String? error) {
+  bool _looksLikeCreateFailure(String? error) => patched(
+    SeamIds.exportCreateFailure,
+    [error],
+    () => _looksLikeCreateFailureOrig(error),
+  );
+
+  bool _looksLikeCreateFailureOrig(String? error) {
     if (error == null) return false;
     return error.contains('Cannot create file');
   }

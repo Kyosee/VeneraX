@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
+import 'package:venera/foundation/feature_flags.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
@@ -454,6 +455,19 @@ class ImageTranslationService with ChangeNotifier {
     required TranslationChapterIdentity chapter,
     bool Function()? shouldCancel,
   }) async {
+    // Kill switch. OCR runs native ONNX code, and a defect there is beyond the
+    // reach of any Dart patch: #169 was a SIGILL from `onnxruntime-android`
+    // dispatching SME2 kernels on chips with only SME1, decided once at library
+    // init with no runtime switch. Refusing here — before the worker is asked
+    // for anything — turns "the app dies when I open a page" into "translation
+    // is unavailable", which is the only remedy available without a release.
+    if (!featureEnabled(KillIds.imageTranslation)) {
+      Log.warning(
+        'Translation',
+        'disabled remotely: ${featureDisabledReason(KillIds.imageTranslation)}',
+      );
+      return false;
+    }
     var outcome = await _translateToCache(
       cacheKey,
       comicKey,
@@ -547,6 +561,16 @@ class ImageTranslationService with ChangeNotifier {
   }) async {
     var success = List.filled(pages.length, false);
     if (pages.isEmpty) return success;
+    // Same gate as [translateOne]. Both entry points need it: a batch is not a
+    // loop over the single-page path, so guarding only one would leave the
+    // reader's pre-translation route wide open to the native fault.
+    if (!featureEnabled(KillIds.imageTranslation)) {
+      Log.warning(
+        'Translation',
+        'disabled remotely: ${featureDisabledReason(KillIds.imageTranslation)}',
+      );
+      return success;
+    }
     TranslationStore().recordExistingChapter(chapter);
     var pipeline = _pipeline ??= PageTranslationPipeline();
     var sourceLang = _effectiveSourceFor(comicKey, config);
