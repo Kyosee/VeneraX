@@ -258,8 +258,18 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   var tasks = <int, _ImageDownloadWrapper>{};
 
-  int get _maxConcurrentTasks =>
-      (appdata.settings["downloadThreads"] as num).toInt();
+  /// Concurrent image downloads per chapter.
+  ///
+  /// The overlay shadows the *default*, never the user's own choice: a value
+  /// they set in settings wins, because remote tuning exists to correct a bad
+  /// default for a fleet, not to overrule a person who already made a decision.
+  /// A source that starts rate-limiting aggressively needs this lowered, and
+  /// that is a number, not a code change.
+  int get _maxConcurrentTasks => configInt(
+        ConfigKeys.downloadThreads,
+        (appdata.settings["downloadThreads"] as num).toInt(),
+        ConfigDefaults.downloadThreads,
+      );
 
   /// Resolves a chapter's page list for downloading.
   ///

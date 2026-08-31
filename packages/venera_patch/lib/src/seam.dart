@@ -139,6 +139,44 @@ abstract final class SeamIds {
   /// export and re-uploading the rollback to everyone.
   static const int isOwnPendingPublish = 0x0007;
 
+  /// `shouldRequireDisclaimerConsent` — whether the launch is gated behind the
+  /// user agreement.
+  ///
+  /// The consent page already exists and is already reachable from settings;
+  /// this seam decides only whether a launch is routed through it. That makes a
+  /// legal-text or first-run-consent requirement a published decision rather
+  /// than a release — which matters because the requirement usually arrives from
+  /// outside on someone else's timetable.
+  ///
+  /// Pure: two booleans in, one out, and re-running it costs nothing. It runs in
+  /// `build`, so an override is read on every rebuild rather than cached.
+  static const int disclaimerGate = 0x0008;
+
+  /// `isBlocked` — the first blocked keyword matched by a comic, or null.
+  ///
+  /// Runs for every tile in every list. The seam exists because "my blocklist
+  /// doesn't catch X" is the single most common filtering complaint, and each
+  /// variant (case-insensitive, whole-word, subtitle-only) is a different
+  /// predicate rather than a different setting.
+  static const int comicIsBlocked = 0x0009;
+
+  /// `blockedTagOf` — the first tag-blocklist entry matched by a tag list.
+  ///
+  /// Separate from [comicIsBlocked] because the matching rules genuinely differ:
+  /// substring rather than equality, and the localized tag text participates.
+  static const int blockedTagOf = 0x000A;
+
+  /// `historySourceLabel` — the display name for a source key in history.
+  ///
+  /// Feeds the filter chips, the keyword match, and the chip ordering, so one
+  /// override changes what a search finds and how the filter list sorts.
+  ///
+  /// RESERVED: the id is claimed but no [patched] call site exists yet. The
+  /// function is duplicated across the history and read-later pages, and a seam
+  /// on one copy would silently leave the other unpatched — worse than no seam,
+  /// because the fix would look applied. Deduplicate first, then install.
+  static const int historySourceLabel = 0x000B;
+
   /// Seam name to id — **only** for seams with a live [patched] call site.
   ///
   /// This is what the surface manifest publishes, and the distinction is
@@ -154,5 +192,8 @@ abstract final class SeamIds {
     'shouldSkipStaleUpload': shouldSkipStaleUpload,
     'mergeIncomingDataVersion': mergeIncomingDataVersion,
     'isOwnPendingPublish': isOwnPendingPublish,
+    'disclaimerGate': disclaimerGate,
+    'comicIsBlocked': comicIsBlocked,
+    'blockedTagOf': blockedTagOf,
   };
 }

@@ -118,13 +118,52 @@ abstract final class ConfigKeys {
   ];
 }
 
-/// Reads an int config value, preferring a published override.
+/// Built-in defaults for the overridable keys, as shipped in [Settings].
 ///
-/// [fallback] is the value the build would have used, so a caller reads exactly
-/// as it did before — `configInt(ConfigKeys.downloadThreads, appdata.settings[...])`.
-int configInt(String key, int fallback) =>
-    ConfigOverlay.instance.typed<int>(key) ?? fallback;
+/// Duplicated from `appdata.dart` on purpose: `Settings` merges defaults and
+/// stored values into one map, so at read time there is no way to ask "was this
+/// ever written". Comparing against the shipped default is the only available
+/// approximation of "did the user choose this".
+///
+/// `feature_flags_test.dart` pins each of these to the live `appdata.settings`
+/// value on a fresh install. Without that test a default could be retuned in
+/// `appdata.dart` and this copy would quietly start reporting every user as
+/// having made a choice — which would disable remote tuning entirely, silently.
+abstract final class ConfigDefaults {
+  static const int downloadThreads = 5;
+  static const int ocrWorkers = 0;
+  static const int backupRetention = 10;
 
-/// Reads a bool config value, preferring a published override.
-bool configBool(String key, bool fallback) =>
-    ConfigOverlay.instance.typed<bool>(key) ?? fallback;
+  /// Not a user setting — a compile-time const in `network/images.dart`. There
+  /// is no user choice to respect, so an overlay always applies.
+  static const int imageTimeoutSeconds = 30;
+}
+
+/// Reads an int config value, letting a published override shadow the *default*.
+///
+/// [current] is what the build would have used (normally `appdata.settings[...]`)
+/// and [builtinDefault] is the value shipped in [Settings]. When they differ the
+/// user has made a choice and it wins outright; only an untouched default can be
+/// shadowed.
+///
+/// That asymmetry is the whole safety property. An overlay that outranked user
+/// settings would produce the worst shape of bug this mechanism can have: a
+/// person changes a value, watches it not take effect, and has no way to see
+/// why — the setting screen shows their number while the app runs ours. Remote
+/// tuning exists to correct a bad default for a fleet, never to overrule someone
+/// who already decided.
+///
+/// Edge case, deliberately accepted: a user who explicitly picks the same value
+/// as the default is indistinguishable from one who never touched it, so an
+/// overlay may shadow that. [Settings] merges defaults and stored values into one
+/// map, so there is no "was this ever written" bit to consult.
+int configInt(String key, int current, int builtinDefault) {
+  if (current != builtinDefault) return current;
+  return ConfigOverlay.instance.typed<int>(key) ?? current;
+}
+
+/// Reads a bool config value. Same default-only rule as [configInt].
+bool configBool(String key, bool current, bool builtinDefault) {
+  if (current != builtinDefault) return current;
+  return ConfigOverlay.instance.typed<bool>(key) ?? current;
+}

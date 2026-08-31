@@ -144,13 +144,23 @@ void main() {
     // * `shouldSkipStaleUpload` — bool + two ints in, bool out, one comparison.
     // * `mergeIncomingDataVersion` — two ints in, int out, a range check.
     // * `isOwnPendingPublish` — names and sizes in, bool out, equality only.
+    // * `disclaimerGate` — two bools in, bool out. Decides whether the consent
+    //   page stands in front of the app. Re-running is free; the page itself
+    //   writes the consent record, and that write is outside the seam.
+    // * `comicIsBlocked` — comic fields and the blocklist in, matched word out.
+    //   Deliberately takes primitives rather than a `Comic`: the IR can pass
+    //   strings and lists but cannot construct a user class, so a signature
+    //   taking `Comic` would be a seam only a patch could not actually satisfy.
+    // * `blockedTagOf` — prepared tag forms and the blocklist in, entry out. The
+    //   caller does the localization lookup, which is not bound to the patch
+    //   surface; what a patch can change is the matching rule, which is the part
+    //   people ask about (substring vs exact, case, namespace handling).
     //
     // None writes a file, touches the database, or fires a request, so the
     // fallback re-running the original after a mid-call fault costs nothing but
-    // time. Every one of them also lives in `sync_protocol.dart`'s "pure
-    // decision logic" layer or is a comparable predicate — which is exactly the
-    // shape the mechanism is for, and where this app's worst bugs (#80, #86,
-    // #133, #51) actually were.
+    // time. Most live in `sync_protocol.dart`'s "pure decision logic" layer or
+    // are comparable predicates — which is exactly the shape the mechanism is
+    // for, and where this app's worst bugs (#80, #86, #133, #51) actually were.
     expect(
       SeamIds.installed.keys.toList(),
       [
@@ -160,6 +170,9 @@ void main() {
         'shouldSkipStaleUpload',
         'mergeIncomingDataVersion',
         'isOwnPendingPublish',
+        'disclaimerGate',
+        'comicIsBlocked',
+        'blockedTagOf',
       ],
       reason: 'Seam set changed. Confirm the new seam sits on a function where '
           're-running the original after a mid-call fault is harmless (pure '

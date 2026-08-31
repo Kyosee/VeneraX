@@ -14,6 +14,9 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/feature_flags.dart';
+// For `backupRetentionPerPlatform`: the drift guard below asserts
+// ConfigDefaults mirrors the real constant rather than a copy of its value.
+import 'package:venera/utils/sync_protocol.dart';
 import 'package:venera_patch/venera_patch.dart';
 
 KillRule _rule(
@@ -170,27 +173,55 @@ void main() {
   });
 
   group('config overlay shadows defaults only', () {
-    test('with no overlay, the caller reads its own default', () {
-      expect(configInt(ConfigKeys.downloadThreads, 5), 5);
-      expect(configBool('someFlag', true), isTrue);
+    const dflt = ConfigDefaults.downloadThreads;
+
+    test('with no overlay, the caller reads the value it passed in', () {
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), dflt);
+      expect(configBool('someFlag', true, true), isTrue);
     });
 
-    test('an override replaces the default', () {
+    test('an override shadows an untouched default', () {
       ConfigOverlay.instance.apply({ConfigKeys.downloadThreads: 2});
-      expect(configInt(ConfigKeys.downloadThreads, 5), 2);
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), 2);
+    });
+
+    // The load-bearing assertion in this file.
+    //
+    // An overlay that outranked user settings produces the worst shape of bug
+    // this mechanism can have: someone changes a number, watches it not take
+    // effect, and has no way to find out why — the settings screen shows their
+    // value while the app runs ours. Remote tuning exists to correct a bad
+    // default for a fleet, never to overrule a person who already decided.
+    test('a value the user changed outranks the override', () {
+      ConfigOverlay.instance.apply({ConfigKeys.downloadThreads: 2});
+      // 8 != the built-in default, so the user picked it.
+      expect(configInt(ConfigKeys.downloadThreads, 8, dflt), 8);
+    });
+
+    test('the same rule holds for bools', () {
+      ConfigOverlay.instance.apply({'someFlag': false});
+      expect(configBool('someFlag', true, true), isFalse, reason: 'default');
+      expect(configBool('someFlag', true, false), isTrue, reason: 'user-set');
     });
 
     test('a wrong-typed override is ignored rather than crashing', () {
       // A hand-edited or mistyped manifest must degrade to built-in behaviour.
       // Casting blindly here would turn a typo into a crash on every launch.
       ConfigOverlay.instance.apply({ConfigKeys.downloadThreads: 'lots'});
-      expect(configInt(ConfigKeys.downloadThreads, 5), 5);
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), dflt);
     });
 
     test('an unrelated key does not disturb others', () {
       ConfigOverlay.instance.apply({ConfigKeys.ocrWorkers: 1});
-      expect(configInt(ConfigKeys.downloadThreads, 5), 5);
-      expect(configInt(ConfigKeys.ocrWorkers, 4), 1);
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), dflt);
+      expect(
+        configInt(
+          ConfigKeys.ocrWorkers,
+          ConfigDefaults.ocrWorkers,
+          ConfigDefaults.ocrWorkers,
+        ),
+        1,
+      );
     });
 
     test('protected keys are refused', () {
@@ -207,13 +238,40 @@ void main() {
       expect(ConfigOverlay.instance.get('webdav'), isNull);
       // The legitimate key in the same payload still applies — one rejected
       // entry must not discard the rest.
-      expect(configInt(ConfigKeys.downloadThreads, 5), 3);
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), 3);
     });
 
     test('clear restores built-in defaults exactly', () {
       ConfigOverlay.instance.apply({ConfigKeys.downloadThreads: 1});
       ConfigOverlay.instance.clear();
-      expect(configInt(ConfigKeys.downloadThreads, 5), 5);
+      expect(configInt(ConfigKeys.downloadThreads, dflt, dflt), dflt);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Defaults must match the ones `Settings` actually ships.
+  //
+  // `configInt` decides "did the user change this?" by comparing against
+  // [ConfigDefaults]. If a default drifts from the one in `Settings._data`,
+  // every untouched install starts looking user-configured and the overlay
+  // silently stops applying — the mechanism would look installed and do
+  // nothing. These pins turn that drift into a test failure.
+  // -------------------------------------------------------------------------
+  group('ConfigDefaults track Settings', () {
+    test('downloadThreads', () {
+      expect(ConfigDefaults.downloadThreads, 5);
+    });
+
+    test('ocrWorkers (0 = automatic)', () {
+      expect(ConfigDefaults.ocrWorkers, 0);
+    });
+
+    test('backupRetention matches backupRetentionPerPlatform', () {
+      expect(ConfigDefaults.backupRetention, backupRetentionPerPlatform);
+    });
+
+    test('imageTimeoutSeconds', () {
+      expect(ConfigDefaults.imageTimeoutSeconds, 30);
     });
   });
 

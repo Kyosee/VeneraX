@@ -884,8 +884,18 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         for (final stale in backupsBeyondPlatformRetention(
           fileNames: files.map((e) => e.name),
           newFileName: filename,
+          // The overlay shadows the default only: a retention count the user
+          // chose is their decision about how much rollback history to keep,
+          // and quietly overruling it could rotate away the very snapshot they
+          // were holding on to.
           keepPerPlatform: sanitizedBackupRetention(
-            appdata.settings['webdavBackupRetention'],
+            configInt(
+              ConfigKeys.backupRetention,
+              sanitizedBackupRetention(
+                appdata.settings['webdavBackupRetention'],
+              ),
+              ConfigDefaults.backupRetention,
+            ),
           ),
         )) {
           try {
