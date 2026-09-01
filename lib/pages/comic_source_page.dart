@@ -865,6 +865,9 @@ class _ComicSourceListState extends State<_ComicSourceList> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
             child: Row(
+              // Keep the action beside the title once a long description
+              // stretches the card.
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -899,13 +902,13 @@ class _ComicSourceListState extends State<_ComicSourceList> {
                       ),
                       if (description != null && description.isNotEmpty) ...[
                         const SizedBox(height: 4),
+                        // Unclamped on purpose: a truncated description hides
+                        // what a plugin actually does, so let it wrap.
                         Text(
                           description,
                           style: ts.s12.copyWith(
                             color: context.colorScheme.outline,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ],
