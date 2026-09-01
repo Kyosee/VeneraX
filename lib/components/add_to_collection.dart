@@ -41,6 +41,11 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
 
   final nameController = TextEditingController();
 
+  /// One tab label per comic, in [widget.comics] order. Only read in
+  /// [CollectionDisplayMode.tabs]; kept alive across a mode switch so toggling
+  /// back doesn't discard what the user typed.
+  late final List<TextEditingController> labelControllers;
+
   CollectionDisplayMode mode = CollectionDisplayMode.flat;
 
   /// Folder to favorite the new collection into; null = don't favorite.
@@ -59,6 +64,9 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
     collections = ComicCollectionStore.all();
     folders = LocalFavoritesManager().folderNames;
     nameController.text = widget.comics.first.title;
+    labelControllers = widget.comics
+        .map((c) => TextEditingController(text: c.title))
+        .toList();
     // Defaults to the folder the first comic is already in, so the collection
     // lands beside the comics it replaces rather than in an unrelated folder.
     final existing = LocalFavoritesManager().find(
@@ -80,20 +88,37 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
   @override
   void dispose() {
     nameController.dispose();
+    for (final c in labelControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  List<CollectionMember> get _members => widget.comics
-      .map(
-        (c) => CollectionMember(
+  /// A tab label is only stored when the user actually kept the tabs layout and
+  /// changed the text: an untouched field equals the comic's own title, and
+  /// [CollectionMember.label] already falls back to that, so storing it would
+  /// freeze a title that the next detail load would otherwise refresh.
+  List<CollectionMember> get _members {
+    final result = <CollectionMember>[];
+    for (var i = 0; i < widget.comics.length; i++) {
+      final c = widget.comics[i];
+      final typed = labelControllers[i].text.trim();
+      result.add(
+        CollectionMember(
           sourceKey: c.sourceKey,
           comicId: c.id,
+          displayName: mode == CollectionDisplayMode.tabs &&
+                  typed != c.title.trim()
+              ? typed
+              : '',
           cachedTitle: c.title,
           cachedSubtitle: c.subtitle ?? '',
           cachedCover: _coverOf(c),
         ),
-      )
-      .toList();
+      );
+    }
+    return result;
+  }
 
   /// The member's cover in a form the image loaders accept.
   ///
@@ -222,6 +247,7 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
               const SizedBox(height: 16),
             ],
             _buildModeSection(),
+            if (mode == CollectionDisplayMode.tabs) _buildLabelSection(),
             const Divider(height: 24),
             _buildFavoriteSection(),
           ],
@@ -303,6 +329,49 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildLabelSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          "Tab names".tl,
+          style: ts.s12.copyWith(color: context.colorScheme.outline),
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < widget.comics.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Which comic this field renames: once the text is edited the
+                // field itself no longer identifies it.
+                if (widget.comics.length > 1) ...[
+                  Text(
+                    widget.comics[i].title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s12.copyWith(color: context.colorScheme.outline),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                TextField(
+                  controller: labelControllers[i],
+                  decoration: InputDecoration(
+                    labelText: "Tab name".tl,
+                    hintText: "Leave empty to use the comic's title".tl,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
