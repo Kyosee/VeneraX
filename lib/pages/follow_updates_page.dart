@@ -910,6 +910,12 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
       var loadingController = showLoadingDialog(
         App.rootContext,
         withProgress: true,
+        // The folder choice is only committed by one of the two buttons (or by
+        // the check finishing). A barrier tap would pop the route without
+        // running either callback, leaving the completer un-completed: the page
+        // stayed on "not configured" while the check ran on, then configured
+        // itself minutes later when the task ended.
+        barrierDismissible: false,
         cancelButtonText: "Cancel".tl,
         onCancel: () {
           canceled = true;

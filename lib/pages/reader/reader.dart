@@ -19,6 +19,7 @@ import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
+import 'package:venera/foundation/chapter_duplicates.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -489,6 +490,24 @@ class _ReaderState extends State<Reader>
   @override
   int get maxChapter => widget.chapters?.length ?? 1;
 
+  /// 1-based chapters collapsed by this comic's "hide duplicate chapters"
+  /// switch. Computed once: the switch lives on the details page, so it cannot
+  /// change while the reader is open.
+  late final Set<int> _hiddenChapters = _computeHiddenChapters();
+
+  Set<int> _computeHiddenChapters() {
+    final chapters = widget.chapters;
+    if (chapters == null ||
+        !ChapterDuplicatePrefs.isHidden(cid, type.sourceKey)) {
+      return const {};
+    }
+    // duplicateTitleIndices() is flat and 0-based; chapter numbers are 1-based.
+    return chapters.duplicateTitleIndices().map((i) => i + 1).toSet();
+  }
+
+  @override
+  bool isChapterHidden(int c) => _hiddenChapters.contains(c);
+
   /// Seamless continuous reading spans every chapter inside a single
   /// [_ContinuousMode]; scrolling into the next chapter bumps [chapter] without
   /// a rebuild. Keying [_ReaderImages] by chapter would then tear down and
@@ -554,6 +573,23 @@ class _ReaderState extends State<Reader>
         _updateHistoryTimer = null;
       });
     }
+  }
+
+  /// 0-based group holding the 1-based flat chapter [c]; always 0 when the
+  /// comic isn't grouped.
+  @override
+  int groupIndexOfChapter(int c) {
+    final chapters = widget.chapters;
+    if (chapters == null || !chapters.isGrouped) return 0;
+    var remaining = c;
+    var g = 0;
+    while (g < chapters.groups.length) {
+      final size = chapters.getGroupByIndex(g).length;
+      if (remaining <= size) break;
+      remaining -= size;
+      g++;
+    }
+    return g;
   }
 
   bool get isFirstChapterOfGroup {
@@ -827,6 +863,14 @@ abstract mixin class _ReaderLocation {
 
   int get maxChapter;
 
+  /// Whether chapter [c] (1-based) is collapsed by "hide duplicate chapters".
+  /// Hidden chapters stay addressable — history may point at one — but no
+  /// navigation ever lands on them on its own.
+  bool isChapterHidden(int c);
+
+  /// 0-based group holding the 1-based flat chapter [c].
+  int groupIndexOfChapter(int c);
+
   bool get isLoading;
 
   String get cid;
@@ -912,15 +956,31 @@ abstract mixin class _ReaderLocation {
     return chapter >= 1 && chapter <= maxChapter;
   }
 
+  /// The first chapter after [from] in [step] direction that isn't collapsed as
+  /// a duplicate, or null when the run of hidden chapters reaches the end.
+  /// Continuous mode uses this instead of `chapter ± 1` so its load window and
+  /// separators skip hidden chapters too.
+  int? visibleChapterFrom(int from, int step) => nextVisibleChapter(
+    from: from,
+    step: step,
+    maxChapter: maxChapter,
+    isHidden: isChapterHidden,
+    groupOf: groupIndexOfChapter,
+  );
+
+  int? _nextVisibleChapter(int step) => visibleChapterFrom(chapter, step);
+
   /// Returns true if the chapter is changed
   bool toNextChapter() {
-    return toChapter(chapter + 1);
+    final target = _nextVisibleChapter(1);
+    return target != null && toChapter(target);
   }
 
   /// Returns true if the chapter is changed
   /// If [toLastPage] is true, the page will be set to the last page of the previous chapter.
   bool toPrevChapter({bool toLastPage = false}) {
-    return toChapter(chapter - 1, toLastPage: toLastPage);
+    final target = _nextVisibleChapter(-1);
+    return target != null && toChapter(target, toLastPage: toLastPage);
   }
 
   bool toChapter(int c, {bool toLastPage = false}) {

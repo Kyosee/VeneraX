@@ -25,6 +25,36 @@ Set<int> findDuplicateTitleIndices({
   return res;
 }
 
+/// The first chapter reached from [from] by repeated [step] that isn't hidden,
+/// or null when none is reachable. 1-based, mirroring reader chapter numbers.
+///
+/// The first step may leave [from]'s group, as plain `±1` always has. Skipping
+/// hidden chapters must not carry us further than that, though: callers guard
+/// group edges separately, and a skip that crossed a second boundary would slip
+/// past that guard.
+int? nextVisibleChapter({
+  required int from,
+  required int step,
+  required int maxChapter,
+  required bool Function(int chapter) isHidden,
+  required int Function(int chapter) groupOf,
+}) {
+  bool valid(int c) => c >= 1 && c <= maxChapter;
+  var c = from + step;
+  if (!valid(c)) return null;
+  if (!isHidden(c)) return c;
+  // The landing chapter is hidden, so we must keep stepping — but only inside
+  // [from]'s own group. Crossing a boundary is a single deliberate step the
+  // caller guards separately (isLastChapterOfGroup); searching on past one
+  // would slip through that guard and drop the reader mid-group.
+  final group = groupOf(from);
+  do {
+    c += step;
+    if (!valid(c) || groupOf(c) != group) return null;
+  } while (isHidden(c));
+  return c;
+}
+
 extension ChapterDuplicateDetection on ComicChapters {
   /// Flat 0-based indices of chapters whose title repeats an earlier chapter of
   /// the SAME group. Groups stay independent on purpose: separate editions

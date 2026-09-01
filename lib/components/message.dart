@@ -252,31 +252,38 @@ LoadingDialogController showLoadingDialog(
               controller._message = message;
             });
           };
-          return ContentDialog(
-            title: controller._message ?? 'Loading',
-            content: LinearProgressIndicator(
-              value: controller._progress,
-              backgroundColor: context.colorScheme.surfaceContainer,
-            ).paddingHorizontal(16).paddingVertical(16),
-            actions: [
-              if (secondaryButtonText != null && onSecondary != null)
-                TextButton(
-                  onPressed: () {
-                    controller.close();
-                    onSecondary();
-                  },
-                  child: Text(secondaryButtonText.tl),
+          return PopScope(
+            // A caller that opted out of barrier dismissal is waiting on one of
+            // the buttons below; the close icon and the system back gesture
+            // would otherwise pop the route without running any callback.
+            canPop: barrierDismissible,
+            child: ContentDialog(
+              title: controller._message ?? 'Loading',
+              dismissible: barrierDismissible,
+              content: LinearProgressIndicator(
+                value: controller._progress,
+                backgroundColor: context.colorScheme.surfaceContainer,
+              ).paddingHorizontal(16).paddingVertical(16),
+              actions: [
+                if (secondaryButtonText != null && onSecondary != null)
+                  TextButton(
+                    onPressed: () {
+                      controller.close();
+                      onSecondary();
+                    },
+                    child: Text(secondaryButtonText.tl),
+                  ),
+                FilledButton(
+                  onPressed: allowCancel
+                      ? () {
+                          controller.close();
+                          onCancel?.call();
+                        }
+                      : null,
+                  child: Text(cancelButtonText.tl),
                 ),
-              FilledButton(
-                onPressed: allowCancel
-                    ? () {
-                        controller.close();
-                        onCancel?.call();
-                      }
-                    : null,
-                child: Text(cancelButtonText.tl),
-              ),
-            ],
+              ],
+            ),
           );
         },
       );

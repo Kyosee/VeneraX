@@ -118,4 +118,69 @@ void main() {
       expect(group.keys.elementAt(visible[0]), 's1');
     });
   });
+
+  group('nextVisibleChapter', () {
+    // Ungrouped: one scope, so group edges never stop a skip.
+    int? flat(int from, int step, Set<int> hidden, {int max = 6}) =>
+        nextVisibleChapter(
+          from: from,
+          step: step,
+          maxChapter: max,
+          isHidden: hidden.contains,
+          groupOf: (_) => 0,
+        );
+
+    test('returns the immediate neighbour when nothing is hidden', () {
+      expect(flat(3, 1, {}), 4);
+      expect(flat(3, -1, {}), 2);
+    });
+
+    test('skips a run of hidden chapters in both directions', () {
+      expect(flat(1, 1, {2, 3, 4}), 5);
+      expect(flat(6, -1, {5, 4, 3}), 2);
+    });
+
+    test('returns null past the ends', () {
+      expect(flat(6, 1, {}), isNull);
+      expect(flat(1, -1, {}), isNull);
+    });
+
+    test('returns null when every remaining chapter is hidden', () {
+      expect(flat(4, 1, {5, 6}), isNull);
+      expect(flat(3, -1, {1, 2}), isNull);
+    });
+
+    test('a hidden current chapter does not block leaving it', () {
+      expect(flat(3, 1, {3}), 4);
+    });
+
+    // Grouped: chapters 1-3 in group 0, 4-6 in group 1.
+    int? grouped(int from, int step, Set<int> hidden) => nextVisibleChapter(
+      from: from,
+      step: step,
+      maxChapter: 6,
+      isHidden: hidden.contains,
+      groupOf: (c) => c <= 3 ? 0 : 1,
+    );
+
+    test('the first step may cross a group boundary', () {
+      expect(grouped(3, 1, {}), 4);
+      expect(grouped(4, -1, {}), 3);
+    });
+
+    test('skipping never crosses a second boundary', () {
+      // 4 is hidden, so a skip would land in group 1 -> refuse instead.
+      expect(grouped(3, 1, {4}), isNull);
+      expect(grouped(4, -1, {3}), isNull);
+    });
+
+    test('skipping stays inside the starting group', () {
+      // From 1, chapters 2-3 are hidden: 4 would be the next group -> refuse.
+      expect(grouped(1, 1, {2, 3}), isNull);
+      expect(grouped(6, -1, {5, 4}), isNull);
+      // Within the group, skipping is fine.
+      expect(grouped(1, 1, {2}), 3);
+      expect(grouped(6, -1, {5}), 4);
+    });
+  });
 }

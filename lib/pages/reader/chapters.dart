@@ -33,6 +33,13 @@ class _ChaptersViewState extends State<_ChaptersView> {
   Widget build(BuildContext context) {
     var chapters = widget.reader.widget.chapters!;
     var current = widget.reader.chapter - 1;
+    // Flat 0-based indices still shown after "hide duplicate chapters". The
+    // current chapter is kept even when hidden, so a history entry pointing at
+    // a duplicate still highlights something.
+    var visible = [
+      for (var i = 0; i < chapters.length; i++)
+        if (!widget.reader.isChapterHidden(i + 1) || i == current) i,
+    ];
     return Scaffold(
       body: SmoothCustomScrollView(
         controller: _scrollController,
@@ -61,10 +68,8 @@ class _ChaptersViewState extends State<_ChaptersView> {
           ),
           SliverList(
             delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                if (desc) {
-                  index = chapters.length - 1 - index;
-                }
+              (context, i) {
+                var index = visible[desc ? visible.length - 1 - i : i];
                 var chapter = chapters.titles.elementAt(index);
                 return _ChapterListTile(
                   onTap: () {
@@ -77,7 +82,7 @@ class _ChaptersViewState extends State<_ChaptersView> {
                       downloaded.contains(chapters.ids.elementAt(index)),
                 );
               },
-              childCount: chapters.length,
+              childCount: visible.length,
             ),
           ),
         ],
@@ -156,21 +161,29 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
 
   Widget buildGroup(String groupName) {
     var group = chapters.getGroup(groupName);
+    // Flat 1-based chapter number of this group's first entry.
+    var base = 1;
+    for (var g in chapters.groups) {
+      if (g == groupName) break;
+      base += chapters.getGroup(g).length;
+    }
+    // Indices within the group that survive "hide duplicate chapters"; the
+    // current chapter is kept even when hidden (see _ChaptersViewState).
+    var visible = [
+      for (var i = 0; i < group.length; i++)
+        if (!widget.reader.isChapterHidden(base + i) ||
+            widget.reader.chapter == base + i)
+          i,
+    ];
     return SmoothCustomScrollView(
       controller: initialGroupName == groupName ? _scrollController : null,
       slivers: [
         SliverList(
           delegate: SliverChildBuilderDelegate(
-            (context, index) {
+            (context, position) {
+              var index = visible[position];
               var name = group.values.elementAt(index);
-              var i = 0;
-              for (var g in chapters.groups) {
-                if (g == groupName) {
-                  break;
-                }
-                i += chapters.getGroup(g).length;
-              }
-              i += index + 1;
+              var i = base + index;
               return _ChapterListTile(
                 onTap: () {
                   widget.reader.toChapter(i);
@@ -181,7 +194,7 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
                 isDownloaded: downloaded.contains(group.keys.elementAt(index)),
               );
             },
-            childCount: group.length,
+            childCount: visible.length,
           ),
         ),
       ],

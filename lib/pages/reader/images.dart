@@ -1023,9 +1023,14 @@ class _ContinuousModeState extends State<_ContinuousMode>
     }
     final entries = <_ContinuousReaderEntry>[];
 
-    // Find the lowest consecutively loaded chapter at or below the anchor.
+    // Find the lowest consecutively loaded chapter at or below the anchor,
+    // stepping over chapters hidden as duplicates.
     int lowestChapter = _anchorChapter;
-    for (var ch = _anchorChapter - 1; ch >= 1; ch--) {
+    for (
+      var ch = reader.visibleChapterFrom(_anchorChapter, -1);
+      ch != null;
+      ch = reader.visibleChapterFrom(ch, -1)
+    ) {
       if (_continuousChapterImages.containsKey(ch)) {
         lowestChapter = ch;
       } else {
@@ -1034,8 +1039,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     }
 
     // A "previous chapter" separator at the very top if earlier chapters exist.
-    if (lowestChapter > 1) {
-      final prevChapter = lowestChapter - 1;
+    final prevChapter = reader.visibleChapterFrom(lowestChapter, -1);
+    if (prevChapter != null) {
       entries.add(
         _ContinuousReaderEntry.separator(
           chapter: 0,
@@ -1047,8 +1052,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
       );
     }
 
-    // Images from lowestChapter up through all consecutively loaded chapters.
-    for (var chapter = lowestChapter; chapter <= reader.maxChapter; chapter++) {
+    // Images from lowestChapter up through all consecutively loaded chapters,
+    // skipping chapters hidden as duplicates.
+    for (int? chapter = lowestChapter; chapter != null; ) {
       final images = _continuousChapterImages[chapter];
       if (images == null) {
         break;
@@ -1062,20 +1068,25 @@ class _ContinuousModeState extends State<_ContinuousMode>
           ),
         );
       }
-      final hasNext = chapter < reader.maxChapter;
+      final nextChapter = reader.visibleChapterFrom(chapter, 1);
       entries.add(
         _ContinuousReaderEntry.separator(
           chapter: chapter,
-          hasNext: hasNext,
-          nextChapter: hasNext ? chapter + 1 : null,
+          hasNext: nextChapter != null,
+          nextChapter: nextChapter,
           isLoading:
-              hasNext && _continuousChapterLoads.containsKey(chapter + 1),
-          error: hasNext ? _continuousChapterErrors[chapter + 1] : null,
+              nextChapter != null &&
+              _continuousChapterLoads.containsKey(nextChapter),
+          error: nextChapter == null
+              ? null
+              : _continuousChapterErrors[nextChapter],
         ),
       );
-      if (!hasNext || !_continuousChapterImages.containsKey(chapter + 1)) {
+      if (nextChapter == null ||
+          !_continuousChapterImages.containsKey(nextChapter)) {
         break;
       }
+      chapter = nextChapter;
     }
     return entries;
   }
@@ -1313,13 +1324,18 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (chapterImages == null) return;
     const edge = 3; // pages from the boundary that trigger a window slide
     // Near the end -> ensure next chapter.
-    if (current.page >= chapterImages.length - edge &&
-        current.chapter < reader.maxChapter) {
-      _ensureContinuousChapterLoaded(current.chapter + 1);
+    if (current.page >= chapterImages.length - edge) {
+      final next = reader.visibleChapterFrom(current.chapter, 1);
+      if (next != null) {
+        _ensureContinuousChapterLoaded(next);
+      }
     }
     // Near the start -> ensure previous chapter.
-    if (current.page <= edge + 1 && current.chapter > 1) {
-      _ensureContinuousChapterLoaded(current.chapter - 1);
+    if (current.page <= edge + 1) {
+      final prev = reader.visibleChapterFrom(current.chapter, -1);
+      if (prev != null) {
+        _ensureContinuousChapterLoaded(prev);
+      }
     }
   }
 
