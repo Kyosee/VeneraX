@@ -222,6 +222,7 @@ class ComicSourceManager with ChangeNotifier, Init {
   Future<void> doInit() async {
     await JsEngine().ensureInit();
     ComicSourceLibraryManager.migrateIfNeeded();
+    adoptSyncedProvenance();
     WebdavLibraryStore.migrateIfNeeded();
     // WebDAV comic libraries are native (non-script) sources, so they are
     // registered directly rather than parsed from disk. Registered before the
@@ -438,15 +439,30 @@ class ComicSourceManager with ChangeNotifier, Init {
     }
   }
 
-  /// Origin/offering libraries for an installed source. Backed by the
-  /// device-local settings store (not synced), so it survives an update-reload
-  /// (which removes and re-adds the same key) and only clears on a genuine
-  /// uninstall.
+  /// Origin/offering libraries for an installed source. Backed by the settings
+  /// store, so it survives an update-reload (which removes and re-adds the same
+  /// key) and only clears on a genuine uninstall. The offering list and the
+  /// resolved winner are device-local; the install origin travels with backups
+  /// and sync, see [adoptSyncedProvenance].
   SourceProvenance? provenanceFor(String key) =>
       ComicSourceLibraryManager.provenanceFor(key);
 
   void updateProvenance(String key, SourceProvenance provenance) {
     ComicSourceLibraryManager.setProvenance(key, provenance);
+    notifyListeners();
+  }
+
+  /// Adopts the install-origin declarations carried by an imported backup or a
+  /// sync download, then drops the cached update state of every source whose
+  /// governing library changed: a pending badge or a download URL resolved for
+  /// the previous library would otherwise install that library's variant before
+  /// the next check recomputes the winner.
+  void adoptSyncedProvenance() {
+    final changed = ComicSourceLibraryManager.adoptSyncedOrigins();
+    if (changed.isEmpty) return;
+    for (final key in changed) {
+      clearAvailableUpdate(key);
+    }
     notifyListeners();
   }
 

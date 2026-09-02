@@ -7,6 +7,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_source/source_library.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -595,6 +596,12 @@ Future<void> _importAppDataLocked(
       if (data is Map<String, dynamic>) {
         await _restoreWebdavConfigIfAbsent(data);
       }
+      // Which library each source installs and updates from rides along in the
+      // settings. Fold a legacy single-URL library in first so the ids those
+      // declarations name exist, then adopt them; otherwise this device would
+      // keep handing every source to whichever library happens to sort first.
+      ComicSourceLibraryManager.migrateIfNeeded();
+      ComicSourceManager().adoptSyncedProvenance();
     }
     if (await implicitDataFile.exists()) {
       try {

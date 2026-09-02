@@ -150,6 +150,70 @@ String allocateLibraryId(String url, Iterable<String> usedIds) {
   throw StateError('Unable to allocate a unique library id');
 }
 
+/// Reconciles the portable origin declarations against this device's
+/// [provenance] store: a key the store carries follows its `originId`, and a
+/// key it does not carry is left as-is.
+///
+/// Leaving unknown keys alone is what makes the declarations mergeable — a
+/// device only ever speaks for the sources it has installed, so two devices
+/// with different source sets converge instead of erasing each other's records.
+/// [removedKeys] drops declarations for sources genuinely uninstalled here.
+@visibleForTesting
+Map<String, String> reconcileOriginDeclarations({
+  required Map<String, dynamic> provenance,
+  required Map<String, String> declarations,
+  Iterable<String> removedKeys = const [],
+}) {
+  final merged = Map<String, String>.from(declarations);
+  for (final entry in provenance.entries) {
+    final raw = entry.value;
+    final originId = raw is Map ? raw['originId']?.toString() : null;
+    if (originId != null && originId.isNotEmpty) {
+      merged[entry.key] = originId;
+    } else {
+      merged.remove(entry.key);
+    }
+  }
+  for (final key in removedKeys) {
+    merged.remove(key);
+  }
+  return merged;
+}
+
+/// Applies incoming origin [declarations] onto [provenance] in place and
+/// returns the keys whose governing library changed.
+///
+/// A declaration naming a library absent from [knownLibraryIds] is ignored: it
+/// would render as "source library removed" and still fall through to another
+/// offerer, which is worse than keeping what this device already knows.
+/// `updateLibraryId` is cleared for every adopted key so the next check
+/// recomputes the winner instead of keeping the previous one.
+@visibleForTesting
+Set<String> adoptOriginDeclarations({
+  required Map<String, dynamic> provenance,
+  required Map<String, String> declarations,
+  required Set<String> knownLibraryIds,
+}) {
+  final changed = <String>{};
+  for (final entry in declarations.entries) {
+    final libraryId = entry.value;
+    if (!knownLibraryIds.contains(libraryId)) continue;
+    final raw = provenance[entry.key];
+    final prov = raw is Map
+        ? SourceProvenance.fromJson(Map<String, dynamic>.from(raw))
+        : SourceProvenance();
+    if (prov.originId == libraryId) continue;
+    prov.originId = libraryId;
+    if (!prov.libraryIds.contains(libraryId)) {
+      prov.libraryIds.add(libraryId);
+    }
+    prov.updateLibraryId = null;
+    provenance[entry.key] = prov.toJson();
+    changed.add(entry.key);
+  }
+  return changed;
+}
+
 @visibleForTesting
 ComicSourceLibrary? findLibraryByUrl(
   Iterable<ComicSourceLibrary> libraries,
@@ -188,6 +252,15 @@ String defaultLibraryName(String url) {
 class ComicSourceLibraryManager {
   static const _librariesKey = 'comicSourceLibraries';
   static const _provenanceKey = 'comicSourceProvenance';
+
+  /// Portable `sourceKey -> libraryId` declarations mirrored out of the
+  /// provenance map. Provenance itself is device-local (its `libraryIds` and
+  /// `updateLibraryId` are rebuilt by every check), but which library a source
+  /// was installed from — and therefore updates through — is a choice the user
+  /// made, so it has to travel with backups and sync. Kept as its own setting
+  /// so it merges per key instead of one device's whole map replacing another's.
+  static const _originsKey = 'comicSourceOrigins';
+
   static const _migratedKey = 'comicSourceLibrariesMigrated';
 
   /// All libraries, sorted by priority ascending (winner first).
@@ -326,7 +399,7 @@ class ComicSourceLibraryManager {
       }
       map[entry.key] = prov.toJson();
     }
-    appdata.settings[_provenanceKey] = map;
+    _applyProvenanceMap(map);
     save(libraries);
   }
 
@@ -336,6 +409,46 @@ class ComicSourceLibraryManager {
       return Map<String, dynamic>.from(raw);
     }
     return {};
+  }
+
+  static Map<String, String> _originDeclarations() {
+    final raw = appdata.settings[_originsKey];
+    if (raw is! Map) {
+      return {};
+    }
+    final out = <String, String>{};
+    raw.forEach((key, value) {
+      final id = value?.toString();
+      if (id != null && id.isNotEmpty) {
+        out[key.toString()] = id;
+      }
+    });
+    return out;
+  }
+
+  /// Stages [map] as the provenance store together with the refreshed portable
+  /// declarations. Every provenance write goes through here so the two never
+  /// drift apart; callers that already persist afterwards use this and skip
+  /// [_writeProvenanceMap].
+  static void _applyProvenanceMap(
+    Map<String, dynamic> map, {
+    Iterable<String> removedKeys = const [],
+  }) {
+    appdata.settings[_provenanceKey] = map;
+    appdata.settings[_originsKey] = reconcileOriginDeclarations(
+      provenance: map,
+      declarations: _originDeclarations(),
+      removedKeys: removedKeys,
+    );
+  }
+
+  static void _writeProvenanceMap(
+    Map<String, dynamic> map, {
+    bool sync = true,
+    Iterable<String> removedKeys = const [],
+  }) {
+    _applyProvenanceMap(map, removedKeys: removedKeys);
+    appdata.saveData(sync);
   }
 
   static SourceProvenance? provenanceFor(String key) {
@@ -349,8 +462,7 @@ class ComicSourceLibraryManager {
   static void setProvenance(String key, SourceProvenance provenance) {
     final map = _provenanceMap();
     map[key] = provenance.toJson();
-    appdata.settings[_provenanceKey] = map;
-    appdata.saveData();
+    _writeProvenanceMap(map);
   }
 
   /// Batch-writes provenance for many keys in a single persist. Used by the
@@ -361,8 +473,38 @@ class ComicSourceLibraryManager {
     if (entries.isEmpty) return;
     final map = _provenanceMap();
     entries.forEach((key, prov) => map[key] = prov.toJson());
-    appdata.settings[_provenanceKey] = map;
-    appdata.saveData(false);
+    _writeProvenanceMap(map, sync: false);
+  }
+
+  /// Adopts the origin declarations that arrived with a backup import or a sync
+  /// download, and returns the source keys whose governing library changed.
+  ///
+  /// Call it after the settings have been applied, so the library list the
+  /// declarations reference is already in place. Adoption never deletes a local
+  /// record: a source this device has but the incoming data does not mention
+  /// keeps whatever it had. Saved without scheduling an upload — the data just
+  /// came from the other side.
+  static Set<String> adoptSyncedOrigins() {
+    final incoming = _originDeclarations();
+    final map = _provenanceMap();
+    final changed = adoptOriginDeclarations(
+      provenance: map,
+      declarations: incoming,
+      knownLibraryIds: all().map((e) => e.id).toSet(),
+    );
+    // Reconcile even when nothing was adopted: an incoming map replaces the
+    // local declarations wholesale, so this device's own ones — and, on the
+    // first launch after an upgrade, the ones never mirrored out before — have
+    // to be written back before they can travel.
+    final reconciled = reconcileOriginDeclarations(
+      provenance: map,
+      declarations: incoming,
+    );
+    if (changed.isEmpty && mapEquals(reconciled, incoming)) {
+      return const {};
+    }
+    _writeProvenanceMap(map, sync: false);
+    return changed;
   }
 
   /// Records a successful catalog fetch time for [id] without triggering a sync
@@ -390,13 +532,14 @@ class ComicSourceLibraryManager {
     setProvenance(key, prov);
   }
 
-  /// Removes a source's provenance entirely. Call only on genuine uninstall,
-  /// never on an update-reload (which keeps the same key).
+  /// Removes a source's provenance entirely, including its portable origin
+  /// declaration so the uninstall propagates instead of being re-adopted from
+  /// another device. Call only on genuine uninstall, never on an update-reload
+  /// (which keeps the same key).
   static void clearProvenance(String key) {
     final map = _provenanceMap();
     if (map.remove(key) != null) {
-      appdata.settings[_provenanceKey] = map;
-      appdata.saveData();
+      _writeProvenanceMap(map, removedKeys: [key]);
     }
   }
 

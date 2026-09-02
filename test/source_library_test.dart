@@ -148,4 +148,162 @@ void main() {
       expect(prov.originId, isNull);
     });
   });
+
+  group('reconcileOriginDeclarations', () {
+    test('mirrors the origin of every locally installed source', () {
+      final result = reconcileOriginDeclarations(
+        provenance: {
+          'a': SourceProvenance(originId: 'lib1', libraryIds: ['lib1']).toJson(),
+          'b': SourceProvenance(originId: 'lib2').toJson(),
+        },
+        declarations: {},
+      );
+      expect(result, {'a': 'lib1', 'b': 'lib2'});
+    });
+
+    test('keeps declarations for sources this device does not have', () {
+      final result = reconcileOriginDeclarations(
+        provenance: {'a': SourceProvenance(originId: 'lib1').toJson()},
+        declarations: {'a': 'lib2', 'onlyOnOtherDevice': 'lib3'},
+      );
+      expect(result, {'a': 'lib1', 'onlyOnOtherDevice': 'lib3'});
+    });
+
+    test('drops a declaration once the local record has no origin left', () {
+      final result = reconcileOriginDeclarations(
+        provenance: {'a': SourceProvenance(libraryIds: ['lib1']).toJson()},
+        declarations: {'a': 'lib1'},
+      );
+      expect(result, isEmpty);
+    });
+
+    test('drops uninstalled keys named in removedKeys', () {
+      final result = reconcileOriginDeclarations(
+        provenance: {},
+        declarations: {'a': 'lib1', 'b': 'lib2'},
+        removedKeys: ['a'],
+      );
+      expect(result, {'b': 'lib2'});
+    });
+  });
+
+  group('adoptOriginDeclarations', () {
+    test('stamps an origin onto a source that has none', () {
+      final provenance = <String, dynamic>{
+        'a': SourceProvenance(libraryIds: ['lib2']).toJson(),
+      };
+      final changed = adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'lib1'},
+        knownLibraryIds: {'lib1', 'lib2'},
+      );
+
+      expect(changed, {'a'});
+      final prov = SourceProvenance.fromJson(
+        Map<String, dynamic>.from(provenance['a'] as Map),
+      );
+      expect(prov.originId, 'lib1');
+      expect(prov.libraryIds, containsAll(['lib1', 'lib2']));
+      // The winner has to be recomputed by the next check.
+      expect(prov.updateLibraryId, isNull);
+    });
+
+    test('creates a record for a source with no provenance at all', () {
+      final provenance = <String, dynamic>{};
+      final changed = adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'lib1'},
+        knownLibraryIds: {'lib1'},
+      );
+
+      expect(changed, {'a'});
+      expect(
+        SourceProvenance.fromJson(
+          Map<String, dynamic>.from(provenance['a'] as Map),
+        ).originId,
+        'lib1',
+      );
+    });
+
+    test('replaces a different local origin', () {
+      final provenance = <String, dynamic>{
+        'a': SourceProvenance(originId: 'lib2', updateLibraryId: 'lib2')
+            .toJson(),
+      };
+      final changed = adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'lib1'},
+        knownLibraryIds: {'lib1', 'lib2'},
+      );
+
+      expect(changed, {'a'});
+      expect(
+        SourceProvenance.fromJson(
+          Map<String, dynamic>.from(provenance['a'] as Map),
+        ).originId,
+        'lib1',
+      );
+    });
+
+    test('reports no change when the origin already matches', () {
+      final provenance = <String, dynamic>{
+        'a': SourceProvenance(originId: 'lib1', updateLibraryId: 'lib1')
+            .toJson(),
+      };
+      final changed = adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'lib1'},
+        knownLibraryIds: {'lib1'},
+      );
+
+      expect(changed, isEmpty);
+      // An unchanged record keeps its resolved winner.
+      expect(
+        SourceProvenance.fromJson(
+          Map<String, dynamic>.from(provenance['a'] as Map),
+        ).updateLibraryId,
+        'lib1',
+      );
+    });
+
+    test('ignores a declaration naming a library this device lacks', () {
+      final provenance = <String, dynamic>{
+        'a': SourceProvenance(originId: 'lib2').toJson(),
+      };
+      final changed = adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'gone', 'b': 'gone'},
+        knownLibraryIds: {'lib2'},
+      );
+
+      expect(changed, isEmpty);
+      expect(
+        SourceProvenance.fromJson(
+          Map<String, dynamic>.from(provenance['a'] as Map),
+        ).originId,
+        'lib2',
+      );
+      expect(provenance.containsKey('b'), isFalse);
+    });
+
+    test('never deletes a local record the incoming data omits', () {
+      final provenance = <String, dynamic>{
+        'a': SourceProvenance(originId: 'lib1').toJson(),
+        'localOnly': SourceProvenance(originId: 'lib2').toJson(),
+      };
+      adoptOriginDeclarations(
+        provenance: provenance,
+        declarations: {'a': 'lib1'},
+        knownLibraryIds: {'lib1', 'lib2'},
+      );
+
+      expect(provenance.keys, containsAll(['a', 'localOnly']));
+      expect(
+        SourceProvenance.fromJson(
+          Map<String, dynamic>.from(provenance['localOnly'] as Map),
+        ).originId,
+        'lib2',
+      );
+    });
+  });
 }
