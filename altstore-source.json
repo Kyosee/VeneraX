@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.0",
+          "buildVersion": "243",
+          "date": "2026-09-03",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Page jump dialog now shows maximum page count and automatically clamps input to valid range\n- Page indicator now appears in navigation bar on all screen sizes\n- Manual page jump feature added to reader\n- Collection tabs can now be renamed when adding comics to a collection\n\n### Fixed\n- Gallery mode settings now display correctly based on the active reader mode\n- Page slider in continuous mode now accurately lands on the selected page\n- Page slider can now reach both the first and last pages properly\n- Image decoding no longer continues during mid-scroll in continuous chapter mode\n- Plugin repository synchronization now works correctly\n- Dismissible dialogs and duplicate chapters in reader have been fixed\n- Full plugin descriptions are now visible in the available plugin list\n- Continuous chapter separator now uses correct viewport size\n- Continuous mode viewport properly updates when screen orientation changes\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.12...v2.3.0",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.0/VeneraX-ios-2.3.0%2B243.ipa",
+          "size": 35258521,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.2.12",
           "buildVersion": "242",
           "date": "2026-08-29",
@@ -267,11 +276,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.2.12",
-      "versionDate": "2026-08-29",
-      "versionDescription": "## What's Changed\n\n### Fixed\n- Fix proxy and certificate settings not applying to downloads\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.11...v2.2.12",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.2.12/VeneraX-ios-2.2.12%2B242.ipa",
-      "size": 35251387
+      "version": "2.3.0",
+      "versionDate": "2026-09-03",
+      "versionDescription": "## What's Changed\n\n### Added\n- Page jump dialog now shows maximum page count and automatically clamps input to valid range\n- Page indicator now appears in navigation bar on all screen sizes\n- Manual page jump feature added to reader\n- Collection tabs can now be renamed when adding comics to a collection\n\n### Fixed\n- Gallery mode settings now display correctly based on the active reader mode\n- Page slider in continuous mode now accurately lands on the selected page\n- Page slider can now reach both the first and last pages properly\n- Image decoding no longer continues during mid-scroll in continuous chapter mode\n- Plugin repository synchronization now works correctly\n- Dismissible dialogs and duplicate chapters in reader have been fixed\n- Full plugin descriptions are now visible in the available plugin list\n- Continuous chapter separator now uses correct viewport size\n- Continuous mode viewport properly updates when screen orientation changes\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.2.12...v2.3.0",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.0/VeneraX-ios-2.3.0%2B243.ipa",
+      "size": 35258521
     }
   ],
   "news": []
