@@ -93,6 +93,10 @@ class CustomSlider extends StatefulWidget {
 class _CustomSliderState extends State<CustomSlider> {
   late double value;
 
+  /// Last value sent by the current gesture; a finger resting past the track
+  /// end keeps producing events and must not re-send the end page.
+  double? _reported;
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +113,24 @@ class _CustomSliderState extends State<CustomSlider> {
     }
   }
 
+  // A drag keeps delivering positions after the finger leaves the track, so
+  // dx outside [0, width] means the nearest end, not "ignore this event".
+  double _valueAt(double dx, double width) {
+    var x = dx.clamp(0.0, width);
+    if (widget.reversed) {
+      x = width - x;
+    }
+    var gap = width / widget.divisions;
+    var gapValue = (widget.max - widget.min) / widget.divisions;
+    return (x / gap).round() * gapValue + widget.min;
+  }
+
+  void _report(double newValue) {
+    if (newValue == _reported) return;
+    _reported = newValue;
+    widget.onChanged.call(newValue);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -121,23 +143,12 @@ class _CustomSliderState extends State<CustomSlider> {
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTapDown: (details){
-              var dx = details.localPosition.dx;
-              if(widget.reversed){
-                dx = constraints.maxWidth - dx;
-              }
-              var gap = constraints.maxWidth / widget.divisions;
-              var gapValue = (widget.max - widget.min)  / widget.divisions;
-              widget.onChanged.call((dx / gap).round() * gapValue + widget.min);
+              _reported = null;
+              _report(_valueAt(details.localPosition.dx, constraints.maxWidth));
             },
+            onVerticalDragStart: (_) => _reported = null,
             onVerticalDragUpdate: (details){
-              var dx = details.localPosition.dx;
-              if(dx > constraints.maxWidth || dx < 0)  return;
-              if(widget.reversed){
-                dx = constraints.maxWidth - dx;
-              }
-              var gap = constraints.maxWidth / widget.divisions;
-              var gapValue = (widget.max - widget.min)  / widget.divisions;
-              widget.onChanged.call((dx / gap).round() * gapValue + widget.min);
+              _report(_valueAt(details.localPosition.dx, constraints.maxWidth));
             },
             child: SizedBox(
               height: 24,
