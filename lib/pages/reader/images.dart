@@ -895,7 +895,16 @@ class _ContinuousModeState extends State<_ContinuousMode>
   int _anchorIndex = 0;
 
   /// Center key handed to the [CustomScrollView]; marks the pivot sliver.
-  final _centerKey = GlobalKey();
+  /// Replaced together with [_pivotGeneration] whenever the pivot moves.
+  GlobalKey _centerKey = GlobalKey();
+
+  /// Bumped by [_repivot]. Both slivers are keyed on it so a pivot move
+  /// rebuilds them instead of shifting every child's index under a live list.
+  int _pivotGeneration = 0;
+
+  /// Set while [_repivot] moves the offset to 0 ahead of the new layout;
+  /// against the old extents that offset can read as the chapter start.
+  bool _repivoting = false;
 
   /// Per-image GlobalKeys ("chapter:page") used to read each visible item's
   /// render box during scroll so we can resolve the current reading position
@@ -1216,13 +1225,16 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (!seamlessChapterReading) {
       _updateSwipeChangeChapter();
     }
-    if (!_positionResolveScheduled) {
-      _positionResolveScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _positionResolveScheduled = false;
-        if (mounted) _onScrollPositionSettled();
-      });
-    }
+    _schedulePositionResolve();
+  }
+
+  void _schedulePositionResolve() {
+    if (_positionResolveScheduled) return;
+    _positionResolveScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _positionResolveScheduled = false;
+      if (mounted) _onScrollPositionSettled();
+    });
   }
 
   /// Resolves the current reading position from render-box geometry (replacing
@@ -1689,6 +1701,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
         // Leading sliver: entries before the pivot, in reverse so element 0 of
         // the builder is the entry immediately above the pivot.
         SliverList(
+          key: ValueKey('lead$_pivotGeneration'),
           delegate: SliverChildBuilderDelegate(
             (context, i) => _buildEntry(_entries[before - 1 - i]),
             childCount: before,
@@ -1801,6 +1814,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
     widget = NotificationListener<ScrollNotification>(
       onNotification: (notification) {
+        if (_repivoting) return true;
         if (notification is ScrollStartNotification) {
           delayedSetIsScrolling(true);
           if (notification.dragDetails != null) {
@@ -1931,14 +1945,19 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// Scrolls (animated or instant) so that (chapter,page) sits at the leading
   /// edge.
   ///
-  /// The target may be far outside the current cacheExtent and therefore not
-  /// laid out, so we can't read its render box directly. We iterate: estimate a
-  /// scroll offset, jump there, let the frame lay out, then read the real delta
-  /// and correct. The estimate uses the *index distance* from a currently-laid-
-  /// out reference item multiplied by an average item extent — robust to the
-  /// center-keyed coordinate space (negative offsets above the pivot) which a
-  /// naive idx/length * maxScrollExtent mapping got wrong (it ignored the
-  /// negative region, so jumps to the first/middle pages missed).
+  /// Explicit jumps (no [maxStepExtent]) re-pivot the scroll view onto the
+  /// target instead of scrolling to it — see [_repivot]. Scrolling can only be
+  /// exact for the pivot itself: the extent of every entry between the pivot
+  /// and the target is baked into the target's offset, and until an image has
+  /// loaded its entry is a fixed placeholder, so those offsets are wrong by
+  /// pages and keep shifting as the images arrive.
+  ///
+  /// Tap-to-turn keeps the scrolling path: its target is the adjacent entry,
+  /// laid out or at most a couple of viewports away, and rapid taps are meant
+  /// to advance gradually rather than teleport. For an off-screen target we
+  /// iterate: estimate a scroll offset from the index distance to a laid-out
+  /// reference item, jump, let the frame lay out, then read the real delta
+  /// and correct.
   Future<void> _goToEntry(
     int chapter,
     int page, {
@@ -1948,7 +1967,22 @@ class _ContinuousModeState extends State<_ContinuousMode>
     double? maxStepExtent,
   }) async {
     bool isStale() => isCurrent != null && !isCurrent();
-    if (!_scrollController.hasClients || isStale()) return;
+    if (isStale()) return;
+
+    if (maxStepExtent == null) {
+      if (_indexOfEntry(chapter, page) != _anchorIndex) {
+        _repivot(chapter, page);
+        return;
+      }
+      // The pivot is the one entry whose offset is exact by construction.
+      await _applyScroll(
+        0 - _centerAdjust(chapter, page, center),
+        animate: animate,
+      );
+      return;
+    }
+
+    if (!_scrollController.hasClients) return;
 
     // Fast path: target already laid out — one precise move.
     final delta = _offsetDeltaToEntry(chapter, page);
@@ -1965,9 +1999,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // Iterative approach for off-screen targets.
     final targetIdx = _indexOfEntry(chapter, page);
     final currentIdx = _indexOfEntry(reader.chapter, reader.page);
-    final maxAttempts = maxStepExtent == null
-        ? 6
-        : math.min(32, math.max(6, (targetIdx - currentIdx).abs() * 2));
+    final maxAttempts = math.min(
+      32,
+      math.max(6, (targetIdx - currentIdx).abs() * 2),
+    );
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (!_scrollController.hasClients || !mounted || isStale()) return;
       final pos = _scrollController.position;
@@ -1975,15 +2010,12 @@ class _ContinuousModeState extends State<_ContinuousMode>
       // Find any currently laid-out image entry to use as a reference point.
       final ref = _firstLaidOutEntry();
       if (ref == null) {
-        // Nothing measurable yet. Rapid tap turns advance gradually so an
-        // unresolved middle target cannot be mistaken for the scroll tail.
-        final targetOffset = maxStepExtent == null
-            ? (targetIdx <= _anchorIndex
-                  ? pos.minScrollExtent
-                  : pos.maxScrollExtent)
-            : pos.pixels +
-                  (targetIdx < currentIdx ? -maxStepExtent : maxStepExtent);
-        await _applyScroll(targetOffset, animate: false);
+        // Nothing measurable yet: step toward the target so an unresolved
+        // middle target cannot be mistaken for the scroll tail.
+        await _applyScroll(
+          pos.pixels + (targetIdx < currentIdx ? -maxStepExtent : maxStepExtent),
+          animate: false,
+        );
         await WidgetsBinding.instance.endOfFrame;
         if (isStale()) return;
         continue;
@@ -2025,6 +2057,50 @@ class _ContinuousModeState extends State<_ContinuousMode>
         );
         return;
       }
+    }
+  }
+
+  /// Makes (chapter, page) the pivot and shows it at the leading edge.
+  ///
+  /// The pivot is laid out at scroll offset 0 and entries before it grow into
+  /// negative offsets, so no image loading anywhere can move it — the same
+  /// guarantee that makes opening the reader on a restored page exact. Both
+  /// slivers are re-keyed so their children are rebuilt for the new index
+  /// mapping; the per-entry GlobalKeys carry the already-decoded images over.
+  void _repivot(int chapter, int page) {
+    if (!mounted || _entries.isEmpty) return;
+    // _indexOfEntry falls back to the chapter's first image; anchor on what
+    // it resolved to, so later _rebuildEntries calls agree with it.
+    final index = _indexOfEntry(chapter, page);
+    final entry = _entries[index];
+    if (entry.isImage) {
+      chapter = entry.chapter;
+      page = entry.page;
+    }
+    _cancelProgrammaticPageTurn();
+    if (prepareToPrevChapter || prepareToNextChapter) {
+      prepareToPrevChapter = false;
+      prepareToNextChapter = false;
+      jumpToPrevChapter = false;
+      jumpToNextChapter = false;
+      context.readerScaffold.setFloatingButton(0);
+    }
+    setState(() {
+      _anchorChapter = chapter;
+      _anchorPage = page;
+      _anchorIndex = index;
+      _pivotGeneration++;
+      _centerKey = GlobalKey();
+    });
+    // The offset may already be 0, in which case jumpTo stays silent and the
+    // scroll listener would never re-read the page under the new layout.
+    _schedulePositionResolve();
+    if (!_scrollController.hasClients) return;
+    _repivoting = true;
+    try {
+      _scrollController.jumpTo(0);
+    } finally {
+      _repivoting = false;
     }
   }
 
@@ -2235,11 +2311,6 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   Future<void> animateToPage(int page) {
-    if (seamlessChapterReading) {
-      return _goToEntry(reader.chapter, page, animate: true);
-    }
-    if (!_scrollController.hasClients) return Future.value();
-    // Non-seamless: page index maps to the (page)-th sliver child.
     return _goToEntry(reader.chapter, page, animate: true);
   }
 
