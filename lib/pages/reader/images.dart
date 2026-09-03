@@ -923,6 +923,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
       ];
     }
     _anchorIndex = _indexOfEntry(_anchorChapter, _anchorPage);
+    _lastCacheAroundChapter = -1;
+    _lastCacheAroundPage = -1;
   }
 
   void delayedSetIsScrolling(bool value) {
@@ -1404,8 +1406,24 @@ class _ContinuousModeState extends State<_ContinuousMode>
     _pageTurnCoordinator.cancel();
   }
 
-  /// Download and decode around the current entry in seamless mode.
+  /// Entry [_cacheAround] last ran for; the scroll listener settles every
+  /// frame, and the entry list scan is wasted while the page has not moved.
+  int _lastCacheAroundChapter = -1;
+  int _lastCacheAroundPage = -1;
+
+  /// Pre-download (never decode) around the current entry in seamless mode.
+  ///
+  /// Decoding is left to the sliver's cacheExtent through [ComicImage], whose
+  /// scroll-aware provider holds off during fast flings. Decoding here via
+  /// [precacheImage] bypassed that and ran mid-fling on every page the window
+  /// slid over, which is what made seamless mode feel choppier (issue #260).
   void _cacheAround(_ContinuousReaderEntry current) {
+    if (current.chapter == _lastCacheAroundChapter &&
+        current.page == _lastCacheAroundPage) {
+      return;
+    }
+    _lastCacheAroundChapter = current.chapter;
+    _lastCacheAroundPage = current.page;
     final idx = _indexOfEntry(current.chapter, current.page);
     var remaining = preCacheCount;
     for (var i = idx + 1; i < _entries.length && remaining > 0; i++) {
@@ -1414,7 +1432,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       remaining--;
       final cacheKey = '${entry.chapter}:${entry.page}:${entry.imageKey}';
       if (_continuousCachedImages.add(cacheKey)) {
-        unawaited(_precacheImageEntry(entry, context));
+        _preDownloadImageEntry(entry, context);
       }
     }
     remaining = preCacheCount;
@@ -1424,7 +1442,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       remaining--;
       final cacheKey = '${entry.chapter}:${entry.page}:${entry.imageKey}';
       if (_continuousCachedImages.add(cacheKey)) {
-        unawaited(_precacheImageEntry(entry, context));
+        _preDownloadImageEntry(entry, context);
       }
     }
   }
@@ -2456,6 +2474,25 @@ void _preDownloadImage(int page, BuildContext context) {
   var eid = reader.eid;
   var sourceKey = reader.type.comicSource?.key;
   ImageDownloader.loadComicImage(imageKey, sourceKey, cid, eid);
+}
+
+void _preDownloadImageEntry(
+  _ContinuousReaderEntry entry,
+  BuildContext context,
+) {
+  final imageKey = entry.imageKey;
+  if (imageKey == null || imageKey.startsWith("file://")) {
+    return;
+  }
+  final reader = context.reader;
+  final eid =
+      reader.widget.chapters?.ids.elementAtOrNull(entry.chapter - 1) ?? '0';
+  ImageDownloader.loadComicImage(
+    imageKey,
+    reader.type.comicSource?.key,
+    reader.cid,
+    eid,
+  );
 }
 
 Future<void> _precacheImageEntry(
