@@ -790,6 +790,23 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 icon: const Icon(Icons.first_page),
               ),
               Expanded(child: buildSlider()),
+              GestureDetector(
+                onTap: showPageJumpDialog,
+                child: Container(
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      text,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
               IconButton.filledTonal(
                 onPressed: () => !isReversed
                     ? context.reader.chapter < context.reader.maxChapter
@@ -808,16 +825,6 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               final small = (constrains.maxWidth - buttons.length * 50) < 120;
               return Row(
                 children: [
-                  if (!small)
-                    Container(
-                      height: 24,
-                      padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Center(child: Text(text)),
-                    ).paddingLeft(16),
                   const Spacer(),
                   for (var button in buttons)
                     if (!small)
@@ -1081,6 +1088,57 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         comicTitle: context.reader.widget.name,
         chapterTitle: chapterTitle,
       ),
+    );
+  }
+
+  void showPageJumpDialog() {
+    final controller = TextEditingController(
+      text: context.reader.page.toString(),
+    );
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Jump to page".tl),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: "Page number".tl,
+              hintText: "1-${this.context.reader.maxPage}",
+            ),
+            onSubmitted: (value) {
+              final page = int.tryParse(value);
+              if (page != null && page >= 1 && page <= this.context.reader.maxPage) {
+                this.context.reader.toPage(page);
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Cancel".tl),
+            ),
+            TextButton(
+              onPressed: () {
+                final page = int.tryParse(controller.text);
+                if (page != null && page >= 1 && page <= this.context.reader.maxPage) {
+                  this.context.reader.toPage(page);
+                  Navigator.of(context).pop();
+                } else {
+                  showToast(
+                    message: "Invalid page number".tl,
+                    context: this.context,
+                  );
+                }
+              },
+              child: Text("Jump".tl),
+            ),
+          ],
+        );
+      },
     );
   }
 
