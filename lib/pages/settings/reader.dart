@@ -404,7 +404,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
-            if (appdata.settings['readerMode']!.startsWith('gallery'))
+            if ((_effectiveSetting('readerMode') as String?)
+                    ?.startsWith('gallery') ??
+                false)
               _SliderSetting(
                 title:
                     "The number of pic in screen for landscape (Only Gallery Mode)"
@@ -423,7 +425,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            if (appdata.settings['readerMode']!.startsWith('gallery'))
+            if ((_effectiveSetting('readerMode') as String?)
+                    ?.startsWith('gallery') ??
+                false)
               _SliderSetting(
                 title:
                     "The number of pic in screen for portrait (Only Gallery Mode)"
@@ -441,9 +445,15 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            if (appdata.settings['readerMode']!.startsWith('gallery') &&
-                (appdata.settings['readerScreenPicNumberForLandscape'] > 1 ||
-                    appdata.settings['readerScreenPicNumberForPortrait'] > 1))
+            if (((_effectiveSetting('readerMode') as String?)
+                        ?.startsWith('gallery') ??
+                    false) &&
+                ((_effectiveSetting('readerScreenPicNumberForLandscape') as int?) ??
+                        1) >
+                    1 ||
+                ((_effectiveSetting('readerScreenPicNumberForPortrait') as int?) ??
+                        1) >
+                    1)
               _SwitchSetting(
                 title: "Show single image on first page".tl,
                 settingKey: "showSingleImageOnFirstPage",
@@ -456,7 +466,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            if (appdata.settings['readerMode']!.startsWith('gallery'))
+            if ((_effectiveSetting('readerMode') as String?)
+                    ?.startsWith('gallery') ??
+                false)
               _SwitchSetting(
                 title: "Fill screen".tl,
                 subtitle:
@@ -487,7 +499,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
-            if (appdata.settings['readerMode']!.startsWith('continuous'))
+            if ((_effectiveSetting('readerMode') as String?)
+                    ?.startsWith('continuous') ??
+                false)
               _SliderSetting(
                 title: "Mouse scroll speed".tl,
                 settingsIndex: "readerScrollSpeed",
@@ -503,7 +517,8 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            if (appdata.settings['readerMode'] == 'continuousTopToBottom')
+            if ((_effectiveSetting('readerMode') as String?) ==
+                'continuousTopToBottom')
               _SwitchSetting(
                 title: "Center page after turning".tl,
                 subtitle:
@@ -519,7 +534,9 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-            if (appdata.settings['readerMode']!.startsWith('continuous'))
+            if ((_effectiveSetting('readerMode') as String?)
+                    ?.startsWith('continuous') ??
+                false)
               _SliderSetting(
                 title: "Spacing between pages".tl,
                 settingsIndex: "readerPageSpacing",
