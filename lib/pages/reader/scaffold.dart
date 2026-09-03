@@ -1092,6 +1092,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   void showPageJumpDialog() {
+    final maxPage = context.reader.maxPage;
     final controller = TextEditingController(
       text: context.reader.page.toString(),
     );
@@ -1100,21 +1101,36 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       builder: (context) {
         return AlertDialog(
           title: Text("Jump to page".tl),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: "Page number".tl,
-              hintText: "1-${this.context.reader.maxPage}",
-            ),
-            onSubmitted: (value) {
-              final page = int.tryParse(value);
-              if (page != null && page >= 1 && page <= this.context.reader.maxPage) {
-                this.context.reader.toPage(page);
-                Navigator.of(context).pop();
-              }
-            },
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "${"Total pages".tl}: $maxPage",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: "Page number".tl,
+                  hintText: "1-$maxPage",
+                ),
+                onSubmitted: (value) {
+                  var page = int.tryParse(value);
+                  if (page != null) {
+                    page = page.clamp(1, maxPage);
+                    this.context.reader.toPage(page);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1123,8 +1139,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             ),
             TextButton(
               onPressed: () {
-                final page = int.tryParse(controller.text);
-                if (page != null && page >= 1 && page <= this.context.reader.maxPage) {
+                var page = int.tryParse(controller.text);
+                if (page != null) {
+                  page = page.clamp(1, maxPage);
                   this.context.reader.toPage(page);
                   Navigator.of(context).pop();
                 } else {
