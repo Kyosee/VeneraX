@@ -8,10 +8,11 @@ import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/comic_details_page/related_sources_section.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
-void showRelatedSourcesDialog(BuildContext context, Comic comic) {
+Future<void> showRelatedSourcesDialog(BuildContext context, Comic comic) {
   final sourceKeyController = TextEditingController();
   final comicIdController = TextEditingController();
   final searchController = TextEditingController(text: comic.title);
@@ -36,6 +37,16 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
   var searchGroups = <String, _RelatedSearchGroup>{};
   var isSearching = false;
   var dialogClosed = false;
+  var acceptedLinksByComicId = <String, DomainComicSourceLink>{};
+
+  void refreshAcceptedLinks() {
+    acceptedLinksByComicId = {
+      for (final link in repository.relatedSourcesFor(comic))
+        if (link.status == 'accepted') link.comicId: link,
+    };
+  }
+
+  refreshAcceptedLinks();
 
   void updateDialog(StateSetter setState, VoidCallback fn) {
     if (dialogClosed) return;
@@ -88,7 +99,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
   void showResultPreview(
     BuildContext context,
     Comic result,
-    VoidCallback onLink,
+    VoidCallback? onLink,
   ) {
     _showRelatedComicPreview(
       context: context,
@@ -102,7 +113,8 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
       tags: result.tags,
       description: result.description,
       actions: [
-        Button.filled(onPressed: onLink, child: Text('Link this comic'.tl)),
+        if (onLink != null)
+          Button.filled(onPressed: onLink, child: Text('Link this comic'.tl)),
         Button.outlined(
           onPressed: () => openDetail(
             result.sourceKey,
@@ -128,8 +140,24 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
         targetSourceKey: result.sourceKey,
         targetComicId: result.id,
       );
+      refreshAcceptedLinks();
       updateDialog(setState, () {});
       context.showMessage(message: 'Linked'.tl);
+    } catch (e) {
+      context.showMessage(message: e.toString().tl);
+    }
+  }
+
+  void unlinkSearchResult(
+    StateSetter setState,
+    BuildContext context,
+    DomainComicSourceLink link,
+  ) {
+    try {
+      repository.unlinkRelatedSource(link);
+      refreshAcceptedLinks();
+      updateDialog(setState, () {});
+      context.showMessage(message: 'Unlinked'.tl);
     } catch (e) {
       context.showMessage(message: e.toString().tl);
     }
@@ -288,6 +316,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
               onAccept: link.status == 'candidate'
                   ? () {
                       repository.acceptRelatedSource(link);
+                      refreshAcceptedLinks();
                       setState(() {});
                       App.rootContext.pop();
                     }
@@ -304,6 +333,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
                       link.comicId != currentIdentity.comicId
                   ? () {
                       repository.unlinkRelatedSource(link);
+                      refreshAcceptedLinks();
                       setState(() {});
                       App.rootContext.pop();
                     }
@@ -312,6 +342,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
             onAccept: link.status == 'candidate'
                 ? () {
                     repository.acceptRelatedSource(link);
+                    refreshAcceptedLinks();
                     setState(() {});
                   }
                 : null,
@@ -326,6 +357,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
                     link.comicId != currentIdentity.comicId
                 ? () {
                     repository.unlinkRelatedSource(link);
+                    refreshAcceptedLinks();
                     setState(() {});
                   }
                 : null,
@@ -347,8 +379,9 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
             border: const OutlineInputBorder(),
             suffixIcon: IconButton(
               icon: const Icon(Icons.search),
-              onPressed:
-                  isSearching ? null : () => runSearch(setState, context),
+              onPressed: isSearching
+                  ? null
+                  : () => runSearch(setState, context),
             ),
           ),
           onSubmitted: (_) => runSearch(setState, context),
@@ -405,15 +438,44 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
                   )
                 else
                   for (final result in group.results.take(12))
-                    _RelatedSearchResultRow(
-                      comic: result,
-                      onTap: () => showResultPreview(
-                        context,
-                        result,
-                        () => linkSearchResult(setState, context, result),
-                      ),
-                      onLink: () =>
-                          linkSearchResult(setState, context, result),
+                    Builder(
+                      builder: (context) {
+                        final resultIdentity = repository.identityFor(
+                          result.sourceKey,
+                          result.id,
+                        );
+                        final linked =
+                            acceptedLinksByComicId[resultIdentity.comicId];
+                        final isCurrent =
+                            resultIdentity.comicId == currentIdentity.comicId;
+                        return _RelatedSearchResultRow(
+                          comic: result,
+                          isLinked: linked != null,
+                          isCurrent: isCurrent,
+                          onTap: () => showResultPreview(
+                            context,
+                            result,
+                            linked == null
+                                ? () => linkSearchResult(
+                                    setState,
+                                    context,
+                                    result,
+                                  )
+                                : null,
+                          ),
+                          onLink: linked == null
+                              ? () =>
+                                    linkSearchResult(setState, context, result)
+                              : null,
+                          onUnlink: linked != null && !isCurrent
+                              ? () => unlinkSearchResult(
+                                  setState,
+                                  context,
+                                  linked,
+                                )
+                              : null,
+                        );
+                      },
                     ),
               ],
             ),
@@ -472,7 +534,7 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
     );
   }
 
-  showDialog(
+  return showDialog(
     context: App.rootContext,
     builder: (context) {
       return StatefulBuilder(
@@ -522,11 +584,21 @@ void showRelatedSourcesDialog(BuildContext context, Comic comic) {
                             child: TabBarView(
                               children: [
                                 Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    8,
+                                  ),
                                   child: buildLinkList(setState, context),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    8,
+                                  ),
                                   child: buildSearchList(setState, context),
                                 ),
                               ],
@@ -761,8 +833,9 @@ class _RelatedSourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusText =
-        link.status == 'candidate' ? 'Candidate'.tl : 'Linked'.tl;
+    final statusText = link.status == 'candidate'
+        ? 'Candidate'.tl
+        : 'Linked'.tl;
     final sourceText = link.linkSource == 'auto' ? 'Auto'.tl : 'Manual'.tl;
     final confidence = link.confidence == null
         ? ''
@@ -863,12 +936,18 @@ class _RelatedSourceRow extends StatelessWidget {
 class _RelatedSearchResultRow extends StatelessWidget {
   const _RelatedSearchResultRow({
     required this.comic,
-    required this.onLink,
+    required this.isLinked,
+    required this.isCurrent,
+    this.onLink,
+    this.onUnlink,
     this.onTap,
   });
 
   final Comic comic;
-  final VoidCallback onLink;
+  final bool isLinked;
+  final bool isCurrent;
+  final VoidCallback? onLink;
+  final VoidCallback? onUnlink;
   final VoidCallback? onTap;
 
   @override
@@ -929,10 +1008,14 @@ class _RelatedSearchResultRow extends StatelessWidget {
                 ],
               ),
             ),
-            Button.icon(
-              icon: const Icon(Icons.link, size: 18),
-              tooltip: 'Link this comic'.tl,
-              onPressed: onLink,
+            RelatedSearchLinkActions(
+              isLinked: isLinked,
+              isCurrent: isCurrent,
+              onLink: onLink,
+              onUnlink: onUnlink,
+              unlinkKey: Key(
+                'related-search-unlink-${comic.sourceKey}-${comic.id}',
+              ),
             ),
           ],
         ),

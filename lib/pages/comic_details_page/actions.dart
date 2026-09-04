@@ -8,6 +8,8 @@ abstract mixin class _ComicPageActions {
   /// a plain [update] would rebuild from the stale data still in hand.
   void reloadDetails();
 
+  Future<void> _showRelatedSourcesManager();
+
   ComicDetails get comic;
 
   ComicSource? get comicSource => ComicSource.find(comic.sourceKey);
@@ -716,22 +718,7 @@ abstract mixin class _ComicPageActions {
         MenuEntry(
           icon: Icons.hub_outlined,
           text: "Related Sources".tl,
-          onClick: () {
-            showRelatedSourcesDialog(
-              context,
-              Comic(
-                comic.title,
-                comic.cover,
-                comic.id,
-                comic.subTitle,
-                comic.plainTags,
-                comic.description ?? '',
-                comic.sourceKey,
-                comic.maxPage,
-                null,
-              ),
-            );
-          },
+          onClick: _showRelatedSourcesManager,
         ),
       if (!_isCollection)
         MenuEntry(

@@ -37,6 +37,7 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/comic_collection_edit_page.dart';
 import 'package:venera/pages/comic_details_page/glossary_editor.dart';
+import 'package:venera/pages/comic_details_page/related_sources_section.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/webdav_migration_dialog.dart';
@@ -164,6 +165,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   final ComicStateRepository _comicStateRepository =
       const ComicStateRepository();
+
+  List<DomainComicSourceLink> _relatedSourceLinks = const [];
+  bool _relatedSourcesLoaded = false;
 
   @override
   void onReadEnd() {
@@ -375,6 +379,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           slivers: [
             ...buildTitle(horizontalInset),
             inset(buildActions()),
+            inset(buildRelatedSources()),
             inset(buildDescription()),
             inset(buildChapters()),
             inset(buildComments()),
@@ -387,6 +392,70 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget buildRelatedSources() {
+    if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey) ||
+        !_comicStateRepository.isDomainReady) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    if (!_relatedSourcesLoaded) {
+      _loadRelatedSources();
+    }
+    final currentComicId = _comicStateRepository
+        .identityFor(comic.sourceKey, comic.id)
+        .comicId;
+    return SliverToBoxAdapter(
+      child: ComicRelatedSourcesSection(
+        links: _relatedSourceLinks,
+        currentComicId: currentComicId,
+        onManage: _showRelatedSourcesManager,
+        onOpenSource: _openRelatedSource,
+      ),
+    );
+  }
+
+  Comic _relatedSourcesComic() => Comic(
+    comic.title,
+    comic.cover,
+    comic.id,
+    comic.subTitle,
+    comic.plainTags,
+    comic.description ?? '',
+    comic.sourceKey,
+    comic.maxPage,
+    null,
+  );
+
+  void _loadRelatedSources() {
+    _relatedSourcesLoaded = true;
+    if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey) ||
+        !_comicStateRepository.isDomainReady) {
+      _relatedSourceLinks = const [];
+      return;
+    }
+    _relatedSourceLinks = _comicStateRepository.relatedSourcesFor(
+      _relatedSourcesComic(),
+    );
+  }
+
+  @override
+  Future<void> _showRelatedSourcesManager() async {
+    await showRelatedSourcesDialog(context, _relatedSourcesComic());
+    if (!mounted) return;
+    setState(_loadRelatedSources);
+  }
+
+  void _openRelatedSource(DomainComicSourceLink link) {
+    final sourceKey = sourceKeyFromRelatedPlatformId(link.platformId);
+    context.to(
+      () => ComicPage(
+        id: link.sourceComicId,
+        sourceKey: sourceKey,
+        cover: link.comicCoverUri,
+        title: link.comicTitle,
       ),
     );
   }
@@ -677,6 +746,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   Future<void> onDataLoaded() async {
     _comicStateRepository.mirrorComicDetails(comic);
+    _loadRelatedSources();
     TranslationStore().updateComicMetadata(
       comic.sourceKey,
       comic.comicId,
