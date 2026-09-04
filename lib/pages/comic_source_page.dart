@@ -667,7 +667,27 @@ class _BodyState extends State<_Body> {
     if (url.isEmpty) {
       return;
     }
-    var splits = url.split("/");
+
+    // Extract HTTP Basic Auth credentials from URL if present
+    Uri? uri;
+    String? basicAuth;
+    String cleanUrl = url;
+
+    try {
+      uri = Uri.parse(url);
+      if (uri.hasAuthority && uri.userInfo.isNotEmpty) {
+        // URL contains username:password@host format
+        final credentials = utf8.encode(uri.userInfo);
+        basicAuth = base64Encode(credentials);
+        // Rebuild URL without credentials
+        cleanUrl = uri.replace(userInfo: '').toString();
+      }
+    } catch (e) {
+      // Invalid URL format; proceed with original URL
+      cleanUrl = url;
+    }
+
+    var splits = cleanUrl.split("/");
     splits.removeWhere((element) => element == "");
     var fileName = splits.last;
     bool cancel = false;
@@ -677,11 +697,16 @@ class _BodyState extends State<_Body> {
       barrierDismissible: false,
     );
     try {
+      final headers = <String, String>{"cache-time": "no"};
+      if (basicAuth != null) {
+        headers["Authorization"] = "Basic $basicAuth";
+      }
+
       var res = await AppDio().get<String>(
-        url,
+        cleanUrl,
         options: Options(
           responseType: ResponseType.plain,
-          headers: {"cache-time": "no"},
+          headers: headers,
         ),
       );
       if (cancel) return;
