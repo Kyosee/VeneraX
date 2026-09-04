@@ -112,11 +112,21 @@ class _ExplorePageState extends State<ExplorePage>
     ),
   );
 
-  Tab buildTab(String i) {
+  ComicSource findSource(String page) {
     var comicSource = ComicSource.all().firstWhere(
-      (e) => e.explorePages.any((e) => e.title == i),
+      (source) => source.explorePages.any((data) => data.title == page),
     );
-    return Tab(text: i.ts(comicSource.key), key: Key(i));
+    return comicSource;
+  }
+
+  TabPageSelectorItem buildSelectorItem(String page) {
+    final source = findSource(page);
+    final pageLabel = page.ts(source.key);
+    return TabPageSelectorItem(
+      label: source.name,
+      subtitle: pageLabel == source.name ? null : pageLabel,
+      searchTerms: '${source.key} $page',
+    );
   }
 
   Widget buildBody(String i) =>
@@ -150,15 +160,22 @@ class _ExplorePageState extends State<ExplorePage>
       return buildEmpty();
     }
 
+    final selectorItems = pages.map(buildSelectorItem).toList();
     Widget tabBar = Material(
       child: AppTabBar(
         key: PageStorageKey(pages.toString()),
-        tabs: pages.map((e) => buildTab(e)).toList(),
+        tabs: List.generate(
+          pages.length,
+          (index) => Tab(
+            text: selectorItems[index].subtitle ?? selectorItems[index].label,
+            key: Key(pages[index]),
+          ),
+        ),
         controller: controller,
-        actionButton: TabActionButton(
-          icon: const Icon(Icons.add),
-          text: "Add".tl,
-          onPressed: addPage,
+        trailing: TabPageSelectorButton(
+          controller: controller,
+          items: selectorItems,
+          onManage: addPage,
         ),
       ),
     ).paddingTop(context.padding.top);

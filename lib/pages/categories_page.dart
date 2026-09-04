@@ -72,6 +72,18 @@ class _CategoriesPageState extends State<CategoriesPage>
     showPopUpWidget(App.rootContext, setCategoryPagesWidget());
   }
 
+  TabPageSelectorItem buildSelectorItem(String category) {
+    final source = ComicSource.all().firstWhere(
+      (source) => source.categoryData?.key == category,
+    );
+    final pageLabel = source.categoryData!.title;
+    return TabPageSelectorItem(
+      label: source.name,
+      subtitle: pageLabel == source.name ? null : pageLabel,
+      searchTerms: '${source.key} $category',
+    );
+  }
+
   @override
   void dispose() {
     appdata.settings.removeListener(onSettingsChanged);
@@ -107,25 +119,25 @@ class _CategoriesPageState extends State<CategoriesPage>
       return buildEmpty();
     }
 
+    final selectorItems = categories.map(buildSelectorItem).toList();
     return Material(
       child: Column(
         children: [
           AppTabBar(
             controller: controller,
             key: PageStorageKey(categories.toString()),
-            tabs: categories.map((e) {
-              String title = e;
-              try {
-                title = getCategoryDataWithKey(e).title;
-              } catch (e) {
-                //
-              }
-              return Tab(text: title, key: Key(e));
-            }).toList(),
-            actionButton: TabActionButton(
-              icon: const Icon(Icons.add),
-              text: "Add".tl,
-              onPressed: addPage,
+            tabs: List.generate(
+              categories.length,
+              (index) => Tab(
+                text:
+                    selectorItems[index].subtitle ?? selectorItems[index].label,
+                key: Key(categories[index]),
+              ),
+            ),
+            trailing: TabPageSelectorButton(
+              controller: controller,
+              items: selectorItems,
+              onManage: addPage,
             ),
           ).paddingTop(context.padding.top),
           Expanded(

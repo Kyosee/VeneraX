@@ -141,7 +141,9 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Material(
+      color: colorScheme.surface,
       child: Column(
         children: [
           Container(
@@ -150,8 +152,11 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
             width: double.infinity,
             decoration: BoxDecoration(
               color: top
-                  ? null
-                  : Theme.of(context).colorScheme.surfaceTint.withAlpha(20),
+                  ? colorScheme.surface
+                  : Color.alphaBlend(
+                      colorScheme.surfaceTint.withAlpha(20),
+                      colorScheme.surface,
+                    ),
             ),
             child: Row(
               children: [

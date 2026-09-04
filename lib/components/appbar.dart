@@ -264,6 +264,7 @@ class AppTabBar extends StatefulWidget {
     this.controller,
     required this.tabs,
     this.actionButton,
+    this.trailing,
     this.withUnderLine = true,
   });
 
@@ -272,6 +273,9 @@ class AppTabBar extends StatefulWidget {
   final List<Tab> tabs;
 
   final Widget? actionButton;
+
+  /// A fixed action shown after the horizontally scrollable tabs.
+  final Widget? trailing;
 
   final bool withUnderLine;
 
@@ -299,6 +303,8 @@ class _AppTabBarState extends State<AppTabBar> {
   Animation<double>? _tabAnimation;
 
   var tabBarKey = GlobalKey();
+
+  var scrollViewportKey = GlobalKey();
 
   var offsets = <double>[];
 
@@ -379,7 +385,7 @@ class _AppTabBarState extends State<AppTabBar> {
   }
 
   Widget buildTabBar(BuildContext context, Widget? _) {
-    var child = SmoothScrollProvider(
+    var scrollable = SmoothScrollProvider(
       controller: scrollController,
       builder: (context, controller, physics) {
         return SingleChildScrollView(
@@ -401,6 +407,31 @@ class _AppTabBarState extends State<AppTabBar> {
         );
       },
     );
+    Widget child;
+    if (widget.trailing == null) {
+      child = SizedBox(
+        key: scrollViewportKey,
+        width: double.infinity,
+        child: scrollable,
+      );
+    } else {
+      child = Row(
+        children: [
+          Expanded(key: scrollViewportKey, child: scrollable),
+          Container(
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: context.colorScheme.outlineVariant,
+                  width: 0.6,
+                ),
+              ),
+            ),
+            child: widget.trailing,
+          ),
+        ],
+      );
+    }
     return Container(
       key: tabBarKey,
       height: _kTabHeight,
@@ -446,7 +477,8 @@ class _AppTabBarState extends State<AppTabBar> {
         !scrollController.hasClients) {
       return;
     }
-    final tabBarContext = tabBarKey.currentContext;
+    final tabBarContext =
+        scrollViewportKey.currentContext ?? tabBarKey.currentContext;
     final renderObject = tabBarContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) {
       return;
@@ -496,6 +528,234 @@ class _AppTabBarState extends State<AppTabBar> {
         ),
       ),
     ).padding(tabPadding);
+  }
+}
+
+class TabPageSelectorItem {
+  const TabPageSelectorItem({
+    required this.label,
+    this.subtitle,
+    this.searchTerms = '',
+  });
+
+  final String label;
+
+  final String? subtitle;
+
+  final String searchTerms;
+}
+
+class TabPageSelectorButton extends StatelessWidget {
+  const TabPageSelectorButton({
+    super.key,
+    required this.controller,
+    required this.items,
+    this.onManage,
+  });
+
+  final TabController controller;
+
+  final List<TabPageSelectorItem> items;
+
+  final VoidCallback? onManage;
+
+  Future<void> _openSelector(BuildContext context) async {
+    if (items.isEmpty) {
+      return;
+    }
+    var selectedIndex = controller.index;
+    if (selectedIndex < 0 || selectedIndex >= items.length) {
+      selectedIndex = 0;
+    }
+    final result = await showPopUpWidget<Object?>(
+      context,
+      _TabPageSelectorPanel(
+        items: items,
+        selectedIndex: selectedIndex,
+        canManage: onManage != null,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (result is int && result >= 0 && result < controller.length) {
+      controller.animateTo(result);
+    } else if (result == _TabPageSelectorAction.manage) {
+      onManage?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: _AppTabBarState._kTabHeight,
+      child: IconButton(
+        tooltip: 'Select Source'.tl,
+        icon: const Icon(Icons.format_list_bulleted_rounded),
+        onPressed: items.isEmpty ? null : () => _openSelector(context),
+      ),
+    );
+  }
+}
+
+enum _TabPageSelectorAction { manage }
+
+class _TabPageSelectorPanel extends StatefulWidget {
+  const _TabPageSelectorPanel({
+    required this.items,
+    required this.selectedIndex,
+    required this.canManage,
+  });
+
+  final List<TabPageSelectorItem> items;
+
+  final int selectedIndex;
+
+  final bool canManage;
+
+  @override
+  State<_TabPageSelectorPanel> createState() => _TabPageSelectorPanelState();
+}
+
+class _TabPageSelectorPanelState extends State<_TabPageSelectorPanel> {
+  static const _itemExtent = 64.0;
+
+  late final TextEditingController searchController;
+
+  late final ScrollController scrollController;
+
+  var query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    searchController = TextEditingController();
+    final initialOffset = widget.selectedIndex * _itemExtent - _itemExtent;
+    scrollController = ScrollController(
+      initialScrollOffset: initialOffset > 0 ? initialOffset : 0,
+    );
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  List<int> get filteredIndexes {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      return List.generate(widget.items.length, (index) => index);
+    }
+    return List.generate(widget.items.length, (index) => index).where((index) {
+      final item = widget.items[index];
+      return item.label.toLowerCase().contains(normalizedQuery) ||
+          (item.subtitle?.toLowerCase().contains(normalizedQuery) ?? false) ||
+          item.searchTerms.toLowerCase().contains(normalizedQuery);
+    }).toList();
+  }
+
+  void updateQuery(String value) {
+    setState(() {
+      query = value;
+    });
+    if (scrollController.hasClients) {
+      scrollController.jumpTo(0);
+    }
+  }
+
+  void closeWith(Object result) {
+    Navigator.of(context, rootNavigator: true).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final indexes = filteredIndexes;
+    return PopUpWidgetScaffold(
+      title: 'Select Source'.tl,
+      tailing: [
+        if (widget.canManage)
+          TextButton.icon(
+            icon: const Icon(Icons.tune_rounded),
+            label: Text('Manage'.tl),
+            onPressed: () => closeWith(_TabPageSelectorAction.manage),
+          ),
+      ],
+      body: Material(
+        color: context.colorScheme.surface,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+              child: AppSearchField(
+                controller: searchController,
+                hintText: 'Search Sources'.tl,
+                autofocus: true,
+                onChanged: updateQuery,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${'Enabled'.tl} ${widget.items.length}',
+                style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+              ).paddingHorizontal(16).paddingVertical(6),
+            ),
+            Expanded(
+              child: ClipRect(
+                child: indexes.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No matching items'.tl,
+                          style: ts.withColor(
+                            context.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemExtent: _itemExtent,
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                        itemCount: indexes.length,
+                        itemBuilder: (context, visibleIndex) {
+                          final index = indexes[visibleIndex];
+                          final item = widget.items[index];
+                          final selected = index == widget.selectedIndex;
+                          return ListTile(
+                            selected: selected,
+                            selectedTileColor:
+                                context.colorScheme.secondaryContainer,
+                            selectedColor:
+                                context.colorScheme.onSecondaryContainer,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            title: Text(
+                              item.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: item.subtitle == null
+                                ? null
+                                : Text(
+                                    item.subtitle!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                            trailing: selected
+                                ? const Icon(Icons.check_rounded)
+                                : null,
+                            onTap: () => closeWith(index),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
