@@ -717,7 +717,7 @@ abstract mixin class _ComicPageActions {
       if (!_isCollection)
         MenuEntry(
           icon: Icons.hub_outlined,
-          text: "Related Sources".tl,
+          text: "Linked entries".tl,
           onClick: _showRelatedSourcesManager,
         ),
       if (!_isCollection)
