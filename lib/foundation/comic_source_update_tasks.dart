@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
-import 'package:venera/network/app_dio.dart';
-import 'package:venera/utils/ext.dart';
+import 'package:venera/network/source_url.dart';
 import 'package:venera/utils/io.dart';
 
 enum ComicSourceUpdateTaskStatus { running, completed, canceled, failed }
@@ -228,18 +227,12 @@ class ComicSourceUpdateTaskManager with ChangeNotifier {
     // source list migration, instead of the dead old one in the old script.
     final downloadUrl =
         ComicSourceManager().updateUrlFor(source.key) ?? source.url;
-    if (!downloadUrl.isURL) {
+    if (!isValidSourceUrl(downloadUrl)) {
       throw Exception('Invalid url config');
     }
     var removed = false;
     try {
-      final res = await AppDio().get<String>(
-        downloadUrl,
-        options: Options(
-          responseType: ResponseType.plain,
-          headers: {'cache-time': 'no'},
-        ),
-      );
+      final res = await fetchSourceText(downloadUrl);
       final data = res.data;
       if (data == null || data.isEmpty) {
         throw Exception('Empty response');
