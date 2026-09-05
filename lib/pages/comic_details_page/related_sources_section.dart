@@ -102,7 +102,7 @@ class _ComicRelatedSourcesSectionState
                     children: [
                       Flexible(
                         child: Text(
-                          'Reading sources'.tl,
+                          'Linked entries'.tl,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleMedium
@@ -171,7 +171,7 @@ class _ComicRelatedSourcesSectionState
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
                 child: Text(
-                  'No related sources'.tl,
+                  'No linked entries'.tl,
                   style: TextStyle(color: context.colorScheme.onSurfaceVariant),
                 ),
               )

@@ -298,7 +298,7 @@ Future<void> showRelatedSourcesDialog(BuildContext context, Comic comic) {
     if (links.isEmpty) {
       return Center(
         child: Text(
-          'No related sources'.tl,
+          'No linked entries'.tl,
           style: TextStyle(color: context.colorScheme.onSurfaceVariant),
         ),
       );
@@ -430,7 +430,7 @@ Future<void> showRelatedSourcesDialog(BuildContext context, Comic comic) {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'No related sources'.tl,
+                      'No results'.tl,
                       style: TextStyle(
                         color: context.colorScheme.onSurfaceVariant,
                       ),
@@ -562,7 +562,7 @@ Future<void> showRelatedSourcesDialog(BuildContext context, Comic comic) {
                         context.pop();
                       },
                     ),
-                    title: Text('Related Sources'.tl),
+                    title: Text('Linked entries'.tl),
                     backgroundColor: Colors.transparent,
                   ),
                   Expanded(

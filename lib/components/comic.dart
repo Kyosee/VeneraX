@@ -253,7 +253,7 @@ class ComicTile extends StatelessWidget {
       if (!_isCollection)
         MenuEntry(
           icon: Icons.hub_outlined,
-          text: 'Related Sources'.tl,
+          text: 'Linked entries'.tl,
           onClick: () => showRelatedSourcesDialog(context, comic),
         ),
       if (!_isCollection)
