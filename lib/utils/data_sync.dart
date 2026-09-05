@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show WidgetsBinding, WidgetsBindingObserve
 import 'package:venera/components/components.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -541,11 +542,14 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     return true;
   }
 
+  /// Guards against uploading a favorites database that lost its content:
+  /// with follow-updates configured, every followed folder being missing or
+  /// empty means this device has nothing worth publishing.
   bool _isFollowFolderEmpty() {
-    var followFolder = appdata.settings['followUpdatesFolder'];
-    if (followFolder is! String || followFolder.isEmpty) {
+    if (!FollowUpdateScope.isConfigured) {
       return false;
     }
+    var wanted = FollowUpdateScope.selected;
     var favDbPath = FilePath.join(App.dataPath, 'local_favorite.db');
     if (!File(favDbPath).existsSync()) return true;
     try {
@@ -554,13 +558,22 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         var tables = db
             .select("SELECT name FROM sqlite_master WHERE type='table'")
             .map((r) => r['name'] as String)
+            .where((name) => name != 'folder_order' && name != 'folder_sync')
             .toList();
-        if (!tables.contains(followFolder)) return true;
-        var escaped = followFolder.replaceAll('"', '""');
-        var count = db.select(
-          'SELECT COUNT(*) as c FROM "$escaped"',
-        ).first['c'] as int;
-        return count == 0;
+        // "All folders" names no folder of its own, so the whole favorites set
+        // is what has to be non-empty.
+        var targets = FollowUpdateScope.allFolders
+            ? tables
+            : tables.where(wanted.contains).toList();
+        if (targets.isEmpty) return true;
+        for (var folder in targets) {
+          var escaped = folder.replaceAll('"', '""');
+          var count = db.select(
+            'SELECT COUNT(*) as c FROM "$escaped"',
+          ).first['c'] as int;
+          if (count > 0) return false;
+        }
+        return true;
       } finally {
         db.dispose();
       }

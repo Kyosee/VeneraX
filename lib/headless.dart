@@ -7,7 +7,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/init.dart';
 import 'package:venera/foundation/follow_updates.dart';
-import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -152,9 +152,9 @@ Future<void> runHeadlessMode(List<String> args) async {
       break;
     case 'updatesubscribe':
       cliPrint({'status': 'running', 'message': 'Updating subscribed comics...'});
-      var folder = appdata.settings["followUpdatesFolder"];
-      if (folder == null) {
-        cliPrint({'status': 'error', 'message': 'Follow updates folder is not configured.'});
+      var folders = FollowUpdateScope.folders();
+      if (folders.isEmpty) {
+        cliPrint({'status': 'error', 'message': 'Follow updates is not configured.'});
         exit(1);
       }
 
@@ -162,10 +162,13 @@ Future<void> runHeadlessMode(List<String> args) async {
       if (updateIndex != -1) {
         var id = args[updateIndex + 1];
         var type = args[updateIndex + 2];
-        var comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
+        var comics = LocalFavoritesManager().getComicsWithUpdatesInfoIn(folders);
         var comic = comics.firstWhere((c) => c.id == id && c.type.sourceKey == type);
-        
-        var result = await updateComic(comic, folder);
+        // Write the result into every followed folder that holds the comic, the
+        // same way a full check does.
+        var holding = LocalFavoritesManager().find(id, comic.type);
+        var targets = folders.where(holding.contains).toList();
+        var result = await updateComic(comic, targets.isEmpty ? folders : targets);
         
         Map<String, dynamic> data = {
           'current': 1,
@@ -204,7 +207,7 @@ Future<void> runHeadlessMode(List<String> args) async {
         });
 
         await Future.delayed(const Duration(milliseconds: 500));
-        var json = await getUpdatedComicsAsJson(folder);
+        var json = await getUpdatedComicsAsJson(folders);
         cliPrint({
           'status': result.errorMessage != null ? 'error' : 'success',
           'message': 'Updated comics list.',
@@ -214,7 +217,7 @@ Future<void> runHeadlessMode(List<String> args) async {
         int total = 0;
         int updated = 0;
         int errors = 0;
-        await for (var progress in updateFolder(folder, true)) {
+        await for (var progress in updateFolders(folders, true)) {
           total = progress.total;
           updated = progress.updated;
           errors = progress.errors;
@@ -254,7 +257,7 @@ Future<void> runHeadlessMode(List<String> args) async {
           }
         });
         await Future.delayed(const Duration(milliseconds: 500));
-        var json = await getUpdatedComicsAsJson(folder);
+        var json = await getUpdatedComicsAsJson(folders);
         cliPrint({
           'status': errors > 0 ? 'error' : 'success',
           'message': 'Updated comics list.',

@@ -1,10 +1,10 @@
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
@@ -586,13 +586,15 @@ class ComicStateRepository {
     String sourceComicId,
     ComicType type,
   ) {
-    final folder = appdata.settings['followUpdatesFolder'];
-    if (folder is! String ||
-        (_favoritesManager == null && !App.isInitialized)) {
+    if (_favoritesManager == null && !App.isInitialized) {
       return null;
     }
     try {
-      return _favorites.getComicWithUpdatesInfo(folder, sourceComicId, type);
+      return _favorites.getComicWithUpdatesInfoIn(
+        FollowUpdateScope.folders(),
+        sourceComicId,
+        type,
+      );
     } catch (_) {
       return null;
     }

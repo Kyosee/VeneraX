@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/scheduler.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/channel.dart';
 
@@ -54,9 +55,14 @@ class ComicUpdateResult {
   ComicUpdateResult(this.updated, this.errorMessage);
 }
 
+/// Checks one comic and writes the result back to every [folders] entry that
+/// holds it. A comic favorited in several followed folders is fetched once, but
+/// each folder row keeps its own baseline: `has_new_update` is decided per row
+/// against that row's `last_update_time`, so removing one folder from the scope
+/// later doesn't take the mark with it.
 Future<ComicUpdateResult> updateComic(
   FavoriteItemWithUpdateInfo c,
-  String folder, {
+  List<String> folders, {
   bool Function()? shouldCancel,
 }) async {
   int retries = 3;
@@ -112,18 +118,20 @@ Future<ComicUpdateResult> updateComic(
 
       await _dbWriteGate.run(() {
         const ComicStateRepository().mirrorComicDetails(newInfo);
-        // mirrorComicDetails above already mirrored strictly more data than
-        // updateInfo's own mirror pass would; skip the duplicate.
-        LocalFavoritesManager().updateInfo(folder, item, false, false);
-        if (updated) {
-          LocalFavoritesManager().updateUpdateTime(
-            folder,
-            c.id,
-            c.type,
-            updateTime,
-          );
-        } else {
-          LocalFavoritesManager().updateCheckTime(folder, c.id, c.type);
+        for (var folder in folders) {
+          // mirrorComicDetails above already mirrored strictly more data than
+          // updateInfo's own mirror pass would; skip the duplicate.
+          LocalFavoritesManager().updateInfo(folder, item, false, false);
+          if (updated) {
+            LocalFavoritesManager().updateUpdateTime(
+              folder,
+              c.id,
+              c.type,
+              updateTime,
+            );
+          } else {
+            LocalFavoritesManager().updateCheckTime(folder, c.id, c.type);
+          }
         }
       });
       return ComicUpdateResult(updated, null);
@@ -173,8 +181,45 @@ class UpdateProgress {
   ]);
 }
 
-void updateFolderBase(
-  String folder,
+/// One comic to check, with every followed folder its result is written to.
+typedef FollowUpdateEntry = ({
+  FavoriteItemWithUpdateInfo comic,
+  List<String> folders,
+});
+
+/// Collects the comics of [folders] into one entry per comic, even when it is
+/// favorited in several of them (#263). The check then fetches each comic once
+/// and writes the result to all of its folders. The row carried along is the
+/// first one seen, so the due/skip decision reads one folder's bookkeeping;
+/// folder order is the store's, which keeps that stable across runs.
+List<FollowUpdateEntry> dedupeFollowUpdateEntries(
+  Map<String, List<FavoriteItemWithUpdateInfo>> folders,
+) {
+  // The favorites store keys rows by (id, type), so that pair is the comic's
+  // identity across folders.
+  var byIdentity = <String, int>{};
+  var comics = <FavoriteItemWithUpdateInfo>[];
+  var owners = <List<String>>[];
+  for (var entry in folders.entries) {
+    for (var comic in entry.value) {
+      var index = byIdentity[comic.identityKey];
+      if (index == null) {
+        byIdentity[comic.identityKey] = comics.length;
+        comics.add(comic);
+        owners.add([entry.key]);
+      } else {
+        owners[index].add(entry.key);
+      }
+    }
+  }
+  return [
+    for (var i = 0; i < comics.length; i++)
+      (comic: comics[i], folders: owners[i]),
+  ];
+}
+
+void updateFoldersBase(
+  List<String> folders,
   StreamController<UpdateProgress> stream,
   bool ignoreCheckTime,
   bool Function()? shouldCancel, {
@@ -185,25 +230,32 @@ void updateFolderBase(
   // left the stream open forever — the consuming task then stayed "running"
   // permanently and blocked every later check for the folder. Surface it
   // through the stream instead so the task finalizes as failed.
-  List<FavoriteItemWithUpdateInfo> comics;
+  List<FollowUpdateEntry> entries;
   try {
-    comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
+    var perFolder = <String, List<FavoriteItemWithUpdateInfo>>{};
+    for (var folder in folders) {
+      perFolder[folder] = LocalFavoritesManager().getComicsWithUpdatesInfo(
+        folder,
+      );
+    }
+    entries = dedupeFollowUpdateEntries(perFolder);
   } catch (e, s) {
     Log.error("Check Updates", e, s);
     stream.addError(e);
     stream.close();
     return;
   }
-  int total = comics.length;
+  int total = entries.length;
   int current = 0;
   int errors = 0;
   int updated = 0;
 
   stream.add(UpdateProgress(total, current, errors, updated));
 
-  var comicsToUpdate = <FavoriteItemWithUpdateInfo>[];
+  var comicsToUpdate = <FollowUpdateEntry>[];
 
-  for (var comic in comics) {
+  for (var entry in entries) {
+    var comic = entry.comic;
     // Resume support: skip comics already checked during this task's lifetime.
     // `checkedSince` is the task's creation time; a comic whose last check is
     // at or after it was handled before the app was killed, so resuming the
@@ -216,32 +268,28 @@ void updateFolderBase(
         continue;
       }
     }
-    if (!ignoreCheckTime) {
-      var lastCheckTime = comic.lastCheckDateTime;
-      if (lastCheckTime != null &&
-          DateTime.now().difference(lastCheckTime).inDays < 1) {
-        current++;
-        stream.add(UpdateProgress(total, current, errors, updated));
-        continue;
-      }
+    if (!ignoreCheckTime && !FollowUpdateScope.isDue(comic.lastCheckDateTime)) {
+      current++;
+      stream.add(UpdateProgress(total, current, errors, updated));
+      continue;
     }
-    comicsToUpdate.add(comic);
+    comicsToUpdate.add(entry);
   }
 
   total = comicsToUpdate.length;
   current = 0;
   stream.add(UpdateProgress(total, current, errors, updated));
 
-  var channel = Channel<FavoriteItemWithUpdateInfo>(10);
+  var channel = Channel<FollowUpdateEntry>(10);
 
   // Producer
   () async {
     var c = 0;
-    for (var comic in comicsToUpdate) {
+    for (var entry in comicsToUpdate) {
       if (shouldCancel?.call() ?? false) {
         break;
       }
-      await channel.push(comic);
+      await channel.push(entry);
       c++;
       // Throttle, but in short slices so a cancel during the backoff closes the
       // channel within ~0.5s instead of blocking for the full delay (#3).
@@ -266,14 +314,18 @@ void updateFolderBase(
   for (var i = 0; i < 5; i++) {
     var f = () async {
       while (true) {
-        var comic = await channel.pop();
-        if (comic == null) {
+        var entry = await channel.pop();
+        if (entry == null) {
           break;
         }
         if (shouldCancel?.call() ?? false) {
           break;
         }
-        var result = await updateComic(comic, folder, shouldCancel: shouldCancel);
+        var result = await updateComic(
+          entry.comic,
+          entry.folders,
+          shouldCancel: shouldCancel,
+        );
         current++;
         if (result.updated) {
           updated++;
@@ -287,7 +339,7 @@ void updateFolderBase(
             current,
             errors,
             updated,
-            comic,
+            entry.comic,
             result.errorMessage,
             result.updated,
           ),
@@ -306,15 +358,15 @@ void updateFolderBase(
   stream.close();
 }
 
-Stream<UpdateProgress> updateFolder(
-  String folder,
+Stream<UpdateProgress> updateFolders(
+  List<String> folders,
   bool ignoreCheckTime, {
   bool Function()? shouldCancel,
   DateTime? checkedSince,
 }) {
   var stream = StreamController<UpdateProgress>();
-  updateFolderBase(
-    folder,
+  updateFoldersBase(
+    folders,
     stream,
     ignoreCheckTime,
     shouldCancel,
@@ -323,9 +375,11 @@ Stream<UpdateProgress> updateFolder(
   return stream.stream;
 }
 
-Future<String> getUpdatedComicsAsJson(String folder) async {
-  var comics = LocalFavoritesManager().getComicsWithUpdatesInfo(folder);
-  var updatedComics = comics.where((c) => c.hasNewUpdate == true).toList();
+Future<String> getUpdatedComicsAsJson(List<String> folders) async {
+  var updatedComics = LocalFavoritesManager()
+      .getComicsWithUpdatesInfoIn(folders)
+      .where((c) => c.hasNewUpdate == true)
+      .toList();
   var jsonList = updatedComics
       .map(
         (c) => {

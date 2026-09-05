@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
@@ -8,6 +9,7 @@ import 'package:venera/foundation/battery_optimization.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
@@ -17,9 +19,15 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/tasks_page.dart';
 import 'package:venera/utils/ext.dart';
 
-/// Above this row count, the followed folder is loaded in a background isolate
-/// so opening the page doesn't jank the transition. See favorites.dart.
-const _asyncDataFetchLimit = 500;
+/// Above this row count the scope is loaded in a background isolate so opening
+/// the page doesn't jank the transition. See favorites.dart.
+///
+/// Going off-thread is not free: it spawns an isolate, opens its own database
+/// connection and copies every row back. With the scope able to cover many
+/// folders the old 500 tripped almost immediately, so a moderate library paid
+/// that on every open AND every refresh. The load itself is ~25ms per 10k rows
+/// now that the dedupe happens in SQL, so the bar sits far higher.
+const _asyncDataFetchLimit = 4000;
 
 class FollowUpdatesWidget extends StatefulWidget {
   const FollowUpdatesWidget({super.key});
@@ -32,30 +40,13 @@ class _FollowUpdatesWidgetState
     extends AutomaticGlobalState<FollowUpdatesWidget> {
   int _count = 0;
 
-  String? get folder => appdata.settings["followUpdatesFolder"];
-
   void getCount() {
-    if (folder == null) {
-      _count = 0;
-      return;
-    }
-    final manager = LocalFavoritesManager();
-    if (!manager.isInitialized) {
-      // Store down (still initializing, or init failed): folderNames reads
-      // empty then, and the branch below would permanently unconfigure the
-      // device-local follow folder. Report zero and keep the setting.
-      _count = 0;
-      return;
-    }
-    if (!manager.folderNames.contains(folder)) {
-      _count = 0;
-      appdata.settings["followUpdatesFolder"] = null;
-      Future.microtask(() {
-        appdata.saveData();
-      });
-    } else {
-      _count = manager.countUpdates(folder!);
-    }
+    // A folder that no longer exists is filtered out by the scope rather than
+    // clearing the setting: with "all folders" on there is nothing to clear,
+    // and a store that is merely still initializing reads as "no folders".
+    _count = LocalFavoritesManager().countUpdatesIn(
+      FollowUpdateScope.folders(),
+    );
   }
 
   void updateCount() {
@@ -313,11 +304,19 @@ class FollowUpdatesPage extends StatefulWidget {
 }
 
 class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
-  String? get folder => appdata.settings["followUpdatesFolder"];
+  List<String> get folders => FollowUpdateScope.folders();
+
+  bool get isConfigured => FollowUpdateScope.isConfigured;
 
   var updatedComics = <FavoriteItemWithUpdateInfo>[];
   var completedComics = <FavoriteItemWithUpdateInfo>[];
+  var unreadComics = <FavoriteItemWithUpdateInfo>[];
   var allComics = <FavoriteItemWithUpdateInfo>[];
+
+  /// Most recent check across the loaded rows, or null if nothing was ever
+  /// checked. Derived with the other lists in [_recomputeDerived].
+  DateTime? lastCheckTime;
+
   bool isLoading = false;
 
   /// Sort comics by update time in descending order with nulls at the end.
@@ -352,16 +351,26 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     // but this page used to reload only when the whole task finished — the
     // home badge counted up while an already-open list stayed stale (#106).
     FollowUpdateTaskManager.instance.addListener(_onTaskProgress);
-    final f = folder;
-    if (f != null &&
-        LocalFavoritesManager().folderComics(f) >= _asyncDataFetchLimit) {
-      // Large folder: defer + load off the UI thread so the page-push
+    final scope = folders;
+    if (_rowCountOf(scope) >= _asyncDataFetchLimit) {
+      // Large scope: defer + load off the UI thread so the page-push
       // transition isn't blocked. A spinner shows until it's ready.
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadAsync(f));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadAsync(scope));
     } else {
       // Small (or unconfigured): load synchronously now — cheap, no flash.
       _loadSync();
     }
+  }
+
+  /// Rows across [scope] before dedupe — an upper bound, enough to decide
+  /// whether the load needs to go off the UI thread.
+  static int _rowCountOf(List<String> scope) {
+    final manager = LocalFavoritesManager();
+    var total = 0;
+    for (final folder in scope) {
+      total += manager.folderComics(folder);
+    }
+    return total;
   }
 
   @override
@@ -386,17 +395,18 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
       if (!mounted) {
         return;
       }
-      final f = folder;
-      if (f == null) {
+      final scope = folders;
+      if (scope.isEmpty) {
         return;
       }
       // Cheap change signal: reload only when the flagged count moved, so an
-      // idle notify doesn't re-read and re-sort the whole folder.
-      if (LocalFavoritesManager().countUpdates(f) == updatedComics.length) {
+      // idle notify doesn't re-read and re-sort the whole scope.
+      if (LocalFavoritesManager().countUpdatesIn(scope) ==
+          updatedComics.length) {
         return;
       }
-      if (LocalFavoritesManager().folderComics(f) >= _asyncDataFetchLimit) {
-        _loadAsync(f);
+      if (_rowCountOf(scope) >= _asyncDataFetchLimit) {
+        _loadAsync(scope);
       } else {
         setState(_loadSync);
       }
@@ -412,44 +422,52 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   void _recomputeDerived() {
     updatedComics = allComics.where((c) => c.hasNewUpdate == true).toList();
     completedComics = allComics.where(_isReadCompleted).toList();
+    // `unread` and the last-check stamp used to be derived in build(). That was
+    // affordable while the scope was one folder, but a scope covering every
+    // folder made both a full scan of the library on every frame — and the page
+    // rebuilds several times a second while a check runs (#263). Reading a comic
+    // routes through updateFollowUpdatesUI(), so recomputing on load stays
+    // correct.
+    unreadComics = allComics.where(_isUnread).toList();
+    lastCheckTime = null;
+    for (final comic in allComics) {
+      final time = comic.lastCheckDateTime;
+      final latest = lastCheckTime;
+      if (time != null && (latest == null || time.isAfter(latest))) {
+        lastCheckTime = time;
+      }
+    }
   }
 
   /// Synchronously (re)load the followed folder and refresh derived lists.
   /// Safe inside initState (assigns fields only); wrap in setState elsewhere.
   void _loadSync() {
-    final f = folder;
-    if (f == null) {
-      allComics = [];
-    } else {
-      allComics = LocalFavoritesManager().getComicsWithUpdatesInfo(f);
-      sortComics();
-    }
+    allComics = LocalFavoritesManager().getComicsWithUpdatesInfoIn(folders);
+    sortComics();
     _recomputeDerived();
   }
 
-  /// Load folder [f] off the UI thread. Always clears [isLoading] when done —
-  /// on success, on error (falls back to a sync load), and if the user switched
-  /// folders mid-load (drops the stale result and resyncs to the current one).
-  void _loadAsync(String f) async {
+  /// Load [scope] off the UI thread. Always clears [isLoading] when done — on
+  /// success, on error (falls back to a sync load), and if the user changed the
+  /// scope mid-load (drops the stale result and resyncs to the current one).
+  void _loadAsync(List<String> scope) async {
     if (!mounted) return;
     setState(() => isLoading = true);
     List<FavoriteItemWithUpdateInfo>? value;
     try {
       value = await LocalFavoritesManager()
-          .getComicsWithUpdatesInfoAsync(f)
+          .getComicsWithUpdatesInfoInAsync(scope)
           .minTime(const Duration(milliseconds: 200));
     } catch (e, s) {
       Log.error("FollowUpdates", "async load failed: $e", s);
     }
     if (!mounted) return;
-    if (folder != f) {
+    if (!listEquals(folders, scope) || value == null) {
       _loadSync();
-    } else if (value != null) {
+    } else {
       allComics = value;
       sortComics();
       _recomputeDerived();
-    } else {
-      _loadSync();
     }
     setState(() => isLoading = false);
   }
@@ -457,8 +475,19 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: Appbar(title: Text('Follow Updates'.tl)),
-      body: folder == null
+      appBar: Appbar(
+        title: Text('Follow Updates'.tl),
+        actions: [
+          Tooltip(
+            message: "Follow Updates Settings".tl,
+            child: IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: showSettings,
+            ),
+          ),
+        ],
+      ),
+      body: !isConfigured
           ? SmoothCustomScrollView(slivers: [buildNotConfigured(context)])
           : (isLoading && allComics.isEmpty)
           ? const Center(child: CircularProgressIndicator())
@@ -485,13 +514,13 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
               title: Text("Not Configured".tl),
             ),
             Text(
-              "Choose a folder to follow updates.".tl,
+              "Open the settings above to pick the folders to follow.".tl,
               style: ts.s16,
             ).paddingHorizontal(16),
             const SizedBox(height: 8),
             FilledButton.tonal(
-              onPressed: showSelector,
-              child: Text("Choose Folder".tl),
+              onPressed: showSettings,
+              child: Text("Follow Updates Settings".tl),
             ).paddingHorizontal(16).toAlign(Alignment.centerRight),
             const SizedBox(height: 16),
           ],
@@ -500,7 +529,11 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     );
   }
 
-  Widget buildConfigured(BuildContext context) {
+  /// Replaces what used to be a plain folder-name row: the scope is now a set,
+  /// so the useful thing to show is what the check covers and when it last ran.
+  Widget buildSummary(BuildContext context) {
+    final scope = folders;
+    final last = lastCheckTime;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
@@ -514,20 +547,80 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
             child: Row(
               children: [
-                Icon(Icons.stars_outlined),
+                Icon(
+                  FollowUpdateScope.allFolders
+                      ? Icons.all_inbox_outlined
+                      : Icons.folder_copy_outlined,
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: Text(folder!, style: ts.s14)),
-                TextButton(
-                  onPressed: showSelector,
-                  child: Text("Change Folder".tl),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        FollowUpdateScope.allFolders
+                            ? "All folders".tl
+                            : FollowUpdateScope.describeFolders(scope),
+                        style: ts.s14.bold,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "@a comics · @b updates".tlParams({
+                          'a': allComics.length,
+                          'b': updatedComics.length,
+                        }),
+                        style: ts.s12.withColor(
+                          context.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.tonal(
-                  onPressed: checkNow,
+                  onPressed: scope.isEmpty ? null : checkNow,
                   child: Text("Check Now".tl),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.schedule,
+                  size: 14,
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    [
+                      FollowUpdateScope.describeInterval(
+                        FollowUpdateScope.intervalHours,
+                      ),
+                      last == null
+                          ? "Never checked".tl
+                          : "Last check: @a".tlParams({
+                              'a': _formatCheckTime(last),
+                            }),
+                    ].join(" · "),
+                    style: ts.s12.withColor(
+                      context.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -538,16 +631,17 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     );
   }
 
+  static String _formatCheckTime(DateTime time) {
+    var text = time.toIso8601String().replaceFirst('T', ' ');
+    return text.substring(0, 16);
+  }
+
   Widget buildConfiguredTabs(BuildContext context) {
-    // `unread` is read-history-dependent (cheap O(1) lookups), so compute it
-    // live here rather than caching, to stay correct after the user reads a
-    // comic. `updated`/`completed` come from the cached fields.
-    final unreadComics = allComics.where(_isUnread).toList();
     return DefaultTabController(
       length: 3,
       child: Column(
         children: [
-          buildConfigured(context),
+          buildSummary(context),
           Material(
             child: AppTabBar(
               tabs: [
@@ -791,184 +885,77 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     );
   }
 
-  void showSelector() {
-    var folders = LocalFavoritesManager().folderNames;
-    if (folders.isEmpty) {
-      context.showMessage(message: "No folders available".tl);
+  /// Opens the follow-updates settings: which folders are followed, and how
+  /// often each comic is re-checked. Returns the chosen scope, or null when the
+  /// user dismissed the dialog.
+  void showSettings() async {
+    var applied = await showDialog<_SettingsChoice>(
+      context: App.rootContext,
+      builder: (context) => const _FollowUpdateSettingsDialog(),
+    );
+    if (applied == null) {
       return;
     }
-    String? selectedFolder;
-    showDialog(
-      context: App.rootContext,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return ContentDialog(
-              title: "Choose Folder".tl,
-              content: Column(
-                children: [
-                  ListTile(
-                    title: Text("Folder".tl),
-                    trailing: Select(
-                      minWidth: 120,
-                      current: selectedFolder,
-                      values: folders,
-                      onTap: (i) {
-                        setState(() {
-                          selectedFolder = folders[i];
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                if (appdata.settings["followUpdatesFolder"] != null)
-                  TextButton(
-                    onPressed: () {
-                      disable();
-                      context.pop();
-                    },
-                    child: Text("Disable".tl),
-                  ),
-                FilledButton(
-                  onPressed: selectedFolder == null
-                      ? null
-                      : () {
-                          context.pop();
-                          setFolder(selectedFolder!);
-                        },
-                  child: Text("Confirm".tl),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    await FollowUpdateScope.saveSchedule(
+      intervalHours: applied.intervalHours,
+      checkOnStart: applied.checkOnStart,
+      fixedTime: applied.fixedTime,
     );
+    await applyScope(allFolders: applied.allFolders, folders: applied.folders);
   }
 
-  void disable() {
-    var oldFolder = appdata.settings["followUpdatesFolder"];
-    appdata.settings["followUpdatesFolder"] = null;
-    appdata.saveData();
-    // Disabling follow-updates is an explicit cancellation: drop any pending
-    // resumable check for that folder so it isn't resumed on the next launch.
-    if (oldFolder is String) {
-      FollowUpdateTaskManager.instance.cancelForFolder(oldFolder);
-    }
-    updateFollowUpdatesUI();
-  }
-
-  void setFolder(String folder) async {
+  Future<void> applyScope({
+    required bool allFolders,
+    required List<String> folders,
+  }) async {
+    var previous = this.folders.toSet();
     FollowUpdatesService._cancelChecking?.call();
-    // Switching to a different folder cancels any pending resumable check for
-    // the previously-followed folder (treated as user-initiated cancellation).
-    var oldFolder = appdata.settings["followUpdatesFolder"];
-    if (oldFolder is String && oldFolder != folder) {
-      FollowUpdateTaskManager.instance.cancelForFolder(oldFolder);
-    }
-    // Do NOT clear has_new_update here. Selecting a follow-updates folder is a
-    // local configuration action; wiping the flags would discard update marks
-    // that were just synced from another device (and, since this is followed
-    // by a sync upload, would propagate the cleared state back to every other
-    // device). Read marks are cleared by the normal read path, and real new
-    // chapters are written incrementally by the update check below.
-    LocalFavoritesManager().prepareTableForFollowUpdates(folder, false);
-
-    var count = LocalFavoritesManager().count(folder);
-
-    void applyFolderSelection() {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        appdata.settings["followUpdatesFolder"] = folder;
-        _loadSync();
-      });
-      // Persist the folder choice locally without triggering a sync upload:
-      // this is a local config change, and uploading here could push a
-      // transient (pre-check) state over the good data on other devices.
-      // Real update marks propagate later via normal data-change syncs.
-      appdata.saveData(false);
-    }
-
-    if (count > 0) {
-      unawaited(maybePromptBatteryOptimization());
-      var task = FollowUpdateTaskManager.instance.startCheck(
-        folder,
-        manual: true,
-      );
-      if (task == null) {
-        return;
-      }
-      final activeTask = task;
-      var completer = Completer<void>();
-      var backgrounded = false;
-      var canceled = false;
-
-      var loadingController = showLoadingDialog(
-        App.rootContext,
-        withProgress: true,
-        // The folder choice is only committed by one of the two buttons (or by
-        // the check finishing). A barrier tap would pop the route without
-        // running either callback, leaving the completer un-completed: the page
-        // stayed on "not configured" while the check ran on, then configured
-        // itself minutes later when the task ended.
-        barrierDismissible: false,
-        cancelButtonText: "Cancel".tl,
-        onCancel: () {
-          canceled = true;
-          FollowUpdateTaskManager.instance.cancel(activeTask.id);
-          if (!completer.isCompleted) {
-            completer.complete();
-          }
-        },
-        secondaryButtonText: "Background".tl,
-        onSecondary: () {
-          backgrounded = true;
-          applyFolderSelection();
-          context.showMessage(message: "Task started".tl);
-          if (!completer.isCompleted) {
-            completer.complete();
-          }
-        },
-        message: "Updating comics...".tl,
-      );
-
-      void onTaskChanged() {
-        loadingController.setProgress(activeTask.progress);
-        if (!activeTask.isRunning && !completer.isCompleted) {
-          completer.complete();
-        }
-      }
-
-      FollowUpdateTaskManager.instance.addListener(onTaskChanged);
-      onTaskChanged();
-
-      try {
-        await completer.future;
-      } finally {
-        FollowUpdateTaskManager.instance.removeListener(onTaskChanged);
-        loadingController.close();
-      }
-
-      if (canceled || backgrounded) {
-        return;
+    // Persisted without a sync upload: the scope is device-local, and uploading
+    // here could push a transient (pre-check) state over good data on other
+    // devices. Real update marks travel with the normal data-change syncs.
+    await FollowUpdateScope.save(allFolders: allFolders, folders: folders);
+    var next = this.folders;
+    // A folder dropped from the scope is an explicit cancellation: its pending
+    // resumable check must not come back on the next launch.
+    for (final folder in previous) {
+      if (!next.contains(folder)) {
+        FollowUpdateTaskManager.instance.cancelForFolder(folder);
       }
     }
-
-    applyFolderSelection();
+    // Do NOT clear has_new_update here. Choosing the scope is a configuration
+    // action; wiping the flags would discard update marks just synced from
+    // another device. Read marks are cleared by the read path, and real new
+    // chapters are written by the check itself.
+    for (final folder in next) {
+      LocalFavoritesManager().prepareTableForFollowUpdates(folder, false);
+    }
+    // Refreshes this page (via updateComics) as well as the home badge.
+    updateFollowUpdatesUI();
+    if (next.any((f) => !previous.contains(f))) {
+      // Newly followed folders have never been checked; get their first pass
+      // going instead of leaving the list empty until the periodic check.
+      checkNow(silent: true);
+    }
   }
 
-  void checkNow() async {
+  void checkNow({bool silent = false}) async {
+    final List<String> scope = folders;
+    if (scope.isEmpty) {
+      if (!silent) {
+        context.showMessage(message: "No folders available".tl);
+      }
+      return;
+    }
     unawaited(maybePromptBatteryOptimization());
     FollowUpdatesService._cancelChecking?.call();
-    FollowUpdateTaskManager.instance.startCheck(folder!, manual: true);
+    FollowUpdateTaskManager.instance.startCheck(scope, manual: true);
     context.showMessage(message: "Task started".tl);
   }
 
   void updateComics() {
+    // Refreshes fire per read and per task tick. They always reload in place:
+    // the list is already on screen, and an isolate spawn per notification cost
+    // far more than the (now cheap) query it was meant to move off-thread.
     setState(_loadSync);
   }
 
@@ -998,8 +985,7 @@ abstract class FollowUpdatesService {
     if (!LocalFavoritesManager().isInitialized) {
       return;
     }
-    var folder = appdata.settings["followUpdatesFolder"];
-    if (folder == null) {
+    if (FollowUpdateScope.folders().isEmpty) {
       return;
     }
     _cancelRequested = false;
@@ -1023,14 +1009,14 @@ abstract class FollowUpdatesService {
       if (_cancelRequested) {
         return;
       }
-      // The wait above can outlive a folder change/disable; re-read the
-      // setting so a check isn't started for a folder no longer followed.
-      folder = appdata.settings["followUpdatesFolder"];
-      if (folder == null) {
+      // The wait above can outlive a scope change; re-read it so a check isn't
+      // started for folders no longer followed.
+      var scope = FollowUpdateScope.folders();
+      if (scope.isEmpty) {
         return;
       }
       var task = FollowUpdateTaskManager.instance.startCheck(
-        folder,
+        scope,
         manual: false,
       );
       if (task == null) {
@@ -1075,11 +1061,20 @@ abstract class FollowUpdatesService {
     // Resume any check that was interrupted by the app being killed before
     // starting a fresh periodic check, so it continues from its breakpoint.
     FollowUpdateTaskManager.instance.resumePendingTasks();
-    _check();
-    DataSync().addListener(updateFollowUpdatesUI);
-    // A short interval will not affect the performance since every comic has a check time.
-    _checkerTimer ??= Timer.periodic(const Duration(minutes: 10), (timer) {
+    // A resumed check finishes regardless; only a fresh startup check is opt-in.
+    if (FollowUpdateScope.checkOnStart) {
       _check();
+    }
+    DataSync().addListener(updateFollowUpdatesUI);
+    // Polling this often is cheap: the per-comic interval decides what actually
+    // gets fetched, so a tick with nothing due starts no task at all.
+    _checkerTimer ??= Timer.periodic(const Duration(minutes: 10), (timer) {
+      if (FollowUpdateScope.isPastFixedTime(
+        FollowUpdateScope.fixedTime,
+        DateTime.now(),
+      )) {
+        _check();
+      }
     });
   }
 }
@@ -1088,4 +1083,256 @@ abstract class FollowUpdatesService {
 void updateFollowUpdatesUI() {
   GlobalState.findOrNull<_FollowUpdatesWidgetState>()?.updateCount();
   GlobalState.findOrNull<_FollowUpdatesPageState>()?.updateComics();
+}
+
+/// What a settings dialog was closed with: the folder scope plus the schedule
+/// preferences, all applied together on confirm.
+class _SettingsChoice {
+  const _SettingsChoice({
+    required this.allFolders,
+    required this.folders,
+    required this.intervalHours,
+    required this.checkOnStart,
+    required this.fixedTime,
+  });
+
+  final bool allFolders;
+  final List<String> folders;
+  final int intervalHours;
+  final bool checkOnStart;
+  final String fixedTime;
+}
+
+/// Follow-updates settings, split into a schedule tab and a folder tab.
+///
+/// Nothing is written until confirm, so backing out of the dialog leaves the
+/// current configuration alone. Deliberately built without a `TabBarView`: the
+/// dialog measures its content with `IntrinsicWidth`, which a page view (or any
+/// other viewport) cannot answer, so the body is switched by hand instead.
+class _FollowUpdateSettingsDialog extends StatefulWidget {
+  const _FollowUpdateSettingsDialog();
+
+  @override
+  State<_FollowUpdateSettingsDialog> createState() =>
+      _FollowUpdateSettingsDialogState();
+}
+
+class _FollowUpdateSettingsDialogState
+    extends State<_FollowUpdateSettingsDialog>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this)
+    ..addListener(() => setState(() {}));
+
+  late bool allFolders = FollowUpdateScope.allFolders;
+
+  /// Kept as a set so toggling a folder is order-independent; the saved list is
+  /// rebuilt in folder order on confirm.
+  late Set<String> selected = FollowUpdateScope.selected.toSet();
+
+  late int intervalHours = FollowUpdateScope.intervalHours;
+
+  late bool checkOnStart = FollowUpdateScope.checkOnStart;
+
+  late String fixedTime = FollowUpdateScope.fixedTime;
+
+  List<String> get availableFolders => LocalFavoritesManager().folderNames;
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFixedTime() async {
+    var current = FollowUpdateScope.parseFixedTime(fixedTime);
+    var picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: current?.hour ?? 8,
+        minute: current?.minute ?? 0,
+      ),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      fixedTime =
+          "${picked.hour.toString().padLeft(2, '0')}:"
+          "${picked.minute.toString().padLeft(2, '0')}";
+    });
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: ts.s12.bold.withColor(context.colorScheme.primary),
+    ).paddingVertical(8);
+  }
+
+  Widget _buildScheduleTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel("Check interval".tl),
+        Text(
+          "A comic is checked again only after this much time.".tl,
+          style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Select(
+            minWidth: 140,
+            current: FollowUpdateScope.describeInterval(intervalHours),
+            values: FollowUpdateScope.intervalOptions
+                .map(FollowUpdateScope.describeInterval)
+                .toList(),
+            onTap: (index) => setState(
+              () => intervalHours = FollowUpdateScope.intervalOptions[index],
+            ),
+          ),
+        ),
+        const Divider(height: 24),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text("Check on startup".tl),
+          subtitle: Text(
+            "Run one check right after the app starts.".tl,
+            style: ts.s12,
+          ),
+          value: checkOnStart,
+          onChanged: (value) => setState(() => checkOnStart = value),
+        ),
+        const Divider(height: 24),
+        _sectionLabel("Fixed check time".tl),
+        Text(
+          "Automatic checks wait until this time of day.".tl,
+          style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            FilledButton.tonal(
+              onPressed: _pickFixedTime,
+              child: Text(FollowUpdateScope.describeFixedTime(fixedTime)),
+            ),
+            const SizedBox(width: 8),
+            if (FollowUpdateScope.parseFixedTime(fixedTime) != null)
+              TextButton(
+                onPressed: () => setState(() => fixedTime = ""),
+                child: Text("Clear".tl),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildFoldersTab(List<String> folders) {
+    if (folders.isEmpty) {
+      return Text(
+        "No folders available".tl,
+        style: ts.s14.withColor(context.colorScheme.onSurfaceVariant),
+      ).paddingVertical(16);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text("All folders".tl),
+          subtitle: Text(
+            "Folders added later are followed too.".tl,
+            style: ts.s12,
+          ),
+          value: allFolders,
+          onChanged: (value) => setState(() => allFolders = value),
+        ),
+        const Divider(height: 8),
+        // Left visible but inert while "all folders" is on, so the user can see
+        // what an individual selection would fall back to.
+        for (var folder in folders)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(folder, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              "@a comics".tlParams({
+                'a': LocalFavoritesManager().folderComics(folder),
+              }),
+              style: ts.s12,
+            ),
+            value: allFolders || selected.contains(folder),
+            onChanged: allFolders
+                ? null
+                : (value) => setState(() {
+                    if (value == true) {
+                      selected.add(folder);
+                    } else {
+                      selected.remove(folder);
+                    }
+                  }),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    var folders = availableFolders;
+    var chosen = folders.where(selected.contains).toList();
+    return ContentDialog(
+      title: "Follow Updates Settings".tl,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 46,
+            child: TabBar(
+              controller: _tabs,
+              tabs: [
+                Tab(text: "Folders".tl),
+                Tab(text: "Settings".tl),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (_tabs.index == 0)
+            _buildFoldersTab(folders)
+          else
+            _buildScheduleTab(),
+        ],
+      ),
+      actions: [
+        if (FollowUpdateScope.isConfigured)
+          TextButton(
+            onPressed: () => context.pop(
+              _SettingsChoice(
+                allFolders: false,
+                folders: const [],
+                intervalHours: intervalHours,
+                checkOnStart: checkOnStart,
+                fixedTime: fixedTime,
+              ),
+            ),
+            child: Text("Disable".tl),
+          ),
+        FilledButton(
+          onPressed: (allFolders || chosen.isNotEmpty)
+              ? () => context.pop(
+                  _SettingsChoice(
+                    allFolders: allFolders,
+                    folders: chosen,
+                    intervalHours: intervalHours,
+                    checkOnStart: checkOnStart,
+                    fixedTime: fixedTime,
+                  ),
+                )
+              : null,
+          child: Text("Confirm".tl),
+        ),
+      ],
+    );
+  }
 }

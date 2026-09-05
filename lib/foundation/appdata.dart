@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/source_platform.dart';
@@ -119,6 +120,13 @@ class Appdata with Init {
     "disableSyncFields",
     "deviceId",
     "followUpdatesFolder",
+    // Which favorite folders this device follows. Folder sets differ between
+    // devices, and tracking a folder is a per-device choice — same policy as
+    // the legacy single-folder key above. The re-check interval is a plain
+    // preference and does sync.
+    "followUpdatesFolders",
+    "followUpdatesAllFolders",
+    "followUpdatesFoldersMigrated",
     // Whether this device participates in local-comic-library sync is a
     // per-device choice, same policy as the image-pack toggle below: a
     // low-memory device can opt out of receiving (and sending) the local
@@ -322,6 +330,7 @@ class Appdata with Init {
     }
     _initSourceTypeRegistry();
     LlmProviderStore.migrateLegacyIfNeeded();
+    FollowUpdateScope.migrateLegacyIfNeeded();
     // The 'ai' erase mode was removed; coerce any persisted value back to the
     // default so the settings dropdown doesn't show a blank (unmatched) option.
     if (settings['imageTranslationInpaintMode'] == 'ai') {
@@ -442,6 +451,19 @@ class Settings with ChangeNotifier {
     'comicSourceLibrariesMigrated': false,
     'preloadImageCount': 4,
     'followUpdatesFolder': null,
+    // Follow-updates scope: either every favorite folder, or the folders listed
+    // here. Both device-local (see _disableSync). See FollowUpdateScope.
+    'followUpdatesFolders': [],
+    'followUpdatesAllFolders': false,
+    'followUpdatesFoldersMigrated': false,
+    // Hours a comic stays "recently checked" before an automatic check picks it
+    // up again (#263). 24 matches the previous fixed behavior.
+    'followUpdatesIntervalHours': 24,
+    // Whether one check runs right after startup, and a time of day automatic
+    // checks wait for ("HH:mm", empty = any time). Both are preferences, so
+    // unlike the folder scope above they sync.
+    'followUpdatesCheckOnStart': true,
+    'followUpdatesFixedTime': '',
     'initialPage': '0',
     'comicListDisplayMode': 'paging', // paging, continuous
     'showPageNumberInReader': true,

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/utils/data_sync.dart';
 
@@ -50,7 +51,7 @@ class FollowUpdateSourceProgress {
 class FollowUpdateTask {
   FollowUpdateTask({
     required this.id,
-    required this.folder,
+    required this.folders,
     required this.manual,
     required this.createdAt,
     required this.sources,
@@ -63,7 +64,10 @@ class FollowUpdateTask {
   });
 
   final String id;
-  final String folder;
+
+  /// Folders this check covers. A comic favorited in several of them is checked
+  /// once (see [dedupeFollowUpdateEntries]).
+  final List<String> folders;
   final bool manual;
   final DateTime createdAt;
   final Map<String, FollowUpdateSourceProgress> sources;
@@ -78,9 +82,12 @@ class FollowUpdateTask {
 
   double get progress => total == 0 ? 0 : checked / total;
 
+  /// Short label for the task list.
+  String get folderLabel => FollowUpdateScope.describeFolders(folders);
+
   Map<String, dynamic> toJson() => {
     'id': id,
-    'folder': folder,
+    'folders': folders,
     'manual': manual,
     'createdAt': createdAt.toIso8601String(),
     'finishedAt': finishedAt?.toIso8601String(),
@@ -94,9 +101,16 @@ class FollowUpdateTask {
 
   factory FollowUpdateTask.fromJson(Map<String, dynamic> json) {
     var sourceData = Map<String, dynamic>.from(json['sources'] ?? {});
+    // Records written before multi-folder support carry a single 'folder'.
+    var folders = json['folders'];
+    var legacyFolder = json['folder'];
     return FollowUpdateTask(
       id: json['id'] ?? '',
-      folder: json['folder'] ?? '',
+      folders: folders is List
+          ? folders.whereType<String>().toList()
+          : (legacyFolder is String && legacyFolder.isNotEmpty
+                ? [legacyFolder]
+                : const []),
       manual: json['manual'] ?? false,
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
@@ -135,20 +149,25 @@ class FollowUpdateTaskManager with ChangeNotifier {
   final _runningIds = <String>{};
   void Function(FollowUpdateTask task)? onTaskFinished;
 
-  FollowUpdateTask? startCheck(String folder, {required bool manual}) {
-    var existing = currentTasks
-        .where((task) => task.folder == folder && task.isRunning)
-        .firstOrNull;
+  /// Starts a check over [folders]. Only one check runs at a time: follow-update
+  /// scope is a single user-level setting now, so a second request while one is
+  /// running joins the running task instead of starting an overlapping one that
+  /// would write the same rows (see the cancel race in #4).
+  FollowUpdateTask? startCheck(List<String> folders, {required bool manual}) {
+    if (folders.isEmpty) {
+      return null;
+    }
+    var existing = currentTasks.where((task) => task.isRunning).firstOrNull;
     if (existing != null) {
       return existing;
     }
 
     var task = FollowUpdateTask(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      folder: folder,
+      folders: List.of(folders),
       manual: manual,
       createdAt: DateTime.now(),
-      sources: _buildInitialSources(folder, ignoreCheckTime: manual),
+      sources: _buildInitialSources(folders, ignoreCheckTime: manual),
     );
     task.total = task.sources.values.fold(
       0,
@@ -184,11 +203,12 @@ class FollowUpdateTaskManager with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cancels any pending/running task for [folder] (used when the user changes
-  /// or disables the follow-updates folder — that is treated as an explicit
-  /// cancellation, so the old folder's task must not be resumed later).
+  /// Cancels any pending/running check that covers [folder] (used when the user
+  /// removes a folder from the follow-updates scope — that is treated as an
+  /// explicit cancellation, so the task must not be resumed later).
   void cancelForFolder(String folder) {
-    for (var task in currentTasks.where((t) => t.folder == folder).toList()) {
+    for (var task
+        in currentTasks.where((t) => t.folders.contains(folder)).toList()) {
       cancel(task.id);
     }
   }
@@ -208,8 +228,8 @@ class FollowUpdateTaskManager with ChangeNotifier {
     }
     _runningIds.add(task.id);
     try {
-      await for (var progress in updateFolder(
-        task.folder,
+      await for (var progress in updateFolders(
+        task.folders,
         ignoreCheckTime,
         shouldCancel: () => _canceledIds.contains(task.id),
         // Only on resume: skip comics whose last check is at or after this
@@ -343,24 +363,29 @@ class FollowUpdateTaskManager with ChangeNotifier {
         : '${task.checked}/${task.total}';
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagFollowUpdate,
-      formatTaskStatus(title: task.folder, detail: detail),
+      formatTaskStatus(title: task.folderLabel, detail: detail),
     );
   }
 
+  /// Per-source totals for the progress card. Built from the same deduplicated
+  /// entry list the check itself walks, so a comic in two selected folders is
+  /// counted once and `total` matches what actually gets checked.
   Map<String, FollowUpdateSourceProgress> _buildInitialSources(
-    String folder, {
+    List<String> folders, {
     required bool ignoreCheckTime,
   }) {
     var result = <String, FollowUpdateSourceProgress>{};
-    for (var comic in LocalFavoritesManager().getComicsWithUpdatesInfo(
-      folder,
-    )) {
-      if (!ignoreCheckTime) {
-        var lastCheckTime = comic.lastCheckDateTime;
-        if (lastCheckTime != null &&
-            DateTime.now().difference(lastCheckTime).inDays < 1) {
-          continue;
-        }
+    var perFolder = <String, List<FavoriteItemWithUpdateInfo>>{};
+    for (var folder in folders) {
+      perFolder[folder] = LocalFavoritesManager().getComicsWithUpdatesInfo(
+        folder,
+      );
+    }
+    for (var entry in dedupeFollowUpdateEntries(perFolder)) {
+      var comic = entry.comic;
+      if (!ignoreCheckTime &&
+          !FollowUpdateScope.isDue(comic.lastCheckDateTime)) {
+        continue;
       }
       result
           .putIfAbsent(

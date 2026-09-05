@@ -541,7 +541,7 @@ class _TasksPageState extends State<TasksPage> with SingleTickerProviderStateMix
           task.status.name,
         ),
         title: Text(
-          getTaskTitle('follow_update', {'folder': task.folder}),
+          getTaskTitle('follow_update', {'folder': task.folderLabel}),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
