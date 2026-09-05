@@ -687,9 +687,7 @@ class _BodyState extends State<_Body> {
       cleanUrl = url;
     }
 
-    var splits = cleanUrl.split("/");
-    splits.removeWhere((element) => element == "");
-    var fileName = splits.last;
+    var fileName = ComicSourceParser.scriptFileName(cleanUrl);
     bool cancel = false;
     var controller = showLoadingDialog(
       App.rootContext,
@@ -1055,9 +1053,7 @@ Future<bool> _installSourceFromUrl(String url, String originLibraryId) async {
   if (url.isEmpty) {
     return false;
   }
-  var splits = url.split("/");
-  splits.removeWhere((element) => element == "");
-  var fileName = splits.isEmpty ? "source.js" : splits.last;
+  var fileName = ComicSourceParser.scriptFileName(url);
   bool cancel = false;
   var controller = showLoadingDialog(
     App.rootContext,

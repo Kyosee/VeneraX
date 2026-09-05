@@ -58,10 +58,30 @@ class ComicSourceParser {
 
   String? _name;
 
-  Future<ComicSource> createAndParse(String js, String fileName) async {
-    if (!fileName.endsWith("js")) {
-      fileName = "$fileName.js";
+  /// Normalizes [nameOrUrl] into a file name that is safe to write as a source
+  /// script. Accepts either a bare file name or a download URL: only the last
+  /// path segment survives and a query string is dropped. Source lists often
+  /// declare `fileName` with a query attached (an access token, a cache
+  /// buster); `?` is not a legal path character on every platform, so keeping
+  /// it made the script fail to write, and a token does not belong in a file
+  /// name anyway. The `.js` suffix is enforced because the startup scan only
+  /// picks up files that carry it.
+  static String scriptFileName(String nameOrUrl) {
+    var name = nameOrUrl.split('?').first.split('#').first;
+    var segments = name.split(RegExp(r'[/\\]')).where((e) => e.isNotEmpty);
+    name = segments.isEmpty ? '' : segments.last;
+    name = name.replaceAll(RegExp(r'[<>:"|?*]'), '_').trim();
+    if (name.isEmpty || name == '.js') {
+      name = 'source';
     }
+    if (!name.endsWith('.js')) {
+      name = '$name.js';
+    }
+    return name;
+  }
+
+  Future<ComicSource> createAndParse(String js, String fileName) async {
+    fileName = scriptFileName(fileName);
     var file = File(FilePath.join(App.dataPath, "comic_source", fileName));
     if (file.existsSync()) {
       int i = 0;
