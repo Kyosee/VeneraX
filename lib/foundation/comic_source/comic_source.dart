@@ -15,6 +15,7 @@ import 'package:venera/foundation/comic_source/webdav_source.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/hot_update.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/category_comics_page.dart';

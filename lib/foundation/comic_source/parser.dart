@@ -1,7 +1,19 @@
 part of 'comic_source.dart';
 
 /// return true if ver1 > ver2
-bool compareSemVer(String ver1, String ver2) {
+///
+/// Seamed: a source author controls these strings, and the parse below throws on
+/// anything that is not `major.minor.patch[-tag]`. The throw is not contained —
+/// it aborts the whole update scan, so one malformed version stops every source
+/// from updating. Pure, two strings in, bool out, so re-running it after a fault
+/// costs nothing.
+bool compareSemVer(String ver1, String ver2) => patched(
+  SeamIds.sourceCompareSemVer,
+  [ver1, ver2],
+  () => _compareSemVerOrig(ver1, ver2),
+);
+
+bool _compareSemVerOrig(String ver1, String ver2) {
   ver1 = ver1.replaceFirst("-", ".");
   ver2 = ver2.replaceFirst("-", ".");
   List<String> v1 = ver1.split('.');

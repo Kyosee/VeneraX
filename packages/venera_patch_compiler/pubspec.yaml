@@ -1,0 +1,28 @@
+name: venera_patch_compiler
+description: Compiles Dart patch sources to VIR. Build-time only — never ships in the app.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+# This package NEVER ships in a release build.
+#
+# That is the reason it is separate from `venera_patch_vm` rather than a mode of
+# it. It depends on `analyzer`, a large package with a large attack surface; the
+# app's release binary contains only the VM, which has no dependencies at all
+# and cannot turn a string into executable code. A patch is compiled to VIR on a
+# developer machine or in CI, signed, and only then does a device see it.
+dependencies:
+  analyzer: ^14.0.0
+  path: ^1.9.0
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0
+  # Test-only, and load-bearing: the round-trip tests compile Dart here and then
+  # run the result on the real interpreter. Asserting on the emitted JSON alone
+  # would pin the format while proving nothing about behaviour — the two halves
+  # could drift into agreeing on a payload the VM executes wrongly.
+  venera_patch_vm:
+    path: ../venera_patch_vm

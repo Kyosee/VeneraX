@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/feature_flags.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/consts.dart';
@@ -12,7 +13,18 @@ import 'package:venera/utils/image.dart';
 
 import 'app_dio.dart';
 
-const _imageStreamIdleTimeout = Duration(seconds: 30);
+/// Idle timeout for an in-flight image stream.
+///
+/// Unlike the other tunables this was never a user setting, so there is no
+/// choice to respect and a published override always applies. It reads through
+/// a getter rather than a const because the overlay lands after startup.
+Duration get _imageStreamIdleTimeout => Duration(
+      seconds: configInt(
+        ConfigKeys.imageTimeoutSeconds,
+        ConfigDefaults.imageTimeoutSeconds,
+        ConfigDefaults.imageTimeoutSeconds,
+      ),
+    );
 
 abstract class ImageDownloader {
   /// Disk cache key for a thumbnail/cover. Callers that may need to evict a

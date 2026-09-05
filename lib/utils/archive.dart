@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:venera/foundation/feature_flags.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 Future<void> compressFolderAsync(String src, String dst) {
@@ -18,6 +19,18 @@ Future<void> compressFolderAsync(String src, String dst) {
 /// Entries whose normalized path would land outside [dest] (zip-slip) abort
 /// the extraction.
 void extractZip(String src, String dest) {
+  // Kill switch. Extraction is a native call, and a defect on that side is
+  // beyond any Dart patch: the double-free this function was written to avoid
+  // aborted in libmalloc, taking the process down from whichever unrelated code
+  // happened to touch the corrupted heap next. Refusing here degrades import,
+  // archive download and WebDAV image bundles to a visible failure, which beats
+  // a crash whose stack points at something innocent.
+  if (!featureEnabled(KillIds.archiveExtract)) {
+    throw StateError(
+      'Archive extraction is unavailable: '
+      '${featureDisabledReason(KillIds.archiveExtract) ?? "disabled remotely"}',
+    );
+  }
   final zip = ZipFile.openRead(src);
   try {
     final root = p.normalize(Directory(dest).absolute.path);

@@ -3,6 +3,7 @@ import 'package:venera/foundation/comic_collection_chapter_id.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/hot_update.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
@@ -236,7 +237,19 @@ Future<_MemberLoad> _loadMember(String collectionId, CollectionMember m) async {
 @visibleForTesting
 String collectionUpdateSortKey(String time) => _updateSortKey(time);
 
-String _updateSortKey(String time) {
+/// Seamed: zero-pads a `y-m-d` string so plain string comparison orders dates
+/// correctly. An ordering slip here makes follow-updates report a stale date for
+/// the whole collection — visible to the user as "it says there's nothing new".
+///
+/// String in, string out, and the caller only compares the result, so re-running
+/// it after a fault costs nothing.
+String _updateSortKey(String time) => patched(
+  SeamIds.collectionUpdateSortKey,
+  [time],
+  () => _updateSortKeyOrig(time),
+);
+
+String _updateSortKeyOrig(String time) {
   final parts = time.split('-');
   if (parts.length != 3) return time;
   return '${parts[0].padLeft(4, '0')}-${parts[1].padLeft(2, '0')}'

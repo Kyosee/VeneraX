@@ -1,0 +1,239 @@
+name: "publish patch"
+run-name: "publish patch v${{ inputs.patch_version }} (${{ inputs.track }})"
+
+# Publishing a patch is a code push to every installed app, so this workflow is
+# manual-only and never fires on a commit. The gate that matters is the verify
+# step: it checks the signed manifest with the SAME verifier the app runs, so a
+# manifest the app would reject cannot be published. That failure mode is
+# otherwise invisible — a rejected manifest looks exactly like no manifest at
+# all, and patches would simply never arrive, with nothing in any log to say why.
+on:
+  workflow_dispatch:
+    inputs:
+      patch_version:
+        description: "Patch version (int, must beat the previous one)"
+        type: string
+        required: true
+      track:
+        description: "Track to publish to"
+        type: choice
+        default: stable
+        required: true
+        options:
+          - stable
+          - beta
+      sources:
+        description: "Patch source files, space-separated (blank = kills/config only)"
+        type: string
+        required: false
+      min_app:
+        description: "Lowest app version this patch applies to (e.g. 2.2.12)"
+        type: string
+        required: false
+      max_app:
+        description: "Highest app version, inclusive (blank = no ceiling)"
+        type: string
+        required: false
+      dry_run:
+        description: "Build, sign and verify, but do not push to the patch branch"
+        type: boolean
+        default: true
+        required: false
+
+# Two concurrent publishes would race on the patch branch and one would
+# overwrite the other's manifest.
+concurrency:
+  group: publish-patch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+      - run: flutter pub get
+
+      # Fail before doing any work if the key is absent. Signing with an empty
+      # key produces a manifest that every app rejects.
+      - name: check the signing key is configured
+        env:
+          PATCH_SIGNING_KEY: ${{ secrets.PATCH_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$PATCH_SIGNING_KEY" || {
+            echo "PATCH_SIGNING_KEY secret is missing."
+            echo "Generate a keypair with:"
+            echo "  dart run tool/patch_tool.dart keygen"
+            echo "then store the private half here and paste the public half"
+            echo "into kPatchPublicKeyB64 in lib/foundation/hot_update.dart."
+            exit 1
+          }
+
+      # The public key compiled into the app must match the private key signing
+      # here, or the verify step below fails with a confusing "invalid
+      # signature" rather than the real cause.
+      - name: check the app carries a public key
+        run: |
+          set -euo pipefail
+          key=$(grep -oP "kPatchPublicKeyB64 = '\K[^']*" \
+            lib/foundation/hot_update.dart || true)
+          test -n "$key" || {
+            echo "kPatchPublicKeyB64 is empty in lib/foundation/hot_update.dart."
+            echo "While empty, HotUpdate.isSupported is false and no build will"
+            echo "load a patch — publishing one would have no effect."
+            exit 1
+          }
+          echo "PATCH_PUBLIC_KEY=$key" >> "$GITHUB_ENV"
+          echo "app carries a public key (${#key} chars)"
+
+      # The surface manifest describes what THIS commit's binary can reach. A
+      # patch compiled against a different commit's surface may name a member id
+      # this build does not bind.
+      - name: emit the surface manifest
+        run: |
+          set -euo pipefail
+          dart run tool/patch_tool.dart surface --out build/patch/surface.json
+          echo "--- surface ---"
+          head -c 400 build/patch/surface.json; echo
+
+      - name: compile the patch
+        id: compile
+        run: |
+          set -euo pipefail
+          sources="${{ inputs.sources }}"
+          if [ -z "$sources" ]; then
+            echo "no sources: kills/config only, no code payload"
+            echo "has_payload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd packages/venera_patch_compiler
+          dart pub get
+          # shellcheck disable=SC2086
+          dart run venera_patch_compiler:compile \
+            --surface ../../build/patch/surface.json \
+            --out ../../build/patch/bundle.vpatch \
+            $(for s in $sources; do echo "../../$s"; done)
+          echo "has_payload=true" >> "$GITHUB_OUTPUT"
+
+      - name: build the spec
+        run: |
+          set -euo pipefail
+          mkdir -p build/patch
+          spec=build/patch/spec.json
+          payload=""
+          if [ "${{ steps.compile.outputs.has_payload }}" = "true" ]; then
+            # The url must be absolute and must point at where this workflow is
+            # about to push the file. jsDelivr is not used here: the app's
+            # manifest mirrors cover transport, and the payload digest in the
+            # manifest covers integrity either way.
+            url="https://raw.githubusercontent.com/${{ github.repository }}"
+            url="$url/patch/patches/v${{ inputs.patch_version }}.vpatch"
+            payload=$(printf '"payload": {"file": "%s", "url": "%s"}' \
+              "build/patch/bundle.vpatch" "$url")
+          fi
+          {
+            printf '{\n'
+            printf '  "patchVersion": %s,\n' "${{ inputs.patch_version }}"
+            if [ -n "${{ inputs.min_app }}" ]; then
+              printf '  "minApp": "%s",\n' "${{ inputs.min_app }}"
+            fi
+            if [ -n "${{ inputs.max_app }}" ]; then
+              printf '  "maxApp": "%s",\n' "${{ inputs.max_app }}"
+            fi
+            printf '  "tracks": {"%s": {%s}}\n' "${{ inputs.track }}" "$payload"
+            printf '}\n'
+          } > "$spec"
+          echo "--- spec ---"
+          cat "$spec"
+
+      - name: sign the manifest
+        env:
+          PATCH_SIGNING_KEY: ${{ secrets.PATCH_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          # Written to a file rather than passed as an argument: a command line is
+          # visible in the process table, and this value is the one secret whose
+          # leak cannot be undone by shipping a new release.
+          printf '%s' "$PATCH_SIGNING_KEY" > /tmp/signing-key
+          dart run tool/patch_tool.dart manifest \
+            --spec build/patch/spec.json \
+            --key /tmp/signing-key \
+            --out build/patch/manifest.json
+          shred -u /tmp/signing-key 2>/dev/null || rm -f /tmp/signing-key
+
+      # The gate. Uses the app's own PatchSignature, so passing here means the
+      # app accepts it — not that a second implementation in the tool agrees.
+      - name: verify exactly as the app does
+        run: |
+          set -euo pipefail
+          dart run tool/patch_tool.dart verify \
+            --manifest build/patch/manifest.json \
+            --pub "$PATCH_PUBLIC_KEY"
+
+      - name: upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-v${{ inputs.patch_version }}-${{ inputs.track }}
+          path: |
+            build/patch/manifest.json
+            build/patch/surface.json
+            build/patch/spec.json
+            build/patch/bundle.vpatch
+          if-no-files-found: warn
+
+      - name: publish to the patch branch
+        if: ${{ inputs.dry_run == false }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          manifest=$(mktemp); cp build/patch/manifest.json "$manifest"
+          bundle=""
+          if [ -f build/patch/bundle.vpatch ]; then
+            bundle=$(mktemp); cp build/patch/bundle.vpatch "$bundle"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The branch is orphan by design: it carries manifests and payloads,
+          # never app source, so a checkout of it can never be mistaken for a
+          # buildable tree.
+          if git ls-remote --exit-code --heads origin patch >/dev/null 2>&1; then
+            git fetch origin patch
+            git checkout patch
+          else
+            git checkout --orphan patch
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p patches
+          # The payload goes in FIRST. The manifest is what the app polls, so a
+          # manifest naming a payload that is not yet fetchable would send every
+          # device to a 404 for as long as the gap lasts.
+          if [ -n "$bundle" ]; then
+            cp "$bundle" "patches/v${{ inputs.patch_version }}.vpatch"
+            git add "patches/v${{ inputs.patch_version }}.vpatch"
+            git commit -m "patch: payload v${{ inputs.patch_version }}"
+            git push origin patch
+          fi
+
+          cp "$manifest" manifest.json
+          git add manifest.json
+          git commit -m "patch: manifest v${{ inputs.patch_version }} (${{ inputs.track }})"
+          git push origin patch
+          echo "published patch v${{ inputs.patch_version }} to ${{ inputs.track }}"
+
+      - name: dry-run notice
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "DRY RUN — nothing was pushed."
+          echo "The manifest was built, signed and verified against the public"
+          echo "key in this commit. Re-run with dry_run unchecked to publish."

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "name": "shouldSkipStaleUpload",
+      "slotCount": 3,
+      "requiredCount": 3,
+      "optionalCount": 0,
+      "body": {
+        "k": "block",
+        "body": [
+          {
+            "k": "if",
+            "c": {
+              "k": "local",
+              "slot": 0
+            },
+            "then": {
+              "k": "return",
+              "v": {
+                "k": "lit",
+                "v": false
+              }
+            }
+          },
+          {
+            "k": "return",
+            "v": {
+              "k": "bin",
+              "op": "gte",
+              "l": {
+                "k": "local",
+                "slot": 2
+              },
+              "r": {
+                "k": "local",
+                "slot": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "overrides": {
+    "5": 0
+  }
+}

@@ -9,6 +9,7 @@ import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/feature_flags.dart';
 import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
@@ -88,6 +89,20 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// the file, and reopening, all inside a gateway exclusive window so no other
   /// handle is alive against a file while it is replaced.
   void _runStartupDownload() async {
+    // Kill switch, checked before the deferred-init gate so a published rule
+    // takes effect on the very next launch. This path applies a downloaded
+    // backup over freshly initialised stores; when it crashes, it crashes at
+    // startup, and a startup crash denies the user every subsequent launch —
+    // including the one that would have fetched the fix. Closing it remotely is
+    // the only way out of that loop that does not require a store update.
+    if (!featureEnabled(KillIds.webdavStartupImport)) {
+      Log.warning(
+        'Data Sync',
+        'startup download disabled remotely: '
+            '${featureDisabledReason(KillIds.webdavStartupImport)}',
+      );
+      return;
+    }
     // The timeout is a safety net for environments that never complete
     // deferredInitCompleter. When it fires we SKIP this launch's auto
     // download instead of proceeding: applying a backup needs fully
@@ -337,6 +352,19 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   void requestAutoUpload() {
     if (!isConfigured) return;
     if (_isApplyingBackup) return;
+    // Kill switch. Automatic upload is the path that can damage the whole
+    // fleet: a device publishing bad data stamps it as newest, and every other
+    // device pulls it, reverting reads they had already recorded (#80, #86,
+    // #133). Closing it leaves manual sync reachable, so a user can still get
+    // their data off a device whose automatic path is misbehaving.
+    if (!featureEnabled(KillIds.webdavAutoSync)) {
+      Log.warning(
+        'Data Sync',
+        'automatic upload disabled remotely: '
+            '${featureDisabledReason(KillIds.webdavAutoSync)}',
+      );
+      return;
+    }
     switch (syncMode) {
       case WebdavSyncMode.realtime:
         _pendingAutoUpload?.cancel();
@@ -869,8 +897,18 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         for (final stale in backupsBeyondPlatformRetention(
           fileNames: files.map((e) => e.name),
           newFileName: filename,
+          // The overlay shadows the default only: a retention count the user
+          // chose is their decision about how much rollback history to keep,
+          // and quietly overruling it could rotate away the very snapshot they
+          // were holding on to.
           keepPerPlatform: sanitizedBackupRetention(
-            appdata.settings['webdavBackupRetention'],
+            configInt(
+              ConfigKeys.backupRetention,
+              sanitizedBackupRetention(
+                appdata.settings['webdavBackupRetention'],
+              ),
+              ConfigDefaults.backupRetention,
+            ),
           ),
         )) {
           try {

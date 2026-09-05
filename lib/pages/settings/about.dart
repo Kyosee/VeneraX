@@ -43,7 +43,15 @@ class _AboutSettingsState extends State<AboutSettings> {
         Column(
           children: [
             const SizedBox(height: 8),
-            Text("V${App.version}", style: const TextStyle(fontSize: 16)),
+            // The revision suffix appears only when a maintenance revision is
+            // actually running, so a stock build reads exactly as before. It is
+            // here because a report from a device on revision 4 and one from a
+            // stock build are different bugs, and without it every report costs
+            // a round of "which build are you on" before triage can start.
+            Text(
+              "V${App.version}${HotUpdate.instance.revisionSuffix}",
+              style: const TextStyle(fontSize: 16),
+            ),
             Text(
               "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original.".tl,
               textAlign: TextAlign.center,
@@ -68,6 +76,76 @@ class _AboutSettingsState extends State<AboutSettings> {
           title: "Check for updates on startup".tl,
           settingKey: "checkUpdateOnStart",
         ).toSliver(),
+        // Only shown where the mechanism actually works: release builds of a
+        // signed app. Rendering the controls in a debug build would offer
+        // switches that silently do nothing.
+        if (HotUpdate.isSupported) ...[
+          // Wording throughout this block avoids "hot update" / "patch".
+          // The mechanism is a first-party maintenance channel, but those terms
+          // read, to a store reviewer or a passing screenshot, as shipping code
+          // around review — which is not what it does, and a label cannot
+          // argue its own case. "Fixes and adjustments" describes the effect,
+          // which is all a user needs.
+          _SwitchSetting(
+            title: "Fixes and adjustments".tl,
+            subtitle: "Receive small fixes without reinstalling".tl,
+            settingKey: "enableHotUpdate",
+          ).toSliver(),
+          _EndSelectorSelectSetting(
+            title: "Update channel".tl,
+            settingKey: "hotUpdateTrack",
+            optionTranslation: {
+              "stable": "Stable".tl,
+              "beta": "Beta".tl,
+            },
+          ).toSliver(),
+          // Shown only once something is actually installed, so a stock build
+          // carries no trace of the mechanism in its UI.
+          if (HotUpdate.instance.activeRevision > 0 ||
+              HotUpdate.instance.pendingRevision > 0)
+            ListTile(
+              title: Text("Applied revision".tl),
+              subtitle: Text(
+                HotUpdate.instance.pendingRevision >
+                        HotUpdate.instance.activeRevision
+                    ? "r@a, r@b takes effect after restart".tlParams({
+                        "a": "${HotUpdate.instance.activeRevision}",
+                        "b": "${HotUpdate.instance.pendingRevision}",
+                      })
+                    : "r@a".tlParams({
+                        "a": "${HotUpdate.instance.activeRevision}",
+                      }),
+              ),
+              trailing: HotUpdate.instance.pendingNotes == null
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.info_outline),
+                      onPressed: () => showDialogMessage(
+                        context,
+                        "What's new".tl,
+                        HotUpdate.instance.pendingNotes!,
+                      ),
+                    ),
+            ).toSliver(),
+          ListTile(
+            title: Text("Roll back fixes".tl),
+            subtitle: Text("Return to the version built into this app".tl),
+            trailing: const Icon(Icons.restore),
+            // The user-facing escape hatch: someone hitting a bad patch must
+            // never be stuck waiting for us to publish a fix.
+            onTap: () => showConfirmDialog(
+              context: context,
+              title: "Roll back fixes".tl,
+              content: "All downloaded fixes will be removed.".tl,
+              onConfirm: () async {
+                await HotUpdate.instance.resetToBuiltin();
+                if (!context.mounted) return;
+                setState(() {});
+                context.showMessage(message: "Rolled back".tl);
+              },
+            ),
+          ).toSliver(),
+        ],
         ListTile(
           title: Text("Guide".tl),
           subtitle: Text("How to use the main features".tl),
@@ -805,7 +883,21 @@ String _normalizeVersion(String version) {
 }
 
 /// return true if version1 > version2
+///
+/// Seam. This function decides whether the user is offered an update at all, so
+/// a bug here is invisible and self-perpetuating: the app stops prompting, and
+/// the fix cannot arrive through the channel the bug disabled. Being pure —
+/// two strings in, a bool out, no side effects — it is safe to re-run after a
+/// machinery fault, which is what [patched]'s fallback requires.
 bool _compareVersion(String version1, String version2) {
+  return patched(
+    SeamIds.compareAppVersions,
+    [version1, version2],
+    () => _compareVersionOrig(version1, version2),
+  );
+}
+
+bool _compareVersionOrig(String version1, String version2) {
   var v1 = _normalizeVersion(version1).split(".");
   var v2 = _normalizeVersion(version2).split(".");
   final length = v1.length > v2.length ? v1.length : v2.length;

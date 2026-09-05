@@ -1833,17 +1833,63 @@ class _SliverGridComics extends StatelessWidget {
 
 /// return the first blocked keyword, or null if not blocked
 String? isBlocked(Comic item) {
-  for (var word in appdata.settings['blockedWords']) {
-    if (item.title.contains(word)) {
+  final word = blockedWordIn(
+    item.title,
+    item.subtitle,
+    item.description,
+    item.tags ?? const <String>[],
+    List<String>.from(
+      (appdata.settings['blockedWords'] as List?)?.whereType<String>() ??
+          const <String>[],
+    ),
+  );
+  if (word != null) return word;
+  return blockedTagOf(item.tags);
+}
+
+/// The first entry of [blockedWords] that matches this comic, or null.
+///
+/// Takes the comic's fields rather than the [Comic] itself, and the blocklist
+/// rather than reading settings, for two reasons. It makes the function pure —
+/// same inputs, same answer, no hidden state — and it makes it expressible in
+/// the patch IR, which can pass strings and lists but cannot construct a
+/// [Comic]. A seam whose signature a patch cannot satisfy is a seam that only
+/// looks patchable.
+///
+/// Matching is substring on the text fields but *exact* on tags, including the
+/// value half of a `namespace:value` tag. That asymmetry is intentional and
+/// long-standing: a word meant to filter titles should not silently hide whole
+/// tag families. [blockedTagOf] is the substring-on-tags counterpart.
+String? blockedWordIn(
+  String title,
+  String? subtitle,
+  String description,
+  List<String> tags,
+  List<String> blockedWords,
+) => patched(
+  SeamIds.comicIsBlocked,
+  [title, subtitle, description, tags, blockedWords],
+  () => _blockedWordInOrig(title, subtitle, description, tags, blockedWords),
+);
+
+String? _blockedWordInOrig(
+  String title,
+  String? subtitle,
+  String description,
+  List<String> tags,
+  List<String> blockedWords,
+) {
+  for (var word in blockedWords) {
+    if (title.contains(word)) {
       return word;
     }
-    if (item.subtitle?.contains(word) ?? false) {
+    if (subtitle?.contains(word) ?? false) {
       return word;
     }
-    if (item.description.contains(word)) {
+    if (description.contains(word)) {
       return word;
     }
-    for (var tag in item.tags ?? <String>[]) {
+    for (var tag in tags) {
       if (tag == word) {
         return word;
       }
@@ -1855,7 +1901,7 @@ String? isBlocked(Comic item) {
       }
     }
   }
-  return blockedTagOf(item.tags);
+  return null;
 }
 
 /// The first entry of the tag blocklist matched by [tags], or null.
@@ -1882,8 +1928,39 @@ String? blockedTagOf(List<String>? tags) {
       plain.add(localized);
     }
   }
+  return blockedTagMatch(whole, plain, blocked.whereType<String>().toList());
+}
+
+/// The blocklist entry matched by a tag set, or null.
+///
+/// The seam sits on the *matching rule* rather than on [blockedTagOf] as a
+/// whole, because the preparation above needs [TagsTranslation.translateTag] —
+/// a member the patch surface does not bind, so a patch could not reproduce it.
+/// The matching rule needs nothing but string operations, and it is also where
+/// the changes actually land: substring versus exact, case handling, and whether
+/// a bare entry may match a namespace.
+///
+/// [whole] holds each tag lowercased; [plain] holds the value half of
+/// `namespace:value` plus the localized text. An entry containing `:` is
+/// compared against [whole] so it can pin a rule to one namespace; a bare entry
+/// is compared against [plain] so it matches what the user sees on screen.
+String? blockedTagMatch(
+  List<String> whole,
+  List<String> plain,
+  List<String> blocked,
+) => patched(
+  SeamIds.blockedTagOf,
+  [whole, plain, blocked],
+  () => _blockedTagMatchOrig(whole, plain, blocked),
+);
+
+String? _blockedTagMatchOrig(
+  List<String> whole,
+  List<String> plain,
+  List<String> blocked,
+) {
   for (var entry in blocked) {
-    if (entry is! String || entry.isEmpty) continue;
+    if (entry.isEmpty) continue;
     var needle = entry.toLowerCase();
     for (var candidate in entry.contains(':') ? whole : plain) {
       if (candidate.contains(needle)) {

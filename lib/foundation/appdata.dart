@@ -156,6 +156,12 @@ class Appdata with Init {
     // capture a trace on the device that misbehaves. Syncing it would carry the
     // battery cost to every other device.
     "verboseNetworkLog",
+    // Hot-update participation is a per-device choice. The track especially:
+    // a device deliberately put on `staging` to vet a patch must not push that
+    // channel to every other device, which would defeat staged rollout by
+    // handing everyone an unvetted patch at once.
+    "enableHotUpdate",
+    "hotUpdateTrack",
     // Whether page transitions follow the back gesture depends on what the
     // device's own system animations look like, so it stays with the device
     // (#194) rather than travelling from one phone to a tablet or desktop.
@@ -397,6 +403,10 @@ class Settings with ChangeNotifier {
     'enableLongPressToZoom': true,
     'longPressZoomPosition': "press", // press, center
     'checkUpdateOnStart': true,
+    // Hot update: master switch and release channel. Off means load nothing and
+    // fetch nothing; the generated seams short-circuit on a static bool.
+    'enableHotUpdate': true,
+    'hotUpdateTrack': 'stable', // stable, beta, staging
     'autoCleanHistoryDays': '0', // retention days; '0' keeps history forever
     'limitImageWidth': true,
     // Image width as a percentage of viewport height when limitImageWidth is on

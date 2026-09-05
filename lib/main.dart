@@ -250,8 +250,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       home = const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
-    } else if (appdata.settings['requireDisclaimerConsent'] == true &&
-        appdata.settings['disclaimerConsented'] != true) {
+    } else if (shouldRequireDisclaimerConsent(
+      appdata.settings['requireDisclaimerConsent'] == true,
+      appdata.settings['disclaimerConsented'] == true,
+    )) {
       home = const DisclaimerConsentPage();
     } else if (appdata.settings['authorizationRequired']) {
       home = AuthPage(
