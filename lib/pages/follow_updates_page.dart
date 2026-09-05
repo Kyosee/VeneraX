@@ -321,6 +321,11 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
 
   /// Sort comics by update time in descending order with nulls at the end.
   void sortComics() {
+    // Nothing to order, and sorting in place would throw if the store handed
+    // back an unmodifiable empty list (a fresh install follows no folder yet).
+    if (allComics.length < 2) {
+      return;
+    }
     allComics.sort((a, b) {
       if (a.updateTime == null && b.updateTime == null) {
         return 0;

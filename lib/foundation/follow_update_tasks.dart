@@ -110,7 +110,7 @@ class FollowUpdateTask {
           ? folders.whereType<String>().toList()
           : (legacyFolder is String && legacyFolder.isNotEmpty
                 ? [legacyFolder]
-                : const []),
+                : <String>[]),
       manual: json['manual'] ?? false,
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),

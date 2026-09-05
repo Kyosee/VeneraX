@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
@@ -153,6 +155,37 @@ void main() {
       });
       expect(entries.length, 1);
       expect(entries.single.folders, ['a', 'b', 'c']);
+    });
+  });
+
+  group('empty scope', () {
+    // A fresh install follows no folder, and the page sorts whatever the store
+    // returns. sort() throws on an unmodifiable list even when it is empty, so
+    // an empty result must still be growable.
+    test('an empty query result can be sorted', () {
+      final db = sqlite3.openInMemory();
+      final rows = LocalFavoritesManager.queryComicsWithUpdatesInfoIn(
+        const [],
+        db,
+      );
+      expect(rows, isEmpty);
+      expect(() => rows.sort((a, b) => 0), returnsNormally);
+      db.dispose();
+    });
+
+    test('a store that is down returns a growable list', () {
+      // Never initialized in a unit test, so this takes the degraded path.
+      final rows = LocalFavoritesManager().getComicsWithUpdatesInfoIn(const [
+        'nope',
+      ]);
+      expect(rows, isEmpty);
+      expect(() => rows.sort((a, b) => 0), returnsNormally);
+    });
+
+    test('a task restored without folders carries a growable list', () {
+      final task = FollowUpdateTask.fromJson({'id': '1', 'sources': {}});
+      expect(task.folders, isEmpty);
+      expect(() => task.folders.add('later'), returnsNormally);
     });
   });
 

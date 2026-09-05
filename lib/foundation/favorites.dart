@@ -2113,7 +2113,9 @@ class LocalFavoritesManager with ChangeNotifier {
     CommonDatabase db,
   ) {
     if (folders.isEmpty) {
-      return const [];
+      // Growable: callers sort the result, and sort() throws on an
+      // unmodifiable list even when it is empty.
+      return [];
     }
     var branches = <String>[];
     for (var folder in folders) {
@@ -2148,7 +2150,7 @@ class LocalFavoritesManager with ChangeNotifier {
   List<FavoriteItemWithUpdateInfo> getComicsWithUpdatesInfoIn(
     List<String> folders,
   ) {
-    if (!isInitialized) return const [];
+    if (!isInitialized) return [];
     return queryComicsWithUpdatesInfoIn(_existingFolders(folders), _db);
   }
 
@@ -2157,9 +2159,9 @@ class LocalFavoritesManager with ChangeNotifier {
   Future<List<FavoriteItemWithUpdateInfo>> getComicsWithUpdatesInfoInAsync(
     List<String> folders,
   ) {
-    if (!isInitialized) return Future.value(const []);
+    if (!isInitialized) return Future.value([]);
     var tables = _existingFolders(folders);
-    if (tables.isEmpty) return Future.value(const []);
+    if (tables.isEmpty) return Future.value([]);
     return DatabaseGateway.instance.isolateOp(
       _dbPath,
       (db) async => queryComicsWithUpdatesInfoIn(tables, db),
