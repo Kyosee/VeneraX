@@ -34,8 +34,6 @@ class _AddToCollectionDialog extends StatefulWidget {
 }
 
 class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
-  late List<ComicCollection> collections;
-
   /// null = creating a new collection; otherwise the target's id.
   String? targetId;
 
@@ -61,7 +59,6 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
   @override
   void initState() {
     super.initState();
-    collections = ComicCollectionStore.all();
     folders = LocalFavoritesManager().folderNames;
     nameController.text = widget.comics.first.title;
     labelControllers = widget.comics
@@ -107,8 +104,8 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
         CollectionMember(
           sourceKey: c.sourceKey,
           comicId: c.id,
-          displayName: mode == CollectionDisplayMode.tabs &&
-                  typed != c.title.trim()
+          displayName:
+              mode == CollectionDisplayMode.tabs && typed != c.title.trim()
               ? typed
               : '',
           cachedTitle: c.title,
@@ -209,85 +206,115 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
       message: isCreating
           ? "Created @c".tlParams({'c': collection.displayName})
           : added == 0
-              ? "Already in this collection".tl
-              : "Added @n comics to @c".tlParams({
-                  'n': added,
-                  'c': collection.displayName,
-                }),
+          ? "Already in this collection".tl
+          : "Added @n comics to @c".tlParams({
+              'n': added,
+              'c': collection.displayName,
+            }),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // ContentDialog wraps its content in IntrinsicWidth, which cannot measure a
-    // scrollable of indefinite width — an unbounded child there renders with no
-    // size and crashes hit-testing. Both dimensions are pinned explicitly.
-    final width = (context.width - 64).clamp(280.0, 420.0);
-    final height = (context.height * 0.6).clamp(280.0, 520.0);
-    return ContentDialog(
-      title: "Add to collection".tl,
-      content: SizedBox(
-        width: width,
-        height: height,
-        child: ListView(
-          padding: EdgeInsets.zero,
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      backgroundColor: context.colorScheme.surface,
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 480,
+        height: math.min(context.height * 0.8, 640),
+        child: Column(
           children: [
-            _buildTargetSection(),
-            const SizedBox(height: 8),
-            if (isCreating) ...[
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: "Collection name".tl,
-                  hintText: "Leave empty to use the first comic's title".tl,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
+            MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: Appbar(
+                backgroundColor: Colors.transparent,
+                title: Text("Add to collection".tl),
+                leading: IconButton(
+                  tooltip: "Cancel".tl,
+                  onPressed: context.pop,
+                  icon: const Icon(Icons.close),
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-            _buildModeSection(),
-            if (mode == CollectionDisplayMode.tabs) _buildLabelSection(),
-            const Divider(height: 24),
-            _buildFavoriteSection(),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  _buildTargetSection(),
+                  const SizedBox(height: 16),
+                  if (isCreating) ...[
+                    TextField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: "Collection name".tl,
+                        hintText:
+                            "Leave empty to use the first comic's title".tl,
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  _buildModeSection(),
+                  if (mode == CollectionDisplayMode.tabs) _buildLabelSection(),
+                  const Divider(height: 24),
+                  _buildFavoriteSection(),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton(
+                  onPressed: _confirm,
+                  child: Text("Confirm".tl),
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      actions: [
-        FilledButton(onPressed: _confirm, child: Text("Confirm".tl)),
-      ],
     );
+  }
+
+  Future<void> _selectTarget() async {
+    FocusScope.of(context).unfocus();
+    final id = await showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _CollectionPickerDialog(selectedId: targetId, comics: widget.comics),
+    );
+    if (!mounted || id == null) return;
+    final picked = id.isEmpty ? null : ComicCollectionStore.find(id);
+    if (id.isNotEmpty && picked == null) {
+      context.showMessage(message: "This collection no longer exists".tl);
+      return;
+    }
+    setState(() {
+      targetId = picked?.id;
+      if (picked != null) mode = picked.displayMode;
+    });
   }
 
   Widget _buildTargetSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Target".tl, style: ts.s12.copyWith(
-          color: context.colorScheme.outline,
-        )),
-        const SizedBox(height: 4),
-        Select(
-          current: isCreating
-              ? "New collection".tl
-              : (ComicCollectionStore.find(targetId!)?.displayName ??
-                    "New collection".tl),
-          values: [
-            "New collection".tl,
-            ...collections.map((e) => e.displayName),
-          ],
-          minWidth: 180,
-          onTap: (i) {
-            setState(() {
-              if (i == 0) {
-                targetId = null;
-              } else {
-                final picked = collections[i - 1];
-                targetId = picked.id;
-                mode = picked.displayMode;
-              }
-            });
-          },
+        Text(
+          "Target".tl,
+          style: ts.s12.copyWith(color: context.colorScheme.outline),
+        ),
+        const SizedBox(height: 8),
+        _CollectionTargetTile(
+          key: const ValueKey('collection-target'),
+          collection: isCreating ? null : ComicCollectionStore.find(targetId!),
+          onTap: _selectTarget,
+          trailing: const Icon(Icons.unfold_more),
         ),
       ],
     );
@@ -297,9 +324,10 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Chapter layout".tl, style: ts.s12.copyWith(
-          color: context.colorScheme.outline,
-        )),
+        Text(
+          "Chapter layout".tl,
+          style: ts.s12.copyWith(color: context.colorScheme.outline),
+        ),
         RadioGroup<CollectionDisplayMode>(
           groupValue: mode,
           onChanged: (v) => v == null ? null : setState(() => mode = v),
@@ -380,9 +408,10 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Favorites".tl, style: ts.s12.copyWith(
-          color: context.colorScheme.outline,
-        )),
+        Text(
+          "Favorites".tl,
+          style: ts.s12.copyWith(color: context.colorScheme.outline),
+        ),
         const SizedBox(height: 4),
         if (folders.isEmpty)
           Text(
@@ -392,9 +421,7 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
         else
           Row(
             children: [
-              Expanded(
-                child: Text("Add collection to".tl, style: ts.s14),
-              ),
+              Expanded(child: Text("Add collection to".tl, style: ts.s14)),
               Select(
                 current: favoriteFolder ?? "Don't add".tl,
                 values: ["Don't add".tl, ...folders],
@@ -422,6 +449,307 @@ class _AddToCollectionDialogState extends State<_AddToCollectionDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CollectionPickerDialog extends StatefulWidget {
+  const _CollectionPickerDialog({
+    required this.selectedId,
+    required this.comics,
+  });
+
+  final String? selectedId;
+  final List<Comic> comics;
+
+  @override
+  State<_CollectionPickerDialog> createState() =>
+      _CollectionPickerDialogState();
+}
+
+class _CollectionPickerDialogState extends State<_CollectionPickerDialog> {
+  final searchController = TextEditingController();
+  final scrollController = ScrollController();
+  late List<ComicCollection> collections;
+  late final selectedComics = widget.comics
+      .map((comic) => (comic.sourceKey, comic.id))
+      .toSet();
+  String query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    collections = ComicCollectionStore.all();
+    ComicCollectionStore.changes.addListener(_reload);
+  }
+
+  void _reload() {
+    setState(() => collections = ComicCollectionStore.all());
+  }
+
+  @override
+  void dispose() {
+    ComicCollectionStore.changes.removeListener(_reload);
+    searchController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = collections.where((collection) {
+      return query.isEmpty ||
+          collection.displayName.toLowerCase().contains(query) ||
+          collection.members.any(
+            (member) =>
+                member.label.toLowerCase().contains(query) ||
+                member.cachedTitle.toLowerCase().contains(query),
+          );
+    }).toList();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      backgroundColor: context.colorScheme.surface,
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 520,
+        height: math.min(context.height * 0.8, 640),
+        child: Column(
+          children: [
+            MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: Appbar(
+                backgroundColor: Colors.transparent,
+                title: Text("Select collection".tl),
+                leading: IconButton(
+                  tooltip: "Cancel".tl,
+                  onPressed: context.pop,
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: AppSearchField(
+                controller: searchController,
+                hintText: "Search collections or comics".tl,
+                onChanged: (value) {
+                  setState(() => query = value.trim().toLowerCase());
+                  if (scrollController.hasClients) scrollController.jumpTo(0);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  "Collections: @n".tlParams({'n': matches.length}),
+                  style: ts.s12.copyWith(
+                    color: context.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Scrollbar(
+                controller: scrollController,
+                child: ListView.separated(
+                  key: const ValueKey('collection-picker-list'),
+                  controller: scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: 1 + math.max(1, matches.length),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    if (index > 0 && matches.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          (collections.isEmpty
+                                  ? "No collections yet"
+                                  : "No matching collections")
+                              .tl,
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+                    final collection = index == 0 ? null : matches[index - 1];
+                    final selected = collection?.id == widget.selectedId;
+                    final included =
+                        collection?.members
+                            .where(
+                              (member) => selectedComics.contains((
+                                member.sourceKey,
+                                member.comicId,
+                              )),
+                            )
+                            .length ??
+                        0;
+                    return _CollectionTargetTile(
+                      key: ValueKey(collection?.id ?? ''),
+                      collection: collection,
+                      selected: selected,
+                      status: included == 0
+                          ? null
+                          : included == selectedComics.length
+                          ? "Already in this collection".tl
+                          : "Already included: @n / @total".tlParams({
+                              'n': included,
+                              'total': selectedComics.length,
+                            }),
+                      onTap: () =>
+                          Navigator.of(context).pop(collection?.id ?? ''),
+                      trailing: Icon(
+                        selected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color: selected
+                            ? context.colorScheme.primary
+                            : context.colorScheme.outline,
+                        size: 20,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CollectionTargetTile extends StatelessWidget {
+  const _CollectionTargetTile({
+    super.key,
+    required this.collection,
+    required this.onTap,
+    required this.trailing,
+    this.selected = false,
+    this.status,
+  });
+
+  final ComicCollection? collection;
+  final VoidCallback onTap;
+  final Widget trailing;
+  final bool selected;
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final collection = this.collection;
+    final name = collection?.displayName ?? "New collection".tl;
+    final cover = collection?.displayCover ?? '';
+    final placeholder = ColoredBox(
+      color: context.colorScheme.secondaryContainer,
+      child: Center(
+        child: Icon(
+          collection == null ? Icons.add : Icons.collections_bookmark_outlined,
+          color: context.colorScheme.onSecondaryContainer,
+        ),
+      ),
+    );
+    final radius = BorderRadius.circular(12);
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected
+            ? context.colorScheme.secondaryContainer
+            : context.colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: selected
+                ? context.colorScheme.primary
+                : context.colorScheme.outlineVariant,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    width: 44,
+                    height: collection == null ? 40 : 60,
+                    child: cover.isEmpty
+                        ? placeholder
+                        : Image(
+                            image: ResizeImage(
+                              CachedImageProvider(
+                                cover,
+                                sourceKey: collection!.sourceKey,
+                                cid: collection.id,
+                              ),
+                              width:
+                                  (44 * MediaQuery.devicePixelRatioOf(context))
+                                      .ceil(),
+                            ),
+                            fit: BoxFit.cover,
+                            excludeFromSemantics: true,
+                            frameBuilder: (_, child, frame, _) =>
+                                frame == null ? placeholder : child,
+                            errorBuilder: (_, _, _) => placeholder,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Tooltip(
+                        message: name,
+                        excludeFromSemantics: true,
+                        child: Text(
+                          name,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: ts.s14.copyWith(
+                            fontWeight: FontWeight.w600,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                      if (collection != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          "@n comics".tlParams({
+                            'n': collection.members.length,
+                          }),
+                          style: ts.s12.copyWith(
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                      if (status != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          status!,
+                          style: ts.s12.copyWith(
+                            color: context.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                trailing,
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
