@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_collection_chapter_id.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -106,7 +107,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   ComicDetails? comic;
 
   /// chapters to download. If null, all chapters will be downloaded.
-  final List<String>? chapters;
+  List<String>? chapters;
 
   @override
   String get id => comicId;
@@ -271,6 +272,65 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       return loadCollectionPages(comicId, ep, forDownload: true);
     }
     return source.loadComicPages!(comicId, ep);
+  }
+
+  Future<void> _resolveCollectionDownloadChapters() async {
+    if (!_isRunning) return;
+    final current = comic!.chapters;
+    if (current == null) return;
+    final pending = current.allChapters.keys
+        .where((key) => chapters == null || chapters!.contains(key))
+        .skip(_chapter);
+    final replacements = <String, Map<String, String>>{};
+    for (final key in pending) {
+      final ref = decodeCollectionChapterId(key);
+      if (ref == null ||
+          ref.chapterId.isNotEmpty ||
+          _images?[key] != null ||
+          ComicType.fromKey(ref.sourceKey) == ComicType.local) {
+        continue;
+      }
+      // Failed member details use the same empty id as single-chapter comics.
+      // Resolve it before sending a null chapter argument to the member source.
+      final memberSource = ComicSource.find(ref.sourceKey);
+      if (memberSource?.loadComicInfo == null) {
+        throw 'The source of this comic is not installed'.tl;
+      }
+      final result = await memberSource!.loadComicInfo!(ref.comicId);
+      if (!_isRunning) return;
+      if (result.error) throw result.errorMessage!;
+      final memberChapters = result.data.chapters?.allChapters;
+      if (memberChapters == null) continue;
+      if (memberChapters.isEmpty) throw 'Unknown chapter'.tl;
+      replacements[key] = {
+        for (final entry in memberChapters.entries)
+          encodeCollectionChapterId(
+            sourceKey: ref.sourceKey,
+            comicId: ref.comicId,
+            chapterId: entry.key,
+          ): entry.value,
+      };
+    }
+    if (replacements.isEmpty) return;
+
+    Map<String, String> expand(Map<String, String> entries) => {
+      for (final entry in entries.entries)
+        ...replacements[entry.key] ?? {entry.key: entry.value},
+    };
+    comic = ComicDetails.fromJson({
+      ...comic!.toJson(),
+      'subtitle': comic!.subTitle,
+      'chapters': current.isGrouped
+          ? {
+              for (final group in current.groups)
+                group: expand(current.getGroup(group)),
+            }
+          : expand(current.allChapters),
+    });
+    // Only pending entries expand, so completed chapters keep their positions.
+    chapters = chapters
+        ?.expand((key) => replacements[key]?.keys ?? [key])
+        .toList();
   }
 
   void _scheduleTasks() {
@@ -506,6 +566,16 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       _message = "$_downloadedCount/$_totalCount";
       notifyListeners();
+      await LocalManager().saveCurrentDownloadingTasks();
+    }
+
+    if (ComicCollectionStore.isCollectionSourceKey(source.key)) {
+      final result = await _runWithRetry(_resolveCollectionDownloadChapters);
+      if (!_isRunning) return;
+      if (result.error) {
+        _setError("Error: ${result.errorMessage}");
+        return;
+      }
       await LocalManager().saveCurrentDownloadingTasks();
     }
 
