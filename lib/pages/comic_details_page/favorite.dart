@@ -486,19 +486,44 @@ class _LocalSectionState extends State<_LocalSection> {
     localAdded = widget.added.toSet();
   }
 
+  void createFolder() {
+    newFolder().then((v) {
+      if (!mounted) return;
+      setState(() {
+        localFolders = LocalFavoritesManager().folderNames;
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            "Local Favorites".tl,
-            style: ts.s14.copyWith(
-              fontWeight: FontWeight.w600,
-              color: context.colorScheme.primary,
-            ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Local Favorites".tl,
+                  style: ts.s14.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: context.colorScheme.primary,
+                  ),
+                ),
+              ),
+              // Mirrored at the list tail: with many folders the tail button is
+              // a long scroll away (#224).
+              TextButton.icon(
+                onPressed: createFolder,
+                icon: const Icon(Icons.add, size: 18),
+                label: Text("New Folder".tl),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
           ),
         ),
         ...localFolders.map((folder) {
@@ -565,13 +590,7 @@ class _LocalSectionState extends State<_LocalSection> {
               Text("New Folder".tl),
             ],
           ),
-          onTap: () {
-            newFolder().then((v) {
-              setState(() {
-                localFolders = LocalFavoritesManager().folderNames;
-              });
-            });
-          },
+          onTap: createFolder,
         ),
       ],
     );
