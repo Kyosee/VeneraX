@@ -37,6 +37,7 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/aggregated_search_page.dart';
 import 'package:venera/pages/comic_collection_edit_page.dart';
+import 'package:venera/pages/comic_details_page/chapter_order_editor.dart';
 import 'package:venera/pages/comic_details_page/glossary_editor.dart';
 import 'package:venera/pages/comic_details_page/related_sources_section.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
@@ -1890,12 +1891,14 @@ class _SelectDownloadChapter extends StatefulWidget {
     this.eps,
     this.finishSelect,
     this.downloadedEps, {
+    required this.chapterOrder,
     this.hiddenEps = const {},
   });
 
   final List<String> eps;
   final void Function(List<int>) finishSelect;
   final List<int> downloadedEps;
+  final List<int> chapterOrder;
 
   /// Indices collapsed by the comic's "hide duplicate chapters" switch. They are
   /// dropped from the list AND from "Download All": the picker returns indices
@@ -1912,7 +1915,7 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
 
   /// Original indices into [widget.eps] that are rendered, in list order.
   List<int> get _visible => [
-    for (int i = 0; i < widget.eps.length; i++)
+    for (final i in widget.chapterOrder)
       if (!widget.hiddenEps.contains(i)) i,
   ];
 
@@ -1983,7 +1986,9 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
                     onPressed: selected.isEmpty
                         ? null
                         : () {
-                            widget.finishSelect(selected);
+                            widget.finishSelect(
+                              visible.where(selected.contains).toList(),
+                            );
                             context.pop();
                           },
                     child: Text("Download Selected".tl),

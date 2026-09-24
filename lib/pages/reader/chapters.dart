@@ -16,10 +16,17 @@ class _ChaptersViewState extends State<_ChaptersView> {
 
   var downloaded = <String>[];
 
+  List<int> get _visibleIndices => [
+    for (final chapter in widget.reader.chapterOrder)
+      if (!widget.reader.isChapterHidden(chapter) ||
+          widget.reader.chapter == chapter)
+        chapter - 1,
+  ];
+
   @override
   void initState() {
     super.initState();
-    int epIndex = widget.reader.chapter - 2;
+    final epIndex = _visibleIndices.indexOf(widget.reader.chapter - 1) - 1;
     _scrollController = ScrollController(
       initialScrollOffset: (epIndex * 48.0 + 52).clamp(0, double.infinity),
     );
@@ -36,10 +43,7 @@ class _ChaptersViewState extends State<_ChaptersView> {
     // Flat 0-based indices still shown after "hide duplicate chapters". The
     // current chapter is kept even when hidden, so a history entry pointing at
     // a duplicate still highlights something.
-    var visible = [
-      for (var i = 0; i < chapters.length; i++)
-        if (!widget.reader.isChapterHidden(i + 1) || i == current) i,
-    ];
+    final visible = _visibleIndices;
     return Scaffold(
       body: SmoothCustomScrollView(
         controller: _scrollController,
@@ -127,10 +131,9 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
       initialIndex: index - 1,
     );
     initialGroupName = chapters.groups.elementAt(index - 1);
-    var epIndexAtGroup = widget.reader.chapter - 1;
-    for (var i = 0; i < index - 1; i++) {
-      epIndexAtGroup -= chapters.getGroupByIndex(i).length;
-    }
+    final epIndexAtGroup = _visibleChapters(
+      initialGroupName,
+    ).indexOf(widget.reader.chapter);
     _scrollController = ScrollController(
       initialScrollOffset: (epIndexAtGroup * 48.0).clamp(0, double.infinity),
     );
@@ -159,7 +162,7 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
     );
   }
 
-  Widget buildGroup(String groupName) {
+  List<int> _visibleChapters(String groupName) {
     var group = chapters.getGroup(groupName);
     // Flat 1-based chapter number of this group's first entry.
     var base = 1;
@@ -167,23 +170,28 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
       if (g == groupName) break;
       base += chapters.getGroup(g).length;
     }
-    // Indices within the group that survive "hide duplicate chapters"; the
-    // current chapter is kept even when hidden (see _ChaptersViewState).
-    var visible = [
-      for (var i = 0; i < group.length; i++)
-        if (!widget.reader.isChapterHidden(base + i) ||
-            widget.reader.chapter == base + i)
-          i,
+    // Chapters of this group in reading order that survive "hide duplicate
+    // chapters"; the current chapter is kept even when hidden.
+    return [
+      for (final chapter in widget.reader.chapterOrder)
+        if (chapter >= base &&
+            chapter < base + group.length &&
+            (!widget.reader.isChapterHidden(chapter) ||
+                widget.reader.chapter == chapter))
+          chapter,
     ];
+  }
+
+  Widget buildGroup(String groupName) {
+    final visible = _visibleChapters(groupName);
     return SmoothCustomScrollView(
       controller: initialGroupName == groupName ? _scrollController : null,
       slivers: [
         SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, position) {
-              var index = visible[position];
-              var name = group.values.elementAt(index);
-              var i = base + index;
+              final i = visible[position];
+              final name = chapters.titles.elementAt(i - 1);
               return _ChapterListTile(
                 onTap: () {
                   widget.reader.toChapter(i);
@@ -191,7 +199,9 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
                 },
                 title: name,
                 isActive: widget.reader.chapter == i,
-                isDownloaded: downloaded.contains(group.keys.elementAt(index)),
+                isDownloaded: downloaded.contains(
+                  chapters.ids.elementAt(i - 1),
+                ),
               );
             },
             childCount: visible.length,

@@ -472,6 +472,9 @@ class Settings with ChangeNotifier {
     'showSingleImageOnFirstPage': false,
     'enableDoubleTapToZoom': true,
     'reverseChapterOrder': false,
+    // Per-comic chapter order overrides. Values are chapter IDs in display
+    // order and are synced with the rest of the user's settings.
+    'chapterOrderOverrides': <String, dynamic>{},
     'showSystemStatusBar': false,
     'comicSpecificSettings': <String, Map<String, dynamic>>{},
     'deviceSpecificSettings': <String, Map<String, dynamic>>{},

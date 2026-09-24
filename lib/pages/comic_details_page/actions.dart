@@ -369,8 +369,8 @@ abstract mixin class _ComicPageActions {
   }
 
   void continueRead() {
-    var ep = history?.ep ?? 1;
-    var page = history?.page ?? 1;
+    var ep = history?.ep;
+    var page = history?.page;
     var group = history?.group;
     read(ep, page, group);
   }
@@ -546,6 +546,11 @@ abstract mixin class _ComicPageActions {
           details.chapters!.titles.toList(),
           (v) => selected = v,
           downloaded,
+          chapterOrder: ChapterOrderPrefs.orderedIndices(
+            details.chapters!,
+            comic.id,
+            comic.sourceKey,
+          ),
           // Chapters collapsed on the detail page stay out of the picker, and
           // out of "Download All": the indices here are the ones the task
           // downloads, so a hidden row must not slip in through select-all.

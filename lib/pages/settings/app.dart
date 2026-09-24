@@ -508,6 +508,7 @@ const _skipSyncCategories = <_SkipSyncCategory>[
       "showSingleImageOnFirstPage",
       "enableDoubleTapToZoom",
       "reverseChapterOrder",
+      "chapterOrderOverrides",
       "showSystemStatusBar",
       "readerScrollSpeed",
       "readerCenterPageOnTurn",

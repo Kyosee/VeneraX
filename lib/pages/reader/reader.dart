@@ -261,11 +261,10 @@ class _ReaderState extends State<Reader>
     if (page < 1) {
       page = 1;
     }
-    chapter = widget.initialChapter ?? 1;
+    chapter = widget.initialChapter ?? 0;
     if (chapter < 1) {
-      chapter = 1;
-    }
-    if (widget.initialChapterGroup != null) {
+      chapter = chapterOrder.firstOrNull ?? 1;
+    } else if (widget.initialChapterGroup != null) {
       for (int i = 0; i < (widget.initialChapterGroup! - 1); i++) {
         chapter += widget.chapters!.getGroupByIndex(i).length;
       }
@@ -519,6 +518,16 @@ class _ReaderState extends State<Reader>
   @override
   int get maxChapter => widget.chapters?.length ?? 1;
 
+  /// Keep the reading order stable while chapter images are loaded.
+  @override
+  late final List<int> chapterOrder = widget.chapters == null
+      ? const [1]
+      : ChapterOrderPrefs.orderedIndices(
+          widget.chapters!,
+          cid,
+          type.sourceKey,
+        ).map((index) => index + 1).toList();
+
   /// 1-based chapters collapsed by this comic's "hide duplicate chapters"
   /// switch. Computed once: the switch lives on the details page, so it cannot
   /// change while the reader is open.
@@ -622,37 +631,15 @@ class _ReaderState extends State<Reader>
   }
 
   bool get isFirstChapterOfGroup {
-    if (widget.chapters?.isGrouped ?? false) {
-      int c = chapter - 1;
-      int g = 1;
-      while (c > 0) {
-        c -= widget.chapters!.getGroupByIndex(g - 1).length;
-        g++;
-      }
-      if (c == 0) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-    return chapter == 1;
+    final previous = visibleChapterFrom(chapter, -1);
+    return previous == null ||
+        groupIndexOfChapter(previous) != groupIndexOfChapter(chapter);
   }
 
   bool get isLastChapterOfGroup {
-    if (widget.chapters?.isGrouped ?? false) {
-      int c = chapter;
-      int g = 1;
-      while (c > 0) {
-        c -= widget.chapters!.getGroupByIndex(g - 1).length;
-        g++;
-      }
-      if (c == 0) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-    return chapter == maxChapter;
+    final next = visibleChapterFrom(chapter, 1);
+    return next == null ||
+        groupIndexOfChapter(next) != groupIndexOfChapter(chapter);
   }
 
   /// Get the size of the reader.
@@ -892,6 +879,9 @@ abstract mixin class _ReaderLocation {
 
   int get maxChapter;
 
+  /// Original 1-based chapter numbers in reading order.
+  List<int> get chapterOrder;
+
   /// Whether chapter [c] (1-based) is collapsed by "hide duplicate chapters".
   /// Hidden chapters stay addressable — history may point at one — but no
   /// navigation ever lands on them on its own.
@@ -995,6 +985,7 @@ abstract mixin class _ReaderLocation {
     maxChapter: maxChapter,
     isHidden: isChapterHidden,
     groupOf: groupIndexOfChapter,
+    order: chapterOrder,
   );
 
   int? _nextVisibleChapter(int step) => visibleChapterFrom(chapter, step);

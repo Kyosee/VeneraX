@@ -1,5 +1,10 @@
 {
   "zh_CN": {
+    "Customize chapter order": "自定义章节顺序",
+    "Drag chapters or use the arrows to reorder. Changes apply to this comic only.": "拖动章节或点击上下箭头调整顺序，仅对这部漫画生效。",
+    "Chapter group": "章节分组",
+    "Restore source order": "恢复原始顺序",
+    "Failed to save chapter order": "章节顺序保存失败",
     "Reading Statistics": "阅读统计",
     "Clear Reading Statistics": "清除阅读统计",
     "Are you sure you want to clear reading statistics?": "确定要清除阅读统计吗？",
@@ -1344,6 +1349,11 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Customize chapter order": "自訂章節順序",
+    "Drag chapters or use the arrows to reorder. Changes apply to this comic only.": "拖曳章節或點擊上下箭頭調整順序，僅對這部漫畫生效。",
+    "Chapter group": "章節分組",
+    "Restore source order": "恢復原始順序",
+    "Failed to save chapter order": "章節順序儲存失敗",
     "Reading Statistics": "閱讀統計",
     "Clear Reading Statistics": "清除閱讀統計",
     "Are you sure you want to clear reading statistics?": "確定要清除閱讀統計嗎？",

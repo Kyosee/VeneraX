@@ -199,6 +199,7 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
     BuildContext context, {
     required bool reverse,
     required VoidCallback onToggleOrder,
+    required VoidCallback onCustomizeOrder,
   }) {
     return _ComicSectionHeader(
       icon: Icons.view_list_rounded,
@@ -228,6 +229,13 @@ mixin _ChapterSelectionMixin<T extends StatefulWidget> on State<T> {
                     : Icons.arrow_downward_rounded,
               ),
               onPressed: onToggleOrder,
+            ),
+          ),
+          Tooltip(
+            message: "Customize chapter order".tl,
+            child: IconButton(
+              icon: const Icon(Icons.reorder_rounded),
+              onPressed: onCustomizeOrder,
             ),
           ),
         ],
@@ -280,10 +288,28 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
     final hidden = state.hideDuplicateChapters
         ? state.duplicateChapterIndices
         : const <int>{};
+    final ordered = ChapterOrderPrefs.orderedIndices(
+      chapters,
+      state.comic.id,
+      state.comic.sourceKey,
+    );
     visible = [
-      for (var i = 0; i < chapters.length; i++)
+      for (final i in ordered)
         if (!hidden.contains(i)) i,
     ];
+  }
+
+  Future<void> _customizeOrder() async {
+    final changed = await showChapterOrderEditor(
+      context: context,
+      chapters: chapters,
+      comicId: state.comic.id,
+      sourceKey: state.comic.sourceKey,
+    );
+    if (changed == true && mounted) {
+      setState(_computeVisible);
+      state.update();
+    }
   }
 
   @override
@@ -349,6 +375,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
                       context,
                       reverse: reverse,
                       onToggleOrder: () => setState(() => reverse = !reverse),
+                      onCustomizeOrder: _customizeOrder,
                     ),
             ),
             SliverGrid(
@@ -573,15 +600,34 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
       visible = const [];
       return;
     }
-    final group = chapters.getGroupByIndex(index);
     final hidden = state.hideDuplicateChapters
         ? state.duplicateChapterIndices
         : const <int>{};
     final offset = _groupOffset;
+    final ordered = ChapterOrderPrefs.orderedIndicesForGroup(
+      chapters,
+      state.comic.id,
+      state.comic.sourceKey,
+      index,
+    );
     visible = [
-      for (var i = 0; i < group.length; i++)
+      for (final i in ordered)
         if (!hidden.contains(offset + i)) i,
     ];
+  }
+
+  Future<void> _customizeOrder() async {
+    final changed = await showChapterOrderEditor(
+      context: context,
+      chapters: chapters,
+      comicId: state.comic.id,
+      sourceKey: state.comic.sourceKey,
+      initialGroupIndex: index,
+    );
+    if (changed == true && mounted) {
+      setState(_computeVisible);
+      state.update();
+    }
   }
 
   /// Selectable keys = ONLY the current group's visible chapters, in reader
@@ -748,6 +794,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
                       context,
                       reverse: reverse,
                       onToggleOrder: () => setState(() => reverse = !reverse),
+                      onCustomizeOrder: _customizeOrder,
                     ),
             ),
             SliverToBoxAdapter(

@@ -777,25 +777,26 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ),
     ];
 
+    void turnChapter(bool forward) {
+      final reader = context.reader;
+      final target = reader.visibleChapterFrom(
+        reader.chapter,
+        forward ? 1 : -1,
+      );
+      if (target != null) {
+        reader.toChapter(target);
+      } else {
+        reader.toPage(forward ? reader.maxPage : 1);
+      }
+    }
+
     final prevChapterButton = IconButton.filledTonal(
-      onPressed: () => !isReversed
-          ? context.reader.chapter > 1
-                ? context.reader.toPrevChapter()
-                : context.reader.toPage(1)
-          : context.reader.chapter < context.reader.maxChapter
-          ? context.reader.toNextChapter()
-          : context.reader.toPage(context.reader.maxPage),
+      onPressed: () => turnChapter(isReversed),
       icon: const Icon(Icons.first_page),
     );
 
     final nextChapterButton = IconButton.filledTonal(
-      onPressed: () => !isReversed
-          ? context.reader.chapter < context.reader.maxChapter
-                ? context.reader.toNextChapter()
-                : context.reader.toPage(context.reader.maxPage)
-          : context.reader.chapter > 1
-          ? context.reader.toPrevChapter()
-          : context.reader.toPage(1),
+      onPressed: () => turnChapter(!isReversed),
       icon: const Icon(Icons.last_page),
     );
 

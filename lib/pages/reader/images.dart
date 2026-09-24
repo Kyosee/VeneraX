@@ -1023,10 +1023,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
         'Chapter @ep'.tlParams({'ep': chapter});
   }
 
-  /// Builds the flat, natural-order entry list spanning every currently
+  /// Builds the flat entry list in reading order, spanning every currently
   /// loaded chapter (earliest first). There is no leading spacer: index 0 is
   /// the first real entry. The pivot/center is chosen separately via
-  /// [_indexOfEntry], so the list order is purely chapters in ascending order.
+  /// [_indexOfEntry], without changing the chapters' original indices.
   List<_ContinuousReaderEntry> _continuousEntries() {
     if (reader.images != null &&
         !identical(_continuousChapterImages[reader.chapter], reader.images)) {
@@ -2155,10 +2155,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
           current.isImage &&
           chapterImages != null &&
           (forward ? current.page >= chapterImages.length : current.page <= 1);
-      final adjacentChapter = current.chapter + (forward ? 1 : -1);
-      if (atBoundary &&
-          adjacentChapter >= 1 &&
-          adjacentChapter <= reader.maxChapter) {
+      final adjacentChapter = reader.visibleChapterFrom(
+        current.chapter,
+        forward ? 1 : -1,
+      );
+      if (atBoundary && adjacentChapter != null) {
         _requestBoundaryTurn(adjacentChapter, forward: forward);
         return true;
       }
