@@ -455,122 +455,6 @@ class _LogsPageState extends State<LogsPage> {
   }
 }
 
-/// A user-facing group of settings that can be excluded from WebDAV sync.
-///
-/// The stored value is still the raw comma-joined key list the sync layer
-/// consumes ([Appdata._disableSync] / syncdata.json); this just maps those
-/// opaque keys onto a labeled, checkable category so users don't have to know
-/// (or read the source for) internal field names.
-class _SkipSyncCategory {
-  const _SkipSyncCategory(this.label, this.description, this.keys);
-
-  /// Translation key for the category name.
-  final String label;
-
-  /// Translation key for the one-line explanation.
-  final String description;
-
-  /// The setting keys this category toggles together.
-  final List<String> keys;
-}
-
-/// The categories offered in the skip-sync picker. Only settings that actually
-/// sync belong here — device-local ones (proxy, app lock, webdav creds, ...)
-/// are already force-excluded in [Appdata._disableSync] and would be redundant.
-const _skipSyncCategories = <_SkipSyncCategory>[
-  _SkipSyncCategory(
-    "Appearance",
-    "Theme color, light/dark mode, comic tile layout",
-    ["color", "theme_mode", "comicDisplayMode", "comicTileScale"],
-  ),
-  _SkipSyncCategory(
-    "Reading Options",
-    "Reader mode, page-turn, image enhance and other reading options",
-    [
-      "readerMode",
-      "enableContinuousChapterReading",
-      "readerScreenPicNumberForLandscape",
-      "readerScreenPicNumberForPortrait",
-      "enableTapToTurnPages",
-      "reverseTapToTurnPages",
-      "enableCustomTapZones",
-      "tapZoneTop",
-      "tapZoneBottom",
-      "tapZoneLeft",
-      "tapZoneRight",
-      "enablePageAnimation",
-      "autoPageTurningInterval",
-      "enableLongPressToZoom",
-      "longPressZoomPosition",
-      "enableTurnPageByVolumeKey",
-      "enableClockAndBatteryInfoInReader",
-      "showPageNumberInReader",
-      "showSingleImageOnFirstPage",
-      "enableDoubleTapToZoom",
-      "reverseChapterOrder",
-      "chapterOrderOverrides",
-      "showSystemStatusBar",
-      "readerScrollSpeed",
-      "readerCenterPageOnTurn",
-      "readerPageSpacing",
-      "comicListDisplayMode",
-      "galleryFillScreen",
-      "readerBackgroundColor",
-      "readerNightModeFollowSystem",
-      "readerNightModeColor",
-      "readerNightModeIntensity",
-      "enableReaderImageEnhance",
-      "readerImageEnhanceStrength",
-      "readerImageEnhanceClarity",
-      "readerImageEnhanceContrast",
-      "readerImageEnhanceVibrance",
-      "limitImageWidth",
-      "preloadImageCount",
-      "showChapterComments",
-      "commentsFontSize",
-      "showChapterCommentsAtEnd",
-    ],
-  ),
-  _SkipSyncCategory(
-    "Explore",
-    "Explore pages, categories, search options and content filters",
-    [
-      "explore_pages",
-      "categories",
-      "searchSources",
-      "defaultSearchTarget",
-      "autoAddLanguageFilter",
-      "blockedWords",
-      "blockedCommentWords",
-      "showFavoriteStatusOnTile",
-      "showHistoryStatusOnTile",
-      "showReadLaterStatusOnTile",
-      "showCollectionStatusOnTile",
-      "showPageCountOnTile",
-    ],
-  ),
-  _SkipSyncCategory(
-    "Favorites",
-    "Favorite folders, sort order and quick-favorite options",
-    [
-      "favorites",
-      "newFavoriteAddTo",
-      "moveFavoriteAfterRead",
-      "quickFavorite",
-      "quickCollectImage",
-      "autoFavoriteCover",
-      "onClickFavorite",
-      "localFavoritesFirst",
-      "autoCloseFavoritePanel",
-    ],
-  ),
-  _SkipSyncCategory(
-    "Comic Source list",
-    "The subscribed comic source list",
-    ["comicSourceLibraries", "comicSourceListUrl"],
-  ),
-];
-
 class _WebdavSetting extends StatefulWidget {
   const _WebdavSetting();
 
@@ -612,105 +496,6 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     // though the mode/retention/proxy selectors now live in _WebdavSyncOptions.
     syncMode = DataSync().syncMode;
     syncLocalComicImages = appdata.settings['syncLocalComicImages'] ?? false;
-  }
-
-  /// True when every key of [category] is currently in the skip list.
-  bool _isCategorySkipped(_SkipSyncCategory category) {
-    final current = appdata.splitField(disableSync).toSet();
-    return category.keys.every(current.contains);
-  }
-
-  int _skipSyncSelectedCount() {
-    return _skipSyncCategories.where(_isCategorySkipped).length;
-  }
-
-  String _skipSyncSummary() {
-    final selected =
-        _skipSyncCategories.where(_isCategorySkipped).map((c) => c.label.tl);
-    if (selected.isEmpty) {
-      return "None".tl;
-    }
-    return selected.join("、");
-  }
-
-  /// Rebuilds [disableSync] from the checked categories plus any preserved
-  /// unknown keys, then persists it. Called on every checkbox toggle so the
-  /// choice survives even without tapping Save (parity with the mode/proxy
-  /// selectors which also persist immediately).
-  void _setCategorySkipped(_SkipSyncCategory category, bool skip) {
-    final current = appdata.splitField(disableSync).toSet();
-    if (skip) {
-      current.addAll(category.keys);
-    } else {
-      current.removeAll(category.keys);
-    }
-    setState(() {
-      disableSync = current.join(", ");
-      appdata.settings['disableSyncFields'] = disableSync;
-      appdata.saveData();
-    });
-  }
-
-  void _editSkipSyncFields() {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return ContentDialog(
-              title: "Skip Sync Items".tl,
-              content: SizedBox(
-                // Cap to the viewport so the fixed-width content never
-                // overflows the dialog on narrow phones (ContentDialog wraps
-                // this in an IntrinsicWidth, so a bare 400 could exceed the
-                // available width). A plain min() avoids a LayoutBuilder,
-                // which crashes inside that IntrinsicWidth.
-                width: context.width < 420 ? context.width - 48 : 400,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Chosen categories stay on this device only: they are never uploaded, and won't be overwritten by other devices."
-                          .tl,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: context.colorScheme.outline,
-                      ),
-                    ).paddingHorizontal(8),
-                    const SizedBox(height: 8),
-                    ..._skipSyncCategories.map((category) {
-                      return CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: _isCategorySkipped(category),
-                        title: Text(category.label.tl),
-                        subtitle: Text(
-                          category.description.tl,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onChanged: (v) {
-                          _setCategorySkipped(category, v ?? false);
-                          // Reflect the toggle in this dialog and in the field
-                          // summary behind it.
-                          setDialogState(() {});
-                        },
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              actions: [
-                Button.filled(
-                  onPressed: dialogContext.pop,
-                  child: Text("Done".tl),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   /// Shows the current config as a PIN-encrypted QR code for another device to
@@ -950,30 +735,6 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               onChanged: (value) => pass = value,
             ),
             const SizedBox(height: 12),
-            InkWell(
-              onTap: _editSkipSyncFields,
-              borderRadius: BorderRadius.circular(4),
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: "Skip Sync Items (Optional)".tl,
-                  helperText:
-                      "Keep chosen categories device-specific; they won't sync."
-                          .tl,
-                  helperMaxLines: 2,
-                  border: const OutlineInputBorder(),
-                  suffixIcon: const Icon(Icons.chevron_right),
-                ),
-                child: Text(
-                  _skipSyncSummary(),
-                  style: TextStyle(
-                    color: _skipSyncSelectedCount() == 0
-                        ? Theme.of(context).hintColor
-                        : null,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -1164,6 +925,20 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
   @override
   void initState() {
     super.initState();
+    _load();
+    // The connection pop-up's QR scan / Save rewrite these under this list.
+    appdata.settings.addListener(_onChanged);
+    DataSync().addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    appdata.settings.removeListener(_onChanged);
+    DataSync().removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _load() {
     // Reads through the legacy-webdavAutoSync migration in DataSync.syncMode.
     syncMode = DataSync().syncMode;
     backupRetention = sanitizedBackupRetention(
@@ -1171,6 +946,26 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
     );
     useProxy = appdata.settings['webdavUseProxy'] != false;
     syncLocalComics = appdata.settings['syncLocalComics'] != false;
+  }
+
+  void _onChanged() {
+    if (mounted) setState(_load);
+  }
+
+  String _skipSyncSummary() {
+    final selection = SyncSkipSelection.parse(
+      appdata.settings['disableSyncFields'] ?? '',
+    );
+    final names = [
+      for (final category in syncSkipCategories)
+        if (selection.isSelected(category))
+          category.label.tl
+        else if (selection.isPartial(category))
+          "@name (partial)".tlParams({"name": category.label.tl}),
+      if (selection.otherFields.isNotEmpty) "Other fields".tl,
+    ];
+    if (names.isEmpty) return "None".tl;
+    return names.join(App.locale.languageCode == 'zh' ? '、' : ', ');
   }
 
   String _syncModeLabel(WebdavSyncMode mode) => switch (mode) {
@@ -1275,6 +1070,17 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
           ),
         ),
         ListTile(
+          title: Text("Skip Sync Items".tl),
+          subtitle: Text(
+            _skipSyncSummary(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.arrow_right),
+          onTap: () => showPopUpWidget(App.rootContext, const _SkipSyncPage()),
+        ),
+        ListTile(
           title: Text("Use Proxy for Sync".tl),
           subtitle: Text(
             "Route WebDAV sync through the app proxy. Turn off if an unstable proxy makes sync fail."
@@ -1284,6 +1090,85 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
           trailing: Switch(value: useProxy, onChanged: onUseProxyChanged),
         ),
       ],
+    );
+  }
+}
+
+/// Picks the setting groups this device keeps out of WebDAV sync. Every toggle
+/// persists at once; the list is device-local, so nothing is uploaded for it.
+class _SkipSyncPage extends StatefulWidget {
+  const _SkipSyncPage();
+
+  @override
+  State<_SkipSyncPage> createState() => _SkipSyncPageState();
+}
+
+class _SkipSyncPageState extends State<_SkipSyncPage> {
+  var selection = SyncSkipSelection.parse(
+    appdata.settings['disableSyncFields'] ?? '',
+  );
+
+  void _update(SyncSkipSelection next) {
+    setState(() => selection = next);
+    appdata.settings['disableSyncFields'] = next.serialize();
+    appdata.saveData(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allSelected = syncSkipCategories.every(selection.isSelected);
+    final otherFields = selection.otherFields;
+    return PopUpWidgetScaffold(
+      title: "Skip Sync Items".tl,
+      tailing: [
+        TextButton(
+          onPressed: () => _update(selection.withAll(!allSelected)),
+          child: Text(allSelected ? "Deselect All".tl : "Select All".tl),
+        ),
+      ],
+      body: ListView(
+        children: [
+          Text(
+            "Checked items stay on this device only: they aren't uploaded, and other devices won't overwrite them. Reading history, favorites and other comic data always sync."
+                .tl,
+            style: TextStyle(fontSize: 13, color: context.colorScheme.outline),
+          ).paddingHorizontal(16).paddingBottom(8),
+          for (final category in syncSkipCategories)
+            CheckboxListTile(
+              controlAffinity: ListTileControlAffinity.leading,
+              tristate: true,
+              value: selection.isSelected(category)
+                  ? true
+                  : selection.isPartial(category)
+                  ? null
+                  : false,
+              title: Text(category.label.tl),
+              subtitle: Text(
+                category.description.tl,
+                style: const TextStyle(fontSize: 12),
+              ),
+              // A partial group completes on tap instead of clearing.
+              onChanged: (_) => _update(
+                selection.withCategory(
+                  category,
+                  !selection.isSelected(category),
+                ),
+              ),
+            ),
+          if (otherFields.isNotEmpty)
+            ListTile(
+              title: Text("Other fields".tl),
+              subtitle: Text(
+                otherFields.join(', '),
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: TextButton(
+                onPressed: () => _update(selection.withoutOtherFields()),
+                child: Text("Clear".tl),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

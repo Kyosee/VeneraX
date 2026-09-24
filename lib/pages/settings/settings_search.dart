@@ -178,6 +178,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     3,
     keywords: ["webdav", "backup", "sync", "cloud"],
   ),
+  _SettingsSearchEntry(
+    "Skip Sync Items",
+    3,
+    keywords: ["webdav", "sync", "skip", "exclude"],
+  ),
   _SettingsSearchEntry("Sync Logs", 3, keywords: ["webdav", "log"]),
   _SettingsSearchEntry(
     "WebDAV Comic Library",

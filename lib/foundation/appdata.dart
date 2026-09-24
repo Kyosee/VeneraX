@@ -10,6 +10,7 @@ import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/init.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/sync_skip.dart';
 
 class Appdata with Init {
   Appdata._create();
@@ -41,6 +42,9 @@ class Appdata with Init {
       var disabledFields = syncDisabledFields(splitField(disableSyncFields));
       for (var field in disabledFields) {
         json4sync["settings"].remove(field);
+      }
+      if (disabledFields.contains(searchHistoryField)) {
+        json4sync.remove('searchHistory');
       }
       var data4sync = jsonEncode(json4sync);
       futures.add(
@@ -169,10 +173,12 @@ class Appdata with Init {
     "imageTranslationLlmConcurrency",
   ];
 
+  /// [customFields] are the user's `disableSyncFields` entries; category
+  /// tokens expand to every key they cover (see [SyncSkipSelection]).
   @visibleForTesting
   static Set<String> syncDisabledFields(Iterable<String> customFields) => {
     ..._disableSync,
-    ...customFields,
+    ...SyncSkipSelection.fromEntries(customFields).skippedFields,
   };
 
   /// Sync data from another device.
@@ -182,17 +188,16 @@ class Appdata with Init {
   /// just-downloaded (and possibly stale) data straight back to the server.
   /// Hence the final [saveData] is called with `sync: false`.
   void syncData(Map<String, dynamic> data) {
+    final disabledFields = syncDisabledFields(
+      splitField(settings["disableSyncFields"] as String),
+    );
     if (data['settings'] is Map) {
       var settings = data['settings'] as Map<String, dynamic>;
-
-      List<String> customDisableSync = splitField(
-        this.settings["disableSyncFields"] as String,
-      );
 
       int localDataVersion = _asVersion(this.settings['dataVersion']);
 
       for (var key in settings.keys) {
-        if (!syncDisabledFields(customDisableSync).contains(key)) {
+        if (!disabledFields.contains(key)) {
           this.settings[key] = settings[key];
         }
       }
@@ -209,7 +214,12 @@ class Appdata with Init {
         incomingDataVersion,
       );
     }
-    searchHistory = List.from(data['searchHistory'] ?? []);
+    // Absent when the sender skips it; like a skipped setting, that must
+    // leave this device's copy alone rather than clear it.
+    if (!disabledFields.contains(searchHistoryField) &&
+        data['searchHistory'] is List) {
+      searchHistory = List.from(data['searchHistory']);
+    }
     var implicitDataChanged = false;
     final syncedImplicitData = data['implicitData'];
     if (syncedImplicitData is Map) {
