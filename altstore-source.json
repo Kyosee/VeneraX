@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.4",
+          "buildVersion": "247",
+          "date": "2026-09-25",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Customize the chapter order of each comic\n- Create a new folder directly from the favorites panel\n- Choose exactly which settings stay on this device in WebDAV sync, now covering all settings including AI translation, network, downloads, home layout and search history\n\n### Changed\n- Easier-to-use collection picker\n- Skip-sync options moved to their own page under WebDAV sync, with Select All\n\n### Fixed\n- Fix language tags disappearing or being hard to see on comic cards\n- Fix saved translations showing on the wrong page in some cases\n- Fix WebDAV upload failing when the local library is in a folder you picked yourself\n- Fix downloads of collection comics failing in some cases\n- Fix some images failing to display without a proper error\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.3...v2.3.4",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.4/VeneraX-ios-2.3.4%2B247.ipa",
+          "size": 35525538,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.3.3",
           "buildVersion": "246",
           "date": "2026-09-19",
@@ -303,11 +312,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.3",
-      "versionDate": "2026-09-19",
-      "versionDescription": "## What's Changed\n\n### Added\n- Editable translation prompt\n- Batch actions for collections\n- Page count display on comic tiles\n- Visual indicator for comics already in a collection\n- Reading orientation toggle in reader\n\n### Changed\n- Moved reader overflow menu to the top bar for better accessibility\n- Folded rare reader actions into a menu to reduce clutter\n- Improved collection browsing experience\n\n### Fixed\n- AVIF images now fall back to WebP when decode fails\n- Type safety guards for episode loading responses\n- Deleted history records no longer reappear after background writes\n- Tag chips in search no longer crash when viewing collections\n- Local comics now correctly resume from last reading position\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.2...v2.3.3",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.3/VeneraX-ios-2.3.3%2B246.ipa",
-      "size": 35492246
+      "version": "2.3.4",
+      "versionDate": "2026-09-25",
+      "versionDescription": "## What's Changed\n\n### Added\n- Customize the chapter order of each comic\n- Create a new folder directly from the favorites panel\n- Choose exactly which settings stay on this device in WebDAV sync, now covering all settings including AI translation, network, downloads, home layout and search history\n\n### Changed\n- Easier-to-use collection picker\n- Skip-sync options moved to their own page under WebDAV sync, with Select All\n\n### Fixed\n- Fix language tags disappearing or being hard to see on comic cards\n- Fix saved translations showing on the wrong page in some cases\n- Fix WebDAV upload failing when the local library is in a folder you picked yourself\n- Fix downloads of collection comics failing in some cases\n- Fix some images failing to display without a proper error\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.3...v2.3.4",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.4/VeneraX-ios-2.3.4%2B247.ipa",
+      "size": 35525538
     }
   ],
   "news": []
