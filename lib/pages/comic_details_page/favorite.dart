@@ -385,7 +385,13 @@ class _NetworkSectionState extends State<_NetworkSection> {
           return ListTile(
             title: Row(
               children: [
-                Text(name),
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 if (isAdded)
                   Container(
@@ -532,7 +538,13 @@ class _LocalSectionState extends State<_LocalSection> {
           return ListTile(
             title: Row(
               children: [
-                Text(folder),
+                Flexible(
+                  child: Text(
+                    folder,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 if (isAdded)
                   Container(
