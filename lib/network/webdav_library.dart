@@ -261,6 +261,34 @@ class WebdavLibraryClient {
     }
   }
 
+  /// Reads each parent once, even for comics with hundreds of chapters.
+  Future<Map<String, DateTime>> chapterModifiedTimes(Iterable<String> ids) async {
+    final paths = {for (final id in ids) id: WebdavLibrary.ensureDir(id)};
+    final parents = paths.values.map((path) {
+      final chapter = path.substring(0, path.length - 1);
+      final end = chapter.lastIndexOf('/');
+      return end <= 0 ? '/' : chapter.substring(0, end + 1);
+    }).toSet();
+    final times = <String, DateTime>{};
+    final client = _newClient();
+    for (final parent in parents) {
+      for (final file in await client.readDir(parent)) {
+        final time = file.mTime;
+        if (file.isDir != true ||
+            time == null ||
+            time.millisecondsSinceEpoch <= 0) {
+          continue;
+        }
+        final path = file.path ?? '$parent${file.name ?? ''}';
+        times[WebdavLibrary.ensureDir(path)] = time;
+      }
+    }
+    return {
+      for (final entry in paths.entries)
+        if (times[entry.value] case final time?) entry.key: time,
+    };
+  }
+
   /// Loads a comic's detail: chapters (subfolders) or a single implicit chapter
   /// (images directly in the folder), plus a cover.
   Future<Res<ComicDetails>> loadComicInfo(String id) async {

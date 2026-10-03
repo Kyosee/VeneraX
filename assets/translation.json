@@ -1,5 +1,10 @@
 {
   "zh_CN": {
+    "Sort chapters, drag them or use the arrows. Changes apply to the current group of this comic only.": "可批量排序、拖动或点击上下箭头，仅调整这部漫画的当前分组。",
+    "Modified time (oldest first)": "修改时间（最早优先）",
+    "Modified time (newest first)": "修改时间（最新优先）",
+    "Chapter modification times are unavailable": "无法获取章节修改时间，顺序未更改",
+    "Failed to load chapter modification times": "章节修改时间读取失败，顺序未更改",
     "Customize chapter order": "自定义章节顺序",
     "Drag chapters or use the arrows to reorder. Changes apply to this comic only.": "拖动章节或点击上下箭头调整顺序，仅对这部漫画生效。",
     "Chapter group": "章节分组",
@@ -1356,6 +1361,11 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Sort chapters, drag them or use the arrows. Changes apply to the current group of this comic only.": "可批次排序、拖曳或點擊上下箭頭，僅調整這部漫畫的目前分組。",
+    "Modified time (oldest first)": "修改時間（最早優先）",
+    "Modified time (newest first)": "修改時間（最新優先）",
+    "Chapter modification times are unavailable": "無法取得章節修改時間，順序未變更",
+    "Failed to load chapter modification times": "章節修改時間讀取失敗，順序未變更",
     "Customize chapter order": "自訂章節順序",
     "Drag chapters or use the arrows to reorder. Changes apply to this comic only.": "拖曳章節或點擊上下箭頭調整順序，僅對這部漫畫生效。",
     "Chapter group": "章節分組",

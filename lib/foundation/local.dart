@@ -108,6 +108,27 @@ class LocalComic with HistoryMixin implements Comic {
       ? directory
       : FilePath.join(LocalManager().path, directory);
 
+  /// Modification times of available chapter directories, keyed by chapter ID.
+  Future<Map<String, DateTime>> chapterModifiedTimes(Iterable<String> ids) async {
+    final times = <String, DateTime>{};
+    for (final id in ids.toSet()) {
+      try {
+        final stat = await Directory(
+          FilePath.join(baseDir, LocalManager.getChapterDirectoryName(id)),
+        ).stat();
+        if (stat.type == FileSystemEntityType.directory &&
+            stat.modified.millisecondsSinceEpoch > 0) {
+          times[id] = stat.modified;
+        }
+      } on FileSystemException {
+        // Missing or inaccessible chapters have no usable timestamp.
+      } on UnimplementedError {
+        // Some Android document providers do not implement directory stat.
+      }
+    }
+    return times;
+  }
+
   LocalComicStatus get status {
     if (LocalManager().isDownloading(id, comicType)) {
       return LocalComicStatus.downloading;
