@@ -493,9 +493,12 @@ class _SliderSetting extends StatefulWidget {
     this.comicId,
     this.comicSource,
     this.useDeviceSettings = false,
+    this.description,
   });
 
   final String title;
+
+  final String? description;
 
   final String settingsIndex;
 
@@ -554,60 +557,70 @@ class _SliderSettingState extends State<_SliderSetting> {
             : value.toStringAsFixed(fractionDigits),
         style: ts.s12,
       ),
-      subtitle: Slider(
-        value: value,
-        onChanged: (value) {
-          if (value.toInt() == value) {
-            setState(() {
-              if (widget.comicId != null) {
-                appdata.settings.setReaderSetting(
-                  widget.comicId!,
-                  widget.comicSource!,
-                  widget.settingsIndex,
-                  value.toInt(),
-                );
-              } else if (widget.useDeviceSettings) {
-                appdata.settings.setDeviceReaderSetting(
-                  widget.settingsIndex,
-                  value.toInt(),
-                );
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.description != null)
+            Text(
+              widget.description!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          Slider(
+            value: value,
+            onChanged: (value) {
+              if (value.toInt() == value) {
+                setState(() {
+                  if (widget.comicId != null) {
+                    appdata.settings.setReaderSetting(
+                      widget.comicId!,
+                      widget.comicSource!,
+                      widget.settingsIndex,
+                      value.toInt(),
+                    );
+                  } else if (widget.useDeviceSettings) {
+                    appdata.settings.setDeviceReaderSetting(
+                      widget.settingsIndex,
+                      value.toInt(),
+                    );
+                  } else {
+                    appdata.settings[widget.settingsIndex] = value.toInt();
+                  }
+                  appdata.saveData();
+                });
               } else {
-                appdata.settings[widget.settingsIndex] = value.toInt();
-              }
-              appdata.saveData();
-            });
-          } else {
-            // Slider emits values with floating-point accumulation error
-            // (e.g. 5.699999999999). Snap to the nearest interval step so the
-            // stored and displayed value stays clean.
-            final steps = ((value - widget.min) / widget.interval).round();
-            value = double.parse(
-              (widget.min + steps * widget.interval).toStringAsFixed(4),
-            );
-            setState(() {
-              if (widget.comicId != null) {
-                appdata.settings.setReaderSetting(
-                  widget.comicId!,
-                  widget.comicSource!,
-                  widget.settingsIndex,
-                  value,
+                // Slider emits values with floating-point accumulation error
+                // (e.g. 5.699999999999). Snap to the nearest interval step so the
+                // stored and displayed value stays clean.
+                final steps = ((value - widget.min) / widget.interval).round();
+                value = double.parse(
+                  (widget.min + steps * widget.interval).toStringAsFixed(4),
                 );
-              } else if (widget.useDeviceSettings) {
-                appdata.settings.setDeviceReaderSetting(
-                  widget.settingsIndex,
-                  value,
-                );
-              } else {
-                appdata.settings[widget.settingsIndex] = value;
+                setState(() {
+                  if (widget.comicId != null) {
+                    appdata.settings.setReaderSetting(
+                      widget.comicId!,
+                      widget.comicSource!,
+                      widget.settingsIndex,
+                      value,
+                    );
+                  } else if (widget.useDeviceSettings) {
+                    appdata.settings.setDeviceReaderSetting(
+                      widget.settingsIndex,
+                      value,
+                    );
+                  } else {
+                    appdata.settings[widget.settingsIndex] = value;
+                  }
+                  appdata.saveData();
+                });
               }
-              appdata.saveData();
-            });
-          }
-          widget.onChanged?.call();
-        },
-        divisions: ((widget.max - widget.min) / widget.interval).toInt(),
-        min: widget.min,
-        max: widget.max,
+              widget.onChanged?.call();
+            },
+            divisions: ((widget.max - widget.min) / widget.interval).toInt(),
+            min: widget.min,
+            max: widget.max,
+          ),
+        ],
       ),
     );
   }

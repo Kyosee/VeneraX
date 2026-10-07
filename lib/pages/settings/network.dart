@@ -24,6 +24,9 @@ class _NetworkSettingsState extends State<NetworkSettings> {
         ).toSliver(),
         _SliderSetting(
           title: "Download Threads".tl,
+          description:
+              'Images downloaded at once within each comic. Reduce this if the source limits requests.'
+                  .tl,
           settingsIndex: 'downloadThreads',
           interval: 1,
           min: 1,
@@ -31,6 +34,9 @@ class _NetworkSettingsState extends State<NetworkSettings> {
         ).toSliver(),
         _SliderSetting(
           title: "Parallel Downloads".tl,
+          description:
+              'Comics downloaded at the same time. Combined with Download Threads, this controls the total number of image requests.'
+                  .tl,
           settingsIndex: 'maxParallelDownloads',
           interval: 1,
           min: 1,

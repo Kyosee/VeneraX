@@ -1278,6 +1278,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
       actions: [
         Button.text(
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.help_outline,
@@ -1295,7 +1296,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
               title: "Import Comics".tl,
             );
           },
-        ).fixWidth(90).paddingRight(8),
+        ).paddingRight(8),
         Button.filled(
           isLoading: loading,
           onPressed: selectAndImport,

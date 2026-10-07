@@ -1,5 +1,13 @@
 {
   "zh_CN": {
+    "Images downloaded at once within each comic. Reduce this if the source limits requests.": "每部漫画同时下载的图片数。若漫画源限制请求频率，请适当调低。",
+    "Comics downloaded at the same time. Combined with Download Threads, this controls the total number of image requests.": "同时下载的漫画部数。它与下载线程数共同决定图片请求总量。",
+    "No matching comics": "没有匹配的漫画",
+    "No comics in this category": "此分类暂无漫画",
+    "Your library is empty": "书库还是空的",
+    "Try another search or return to all comics.": "试试其他关键词，或返回全部漫画。",
+    "Import comics to start reading offline.": "导入漫画，开始离线阅读。",
+    "Show all comics": "查看全部漫画",
     "Search tasks": "搜索任务",
     "Task type": "任务类型",
     "No matching tasks": "没有匹配的任务",
@@ -1411,6 +1419,14 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Images downloaded at once within each comic. Reduce this if the source limits requests.": "每部漫畫同時下載的圖片數。若漫畫來源限制請求頻率，請適度調低。",
+    "Comics downloaded at the same time. Combined with Download Threads, this controls the total number of image requests.": "同時下載的漫畫部數。它與下載執行緒數共同決定圖片請求總量。",
+    "No matching comics": "沒有相符的漫畫",
+    "No comics in this category": "此分類暫無漫畫",
+    "Your library is empty": "書庫還是空的",
+    "Try another search or return to all comics.": "試試其他關鍵字，或返回全部漫畫。",
+    "Import comics to start reading offline.": "匯入漫畫，開始離線閱讀。",
+    "Show all comics": "查看全部漫畫",
     "Search tasks": "搜尋任務",
     "Task type": "任務類型",
     "No matching tasks": "沒有相符的任務",

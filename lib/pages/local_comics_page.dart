@@ -92,15 +92,17 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
-    setState(() {
-      currentTab = switch (_tabController.index) {
+    final nextTab = switch (_tabController.index) {
         1 => LocalComicStatus.downloaded,
         2 => LocalComicStatus.downloading,
         3 => LocalComicStatus.notDownloaded,
         _ => null,
       };
+    if (nextTab == currentTab) return;
+    setState(() {
+      currentTab = nextTab;
+      comics = _collectComics();
     });
-    update();
   }
 
   void sort() {
@@ -273,13 +275,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
           MenuEntry(
             icon: Icons.file_download_outlined,
             text: "Import".tl,
-            onClick: () {
-              showDialog(
-                barrierDismissible: false,
-                context: context,
-                builder: (context) => const ImportComicsWidget(),
-              );
-            },
+            onClick: _openImport,
           ),
           MenuEntry(
             icon: Icons.file_upload_outlined,
@@ -366,7 +362,10 @@ class _LocalComicsPageState extends State<LocalComicsPage>
                 ),
               ),
             ),
-          SliverGridComics(
+          if (comics.isEmpty)
+            _emptyLibrary()
+          else
+            SliverGridComics(
             comics: comics,
             enableHero: false,
             selections: selectedItems,
@@ -442,6 +441,77 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       child: body,
     );
   }
+
+  Widget _emptyLibrary() {
+    final searching = keyword.trim().isNotEmpty;
+    final filtered = searching || currentTab != null;
+    return SliverFillRemaining(
+      hasScrollBody: false,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                searching
+                    ? Icons.search_off_rounded
+                    : Icons.library_books_outlined,
+                size: 52,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                (searching
+                        ? 'No matching comics'
+                        : filtered
+                        ? 'No comics in this category'
+                        : 'Your library is empty')
+                    .tl,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                (filtered
+                        ? 'Try another search or return to all comics.'
+                        : 'Import comics to start reading offline.')
+                    .tl,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                icon: Icon(
+                  filtered
+                      ? Icons.filter_alt_off_outlined
+                      : Icons.file_download_outlined,
+                ),
+                label: Text((filtered ? 'Show all comics' : 'Import').tl),
+                onPressed: filtered
+                    ? () {
+                        setState(() {
+                          keyword = '';
+                          searchMode = false;
+                          currentTab = null;
+                          comics = _collectComics();
+                        });
+                        _tabController.index = 0;
+                      }
+                    : _openImport,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openImport() => showDialog(
+    barrierDismissible: false,
+    context: context,
+    builder: (context) => const ImportComicsWidget(),
+  );
 
   void _showNotDownloadedDialog(LocalComic comic) {
     final hasSource = comic.comicType != ComicType.local &&
