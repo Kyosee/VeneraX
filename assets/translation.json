@@ -1,5 +1,15 @@
 {
   "zh_CN": {
+    "Search tasks": "搜索任务",
+    "Task type": "任务类型",
+    "No matching tasks": "没有匹配的任务",
+    "Clear filters": "清除筛选",
+    "@shown of @total tasks": "显示 @shown / @total 个任务",
+    "Try another search or clear the filters.": "试试其他关键词，或清除筛选条件。",
+    "Background activity will appear here.": "下载、翻译、导入和同步等后台任务会显示在这里。",
+    "Waiting for confirmation": "等待确认",
+    "Auto Link Sources": "自动关联来源",
+    "Source Migration": "来源迁移",
     "Custom translation script": "自定义翻译脚本",
     "Add a translation script first": "请先添加翻译脚本",
     "Edit translation script": "编辑翻译脚本",
@@ -1381,6 +1391,16 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Search tasks": "搜尋任務",
+    "Task type": "任務類型",
+    "No matching tasks": "沒有相符的任務",
+    "Clear filters": "清除篩選",
+    "@shown of @total tasks": "顯示 @shown / @total 個任務",
+    "Try another search or clear the filters.": "試試其他關鍵字，或清除篩選條件。",
+    "Background activity will appear here.": "下載、翻譯、匯入和同步等背景任務會顯示在這裡。",
+    "Waiting for confirmation": "等待確認",
+    "Auto Link Sources": "自動關聯來源",
+    "Source Migration": "來源遷移",
     "Custom translation script": "自訂翻譯腳本",
     "Add a translation script first": "請先新增翻譯腳本",
     "Edit translation script": "編輯翻譯腳本",
