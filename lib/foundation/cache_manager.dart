@@ -113,8 +113,9 @@ class CacheManager {
           var dir = segments.elementAtOrNull(segments.length - 2) ?? "*";
           var res = db.select(
             '''
-                SELECT * FROM cache
+                SELECT 1 FROM cache
                 WHERE dir = ? AND name = ?
+                LIMIT 1
               ''',
             [dir, name],
           );
@@ -159,6 +160,9 @@ class CacheManager {
         expires INTEGER NOT NULL,
         type TEXT
       )
+    ''');
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS cache_file_location ON cache (dir, name)
     ''');
     ready = _scanDir(_dbPath, _cachePath)
         .then((value) async {
