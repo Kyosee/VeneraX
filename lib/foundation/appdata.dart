@@ -121,6 +121,7 @@ class Appdata with Init {
     "batteryOptimizationPrompted",
     "customImageProcessing",
     "comicCacheDirectory",
+    "imageTranslationScripts",
     "webdav",
     "disableSyncFields",
     "deviceId",
@@ -456,6 +457,7 @@ class Settings with ChangeNotifier {
     'verboseNetworkLog': false,
     'enableCustomImageProcessing': false,
     'comicCacheDirectory': '',
+    'imageTranslationScripts': <String, dynamic>{},
     'customImageProcessing': defaultCustomImageProcessing,
     'sni': true,
     'autoAddLanguageFilter': 'none', // none, chinese, english, japanese

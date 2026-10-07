@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/public_translator.dart';
+import 'package:venera/foundation/image_translation/script_translator.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/log.dart';
@@ -29,7 +30,9 @@ enum LlmProviderKind {
 
   /// Google Translate's free endpoint. Needs no configuration at all, so its
   /// URL/key/model stay empty.
-  publicFree('public');
+  publicFree('public'),
+
+  customScript('script');
 
   const LlmProviderKind(this.token);
 
@@ -60,6 +63,7 @@ class LlmProvider {
     required this.key,
     required this.model,
     this.kind = LlmProviderKind.openai,
+    this.script = '',
   });
 
   final String id;
@@ -68,8 +72,11 @@ class LlmProvider {
   final String key;
   final String model;
   final LlmProviderKind kind;
+  // Stored separately by LlmProviderStore; never included in synced metadata.
+  final String script;
 
   bool get isPublicFree => kind == LlmProviderKind.publicFree;
+  bool get isCustomScript => kind == LlmProviderKind.customScript;
 
   LlmProvider copyWith({
     String? name,
@@ -77,6 +84,7 @@ class LlmProvider {
     String? key,
     String? model,
     LlmProviderKind? kind,
+    String? script,
   }) {
     return LlmProvider(
       id: id,
@@ -85,6 +93,7 @@ class LlmProvider {
       key: key ?? this.key,
       model: model ?? this.model,
       kind: kind ?? this.kind,
+      script: script ?? this.script,
     );
   }
 
@@ -121,6 +130,8 @@ class LlmProvider {
 abstract class LlmProviderStore {
   static const _listKey = 'imageTranslationProviders';
   static const _activeKey = 'imageTranslationActiveProviderId';
+  // Executable scripts stay on the device, like custom image processing.
+  static const scriptsKey = 'imageTranslationScripts';
 
   static List<LlmProvider> get providers {
     var raw = appdata.settings[_listKey];
@@ -128,7 +139,11 @@ abstract class LlmProviderStore {
     var result = <LlmProvider>[];
     for (var item in raw) {
       var provider = LlmProvider.fromJson(item);
-      if (provider != null) result.add(provider);
+      if (provider != null) {
+        final scripts = appdata.settings[scriptsKey];
+        final script = scripts is Map ? scripts[provider.id] : null;
+        result.add(provider.copyWith(script: script is String ? script : ''));
+      }
     }
     return result;
   }
@@ -150,6 +165,10 @@ abstract class LlmProviderStore {
 
   static void _persist(List<LlmProvider> list) {
     appdata.settings[_listKey] = [for (var p in list) p.toJson()];
+    appdata.settings[scriptsKey] = {
+      for (var p in list)
+        if (p.script.isNotEmpty) p.id: p.script,
+    };
   }
 
   /// Adds [provider] and returns it. Becomes active if none was set.
@@ -335,6 +354,7 @@ abstract class LlmTranslator {
     var active = LlmProviderStore.active;
     if (active == null) return false;
     if (active.isPublicFree) return true;
+    if (active.isCustomScript) return active.script.trim().isNotEmpty;
     return _rawUrl.isNotEmpty && _model.isNotEmpty;
   }
 
@@ -472,9 +492,25 @@ abstract class LlmTranslator {
     List<String> texts,
     String targetLang, {
     Map<String, String> glossary = const {},
+    String sourceLang = 'auto',
   }) async {
     if (texts.isEmpty) {
       return const LlmTranslationResult([], {});
+    }
+    final provider = LlmProviderStore.active;
+    if (provider?.isCustomScript ?? false) {
+      await _gate.acquire(provider!.id, maxWait: _slotWaitBackstop);
+      try {
+        return await ScriptTranslator.translate(
+          provider,
+          texts,
+          sourceLang,
+          targetLang,
+          glossary: glossary,
+        );
+      } finally {
+        _gate.release(provider.id);
+      }
     }
     if (activeIsPublicFree) {
       return _translateBatchPublic(texts, targetLang);

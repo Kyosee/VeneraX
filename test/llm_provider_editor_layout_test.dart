@@ -42,9 +42,44 @@ void main() {
     expect(find.text("LLM API URL".tl), findsNothing);
     expect(find.text("LLM API Key".tl), findsNothing);
 
+    await tester.tap(find.text("Custom translation script".tl).last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text("Edit translation script".tl), findsOneWidget);
+    await tester.tap(find.text("Edit translation script".tl));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text("Test script".tl), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text("AI model".tl).last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text("LLM API URL".tl), findsOneWidget);
+  });
+
+  testWidgets('script editor fits a narrow screen', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: App.rootNavigatorKey,
+        home: const LlmProvidersPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Custom translation script".tl).last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text("Edit translation script".tl));
+    await tester.tap(find.text("Edit translation script".tl));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text("Test script".tl), findsOneWidget);
   });
 }
