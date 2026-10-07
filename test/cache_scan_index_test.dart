@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -7,8 +8,55 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 
+class _PendingCacheFile implements File {
+  _PendingCacheFile(this.onWrite);
+  final void Function() onWrite;
+  @override
+  Future<File> create({bool recursive = false, bool exclusive = false}) async => this;
+  @override
+  Future<File> writeAsBytes(List<int> bytes, {FileMode mode = FileMode.write, bool flush = false}) async {
+    onWrite();
+    return this;
+  }
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('new cache writes wait until startup orphan cleanup completes', () async {
+    final root = Directory.systemTemp.createTempSync('cache-startup-write-');
+    App.dataPath = root.path;
+    App.cachePath = root.path;
+    appdata.settings[CacheManager.directorySetting] = '';
+    CacheManager.instance = null;
+    final release = Completer<void>();
+    final gate = DatabaseGateway.instance.runExclusive(() => release.future);
+    final manager = CacheManager();
+    var writes = 0;
+    var writesDuringScan = -1;
+    try {
+      await IOOverrides.runZoned(() async {
+        final pending = manager.writeCache('new', [1, 2, 3]);
+        await Future<void>(() {});
+        writesDuringScan = writes;
+        release.complete();
+        await pending;
+      }, createFile: (_) => _PendingCacheFile(() => writes++));
+      await manager.ready;
+      expect(writesDuringScan, 0);
+      expect(writes, 1);
+      expect(manager.currentSize, 3);
+    } finally {
+      if (!release.isCompleted) release.complete();
+      await gate;
+      await manager.ready;
+      DatabaseGateway.instance.closeManaged('${root.path}/cache.db');
+      CacheManager.instance = null;
+      root.deleteSync(recursive: true);
+    }
+  });
 
   test('old cache databases gain indexed file lookup without losing cached data', () async {
     final root = Directory.systemTemp.createTempSync('cache-scan-index-');

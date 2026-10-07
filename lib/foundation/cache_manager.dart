@@ -208,6 +208,8 @@ class CacheManager {
     List<int> data, [
     int duration = 7 * 24 * 60 * 60 * 1000,
   ]) async {
+    // Startup cleanup must not classify a partially written file as an orphan.
+    await ready;
     await delete(key);
     this.dir++;
     this.dir %= 100;
