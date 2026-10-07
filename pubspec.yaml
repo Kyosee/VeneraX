@@ -100,6 +100,9 @@ dependencies:
   flutter_onnxruntime: ^1.8.3
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
+  pdfrx_engine: ^0.4.3
+  # Supplies PDFium on all native platforms, including the Apple XCFramework.
+  pdfium_flutter: ^0.2.3
 
 dev_dependencies:
   flutter_test:

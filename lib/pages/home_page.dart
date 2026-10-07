@@ -1198,7 +1198,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
   @override
   Widget build(BuildContext context) {
     String info = [
-      "Select comic files (cbz, zip, 7z, cb7, or .venera_comics).".tl,
+      "Select comic files (cbz, zip, 7z, cb7, pdf, or .venera_comics).".tl,
       "Select a folder; single/multiple will be detected.".tl,
       "Select an EhViewer database and a download folder.".tl,
       "Scan the current local path and restore the local database.".tl,
@@ -1267,6 +1267,11 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
                     ).paddingHorizontal(8),
                   const SizedBox(height: 8),
                   Text(info).paddingHorizontal(24),
+                  if (type == 0)
+                    Text(
+                      'PDF pages are converted to images in the app local path.'
+                          .tl,
+                    ).paddingHorizontal(24),
                 ],
               ),
             ),

@@ -13,6 +13,7 @@ import 'package:venera/utils/translations.dart';
 import 'cbz.dart';
 import 'io.dart';
 import 'local_comic_scanner.dart';
+import 'pdf_import.dart';
 import 'venera_comics.dart';
 
 class ImportComic {
@@ -48,13 +49,14 @@ class ImportComic {
     return registerComics(imported, false);
   }
 
-  /// 导入文件:单选,按扩展名路由到 CBZ 或 venera_comics。
+  /// Selects one file and routes it to the matching comic importer.
   Future<bool> files() async {
     var file = await selectFile(
-      ext: ['cbz', 'zip', '7z', 'cb7', 'venera_comics'],
+      ext: ['cbz', 'zip', '7z', 'cb7', 'pdf', 'venera_comics'],
     );
     if (file == null) return false;
     final ext = file.path.split('.').last.toLowerCase();
+    if (ext == 'pdf') return pdfFile(File(file.path));
     if (ext == 'venera_comics') {
       try {
         await importVeneraComics(File(file.path));
@@ -65,6 +67,39 @@ class ImportComic {
       }
     }
     return cbzFile(File(file.path));
+  }
+
+  Future<bool> pdfFile(File file) async {
+    final controller = showLoadingDialog(
+      App.rootContext,
+      allowCancel: false,
+      barrierDismissible: false,
+      withProgress: true,
+      message: 'Import Comics'.tl,
+    );
+    LocalComic comic;
+    try {
+      comic = await importPdfComic(
+        file,
+        localPath: LocalManager().path,
+        cachePath: App.cachePath,
+        onProgress: controller.setProgress,
+      );
+    } catch (e, s) {
+      Log.error('Import PDF', e.toString(), s);
+      App.rootContext.showMessage(
+        message:
+            (diskFullMessageKey(e) ??
+                    'Unable to import PDF. The file may be damaged or require a password.')
+                .tl,
+      );
+      return false;
+    } finally {
+      controller.close();
+    }
+    return registerComics({
+      selectedFolder: [comic],
+    }, false);
   }
 
   Future<bool> multipleCbz() async {

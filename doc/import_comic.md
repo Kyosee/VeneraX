@@ -61,6 +61,18 @@ Otherwise, the first image will be considered as the cover image.
 
 The name of directory will be used as comic title. And the name of chapter directory will be used as chapter title.
 
+## PDF
+
+Choose **Import Comics > Import files** and select a `.pdf` file. Each PDF is
+imported as one comic, named after the file. Pages keep their original order,
+and the first page is also used as the cover.
+
+Pages are converted to PNG images in the app local path, even when **Copy to app
+local path** is unchecked. The source PDF is unchanged and is no longer needed
+after import. Conversion requires additional storage and may take time for large
+documents. Images are rendered at up to 144 dpi, with the longest edge capped at
+2400 pixels. PDFs that require a password are not supported.
+
 ## Archive
 
 VeneraX supports importing comics from archive files.
