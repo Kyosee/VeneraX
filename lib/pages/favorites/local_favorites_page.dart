@@ -6,6 +6,57 @@ const _localAllFolderLabel = '^_^[%local_all%]^_^';
 /// fetched asynchronously.
 const _asyncDataFetchLimit = 500;
 
+/// Prepares keyword variants once, then matches each word across comic fields.
+List<FavoriteItem> searchLocalFavorites(
+  List<FavoriteItem> comics,
+  String keyword,
+) {
+  if (keyword.trim().isEmpty) return comics;
+  final hasUpper = keyword.contains(RegExp(r'[A-Z]'));
+  final translateTags = App.locale.languageCode != 'en';
+  final terms = keyword
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .map(
+        (word) => {
+          word,
+          if (OpenCC.hasChineseSimplified(word))
+            OpenCC.simplifiedToTraditional(word),
+          if (OpenCC.hasChineseTraditional(word))
+            OpenCC.traditionalToSimplified(word),
+        },
+      )
+      .toList();
+
+  bool matches(Set<String> variants, String text, {bool exact = false}) {
+    final value = hasUpper ? text : text.toLowerCase();
+    return variants.any((word) => exact ? value == word : value.contains(word));
+  }
+
+  return comics
+      .where(
+        (comic) => terms.every((variants) {
+          if (matches(variants, comic.title) ||
+              (comic.subtitle != null && matches(variants, comic.subtitle!))) {
+            return true;
+          }
+          if (comic.tags.any(
+            (tag) =>
+                matches(variants, tag, exact: true) ||
+                (tag.contains(':') &&
+                    matches(variants, tag.split(':')[1], exact: true)) ||
+                (translateTags &&
+                    matches(variants, tag.translateTagsToCN, exact: true)),
+          )) {
+            return true;
+          }
+          return matches(variants, comic.author, exact: true);
+        }),
+      )
+      .toList();
+}
+
 class _LocalFavoritesPage extends StatefulWidget {
   const _LocalFavoritesPage({required this.folder, super.key});
 
@@ -31,7 +82,6 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
   late List<String> added = [];
 
   String keyword = "";
-  bool searchHasUpper = false;
 
   bool searchMode = false;
 
@@ -59,18 +109,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
 
   void updateSearchResult() {
     setState(() {
-      if (keyword.trim().isEmpty) {
-        searchResults = comics;
-      } else {
-        searchResults = [];
-        for (var comic in comics) {
-          if (matchKeyword(keyword, comic) ||
-              matchKeywordT(keyword, comic) ||
-              matchKeywordS(keyword, comic)) {
-            searchResults.add(comic);
-          }
-        }
-      }
+      searchResults = searchLocalFavorites(comics, keyword);
     });
   }
 
@@ -366,66 +405,6 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
       return value.whereType<String>().toSet();
     }
     return {};
-  }
-
-  bool matchKeyword(String keyword, FavoriteItem comic) {
-    var list = keyword.split(" ");
-    for (var k in list) {
-      if (k.isEmpty) continue;
-      if (checkKeyWordMatch(k, comic.title, false)) {
-        continue;
-      } else if (comic.subtitle != null &&
-          checkKeyWordMatch(k, comic.subtitle!, false)) {
-        continue;
-      } else if (comic.tags.any((tag) {
-        if (checkKeyWordMatch(k, tag, true)) {
-          return true;
-        } else if (tag.contains(':') &&
-            checkKeyWordMatch(k, tag.split(':')[1], true)) {
-          return true;
-        } else if (App.locale.languageCode != 'en' &&
-            checkKeyWordMatch(k, tag.translateTagsToCN, true)) {
-          return true;
-        }
-        return false;
-      })) {
-        continue;
-      } else if (checkKeyWordMatch(k, comic.author, true)) {
-        continue;
-      }
-      return false;
-    }
-    return true;
-  }
-
-  bool checkKeyWordMatch(String keyword, String compare, bool needEqual) {
-    String temp = compare;
-    // 没有大写的话, 就转成小写比较, 避免搜索需要注意大小写
-    if (!searchHasUpper) {
-      temp = temp.toLowerCase();
-    }
-    if (needEqual) {
-      return keyword == temp;
-    }
-    return temp.contains(keyword);
-  }
-
-  // Convert keyword to traditional Chinese to match comics
-  bool matchKeywordT(String keyword, FavoriteItem comic) {
-    if (!OpenCC.hasChineseSimplified(keyword)) {
-      return false;
-    }
-    keyword = OpenCC.simplifiedToTraditional(keyword);
-    return matchKeyword(keyword, comic);
-  }
-
-  // Convert keyword to simplified Chinese to match comics
-  bool matchKeywordS(String keyword, FavoriteItem comic) {
-    if (!OpenCC.hasChineseTraditional(keyword)) {
-      return false;
-    }
-    keyword = OpenCC.traditionalToSimplified(keyword);
-    return matchKeyword(keyword, comic);
   }
 
   @override
@@ -918,7 +897,6 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
               height: AppSearchField.toolbarHeight,
               onChanged: (v) {
                 keyword = v;
-                searchHasUpper = keyword.contains(RegExp(r'[A-Z]'));
                 updateSearchResult();
               },
             ).paddingRight(8),
