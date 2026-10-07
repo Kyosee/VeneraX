@@ -17,11 +17,13 @@ library;
 enum GuideAnchor {
   translation('ai-translation'),
   translationSetup('translation-setup'),
+  translationScript('translation-script'),
   translationEnable('translation-enable'),
   translationReading('translation-reading'),
   translationAdjust('translation-adjust'),
   translationPerformance('translation-performance'),
   translationLimits('translation-limits'),
+  cacheDirectory('cache-directory'),
   collections('collections'),
   collectionCreate('collection-create'),
   collectionLayout('collection-layout'),
