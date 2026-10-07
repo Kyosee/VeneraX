@@ -37,7 +37,8 @@ class CachedImageProvider
 
   @override
   Future<Uint8List> load(chunkEvents, checkStop) async {
-    while(loadingCount > _kMaxLoadingCount) {
+    checkStop();
+    while(loadingCount >= _kMaxLoadingCount) {
       await Future.delayed(const Duration(milliseconds: 100));
       checkStop();
     }
@@ -45,7 +46,7 @@ class CachedImageProvider
     try {
       if(url.startsWith("file://")) {
         var file = File(url.substring(7));
-        return file.readAsBytes();
+        return await file.readAsBytes();
       }
       await for (var progress in ImageDownloader.loadThumbnail(url, sourceKey, cid)) {
         checkStop();
@@ -60,6 +61,7 @@ class CachedImageProvider
       throw "Error: Empty response body.";
     }
     catch(e) {
+      checkStop();
       if (fallbackToLocalCover && sourceKey != null && cid != null) {
         final localComic = LocalManager().find(
           cid!,
@@ -74,6 +76,9 @@ class CachedImageProvider
             }
           }
         }
+      }
+      if (url.startsWith('file://') && e is FileSystemException) {
+        throw ImageLoadingPermanentException(e.toString());
       }
       rethrow;
     }
