@@ -168,6 +168,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Storage Path for local comics", 3, keywords: ["path"]),
   _SettingsSearchEntry("Set New Storage Path", 3, keywords: ["path"]),
   _SettingsSearchEntry("Cache Size", 3, keywords: ["cache"]),
+  _SettingsSearchEntry("Comic cache directory", 3, keywords: ["cache", "path"]),
   _SettingsSearchEntry("Clear Cache", 3, keywords: ["cache"]),
   _SettingsSearchEntry("Cache Limit", 3, keywords: ["cache"]),
   _SettingsSearchEntry("Auto clean reading history", 3),

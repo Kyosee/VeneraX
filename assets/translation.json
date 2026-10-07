@@ -1,5 +1,10 @@
 {
   "zh_CN": {
+    "Comic cache directory": "漫画缓存目录",
+    "Leave empty to use the default directory": "留空使用默认目录",
+    "Cannot use this cache directory. Check the path, permissions and existing files.": "无法使用此缓存目录，请检查路径、写入权限及已有文件。",
+    "Changes take effect after restarting. Missing folders are created automatically. Old cache stays in its previous directory; clear it before switching if needed. Leave the path empty to restore the default.": "重启后生效，自动创建不存在的文件夹。旧缓存保留在原目录，如需清理请在切换前操作。路径留空可恢复默认目录。",
+    "The custom cache directory is unavailable. Using the default directory for this session.": "自定义缓存目录不可用，本次启动使用默认目录。",
     "Sort chapters, drag them or use the arrows. Changes apply to the current group of this comic only.": "可批量排序、拖动或点击上下箭头，仅调整这部漫画的当前分组。",
     "Modified time (oldest first)": "修改时间（最早优先）",
     "Modified time (newest first)": "修改时间（最新优先）",
@@ -1363,6 +1368,11 @@
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
   },
   "zh_TW": {
+    "Comic cache directory": "漫畫快取目錄",
+    "Leave empty to use the default directory": "留空使用預設目錄",
+    "Cannot use this cache directory. Check the path, permissions and existing files.": "無法使用此快取目錄，請檢查路徑、寫入權限及既有檔案。",
+    "Changes take effect after restarting. Missing folders are created automatically. Old cache stays in its previous directory; clear it before switching if needed. Leave the path empty to restore the default.": "重新啟動後生效，自動建立不存在的資料夾。舊快取保留在原目錄，如需清理請在切換前操作。路徑留空可恢復預設目錄。",
+    "The custom cache directory is unavailable. Using the default directory for this session.": "自訂快取目錄無法使用，本次啟動使用預設目錄。",
     "Sort chapters, drag them or use the arrows. Changes apply to the current group of this comic only.": "可批次排序、拖曳或點擊上下箭頭，僅調整這部漫畫的目前分組。",
     "Modified time (oldest first)": "修改時間（最早優先）",
     "Modified time (newest first)": "修改時間（最新優先）",

@@ -1,18 +1,88 @@
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/utils/io.dart';
 
 import 'app.dart';
 
 class CacheManager {
-  static String get cachePath => '${App.cachePath}/cache';
+  static const directorySetting = 'comicCacheDirectory';
 
-  static String get _dbPath => '${App.dataPath}/cache.db';
+  static String get customDirectory =>
+      (appdata.settings[directorySetting] as String? ?? '').trim();
+
+  static String get configuredPath => customDirectory.isEmpty
+      ? '${App.cachePath}/cache'
+      : p.join(customDirectory, 'venera-cache', 'cache');
+
+  static String get cachePath => instance?._cachePath ?? configuredPath;
+
+  // Keep both paths fixed until restart, including during background writes.
+  final String _cachePath;
+  final String _dbPath;
+
+  static String? startupPathError;
+
+  /// Uses a dedicated child directory; the selected parent is never cleared.
+  static String _prepareDirectory(String path) {
+    if (!p.isAbsolute(path)) {
+      throw const FileSystemException('An absolute directory path is required');
+    }
+    final parent = p.normalize(path);
+    final root = p.join(parent, 'venera-cache');
+    final images = p.join(root, 'cache');
+    for (final dir in [root, images]) {
+      if (FileSystemEntity.typeSync(dir, followLinks: false) ==
+          FileSystemEntityType.link) {
+        throw const FileSystemException('The cache directory cannot be a link');
+      }
+    }
+    // Do not adopt an unrelated, populated folder with the same name.
+    if (Directory(root).existsSync() &&
+        !File(p.join(root, 'cache.db')).existsSync() &&
+        Directory(root).listSync().isNotEmpty) {
+      final entries = Directory(root).listSync();
+      if (entries.length != 1 ||
+          entries.single.path != images ||
+          !Directory(images).existsSync() ||
+          Directory(images).listSync().isNotEmpty) {
+        throw const FileSystemException(
+          'The cache directory is already in use',
+        );
+      }
+    }
+    Directory(images).createSync(recursive: true);
+    final probe = Directory(root).createTempSync('.write-test-');
+    try {
+      File(p.join(probe.path, 'test')).writeAsStringSync('test', flush: true);
+    } finally {
+      probe.deleteSync(recursive: true);
+    }
+    return parent;
+  }
+
+  /// Saves a device-local preference without moving live cache files.
+  static Future<void> setCustomDirectory(String path) async {
+    CacheManager();
+    final value = path.trim().isEmpty ? '' : _prepareDirectory(path.trim());
+    final previous = customDirectory;
+    appdata.settings[directorySetting] = value;
+    try {
+      await appdata.saveData(false);
+    } catch (_) {
+      appdata.settings[directorySetting] = previous;
+      rethrow;
+    }
+  }
 
   static CacheManager? instance;
 
   late Database _db;
+
+  late final Future<void> ready;
 
   int? _currentSize;
 
@@ -33,7 +103,9 @@ class CacheManager {
     var res = await DatabaseGateway.instance.isolateOp(dbPath, (db) async {
       int totalSize = 0;
       List<String> unmanagedFiles = [];
-      await for (var file in Directory(dir).list(recursive: true)) {
+      await for (var file in Directory(
+        dir,
+      ).list(recursive: true, followLinks: false)) {
         if (file is File) {
           var size = await file.length();
           var segments = file.uri.pathSegments;
@@ -76,8 +148,8 @@ class CacheManager {
     return res['totalSize'] as int;
   }
 
-  CacheManager._create() {
-    Directory(cachePath).createSync(recursive: true);
+  CacheManager._create(this._cachePath, this._dbPath) {
+    Directory(_cachePath).createSync(recursive: true);
     _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute('''
       CREATE TABLE IF NOT EXISTS cache (
@@ -88,14 +160,38 @@ class CacheManager {
         type TEXT
       )
     ''');
-    _scanDir(_dbPath, cachePath).then((value) {
-      _currentSize = value;
-      checkCache();
-    });
+    ready = _scanDir(_dbPath, _cachePath)
+        .then((value) async {
+          _currentSize = value;
+          await checkCache();
+        })
+        .catchError((Object error, StackTrace stack) {
+          Log.error('Cache', 'Failed to scan cache: $error', stack);
+        });
   }
 
   /// Get the singleton instance of CacheManager.
-  factory CacheManager() => instance ??= CacheManager._create();
+  factory CacheManager() {
+    if (instance != null) return instance!;
+    startupPathError = null;
+    if (customDirectory.isNotEmpty) {
+      try {
+        final parent = _prepareDirectory(customDirectory);
+        final root = p.join(parent, 'venera-cache');
+        return instance = CacheManager._create(
+          p.join(root, 'cache'),
+          p.join(root, 'cache.db'),
+        );
+      } catch (e) {
+        startupPathError = e.toString();
+        Log.error('Cache', 'Custom cache directory unavailable: $e');
+      }
+    }
+    return instance = CacheManager._create(
+      '${App.cachePath}/cache',
+      '${App.dataPath}/cache.db',
+    );
+  }
 
   /// set cache size limit in MB
   void setLimitSize(int size) {

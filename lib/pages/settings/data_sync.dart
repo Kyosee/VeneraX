@@ -9,6 +9,25 @@ class DataSyncSettings extends StatefulWidget {
 }
 
 class _DataSyncSettingsState extends State<DataSyncSettings> {
+  Future<void> _editCacheDirectory() async {
+    await showInputDialog(
+      context: context,
+      title: "Comic cache directory".tl,
+      initialValue: CacheManager.customDirectory,
+      hintText: "Leave empty to use the default directory".tl,
+      onConfirm: (value) async {
+        try {
+          await CacheManager.setCustomDirectory(value);
+          if (mounted) setState(() {});
+          return null;
+        } catch (_) {
+          return "Cannot use this cache directory. Check the path, permissions and existing files."
+              .tl;
+        }
+      },
+    );
+  }
+
   String _importTaskMessage(ImportTask task) {
     if (task.phase == ImportPhase.extracting) {
       if (task.extractedBytes <= 0) return "Extracting".tl;
@@ -149,6 +168,31 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
               title: Text("Cache Size".tl),
               subtitle: Text(bytesToReadableString(CacheManager().currentSize)),
             ),
+            _CallbackSetting(
+              title: "Comic cache directory".tl,
+              subtitle: CacheManager.configuredPath,
+              actionTitle: "Set".tl,
+              callback: _editCacheDirectory,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                "Changes take effect after restarting. Missing folders are created automatically. Old cache stays in its previous directory; clear it before switching if needed. Leave the path empty to restore the default."
+                    .tl,
+              ),
+            ),
+            if (CacheManager.startupPathError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Text(
+                  "The custom cache directory is unavailable. Using the default directory for this session."
+                      .tl,
+                  style: TextStyle(color: context.colorScheme.error),
+                ),
+              ),
             _CallbackSetting(
               title: "Clear Cache".tl,
               actionTitle: "Clear".tl,

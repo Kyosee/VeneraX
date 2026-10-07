@@ -120,6 +120,7 @@ class Appdata with Init {
     "appLockCredential",
     "batteryOptimizationPrompted",
     "customImageProcessing",
+    "comicCacheDirectory",
     "webdav",
     "disableSyncFields",
     "deviceId",
@@ -454,6 +455,7 @@ class Settings with ChangeNotifier {
     // comic page, a steady battery drain. Failures are logged either way.
     'verboseNetworkLog': false,
     'enableCustomImageProcessing': false,
+    'comicCacheDirectory': '',
     'customImageProcessing': defaultCustomImageProcessing,
     'sni': true,
     'autoAddLanguageFilter': 'none', // none, chinese, english, japanese
