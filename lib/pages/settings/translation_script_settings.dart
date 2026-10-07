@@ -2,7 +2,6 @@ part of 'settings_page.dart';
 
 class _TranslationScriptEditor extends StatefulWidget {
   const _TranslationScriptEditor({required this.provider});
-
   final LlmProvider provider;
 
   @override
@@ -14,6 +13,7 @@ class _TranslationScriptEditorState extends State<_TranslationScriptEditor> {
   late String _script;
   int _revision = 0;
   bool _testing = false;
+  bool _failed = false;
   String? _result;
 
   @override
@@ -24,25 +24,198 @@ class _TranslationScriptEditorState extends State<_TranslationScriptEditor> {
         : widget.provider.script;
   }
 
+  void _reset() {
+    showConfirmDialog(
+      context: context,
+      title: "Restore example".tl,
+      content: "Replace the current script with the example?".tl,
+      onConfirm: () => setState(() {
+        _script = ScriptTranslator.template;
+        _revision++;
+        _result = null;
+      }),
+    );
+  }
+
   Future<void> _test() async {
+    final testedScript = _script;
     setState(() {
       _testing = true;
+      _failed = false;
       _result = null;
     });
     try {
       final result = await ScriptTranslator.translate(
-        widget.provider.copyWith(script: _script),
+        widget.provider.copyWith(script: testedScript),
         ['Hello'],
         'en',
         'zh',
         timeout: const Duration(seconds: 30),
       );
-      if (mounted) setState(() => _result = result.texts.single);
+      if (mounted && _script == testedScript) {
+        setState(() => _result = result.texts.single);
+      }
     } catch (e) {
-      if (mounted) setState(() => _result = e.toString());
+      if (mounted && _script == testedScript) {
+        setState(() {
+          _failed = true;
+          _result = e.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _testing = false);
     }
+  }
+
+  Widget _editor() {
+    final colors = context.colorScheme;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Container(
+            color: colors.surfaceContainerLow,
+            padding: const EdgeInsets.only(left: 16, right: 4),
+            child: Row(
+              children: [
+                Icon(Icons.code_rounded, size: 18, color: colors.primary),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'JavaScript',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  tooltip: "Restore example".tl,
+                  onPressed: _testing ? null : _reset,
+                  icon: const Icon(Icons.restore, size: 20),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: CodeEditor(
+              key: ValueKey(_revision),
+              initialValue: _script,
+              onChanged: (value) => setState(() {
+                _script = value;
+                _result = null;
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _testPanel({required bool compact}) {
+    final colors = context.colorScheme;
+    final stateColor = _failed ? colors.error : colors.primary;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.science_outlined, size: 20, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Test run".tl,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (compact)
+                FilledButton.tonal(
+                  onPressed: _testing ? null : _test,
+                  child: Text((_testing ? "Testing" : "Test script").tl),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "English → Chinese · Hello".tl,
+            style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+          ),
+          if (!compact) ...[
+            const SizedBox(height: 8),
+            Text(
+              "Runs the current script with your connection settings. A real API request may use your quota."
+                  .tl,
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _testing ? null : _test,
+              icon: const Icon(Icons.play_arrow_rounded, size: 20),
+              label: Text((_testing ? "Testing" : "Test script").tl),
+            ),
+          ],
+          if (_testing) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+          ],
+          if (_result != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  _failed ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 18,
+                  color: stateColor,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    (_failed ? "Test failed" : "Test passed").tl,
+                    style: TextStyle(
+                      color: stateColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SelectableText(_result!, style: const TextStyle(fontSize: 13)),
+          ] else if (!_testing && !compact) ...[
+            const SizedBox(height: 20),
+            Text(
+              "The translated text or an error will appear here.".tl,
+              style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+            ),
+          ],
+          if (!compact) ...[
+            const Divider(height: 32),
+            Text(
+              "Save the provider afterwards to apply this script.".tl,
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+            TextButton.icon(
+              onPressed: () => GuidePage.open(
+                context,
+                anchor: GuideAnchor.translationScript,
+              ),
+              icon: const Icon(Icons.menu_book_outlined, size: 18),
+              label: Text("Usage guide".tl),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -51,55 +224,91 @@ class _TranslationScriptEditorState extends State<_TranslationScriptEditor> {
       appBar: Appbar(
         title: Text("Custom translation script".tl),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _script),
-            child: Text("Save".tl),
+          IconButton(
+            tooltip: "Usage guide".tl,
+            onPressed: () =>
+                GuidePage.open(context, anchor: GuideAnchor.translationScript),
+            icon: const Icon(Icons.help_outline),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton(
+              onPressed: () => Navigator.pop(context, _script),
+              child: Text("Save".tl),
+            ),
           ),
         ],
       ),
       body: SafeArea(
         top: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                "Define translate(input). Use Network.sendRequest(method, url, headers, body) to call your API. Return {texts: [...]} in input order, with an optional glossary. Test sends Hello from English to Chinese using the current script."
-                    .tl,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            final roomy = constraints.maxHeight >= 440;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                wide ? 24 : 12,
+                8,
+                wide ? 24 : 12,
+                12,
               ),
-            ),
-            Wrap(
-              spacing: 12,
-              children: [
-                TextButton(
-                  onPressed: _testing ? null : _test,
-                  child: Text((_testing ? "Loading" : "Test script").tl),
-                ),
-                TextButton(
-                  onPressed: () => setState(() {
-                    _script = ScriptTranslator.template;
-                    _revision++;
-                  }),
-                  child: Text("Reset".tl),
-                ),
-              ],
-            ),
-            if (_result != null)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 100),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: SelectableText(_result!),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (roomy) ...[
+                    Text(
+                      "Connect your translation service".tl,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "Customize the request and map the response. See the guide for parameters and examples."
+                          .tl,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Expanded(
+                    child: wide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: _editor()),
+                              const SizedBox(width: 16),
+                              SizedBox(
+                                width: 300,
+                                child: SingleChildScrollView(
+                                  child: _testPanel(compact: false),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              Expanded(child: _editor()),
+                              const SizedBox(height: 12),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: (constraints.maxHeight * .32)
+                                      .clamp(60.0, 200.0),
+                                ),
+                                child: SingleChildScrollView(
+                                  child: _testPanel(compact: true),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
-            Expanded(
-              child: CodeEditor(
-                key: ValueKey(_revision),
-                initialValue: _script,
-                onChanged: (value) => _script = value,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

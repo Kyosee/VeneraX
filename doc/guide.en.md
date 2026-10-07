@@ -174,7 +174,7 @@ Two things must stay in the prompt or the feature stops working. First, ask the 
 <!--anchor:cache-directory-->
 ## Comic cache directory
 
-Use this to put images cached during online reading on a drive or directory with more free space. Settings → Data & Sync → Data → "Comic cache directory" → "Change directory": choose a folder or enter an absolute path the app can write to, such as `D:\VeneraCache`. Saving checks the path and write access and automatically creates missing folders. The card shows "Currently in use" separately from the pending "After restart" path. Choose "Use default" to clear the input, then save to restore the default location on the next launch.
+Use this to put images cached during online reading on a drive or directory with more free space. Settings → Data & Sync → Data → "Comic cache directory" → "Set": choose a folder or enter an absolute path the app can write to, such as `D:\VeneraCache`. Saving checks the path and write access and automatically creates missing folders. The setting shows the active path and adds an "After restart" path when a change is pending. Choose "Use default" to clear the input, then save to restore the default location on the next launch.
 
 | Location | Contents |
 | --- | --- |

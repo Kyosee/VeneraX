@@ -46,6 +46,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text("Edit translation script".tl), findsOneWidget);
+    await tester.ensureVisible(find.text("Edit translation script".tl));
     await tester.tap(find.text("Edit translation script".tl));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -53,6 +54,7 @@ void main() {
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text("AI model".tl).last);
     await tester.tap(find.text("AI model".tl).last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

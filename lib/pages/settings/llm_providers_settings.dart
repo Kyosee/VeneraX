@@ -59,7 +59,7 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
   @override
   Widget build(BuildContext context) {
     var providers = LlmProviderStore.providers;
-    var activeId = LlmProviderStore.activeId;
+    var activeId = LlmProviderStore.active?.id ?? '';
     return Scaffold(
       body: SmoothCustomScrollView(
         scrollbarTopPadding: context.padding.top + 56,
@@ -67,6 +67,14 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
           SliverAppbar(
             title: Text("LLM providers".tl),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.help_outline),
+                tooltip: "Usage guide".tl,
+                onPressed: () => GuidePage.open(
+                  context,
+                  anchor: GuideAnchor.translationScript,
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.add),
                 tooltip: "Add provider".tl,
@@ -109,27 +117,45 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
             if (provider.url.isNotEmpty) provider.url,
             if (provider.model.isNotEmpty) provider.model,
           ];
-    return ListTile(
-      leading: RadioGroup<String>(
-        groupValue: activeId,
-        onChanged: (v) {
-          if (v == null) return;
-          LlmProviderStore.setActive(v);
-          _refresh();
-        },
-        child: Radio<String>(value: provider.id),
+    final selected = provider.id == activeId;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      color: selected
+          ? context.colorScheme.primaryContainer.withValues(alpha: .3)
+          : context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected
+              ? context.colorScheme.primary
+              : context.colorScheme.outlineVariant,
+        ),
       ),
-      title: Text(
-        provider.name.isEmpty ? "Unnamed provider".tl : provider.name,
-      ),
-      subtitle: subtitleParts.isEmpty
-          ? Text("Not configured".tl)
-          : Text(subtitleParts.join('\n')),
-      isThreeLine: subtitleParts.length > 1,
-      onTap: () => _editExisting(provider),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        onPressed: () => _deleteProvider(provider),
+      child: ListTile(
+        leading: RadioGroup<String>(
+          groupValue: activeId,
+          onChanged: (v) {
+            if (v == null) return;
+            LlmProviderStore.setActive(v);
+            _refresh();
+          },
+          child: Radio<String>(value: provider.id),
+        ),
+        title: Text(
+          provider.name.isEmpty ? "Unnamed provider".tl : provider.name,
+        ),
+        subtitle: subtitleParts.isEmpty
+            ? Text("Not configured".tl)
+            : Text(subtitleParts.join('\n')),
+        isThreeLine: subtitleParts.length > 1,
+        onTap: () => _editExisting(provider),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: "Delete".tl,
+          onPressed: () => _deleteProvider(provider),
+        ),
       ),
     );
   }
@@ -412,33 +438,92 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
                 )
               else ...[
                 if (_kind == LlmProviderKind.customScript) ...[
-                  Text(
-                    "The script receives texts and languages and returns translations. URL, key and model are optional script parameters. Scripts stay on this device."
-                        .tl,
-                  ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.code),
-                    label: Text("Edit translation script".tl),
-                    onPressed: () async {
-                      final script = await Navigator.of(context).push<String>(
-                        MaterialPageRoute(
-                          builder: (_) => _TranslationScriptEditor(
-                            provider: LlmProvider(
-                              id: widget.existing?.id ?? '',
-                              name: _name.text,
-                              url: _url.text.trim(),
-                              key: _key.text.trim(),
-                              model: _model,
-                              kind: LlmProviderKind.customScript,
-                              script: _script,
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: context.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.code,
+                              size: 20,
+                              color: context.colorScheme.primary,
                             ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                (_script.trim().isEmpty
+                                        ? "Script not added"
+                                        : "Script ready")
+                                    .tl,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "The script receives texts and languages and returns translations. URL, key and model are optional script parameters. Scripts stay on this device."
+                              .tl,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      );
-                      if (script != null && mounted)
-                        setState(() => _script = script);
-                    },
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton.icon(
+                              icon: const Icon(Icons.code),
+                              label: Text("Edit translation script".tl),
+                              onPressed: () async {
+                                final script = await Navigator.of(context)
+                                    .push<String>(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            _TranslationScriptEditor(
+                                              provider: LlmProvider(
+                                                id: widget.existing?.id ?? '',
+                                                name: _name.text,
+                                                url: _url.text.trim(),
+                                                key: _key.text.trim(),
+                                                model: _model,
+                                                kind: LlmProviderKind
+                                                    .customScript,
+                                                script: _script,
+                                              ),
+                                            ),
+                                      ),
+                                    );
+                                if (script != null && mounted) {
+                                  setState(() => _script = script);
+                                }
+                              },
+                            ),
+                            TextButton.icon(
+                              onPressed: () => GuidePage.open(
+                                context,
+                                anchor: GuideAnchor.translationScript,
+                              ),
+                              icon: const Icon(
+                                Icons.menu_book_outlined,
+                                size: 18,
+                              ),
+                              label: Text("Usage guide".tl),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: 16),
                 ],
                 TextField(
                   controller: _url,

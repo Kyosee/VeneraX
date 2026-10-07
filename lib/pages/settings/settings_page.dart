@@ -56,6 +56,7 @@ part 'home_layout.dart';
 part 'local_favorites.dart';
 part 'app.dart';
 part 'data_sync.dart';
+part 'cache_directory_settings.dart';
 part 'about.dart';
 part 'network.dart';
 part 'debug.dart';
