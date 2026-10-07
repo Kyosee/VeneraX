@@ -235,7 +235,9 @@ void main() {
     local.execute('create table "other" (id text, name text, author text, '
         'tags text, cover_path text, time text, has_new_update int);');
     local.execute(
-        'insert into "other" (id, has_new_update) values ("x", 1);');
+      'insert into "other" (id, has_new_update) values (?, ?);',
+      ['x', 1],
+    );
     final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
 
     final imported = _folderDb();
