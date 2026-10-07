@@ -50,4 +50,29 @@ void main() {
     expect(find.text('Theme Color'), findsOneWidget);
     expect(find.text('Language'), findsOneWidget);
   });
+
+  for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
+    testWidgets('custom translation scripts are searchable in $locale', (
+      tester,
+    ) async {
+      appdata.settings['language'] = locale;
+      await tester.binding.setSurfaceSize(const Size(500, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byType(TextField),
+        'Custom translation script'.tl,
+      );
+      await tester.pumpAndSettle();
+
+      final result = find.widgetWithText(ListTile, 'Custom translation script'.tl);
+      expect(result, findsOneWidget);
+      expect(
+        find.descendant(of: result, matching: find.text('Reading settings'.tl)),
+        findsOneWidget,
+      );
+    });
+  }
 }
