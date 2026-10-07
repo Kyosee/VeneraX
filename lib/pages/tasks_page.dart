@@ -2085,7 +2085,6 @@ getTaskTitle(taskType, {}),
   }
 }
 
-/// Rotating icon widget with proper animation controller
 /// Keeps task actions from squeezing the title on phones and large text.
 class _TaskExpansionTile extends StatelessWidget {
   const _TaskExpansionTile({
@@ -2109,6 +2108,7 @@ class _TaskExpansionTile extends StatelessWidget {
     builder: (context, constraints) {
       final stackedActions = constraints.maxWidth < 520 ||
           MediaQuery.textScalerOf(context).scale(14) > 20;
+      final actions = trailing;
       return ExpansionTile(
         initiallyExpanded: initiallyExpanded,
         leading: leading,
@@ -2119,7 +2119,12 @@ class _TaskExpansionTile extends StatelessWidget {
                 children: [
                   subtitle,
                   const SizedBox(height: 8),
-                  Align(alignment: Alignment.centerRight, child: trailing),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: actions is Row
+                        ? Wrap(alignment: WrapAlignment.end, children: actions.children)
+                        : actions,
+                  ),
                 ],
               )
             : subtitle,
@@ -2130,6 +2135,7 @@ class _TaskExpansionTile extends StatelessWidget {
   );
 }
 
+/// Rotating icon widget with proper animation controller.
 class _RotatingIcon extends StatefulWidget {
   final IconData icon;
   const _RotatingIcon({required this.icon});

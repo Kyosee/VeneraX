@@ -7,6 +7,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/import_tasks.dart';
+import 'package:venera/foundation/source_migration_tasks.dart';
 import 'package:venera/pages/tasks_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -26,6 +27,8 @@ void main() {
     ExportTaskManager.instance.historyTasks.clear();
     FollowUpdateTaskManager.instance.currentTasks.clear();
     FollowUpdateTaskManager.instance.historyTasks.clear();
+    SourceMigrationTaskManager.instance.currentTasks.clear();
+    SourceMigrationTaskManager.instance.historyTasks.clear();
   });
 
   testWidgets(
@@ -58,6 +61,29 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('long confirmation actions fit narrow screens with large text', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SourceMigrationTaskManager.instance.currentTasks.add(SourceMigrationTask(
+      id: 'waiting', folder: 'Reading', targetSourceKeys: [], targetSourceNames: [],
+      createdAt: DateTime(2026), details: [], migrateHistory: false,
+      replaceFavorite: false, confirmEach: true,
+      status: SourceMigrationTaskStatus.waitingConfirmation,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.5)),
+        child: child!,
+      ),
+      home: const TasksPage(),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm All'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('following a task link keeps its card expanded', (tester) async {
     FollowUpdateTaskManager.instance.currentTasks.add(
