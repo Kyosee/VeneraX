@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.5",
+          "buildVersion": "248",
+          "date": "2026-10-08",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Import PDF files as local comics.\n- Reorder comic chapters in batches.\n- Choose a custom comic cache directory, with a folder picker and an option to restore the default location.\n- Connect translation services through custom scripts, with an example and a test panel.\n- Search tasks and combine task type and status filters.\n- See whether reading settings come from global, device or per-comic preferences, and restore inherited values individually.\n\n### Changed\n- Settings categories now have short descriptions, AI Translation has its own entry, and wide-screen settings open with content already selected.\n- Settings search opens and highlights the relevant option, with an explanation when an option is unavailable in the current mode.\n- Clearer task cards and action buttons, especially on phones and with larger text.\n- Empty libraries, empty categories and searches with no results now provide clearer guidance and actions.\n- Setting sliders preview changes immediately and save on release or when leaving the page, reducing interruptions during adjustment.\n- Smoother startup handling with large caches and more efficient display of long task lists.\n\n### Fixed\n- Fixed missing pages or incomplete endings when exporting large EPUB files.\n- Fixed favorites search missing matches with mixed Simplified and Traditional Chinese or pasted keywords.\n- Fixed long favorite-folder names crowding the favorites panel.\n- Fixed some reading options not following device or per-comic preferences.\n- Fixed lengthy retries for missing local covers and reads continuing after loading was canceled.\n- Fixed startup cleanup potentially removing new cache files while they were being written.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.4...v2.3.5",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.5/VeneraX-ios-2.3.5%2B248.ipa",
+          "size": 38817938,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.3.4",
           "buildVersion": "247",
           "date": "2026-09-25",
@@ -312,11 +321,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.4",
-      "versionDate": "2026-09-25",
-      "versionDescription": "## What's Changed\n\n### Added\n- Customize the chapter order of each comic\n- Create a new folder directly from the favorites panel\n- Choose exactly which settings stay on this device in WebDAV sync, now covering all settings including AI translation, network, downloads, home layout and search history\n\n### Changed\n- Easier-to-use collection picker\n- Skip-sync options moved to their own page under WebDAV sync, with Select All\n\n### Fixed\n- Fix language tags disappearing or being hard to see on comic cards\n- Fix saved translations showing on the wrong page in some cases\n- Fix WebDAV upload failing when the local library is in a folder you picked yourself\n- Fix downloads of collection comics failing in some cases\n- Fix some images failing to display without a proper error\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.3...v2.3.4",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.4/VeneraX-ios-2.3.4%2B247.ipa",
-      "size": 35525538
+      "version": "2.3.5",
+      "versionDate": "2026-10-08",
+      "versionDescription": "## What's Changed\n\n### Added\n- Import PDF files as local comics.\n- Reorder comic chapters in batches.\n- Choose a custom comic cache directory, with a folder picker and an option to restore the default location.\n- Connect translation services through custom scripts, with an example and a test panel.\n- Search tasks and combine task type and status filters.\n- See whether reading settings come from global, device or per-comic preferences, and restore inherited values individually.\n\n### Changed\n- Settings categories now have short descriptions, AI Translation has its own entry, and wide-screen settings open with content already selected.\n- Settings search opens and highlights the relevant option, with an explanation when an option is unavailable in the current mode.\n- Clearer task cards and action buttons, especially on phones and with larger text.\n- Empty libraries, empty categories and searches with no results now provide clearer guidance and actions.\n- Setting sliders preview changes immediately and save on release or when leaving the page, reducing interruptions during adjustment.\n- Smoother startup handling with large caches and more efficient display of long task lists.\n\n### Fixed\n- Fixed missing pages or incomplete endings when exporting large EPUB files.\n- Fixed favorites search missing matches with mixed Simplified and Traditional Chinese or pasted keywords.\n- Fixed long favorite-folder names crowding the favorites panel.\n- Fixed some reading options not following device or per-comic preferences.\n- Fixed lengthy retries for missing local covers and reads continuing after loading was canceled.\n- Fixed startup cleanup potentially removing new cache files while they were being written.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.4...v2.3.5",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.5/VeneraX-ios-2.3.5%2B248.ipa",
+      "size": 38817938
     }
   ],
   "news": []
