@@ -707,7 +707,8 @@ class _HistoryState extends State<_History> {
                   scrollDirection: Axis.horizontal,
                   itemCount: history.length,
                   itemBuilder: (context, index) {
-                    final heroID = history[index].id.hashCode;
+                    final heroID =
+                        'home:history:${history[index].type.value}:${history[index].id}';
                     return SimpleComicTile(
                       comic: history[index],
                       heroID: heroID,
@@ -841,7 +842,8 @@ class _ReadLaterState extends State<_ReadLater> {
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
               itemBuilder: (context, index) {
-                final heroID = items[index].id.hashCode;
+                final heroID =
+                    'home:readLater:${items[index].type.value}:${items[index].id}';
                 return SimpleComicTile(
                   comic: items[index],
                   heroID: heroID,
@@ -1060,7 +1062,8 @@ class _LocalState extends State<_Local> {
                     scrollDirection: Axis.horizontal,
                     itemCount: local.length,
                     itemBuilder: (context, index) {
-                      final heroID = local[index].id.hashCode;
+                      final heroID =
+                          'home:local:${local[index].comicType.value}:${local[index].id}';
                       return SimpleComicTile(
                         comic: local[index],
                         heroID: heroID,
