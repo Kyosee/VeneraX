@@ -63,6 +63,22 @@ class TranslationConfig {
     );
   }
 
+  /// Effective defaults on this device, before any per-comic override.
+  static TranslationConfig get device {
+    String read(String name, String fallback) {
+      final value = appdata.settings.getDeviceReaderSetting(name);
+      return value is String && value.isNotEmpty ? value : fallback;
+    }
+
+    return TranslationConfig(
+      sourceLang: read(sourceKeyName, 'auto'),
+      targetLang: read(targetKeyName, 'zh'),
+      mode: InpaintMode.fromSettings(
+        appdata.settings.getDeviceReaderSetting(inpaintKeyName),
+      ),
+    );
+  }
+
   /// Cache-key prefix for this language pair. Every page key of every comic
   /// translated with these languages starts with it, so changing the pair
   /// naturally addresses a different cache generation instead of serving pages

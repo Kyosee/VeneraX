@@ -58,30 +58,43 @@ class _SwitchSettingState extends State<_SwitchSetting> {
     }
 
     return ListTile(
-      title: Text(widget.title),
+      title: _SettingLabel(
+        title: widget.title,
+        keys: [widget.settingKey],
+        comicId: widget.comicId,
+        sourceKey: widget.comicSource,
+        useDeviceSettings: widget.useDeviceSettings,
+        onReset: () {
+          if (mounted) setState(() {});
+          widget.onChanged?.call();
+        },
+      ),
       subtitle: widget.subtitle == null ? null : Text(widget.subtitle!),
       trailing: Switch(
         value: value,
         onChanged: widget.enabled
             ? (value) {
-          setState(() {
-            if (widget.comicId != null) {
-              appdata.settings.setReaderSetting(
-                widget.comicId!,
-                widget.comicSource!,
-                widget.settingKey,
-                value,
-              );
-            } else if (widget.useDeviceSettings) {
-              appdata.settings.setDeviceReaderSetting(widget.settingKey, value);
-            } else {
-              appdata.settings[widget.settingKey] = value;
-            }
-          });
-          appdata.saveData().then((_) {
-            widget.onChanged?.call();
-          });
-        }
+                setState(() {
+                  if (widget.comicId != null) {
+                    appdata.settings.setReaderSetting(
+                      widget.comicId!,
+                      widget.comicSource!,
+                      widget.settingKey,
+                      value,
+                    );
+                  } else if (widget.useDeviceSettings) {
+                    appdata.settings.setDeviceReaderSetting(
+                      widget.settingKey,
+                      value,
+                    );
+                  } else {
+                    appdata.settings[widget.settingKey] = value;
+                  }
+                });
+                appdata.saveData().then((_) {
+                  widget.onChanged?.call();
+                });
+              }
             : null,
       ),
     );
@@ -137,6 +150,7 @@ class _PageTurnModeSettingState extends State<_PageTurnModeSetting> {
       appdata.settings[key] = value;
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final enabled = _read('enableTapToTurnPages') == true;
@@ -144,8 +158,8 @@ class _PageTurnModeSettingState extends State<_PageTurnModeSetting> {
     final current = !enabled
         ? 'off'
         : reverse
-            ? 'reverse'
-            : 'normal';
+        ? 'reverse'
+        : 'normal';
     final options = {
       'off': "Off".tl,
       'normal': "Tap to turn Pages".tl,
@@ -171,7 +185,18 @@ class _PageTurnModeSettingState extends State<_PageTurnModeSetting> {
     }
 
     return ListTile(
-      title: Text("Page turn mode".tl),
+      title: _SettingLabel(
+        title: "Page turn mode".tl,
+        keys: const ['enableTapToTurnPages', 'reverseTapToTurnPages'],
+        comicId: widget.comicId,
+        sourceKey: widget.comicSource,
+        useDeviceSettings: widget.useDeviceSettings,
+        onReset: () {
+          if (mounted) setState(() {});
+          widget.onChanged?.call('enableTapToTurnPages');
+          widget.onChanged?.call('reverseTapToTurnPages');
+        },
+      ),
       trailing: Select(
         current: options[current],
         values: options.values.toList(),
@@ -295,7 +320,19 @@ class _DoubleLineSelectSettingsState extends State<_DoubleLineSelectSettings> {
     return ListTile(
       title: Row(
         children: [
-          Text(widget.title),
+          Expanded(
+            child: _SettingLabel(
+              title: widget.title,
+              keys: [widget.settingKey],
+              comicId: widget.comicId,
+              sourceKey: widget.comicSource,
+              useDeviceSettings: widget.useDeviceSettings,
+              onReset: () {
+                if (mounted) setState(() {});
+                widget.onChanged?.call();
+              },
+            ),
+          ),
           const SizedBox(width: 4),
           if (widget.help != null)
             Button.icon(
@@ -426,7 +463,19 @@ class _EndSelectorSelectSettingState extends State<_EndSelectorSelectSetting> {
     return ListTile(
       title: Row(
         children: [
-          Text(widget.title),
+          Expanded(
+            child: _SettingLabel(
+              title: widget.title,
+              keys: [widget.settingKey],
+              comicId: widget.comicId,
+              sourceKey: widget.comicSource,
+              useDeviceSettings: widget.useDeviceSettings,
+              onReset: () {
+                if (mounted) setState(() {});
+                widget.onChanged?.call();
+              },
+            ),
+          ),
           const SizedBox(width: 4),
           if (widget.help != null)
             Button.icon(
@@ -521,6 +570,20 @@ class _SliderSetting extends StatefulWidget {
 }
 
 class _SliderSettingState extends State<_SliderSetting> {
+  bool _needsSave = false;
+
+  void _save() {
+    if (!_needsSave) return;
+    _needsSave = false;
+    appdata.saveData();
+  }
+
+  @override
+  void dispose() {
+    _save();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     var raw = widget.comicId != null
@@ -550,7 +613,17 @@ class _SliderSettingState extends State<_SliderSetting> {
         ? 0
         : widget.interval.toString().split('.').last.length;
     return ListTile(
-      title: Text(widget.title, softWrap: true, maxLines: 2),
+      title: _SettingLabel(
+        title: widget.title,
+        keys: [widget.settingsIndex],
+        comicId: widget.comicId,
+        sourceKey: widget.comicSource,
+        useDeviceSettings: widget.useDeviceSettings,
+        onReset: () {
+          if (mounted) setState(() {});
+          widget.onChanged?.call();
+        },
+      ),
       trailing: Text(
         value.toInt() == value
             ? value.toInt().toString()
@@ -568,54 +641,36 @@ class _SliderSettingState extends State<_SliderSetting> {
           Slider(
             value: value,
             onChanged: (value) {
-              if (value.toInt() == value) {
-                setState(() {
-                  if (widget.comicId != null) {
-                    appdata.settings.setReaderSetting(
-                      widget.comicId!,
-                      widget.comicSource!,
-                      widget.settingsIndex,
-                      value.toInt(),
-                    );
-                  } else if (widget.useDeviceSettings) {
-                    appdata.settings.setDeviceReaderSetting(
-                      widget.settingsIndex,
-                      value.toInt(),
-                    );
-                  } else {
-                    appdata.settings[widget.settingsIndex] = value.toInt();
-                  }
-                  appdata.saveData();
-                });
-              } else {
-                // Slider emits values with floating-point accumulation error
-                // (e.g. 5.699999999999). Snap to the nearest interval step so the
-                // stored and displayed value stays clean.
-                final steps = ((value - widget.min) / widget.interval).round();
-                value = double.parse(
-                  (widget.min + steps * widget.interval).toStringAsFixed(4),
-                );
-                setState(() {
-                  if (widget.comicId != null) {
-                    appdata.settings.setReaderSetting(
-                      widget.comicId!,
-                      widget.comicSource!,
-                      widget.settingsIndex,
-                      value,
-                    );
-                  } else if (widget.useDeviceSettings) {
-                    appdata.settings.setDeviceReaderSetting(
-                      widget.settingsIndex,
-                      value,
-                    );
-                  } else {
-                    appdata.settings[widget.settingsIndex] = value;
-                  }
-                  appdata.saveData();
-                });
-              }
+              final steps = ((value - widget.min) / widget.interval).round();
+              final snapped = double.parse(
+                (widget.min + steps * widget.interval)
+                    .clamp(widget.min, widget.max)
+                    .toStringAsFixed(4),
+              );
+              final num stored = snapped == snapped.roundToDouble()
+                  ? snapped.toInt()
+                  : snapped;
+              setState(() {
+                _needsSave = true;
+                if (widget.comicId != null) {
+                  appdata.settings.setReaderSetting(
+                    widget.comicId!,
+                    widget.comicSource!,
+                    widget.settingsIndex,
+                    stored,
+                  );
+                } else if (widget.useDeviceSettings) {
+                  appdata.settings.setDeviceReaderSetting(
+                    widget.settingsIndex,
+                    stored,
+                  );
+                } else {
+                  appdata.settings[widget.settingsIndex] = stored;
+                }
+              });
               widget.onChanged?.call();
             },
+            onChangeEnd: (_) => _save(),
             divisions: ((widget.max - widget.min) / widget.interval).toInt(),
             min: widget.min,
             max: widget.max,
@@ -864,10 +919,7 @@ class _CallbackSetting extends StatelessWidget {
     return ListTile(
       title: Text(title),
       subtitle: subtitle == null ? null : Text(subtitle!),
-      trailing: Button.normal(
-        onPressed: callback,
-        child: Text(actionTitle),
-      ).fixHeight(28),
+      trailing: TextButton(onPressed: callback, child: Text(actionTitle)),
       onTap: callback,
     );
   }
@@ -899,6 +951,10 @@ class _SettingsExpansionTile extends StatelessWidget {
     return ExpansionTile(
       key: expansionKey,
       initiallyExpanded: initiallyExpanded,
+      maintainState: _SettingsJumpScope.targetOf(context) != null,
+      expansionAnimationStyle: _SettingsJumpScope.targetOf(context) != null
+          ? AnimationStyle.noAnimation
+          : null,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       childrenPadding: const EdgeInsets.only(bottom: 8),
       leading: Icon(icon),

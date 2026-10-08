@@ -34,6 +34,79 @@ class _SettingsSearchEntry {
   /// Optional availability guard, mirroring the page's own conditional so a
   /// result never points at a setting the current platform doesn't show.
   final bool Function()? visible;
+
+  String get targetTitle =>
+      title == 'Custom translation script' ? 'LLM providers' : title;
+
+  String? get fallbackTitle => switch (title) {
+    'Night mode color' || 'Night mode intensity' => 'Night mode',
+    'Long press zoom position' => 'Long press to zoom',
+    'Show Comments at Chapter End' => 'Show Chapter Comments',
+    'Sharpen strength' ||
+    'Clarity' ||
+    'Contrast' ||
+    'Color vibrance' => 'Image enhancement',
+    'The number of pic in screen for landscape (Only Gallery Mode)' ||
+    'The number of pic in screen for portrait (Only Gallery Mode)' ||
+    'Show single image on first page' ||
+    'Fill screen' => 'Reading mode',
+    _ => null,
+  };
+
+  String? get section {
+    if (category == 0) {
+      if (title == 'Language' || title == 'Authorization Required') {
+        return 'User';
+      }
+      if (title == 'Minimize to tray') return 'Window';
+      return 'Appearance';
+    }
+    if (category == 1) {
+      if (const [
+        'Page turn mode',
+        'Double tap to zoom',
+        'Long press to zoom',
+        'Long press zoom position',
+        'Turn page by volume keys',
+        'Also collect chapter cover when collecting image',
+        'Quick collect image',
+      ].contains(title)) {
+        return 'Gesture settings';
+      }
+      if (const [
+        'Limit image width',
+        'Custom Image Processing',
+        'Image enhancement',
+        'Sharpen strength',
+        'Clarity',
+        'Contrast',
+        'Color vibrance',
+      ].contains(title)) {
+        return 'Image processing / enhancement';
+      }
+      if (const [
+        'Reading background color',
+        'Night mode',
+        'Follow system dark mode',
+        'Night mode color',
+        'Night mode intensity',
+        'Display time & battery info in reader',
+        'Show system status bar',
+        'Show Page Number',
+        'Show Chapter Comments',
+        'Show Comments at Chapter End',
+      ].contains(title)) {
+        return 'Display settings';
+      }
+    }
+    return null;
+  }
+
+  String get path => [
+    _settingsCategories[category].tl,
+    if (section != null) section!.tl,
+    if (targetTitle != title) targetTitle.tl,
+  ].join(' / ');
 }
 
 /// The full index. Built once; `visible` guards are evaluated lazily at match
@@ -123,24 +196,39 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ["comment"],
   ),
   _SettingsSearchEntry(
-    "AI Translation (experimental)",
-    1,
+    "AI Translation",
+    8,
     keywords: ["LLM", "OCR", "translate"],
   ),
-  _SettingsSearchEntry("LLM providers", 1, keywords: ["API", "model"]),
+  _SettingsSearchEntry("LLM providers", 8, keywords: ["API", "model"]),
+  _SettingsSearchEntry('Source language', 8, keywords: ['language']),
+  _SettingsSearchEntry('Target language', 8, keywords: ['language']),
+  _SettingsSearchEntry('Test translation', 8, keywords: ['API', 'test']),
   _SettingsSearchEntry(
     "Custom translation script",
-    1,
+    8,
     keywords: ["API", "javascript", "translate"],
   ),
   _SettingsSearchEntry(
     "Translation prompt",
-    1,
+    8,
     keywords: ["prompt", "token", "system"],
   ),
-  _SettingsSearchEntry("Performance mode", 1, keywords: ["speed", "mobile"]),
-  _SettingsSearchEntry("Text removal", 1, keywords: ["erase", "inpaint"]),
-  _SettingsSearchEntry("Translation models", 1, keywords: ["OCR", "download"]),
+  _SettingsSearchEntry("Performance mode", 8, keywords: ["speed", "mobile"]),
+  _SettingsSearchEntry("Text removal", 8, keywords: ["erase", "inpaint"]),
+  _SettingsSearchEntry("Translation models", 8, keywords: ["OCR", "download"]),
+  _SettingsSearchEntry(
+    'Pages per pre-translation request',
+    8,
+    keywords: ['batch'],
+  ),
+  _SettingsSearchEntry('OCR parallelism (0 = auto)', 8, keywords: ['speed']),
+  _SettingsSearchEntry('Image download concurrency', 8, keywords: ['download']),
+  _SettingsSearchEntry(
+    'Translation request concurrency',
+    8,
+    keywords: ['API', 'speed'],
+  ),
 
   // --- 0: App / Appearance ---
   _SettingsSearchEntry("Theme Mode", 0, keywords: ["dark", "light"]),
@@ -278,11 +366,11 @@ bool _settingsEntryMatches(_SettingsSearchEntry e, String q) {
 }
 
 /// Builds the search results list shown in place of the category list while a
-/// query is active. [onOpen] receives the tapped entry's category index.
+/// query is active. The selected entry carries its route and focus target.
 Widget _buildSettingsSearchResults(
   BuildContext context,
   String query,
-  void Function(int category) onOpen,
+  void Function(_SettingsSearchEntry entry) onOpen,
 ) {
   final results = _matchSettingsSearch(query);
   if (results.isEmpty) {
@@ -296,10 +384,11 @@ Widget _buildSettingsSearchResults(
     itemBuilder: (context, index) {
       final e = results[index];
       return ListTile(
+        key: ValueKey('settings-result-${e.title}'),
         leading: Icon(_settingsCategoryIcons[e.category]),
         title: Text(e.title.tl),
-        subtitle: Text(_settingsCategories[e.category].tl),
-        onTap: () => onOpen(e.category),
+        subtitle: Text(e.path),
+        onTap: () => onOpen(e),
       );
     },
   );

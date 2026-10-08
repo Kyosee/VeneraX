@@ -415,7 +415,7 @@ class _GalleryModeState extends State<_GalleryMode>
             photoViewControllers[index] ??= PhotoViewController();
 
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
-              final fillScreen = appdata.settings['galleryFillScreen'] == true;
+              final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
               return PhotoViewGalleryPageOptions(
                 filterQuality: FilterQuality.medium,
                 controller: photoViewControllers[index],
@@ -615,7 +615,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void handleDoubleTap(Offset location) {
-    if (appdata.settings['quickCollectImage'] == 'DoubleTap') {
+    if (reader.effectiveSetting('quickCollectImage') == 'DoubleTap') {
       context.readerScaffold.addImageFavorite();
       return;
     }
@@ -626,7 +626,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void handleLongPressDown(Offset location) {
-    if (!appdata.settings['enableLongPressToZoom'] || fingers != 1) {
+    if (!reader.effectiveSetting('enableLongPressToZoom') || fingers != 1) {
       return;
     }
     var photoViewController = photoViewControllers[reader.page];
@@ -634,7 +634,7 @@ class _GalleryModeState extends State<_GalleryMode>
     double target = photoViewController.getInitialScale!.call()! * 1.75;
     var size = reader.size;
     Offset zoomPosition;
-    if (appdata.settings['longPressZoomPosition'] != 'center') {
+    if (reader.effectiveSetting('longPressZoomPosition') != 'center') {
       zoomPosition = Offset(
         size.width / 2 - location.dx,
         size.height / 2 - location.dy,
@@ -648,7 +648,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void handleLongPressUp(Offset location) {
-    if (!appdata.settings['enableLongPressToZoom'] || !isLongPressing) {
+    if (!reader.effectiveSetting('enableLongPressToZoom') || !isLongPressing) {
       return;
     }
     var photoViewController = photoViewControllers[reader.page];
@@ -2317,7 +2317,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void handleDoubleTap(Offset location) {
-    if (appdata.settings['quickCollectImage'] == 'DoubleTap') {
+    if (reader.effectiveSetting('quickCollectImage') == 'DoubleTap') {
       context.readerScaffold.addImageFavorite();
       return;
     }
@@ -2338,13 +2338,13 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void handleLongPressDown(Offset location) {
-    if (!appdata.settings['enableLongPressToZoom'] || delayedIsScrolling) {
+    if (!reader.effectiveSetting('enableLongPressToZoom') || delayedIsScrolling) {
       return;
     }
     double target = photoViewController.getInitialScale!.call()! * 1.75;
     var size = reader.size;
     Offset zoomPosition;
-    if (appdata.settings['longPressZoomPosition'] != 'center') {
+    if (reader.effectiveSetting('longPressZoomPosition') != 'center') {
       zoomPosition = Offset(
         size.width / 2 - location.dx,
         size.height / 2 - location.dy,
@@ -2359,7 +2359,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void handleLongPressUp(Offset location) {
-    if (!appdata.settings['enableLongPressToZoom']) {
+    if (!reader.effectiveSetting('enableLongPressToZoom')) {
       return;
     }
     double target = photoViewController.getInitialScale!.call()!;

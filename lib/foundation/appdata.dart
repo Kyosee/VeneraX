@@ -621,6 +621,15 @@ class Settings with ChangeNotifier {
     notifyListeners();
   }
 
+  bool hasComicReaderSetting(String comicId, String sourceKey, String key) =>
+      isComicSpecificSettingsEnabled(comicId, sourceKey) &&
+      _data['comicSpecificSettings']['$comicId@$sourceKey']?[key] != null;
+
+  void resetComicReaderSetting(String comicId, String sourceKey, String key) {
+    (_data['comicSpecificSettings']['$comicId@$sourceKey'] as Map?)?.remove(key);
+    notifyListeners();
+  }
+
   void setEnabledDeviceSpecificSettings(bool enabled) {
     setDeviceReaderSetting("enabled", enabled);
   }
@@ -656,6 +665,15 @@ class Settings with ChangeNotifier {
       return;
     }
     (_data['deviceSpecificSettings'] as Map).remove(deviceId);
+    notifyListeners();
+  }
+
+  bool hasDeviceReaderSetting(String key) =>
+      isDeviceSpecificSettingsEnabled() &&
+      _data['deviceSpecificSettings'][_data['deviceId']]?[key] != null;
+
+  void resetDeviceReaderSetting(String key) {
+    (_data['deviceSpecificSettings'][_data['deviceId']] as Map?)?.remove(key);
     notifyListeners();
   }
 

@@ -53,7 +53,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     if (!mounted) return;
 
     // 横向阅读的时候, 如果纵向滑就触发收藏, 纵向阅读的时候, 如果横向滑动就触发收藏
-    if (appdata.settings['quickCollectImage'] == 'Swipe') {
+    if (context.reader.effectiveSetting('quickCollectImage') == 'Swipe') {
       if (_imageFavoriteDragListener == null) {
         double crossAxisDistance = 0;
         double mainAxisDistance = 0;
@@ -614,7 +614,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             });
         if (imageFavoritesEp == null) {
           if (page != firstPage &&
-              appdata.settings['autoFavoriteCover'] == true) {
+              context.reader.effectiveSetting('autoFavoriteCover') == true) {
             var copy = imageFavorite.copyWith(
               page: firstPage,
               isAutoFavorite: true,
@@ -1023,41 +1023,42 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         comicId: context.reader.cid,
         comicSource: context.reader.type.sourceKey,
         onChanged: (key) {
-          if (key == "readerMode") {
+          final scopeChanged = key == 'enabled';
+          if (key == "readerMode" || scopeChanged) {
             context.reader.mode = ReaderMode.fromKey(
               appdata.settings.getReaderSetting(
                 context.reader.cid,
                 context.reader.type.sourceKey,
-                key,
+                'readerMode',
               ),
             );
           }
-          if (key == "enableTurnPageByVolumeKey") {
+          if (key == "enableTurnPageByVolumeKey" || scopeChanged) {
             if (appdata.settings.getReaderSetting(
               context.reader.cid,
               context.reader.type.sourceKey,
-              key,
+              'enableTurnPageByVolumeKey',
             )) {
               context.reader.handleVolumeEvent();
             } else {
               context.reader.stopVolumeEvent();
             }
           }
-          if (key == "quickCollectImage") {
+          if (key == "quickCollectImage" || scopeChanged) {
             addDragListener();
           }
-          if (key == "showSystemStatusBar") {
+          if (key == "showSystemStatusBar" || scopeChanged) {
             final showSystemStatusBar =
                 appdata.settings.getReaderSetting(
                   context.reader.cid,
                   context.reader.type.sourceKey,
-                  key,
+                  'showSystemStatusBar',
                 ) ==
                 true;
             applyReaderSystemUiMode(showSystemStatusBar);
           }
           if (key == "showChapterComments" ||
-              key == "showChapterCommentsAtEnd") {
+              key == "showChapterCommentsAtEnd" || scopeChanged) {
             update();
           }
           // Changing this comic's language pair or text-removal mode addresses a
@@ -1067,7 +1068,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           if (key == "imageTranslationSource" ||
               key == "imageTranslationTarget" ||
               key == "imageTranslationInpaintMode" ||
-              key == "enableImageTranslation") {
+              key == "enableImageTranslation" || scopeChanged) {
             PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
           }

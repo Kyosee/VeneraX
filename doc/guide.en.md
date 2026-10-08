@@ -30,7 +30,7 @@ Detection and recognition run on the device; the recognized text is sent to an A
 <!--anchor:translation-setup-->
 ### Setup
 
-1. Settings → Reading → expand "AI Translation (experimental)".
+1. Settings → AI Translation.
 2. "LLM providers" → add one. Pick "Google Translate" to use its free endpoint: no account, no key, nothing to fill in — just save and it works. The trade-off is that each line is translated on its own, so wording and character names may vary between pages, and quality is below an AI model. It is not an official API, so it can be rate-limited or stop working at any time — use an AI model if you need reliability.
 3. For better results pick "AI model": enter the API URL and API key (some local services can leave it blank), then tap "Get models" to choose a model. Any OpenAI-compatible service works. If model fetching fails, enter the model name manually. You can add several providers and switch at any time.
 4. "Test translation" → a returned translation confirms the configuration works.
@@ -50,7 +50,7 @@ With "Source language" set to "Auto detect", the detector plus any one recogniti
 
 Use a script for a translation service whose request format, authentication or response does not match OpenAI, or for your own translation gateway. OpenAI-compatible services can use "AI model" directly and do not need a script. A script replaces only the text translation step; text detection and recognition models are still required.
 
-1. Settings → Reading → "AI Translation (experimental)" → "LLM providers" → add or edit a provider.
+1. Settings → AI Translation → "LLM providers" → add or edit a provider.
 2. Choose "Custom translation script" as the service type. Fill in the API URL, API key and model name as your script requires. These three fields are passed to the script as parameters; unused fields can remain empty.
 3. Open "Edit translation script" and define `translate(input)`. Start with the offline example below if needed, then tap "Test script".
 4. Tap "Save" at the top of the editor, then also "Save" in the provider dialog, and select that provider in the list. Saving the editor or passing a test does not automatically save and activate the provider.
@@ -115,7 +115,7 @@ async function translate({texts, sourceLang, targetLang, glossary, provider}) {
 Translation is enabled per comic, with no global switch, because it spends your own credits. Two entry points:
 
 - Comic detail page → more menu (top right) → "Enable AI translation".
-- Reader → Settings → "Translate pages while reading".
+- Reader → Settings → AI Translation → "Translate pages while reading".
 
 Pages are then translated as they are reached, showing the original until each finishes. To translate in advance, use the "Pre-translate" button on the detail page; work runs in the background and progress appears on the Tasks page.
 

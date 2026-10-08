@@ -90,9 +90,9 @@ abstract final class TranslationPerformanceConfig {
     appdata.saveData();
   }
 
-  static void markCustom() {
+  static void markCustom({bool save = true}) {
     appdata.settings[settingKey] = TranslationPerformancePreset.custom.name;
-    appdata.saveData();
+    if (save) appdata.saveData();
   }
 
   static int _intSetting(String key, int fallback) {

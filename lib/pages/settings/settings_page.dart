@@ -61,6 +61,8 @@ part 'about.dart';
 part 'network.dart';
 part 'debug.dart';
 part 'settings_search.dart';
+part 'settings_scope.dart';
+part 'settings_focus.dart';
 
 /// Settings category display names, indexed by page id. Top-level so the
 /// settings search index ([_settingsSearchIndex]) can map a result back to its
@@ -75,6 +77,7 @@ const _settingsCategories = <String>[
   "Network",
   "Debug",
   "About",
+  "AI Translation",
 ];
 
 const _settingsCategoryIcons = <IconData>[
@@ -86,6 +89,20 @@ const _settingsCategoryIcons = <IconData>[
   Icons.public,
   Icons.bug_report,
   Icons.info,
+  Icons.translate,
+];
+
+const _settingsOrder = [0, 1, 8, 2, 3, 4, 5, 6, 7];
+const _settingsDescriptions = [
+  'Appearance, language, privacy and window behavior',
+  'Page layout, gestures and reading display',
+  'Favorite folders and collection behavior',
+  'Storage, cache, backups and WebDAV',
+  'Comic lists, sources and content filters',
+  'Proxy, DNS and download connections',
+  'Logs and troubleshooting tools',
+  'Version, updates and help',
+  'Translation services, languages, models and performance',
 ];
 
 class SettingsPage extends StatefulWidget {
@@ -99,6 +116,9 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int currentPage = -1;
+  String? _focusTitle;
+  String? _focusFallback;
+  int _destinationVersion = 0;
 
   ColorScheme get colors => Theme.of(context).colorScheme;
 
@@ -116,8 +136,18 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void initState() {
-    currentPage = widget.initialPage;
+    currentPage =
+        widget.initialPage >= 0 &&
+            widget.initialPage < _settingsCategories.length
+        ? widget.initialPage
+        : -1;
     super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (enableTwoViews && currentPage == -1) currentPage = 0;
   }
 
   @override
@@ -192,7 +222,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 const SizedBox(width: 8),
                 Tooltip(
-                  message: "Back",
+                  message: "Back".tl,
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: context.pop,
@@ -211,7 +241,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 : _buildSettingsSearchResults(
                     context,
                     _searchQuery,
-                    _openSettingsCategory,
+                    _openSettingsResult,
                   ),
           ),
         ],
@@ -232,9 +262,33 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _openSettingsCategory(int id) {
     if (enableTwoViews) {
-      setState(() => currentPage = id);
+      setState(() {
+        currentPage = id;
+        _focusTitle = null;
+        _focusFallback = null;
+        _destinationVersion++;
+      });
     } else {
       context.to(() => _SettingsDetailPage(pageIndex: id));
+    }
+  }
+
+  void _openSettingsResult(_SettingsSearchEntry entry) {
+    if (enableTwoViews) {
+      setState(() {
+        currentPage = entry.category;
+        _focusTitle = entry.targetTitle;
+        _focusFallback = entry.fallbackTitle;
+        _destinationVersion++;
+      });
+    } else {
+      context.to(
+        () => _SettingsDetailPage(
+          pageIndex: entry.category,
+          focusTitle: entry.targetTitle,
+          fallbackTitle: entry.fallbackTitle,
+        ),
+      );
     }
   }
 
@@ -246,8 +300,8 @@ class _SettingsPageState extends State<SettingsPage> {
         key: ValueKey(id),
         duration: const Duration(milliseconds: 200),
         width: double.infinity,
-        height: 46,
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+        constraints: const BoxConstraints(minHeight: 68),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? colors.primaryContainer.toOpacity(0.36) : null,
           border: Border(
@@ -262,7 +316,19 @@ class _SettingsPageState extends State<SettingsPage> {
             Icon(_settingsCategoryIcons[id]),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(name, style: ts.s16, overflow: TextOverflow.ellipsis),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: ts.s16),
+                  const SizedBox(height: 3),
+                  Text(
+                    _settingsDescriptions[id].tl,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s12.withColor(colors.onSurfaceVariant),
+                  ),
+                ],
+              ),
             ),
             if (selected) const Icon(Icons.arrow_right),
           ],
@@ -282,9 +348,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemCount: _settingsCategories.length,
-      itemBuilder: (context, index) =>
-          buildItem(_settingsCategories[index].tl, index),
+      itemCount: _settingsOrder.length,
+      itemBuilder: (context, index) => buildItem(
+        _settingsCategories[_settingsOrder[index]].tl,
+        _settingsOrder[index],
+      ),
     );
   }
 
@@ -293,40 +361,46 @@ class _SettingsPageState extends State<SettingsPage> {
       return const SizedBox();
     }
     return Navigator(
+      key: ValueKey('$currentPage:$_destinationVersion'),
       onGenerateRoute: (settings) {
         return PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) {
-            return _buildSettingsContent(currentPage);
+            return _SettingsDetailPage(
+              pageIndex: currentPage,
+              focusTitle: _focusTitle,
+              fallbackTitle: _focusFallback,
+            );
           },
           transitionDuration: Duration.zero,
         );
       },
     );
   }
-
-  Widget _buildSettingsContent(int pageIndex) {
-    return switch (pageIndex) {
-      0 => const AppSettings(),
-      1 => const ReaderSettings(),
-      2 => const LocalFavoritesSettings(),
-      3 => const DataSyncSettings(),
-      4 => const ExploreSettings(),
-      5 => const NetworkSettings(),
-      6 => const DebugPage(),
-      7 => const AboutSettings(),
-      _ => throw UnimplementedError(),
-    };
-  }
 }
 
 class _SettingsDetailPage extends StatelessWidget {
-  const _SettingsDetailPage({required this.pageIndex});
+  const _SettingsDetailPage({
+    required this.pageIndex,
+    this.focusTitle,
+    this.fallbackTitle,
+  });
 
   final int pageIndex;
+  final String? focusTitle;
+  final String? fallbackTitle;
 
   @override
   Widget build(BuildContext context) {
-    return Material(child: _buildPage());
+    final page = _buildPage();
+    return Material(
+      child: focusTitle == null
+          ? page
+          : _SettingsDestination(
+              title: focusTitle!,
+              fallback: fallbackTitle,
+              child: page,
+            ),
+    );
   }
 
   Widget _buildPage() {
@@ -339,6 +413,7 @@ class _SettingsDetailPage extends StatelessWidget {
       5 => const NetworkSettings(),
       6 => const DebugPage(),
       7 => const AboutSettings(),
+      8 => const ReaderSettings(translationOnly: true),
       _ => throw UnimplementedError(),
     };
   }

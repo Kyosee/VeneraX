@@ -12,8 +12,9 @@ void main() {
   });
 
   testWidgets('settings categories follow the requested order', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(500, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
 
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
     await tester.pumpAndSettle();
@@ -21,6 +22,7 @@ void main() {
     const labels = [
       'App',
       'Reading settings',
+      'AI Translation',
       'Local Favorites',
       'Data & Sync',
       'Explore',
@@ -67,10 +69,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final result = find.widgetWithText(ListTile, 'Custom translation script'.tl);
+      final result = find.widgetWithText(
+        ListTile,
+        'Custom translation script'.tl,
+      );
       expect(result, findsOneWidget);
       expect(
-        find.descendant(of: result, matching: find.text('Reading settings'.tl)),
+        find.descendant(
+          of: result,
+          matching: find.text('${'AI Translation'.tl} / ${'LLM providers'.tl}'),
+        ),
         findsOneWidget,
       );
     });
