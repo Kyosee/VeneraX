@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.6",
+          "buildVersion": "249",
+          "date": "2026-10-09",
+          "localizedDescription": "## What's Changed\n\n### Added\n- No new features were added in this release.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed blank covers after opening details and returning when the same comic appears in multiple home sections, such as History, Read Later or Local.\n- Fixed the Tasks page showing an error instead of the empty list after an expanded upload task finishes.\n- Fixed task cards losing or sharing their expanded state after filtering the task list.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.5...v2.3.6",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.6/VeneraX-ios-2.3.6%2B249.ipa",
+          "size": 38818608,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.3.5",
           "buildVersion": "248",
           "date": "2026-10-08",
@@ -321,11 +330,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.5",
-      "versionDate": "2026-10-08",
-      "versionDescription": "## What's Changed\n\n### Added\n- Import PDF files as local comics.\n- Reorder comic chapters in batches.\n- Choose a custom comic cache directory, with a folder picker and an option to restore the default location.\n- Connect translation services through custom scripts, with an example and a test panel.\n- Search tasks and combine task type and status filters.\n- See whether reading settings come from global, device or per-comic preferences, and restore inherited values individually.\n\n### Changed\n- Settings categories now have short descriptions, AI Translation has its own entry, and wide-screen settings open with content already selected.\n- Settings search opens and highlights the relevant option, with an explanation when an option is unavailable in the current mode.\n- Clearer task cards and action buttons, especially on phones and with larger text.\n- Empty libraries, empty categories and searches with no results now provide clearer guidance and actions.\n- Setting sliders preview changes immediately and save on release or when leaving the page, reducing interruptions during adjustment.\n- Smoother startup handling with large caches and more efficient display of long task lists.\n\n### Fixed\n- Fixed missing pages or incomplete endings when exporting large EPUB files.\n- Fixed favorites search missing matches with mixed Simplified and Traditional Chinese or pasted keywords.\n- Fixed long favorite-folder names crowding the favorites panel.\n- Fixed some reading options not following device or per-comic preferences.\n- Fixed lengthy retries for missing local covers and reads continuing after loading was canceled.\n- Fixed startup cleanup potentially removing new cache files while they were being written.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.4...v2.3.5",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.5/VeneraX-ios-2.3.5%2B248.ipa",
-      "size": 38817938
+      "version": "2.3.6",
+      "versionDate": "2026-10-09",
+      "versionDescription": "## What's Changed\n\n### Added\n- No new features were added in this release.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed blank covers after opening details and returning when the same comic appears in multiple home sections, such as History, Read Later or Local.\n- Fixed the Tasks page showing an error instead of the empty list after an expanded upload task finishes.\n- Fixed task cards losing or sharing their expanded state after filtering the task list.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.5...v2.3.6",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.6/VeneraX-ios-2.3.6%2B249.ipa",
+      "size": 38818608
     }
   ],
   "news": []
