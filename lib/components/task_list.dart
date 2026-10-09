@@ -244,7 +244,7 @@ class _TaskListViewState extends State<TaskListView>
                   findChildIndexCallback: (key) =>
                       key is ValueKey<String> ? indexById[key.value] : null,
                   itemBuilder: (context, index) => KeyedSubtree(
-                    key: ValueKey(filtered[index].id),
+                    key: PageStorageKey(filtered[index].id),
                     child: filtered[index].builder(context),
                   ),
                 ),

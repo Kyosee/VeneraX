@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/import_tasks.dart';
@@ -112,4 +113,38 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
+    testWidgets('an expanded upload can finish and open history in $locale', (
+      tester,
+    ) async {
+      appdata.settings['language'] = locale;
+      final manager = DataSyncTaskManager.instance;
+      final task = manager.createTask(DataSyncTaskType.upload);
+      addTearDown(() async {
+        manager.removeTask(task.id);
+        await appdata.saveData(false);
+      });
+      await tester.pumpWidget(const MaterialApp(home: TasksPage()));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byType(ExpansionTile));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Details'.tl), findsOneWidget);
+
+      await tester.runAsync(() async {
+        manager.completeTask(task.id);
+        await appdata.saveData(false);
+      });
+      expect(task.progress, 1.0);
+      expect(task.status, DataSyncTaskStatus.completed);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('No current tasks'.tl), findsOneWidget);
+      expect(find.text("${'Current'.tl} (0)"), findsOneWidget);
+      await tester.tap(find.text("${'History'.tl} (1)"));
+      await tester.pumpAndSettle();
+      expect(find.byType(ExpansionTile), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

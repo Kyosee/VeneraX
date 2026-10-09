@@ -11,6 +11,7 @@ void main() {
   Widget app(List<TaskListEntry> entries) => MaterialApp(
     home: Scaffold(
       body: TaskListView(
+        key: const PageStorageKey('test-tasks'),
         entries: entries,
         emptyText: 'No task history',
         emptyIcon: Icons.history,
@@ -99,6 +100,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('details A'), findsOneWidget);
     expect(find.text('details B'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'missing');
+    await tester.pumpAndSettle();
+    expect(find.text('No matching tasks'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.widgetWithText(TextButton, 'Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('details A'), findsOneWidget);
+    expect(find.text('details B'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
