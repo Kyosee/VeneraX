@@ -2,6 +2,57 @@ part of 'favorites_page.dart';
 
 const _localAllFolderLabel = '^_^[%local_all%]^_^';
 
+/// Sort choice stored in implicit data. Each folder may override the
+/// global value; a folder without an override follows it.
+@visibleForTesting
+abstract final class FavoriteFolderSort {
+  static const globalKey = "local_favorites_sort";
+  static const folderKey = "local_favorites_folder_sort";
+
+  static LocalSortType read(Map<String, dynamic> data, String folder) {
+    var map = data[folderKey];
+    var value = map is Map ? map[folder] : null;
+    return LocalSortType.fromString(value ?? data[globalKey] ?? "default");
+  }
+
+  static void setFolder(
+    Map<String, dynamic> data,
+    String folder,
+    LocalSortType type,
+  ) {
+    _map(data)[folder] = type.value;
+  }
+
+  /// Applies [type] everywhere, dropping every folder override.
+  static void setGlobal(Map<String, dynamic> data, LocalSortType type) {
+    data[globalKey] = type.value;
+    data.remove(folderKey);
+  }
+
+  /// Returns whether [data] changed.
+  static bool rename(Map<String, dynamic> data, String before, String after) {
+    var map = _map(data);
+    if (!map.containsKey(before)) return false;
+    map[after] = map.remove(before);
+    return true;
+  }
+
+  /// Returns whether [data] changed.
+  static bool remove(Map<String, dynamic> data, String folder) {
+    return _map(data).remove(folder) != null;
+  }
+
+  static Map<String, dynamic> _map(Map<String, dynamic> data) {
+    var stored = data[folderKey];
+    if (stored is Map<String, dynamic>) return stored;
+    var map = stored is Map
+        ? Map<String, dynamic>.from(stored)
+        : <String, dynamic>{};
+    data[folderKey] = map;
+    return map;
+  }
+}
+
 /// If the number of comics in a folder exceeds this limit, it will be
 /// fetched asynchronously.
 const _asyncDataFetchLimit = 500;
@@ -312,10 +363,27 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
               ),
             ),
             actions: [
+              TextButton(
+                onPressed: () {
+                  FavoriteFolderSort.setGlobal(
+                    appdata.implicitData,
+                    favSortType,
+                  );
+                  appdata.writeImplicitData();
+                  Navigator.pop(context);
+                  this.setState(() {
+                    updateFilteredComics();
+                  });
+                },
+                child: Text("Apply to All Folders".tl),
+              ),
               FilledButton(
                 onPressed: () {
-                  appdata.implicitData["local_favorites_sort"] =
-                      favSortType.value;
+                  FavoriteFolderSort.setFolder(
+                    appdata.implicitData,
+                    widget.folder,
+                    favSortType,
+                  );
                   appdata.writeImplicitData();
                   Navigator.pop(context);
                   this.setState(() {
@@ -428,9 +496,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
         appdata.implicitData["local_favorites_tag_match_all"] ?? false;
     authorMatchAll =
         appdata.implicitData["local_favorites_author_match_all"] ?? false;
-    favSortType = LocalSortType.fromString(
-      appdata.implicitData["local_favorites_sort"] ?? "default",
-    );
+    favSortType = FavoriteFolderSort.read(appdata.implicitData, widget.folder);
     favPage = context.findAncestorStateOfType<_FavoritesPageState>()!;
     if (!isAllFolder) {
       var (a, b) = LocalFavoritesManager().findLinked(widget.folder);
@@ -654,6 +720,13 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                               widget.folder,
                               value.toString(),
                             );
+                            if (FavoriteFolderSort.rename(
+                              appdata.implicitData,
+                              widget.folder,
+                              value.toString(),
+                            )) {
+                              appdata.writeImplicitData();
+                            }
                             favPage.folderList?.updateFolders();
                             favPage.setFolder(false, value.toString());
                             return null;
@@ -725,6 +798,12 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                           onConfirm: () {
                             favPage.setFolder(false, null);
                             LocalFavoritesManager().deleteFolder(widget.folder);
+                            if (FavoriteFolderSort.remove(
+                              appdata.implicitData,
+                              widget.folder,
+                            )) {
+                              appdata.writeImplicitData();
+                            }
                             favPage.folderList?.updateFolders();
                           },
                         );
