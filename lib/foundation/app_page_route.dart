@@ -17,15 +17,39 @@ const double _kMinFlingVelocity = 1.0;
 /// back closed) must NOT be stolen by the page back gesture, so over a swipe
 /// region the back gesture is only allowed from the screen's left edge. This
 /// lets left-swipe-to-favorite and right-swipe-to-go-back coexist.
+///
+/// [active] is read when the back gesture decides, so a region can claim
+/// horizontal drags only part of the time (e.g. while a reader image is
+/// zoomed and a drag pans it). Null means always active.
 class SwipeRegionMarker extends SingleChildRenderObjectWidget {
-  const SwipeRegionMarker({super.key, required Widget super.child});
+  const SwipeRegionMarker({
+    super.key,
+    this.active,
+    required Widget super.child,
+  });
+
+  final bool Function()? active;
 
   @override
   RenderSwipeRegionMarker createRenderObject(BuildContext context) =>
-      RenderSwipeRegionMarker();
+      RenderSwipeRegionMarker(active: active);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderSwipeRegionMarker renderObject,
+  ) {
+    renderObject.active = active;
+  }
 }
 
-class RenderSwipeRegionMarker extends RenderProxyBox {}
+class RenderSwipeRegionMarker extends RenderProxyBox {
+  RenderSwipeRegionMarker({this.active});
+
+  bool Function()? active;
+
+  bool get isActive => active?.call() ?? true;
+}
 
 class AppPageRoute<T> extends PageRoute<T> with _AppRouteTransitionMixin {
   /// Construct a MaterialPageRoute whose contents are defined by [builder].
@@ -357,9 +381,10 @@ class _IOSBackGestureDetectorState extends State<IOSBackGestureDetector> {
       // from the true left edge over it, instead of stealing the swipe-back-to-
       // close drag and popping the page.
       if (target is RenderSwipeRegionMarker) {
-        return true;
-      }
-      if (target is RenderViewport) {
+        if (target.isActive) {
+          return true;
+        }
+      } else if (target is RenderViewport) {
         if (target.axisDirection == AxisDirection.left ||
             target.axisDirection == AxisDirection.right) {
           return true;
@@ -449,7 +474,6 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
 
   Offset? _startGlobal;
   bool _accepted = false;
-  bool _startedInHorizontal = false;
   bool _startedNearLeftEdge = false;
 
   VelocityTracker? _velocityTracker;
@@ -462,7 +486,6 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
     _startGlobal = event.position;
     _accepted = false;
 
-    _startedInHorizontal = isPointerInHorizontal(event.position);
     _startedNearLeftEdge = event.position.dx <= gestureWidth;
 
     _velocityTracker = VelocityTracker.withKind(event.kind);
@@ -486,10 +509,14 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
 
         final isRight = dx > 0;
         final isHorizontal = dx.abs() > dy * 1.5;
+        // Hit-test now rather than on pointer down: a long-press zoom can turn
+        // the reader into a pan surface while the finger is still resting.
         final bool eligible =
-            _startedNearLeftEdge || (!_startedInHorizontal);
+            isRight &&
+            isHorizontal &&
+            (_startedNearLeftEdge || !isPointerInHorizontal(_startGlobal!));
 
-        if (isRight && isHorizontal && eligible) {
+        if (eligible) {
           _accepted = true;
           resolve(GestureDisposition.accepted);
           onStart(
@@ -541,7 +568,6 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
     stopTrackingPointer(0);
     _accepted = false;
     _startGlobal = null;
-    _startedInHorizontal = false;
     _startedNearLeftEdge = false;
     _velocityTracker = null;
   }

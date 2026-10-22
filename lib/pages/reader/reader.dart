@@ -17,6 +17,7 @@ import 'package:venera/components/custom_slider.dart';
 import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/chapter_duplicates.dart';
@@ -1158,7 +1159,8 @@ abstract interface class _ImageViewController {
 
   /// Whether the current page's image is zoomed in (scale above the fit
   /// scale). While zoomed, a single-finger drag pans the image, so the
-  /// swipe-to-favorite gesture must stand down to avoid false triggers (#143).
+  /// swipe-to-favorite gesture (#143) and the iOS back swipe (#310) must
+  /// stand down to avoid false triggers.
   bool get isImageZoomed;
 
   Future<Uint8List?> getImageByOffset(Offset offset);
