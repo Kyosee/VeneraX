@@ -1084,6 +1084,7 @@ class ComicDescription extends StatelessWidget {
     this.progressText,
     this.pagesText,
     this.showTitle = true,
+    this.showDescription = true,
     this.onTapAuthor,
     this.onTapTag,
     this.enableLongPressCopy = false,
@@ -1102,6 +1103,9 @@ class ComicDescription extends StatelessWidget {
   final String? progressText;
   final String? pagesText;
   final bool showTitle;
+
+  /// Off on the detail page, which renders the full description on its own.
+  final bool showDescription;
   final void Function(String author, String? namespace)? onTapAuthor;
   final void Function(String tag, String namespace)? onTapTag;
 
@@ -1195,7 +1199,7 @@ class ComicDescription extends StatelessWidget {
       if (status != null) _infoRow(context, "Status".tl, status, Colors.purple),
       if (progress != null)
         _infoRow(context, "Progress".tl, progress, Colors.green),
-      if (fallbackDescription != null)
+      if (showDescription && fallbackDescription != null)
         _infoRow(context, "Description".tl, fallbackDescription, Colors.orange),
     ];
 

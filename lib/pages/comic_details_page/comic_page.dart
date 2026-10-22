@@ -986,6 +986,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           progressText: chapterProgress.currentTitle ?? history?.description,
           pagesText: comic.maxPage?.toString(),
           showTitle: false,
+          showDescription: false,
           onTapAuthor: (author, namespace) {
             onTapTag(author, namespace ?? 'author');
           },
