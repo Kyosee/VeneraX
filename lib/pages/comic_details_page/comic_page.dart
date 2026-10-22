@@ -530,9 +530,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       _localComic = localComic;
       isAddToLocalFav = state.isLocalFavorite;
       history = state.history;
-      isDownloaded = true;
       detailsLoadError = null;
       var comicSource = ComicSource.find(widget.sourceKey);
+      // A multi-chapter comic on disk may hold only some chapters; keep the
+      // download entry while a source can still fetch the rest.
+      isDownloaded = localComic.chapters == null || comicSource == null;
       if (comicSource != null && comicSource.loadComicInfo != null) {
         scheduleMicrotask(() => _refreshNetworkDetails(comicSource));
       }
