@@ -6,6 +6,7 @@ This document covers the setup steps and controls for each feature. If a setting
 
 - [AI Translation](#ai-translation)
   - [Setup](#setup)
+  - [Target languages](#target-languages)
   - [Custom translation scripts](#custom-translation-scripts)
   - [Enabling](#enabling)
   - [Controls while reading](#controls-while-reading)
@@ -45,6 +46,22 @@ Detection and recognition run on the device; the recognized text is sent to an A
 
 With "Source language" set to "Auto detect", the detector plus any one recognition model is sufficient; the app determines each comic's language itself.
 
+<!--anchor:translation-target-->
+### Target languages
+
+"Target language" includes Simplified Chinese, Traditional Chinese, English, Japanese, Korean, French, German, Spanish, Russian and Vietnamese. You can add a language that is not listed:
+
+1. Settings → AI Translation → "Custom target languages" → "+" at the top right.
+2. "Language name": the AI model translates into this name. Write it in that language, such as `ไทย` or `Bahasa Indonesia`.
+3. "Language code": sent to Google Translate and translation scripts, such as `th`, `id` or `pt-BR`. Use a code your service supports.
+4. Save, then select it under "Target language".
+
+- Translated pages are stored by language code, so a code cannot be changed after it is added. The name can be changed at any time.
+- Removing a custom language does not delete pages already translated into it; adding the same code again brings them back.
+- Built-in languages cannot be removed or changed. The custom list travels with your backups across devices.
+- This extends target languages only; source languages are still limited to what the recognition models support.
+- Translations are laid out left to right, so right-to-left languages such as Arabic or Hebrew may not display correctly.
+
 <!--anchor:translation-script-->
 ### Custom translation scripts
 
@@ -61,7 +78,7 @@ The function receives an object containing:
 | --- | --- |
 | `texts` | An array of input strings, possibly from one or several pages |
 | `sourceLang` | Source language code, such as `en`, `ja` or `zh`. `auto` means the app has not determined the language yet; your script or service must detect it, or map it to the API's auto-detection parameter |
-| `targetLang` | Target language code, such as `zh`, `zh-TW` or `en`; map language codes as required by your service |
+| `targetLang` | Target language code, such as `zh`, `zh-TW` or `en`, or the code of a custom target language; map language codes as required by your service |
 | `glossary` | This comic's existing glossary as `{source: translation}`. The script must pass it to the service or apply it itself to keep names consistent |
 | `provider` | The provider dialog's `{url, key, model}`, all strings. The app does not append URL paths or add authentication headers for your script |
 
@@ -160,7 +177,7 @@ Most users do not need Advanced settings; changing any performance detail switch
 
 | Placeholder | Replaced with |
 | --- | --- |
-| `$target` | The target language name, e.g. "English" |
+| `$target` | The target language name, e.g. "English"; for a custom target language, the name entered when adding it |
 
 Two things must stay in the prompt or the feature stops working. First, ask the model to output only a JSON object like `{"lines":[{"id":0,"text":"translation"}]}` with each id appearing exactly once — the app uses those ids to put each translation back in its own bubble, and a reply it cannot parse fails the page. Second, if you want names to stay consistent, tell the model to reuse the renderings given in the `glossary` field and to return newly seen proper nouns in a `names` field. Clearing the field and saving restores the built-in prompt. The setting travels with your backups across devices.
 

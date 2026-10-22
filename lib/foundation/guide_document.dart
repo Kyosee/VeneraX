@@ -17,6 +17,7 @@ library;
 enum GuideAnchor {
   translation('ai-translation'),
   translationSetup('translation-setup'),
+  translationTarget('translation-target'),
   translationScript('translation-script'),
   translationEnable('translation-enable'),
   translationReading('translation-reading'),

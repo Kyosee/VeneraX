@@ -7,6 +7,7 @@ import 'package:venera/foundation/image_translation/public_translator.dart';
 import 'package:venera/foundation/image_translation/script_translator.dart';
 import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
+import 'package:venera/foundation/image_translation/translation_targets.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
@@ -465,21 +466,6 @@ abstract class LlmTranslator {
     }
   }
 
-  static String _targetName(String targetLang) {
-    return switch (targetLang) {
-      'zh' => '简体中文',
-      'zh-TW' => '繁体中文（台湾用语习惯）',
-      'en' => 'English',
-      'ja' => '日本語',
-      'ko' => '한국어',
-      'fr' => 'Français',
-      'de' => 'Deutsch',
-      'es' => 'Español',
-      'ru' => 'Русский',
-      _ => targetLang,
-    };
-  }
-
   /// Translates [texts] into [targetLang]. [glossary] carries agreed
   /// translations of names/proper nouns established on earlier pages of the
   /// same comic; it is sent to the model as a must-follow reference so a
@@ -515,7 +501,7 @@ abstract class LlmTranslator {
     if (activeIsPublicFree) {
       return _translateBatchPublic(texts, targetLang);
     }
-    var target = _targetName(targetLang);
+    var target = TranslationTargets.promptName(targetLang);
     var systemPrompt = LlmPromptStore.resolve(target);
     var payload = jsonEncode({
       if (glossary.isNotEmpty) 'glossary': glossary,

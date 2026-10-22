@@ -526,7 +526,9 @@ class Settings with ChangeNotifier {
     // 消耗 token，绝不能一开即对所有漫画全局生效。此键为历史遗留，已不再读取。
     'enableImageTranslation': false,
     'imageTranslationSource': 'auto', // auto, ja, zh, en, ko
-    'imageTranslationTarget': 'zh', // zh, zh-TW, en
+    'imageTranslationTarget': 'zh', // a code from TranslationTargets
+    // User-added target languages, [{code, name}]; synced like providers.
+    'imageTranslationCustomTargets': <dynamic>[],
     'imageTranslationHfEndpoint':
         'https://huggingface.co', // model download endpoint (mirrorable)
     // 用户自己的 OpenAI 兼容端点；App 不预置任何站点或密钥。

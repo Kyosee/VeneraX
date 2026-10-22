@@ -115,6 +115,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "imageTranslationPrompt",
       "imageTranslationSource",
       "imageTranslationTarget",
+      "imageTranslationCustomTargets",
       "imageTranslationInpaintMode",
       "imageTranslationHfEndpoint",
       // Legacy single-provider keys, still read by the provider migration.

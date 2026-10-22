@@ -97,6 +97,19 @@ class _ReaderSettingsState extends State<ReaderSettings> {
 
   String _effectiveTargetLang() => _effectiveTranslationConfig().targetLang;
 
+  /// Built-in targets, then the user's own. A selected code that is no longer
+  /// listed (a removed custom language) stays visible under its raw code
+  /// instead of showing as blank.
+  Map<String, String> _targetLanguageOptions() {
+    var options = {
+      for (var e in TranslationTargets.builtIn.entries) e.key: e.value.label.tl,
+      for (var e in TranslationTargets.custom) e.code: e.name,
+    };
+    var current = _effectiveTargetLang();
+    options.putIfAbsent(current, () => current);
+    return options;
+  }
+
   /// Summary line for the LLM-providers entry: the active provider's name (or
   /// its URL when unnamed), how many others are configured, or "Not configured".
   String _activeProviderSubtitle() {
@@ -154,6 +167,11 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               section(
                 "How to use".tl,
                 "Translation is turned on per comic, not globally, because it uses your API tokens. Open a comic, turn on \"Translate pages while reading\", and pages translate as you read. To translate ahead of time, use Pre-translate from the comic's menu."
+                    .tl,
+              ),
+              section(
+                "Target language".tl,
+                "Language not in the list? Open Custom target languages, tap + and enter a name (what the AI model translates into, e.g. ไทย) and a code (used by Google Translate and scripts, e.g. th). It then appears in Target language. Removing it later keeps the pages already translated."
                     .tl,
               ),
               section(
@@ -1118,17 +1136,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               SelectSetting(
                 title: "Target language".tl,
                 settingKey: "imageTranslationTarget",
-                optionTranslation: {
-                  "zh": "Simplified Chinese".tl,
-                  "zh-TW": "Traditional Chinese".tl,
-                  "en": "English".tl,
-                  "ja": "Japanese".tl,
-                  "ko": "Korean".tl,
-                  "fr": "French".tl,
-                  "de": "German".tl,
-                  "es": "Spanish".tl,
-                  "ru": "Russian".tl,
-                },
+                optionTranslation: _targetLanguageOptions(),
                 onChanged: () {
                   setState(() {});
                   widget.onChanged?.call("imageTranslationTarget");
@@ -1138,6 +1146,19 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     ? widget.comicSource
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              _CallbackSetting(
+                title: "Custom target languages".tl,
+                subtitle: TranslationTargets.custom.isEmpty
+                    ? "Add a language that is not in the list".tl
+                    : "@count added".tlParams({
+                        'count': TranslationTargets.custom.length,
+                      }),
+                actionTitle: "Manage".tl,
+                callback: () async {
+                  await context.to(() => const TranslationTargetsPage());
+                  if (mounted) setState(() {});
+                },
               ),
               SelectSetting(
                 title: "Performance mode".tl,

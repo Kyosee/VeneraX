@@ -11,6 +11,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/script_translator.dart';
+import 'package:venera/foundation/image_translation/translation_targets.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/guide_page.dart';
@@ -257,6 +258,79 @@ void main() {
         tester.widget<GuidePage>(find.byType(GuidePage)).anchor,
         GuideAnchor.translationScript,
       );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final size in [const Size(1280, 820), const Size(360, 760)]) {
+    testWidgets('custom target languages can be added, renamed and removed '
+        'at $size', (tester) async {
+      appdata.settings[TranslationTargets.settingKey] = <dynamic>[];
+      addTearDown(
+        () => appdata.settings[TranslationTargets.settingKey] = <dynamic>[],
+      );
+      Finder field(String label) => find.widgetWithText(TextField, label.tl);
+      List<String> stored() =>
+          TranslationTargets.custom.map((e) => '${e.code}=${e.name}').toList();
+      // Taps that write appdata.json run in real async, as elsewhere here.
+      Future<void> submit(Finder button) async {
+        await tester.runAsync(() async {
+          await tester.tap(button);
+          await appdata.saveData(false);
+        });
+        await tester.pumpAndSettle();
+      }
+
+      // Rejected input only shows a toast; let its timer run out.
+      Future<void> tapRejected(Finder button) async {
+        await tester.tap(button);
+        await tester.pump(const Duration(seconds: 3));
+      }
+
+      await pump(tester, const TranslationTargetsPage(), size);
+      expect(
+        find.text(
+          "No custom languages yet. Tap + to add a language that is not in the list."
+              .tl,
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Add language'.tl));
+      await tester.pumpAndSettle();
+      await tester.enterText(field('Language name'), 'Português');
+      await tester.enterText(field('Language code'), 'pt@br');
+      await tapRejected(find.text('Save'.tl));
+      await tester.enterText(field('Language code'), 'ZH-tw');
+      await tapRejected(find.text('Save'.tl));
+      expect(stored(), isEmpty);
+      expect(find.text('Add language'.tl), findsOneWidget);
+
+      await tester.enterText(field('Language code'), 'pt_br');
+      await submit(find.text('Save'.tl));
+      expect(stored(), ['pt-BR=Português']);
+      expect(find.text('pt-BR'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Português'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field('Language code')).enabled, false);
+      await tester.enterText(field('Language name'), 'Português (Brasil)');
+      await submit(find.text('Save'.tl));
+      expect(stored(), ['pt-BR=Português (Brasil)']);
+
+      await tester.tap(find.byTooltip('Delete'.tl));
+      await tester.pumpAndSettle();
+      await submit(find.text('Confirm'.tl));
+      expect(stored(), isEmpty);
+
+      await openGuide(tester, find.byTooltip('Usage guide'.tl));
+      expect(
+        tester.widget<GuidePage>(find.byType(GuidePage)).anchor,
+        GuideAnchor.translationTarget,
+      );
+      final heading = find.text('目标语言', findRichText: true).last;
+      expect(tester.getTopLeft(heading).dy, inInclusiveRange(50, 200));
       expect(tester.takeException(), isNull);
     });
   }
