@@ -34,6 +34,7 @@ import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/app_lock_setup.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/guide_page.dart';
+import 'package:venera/pages/settings/image_enhance_preview.dart';
 import 'package:venera/pages/settings/sync_config_qr.dart';
 import 'package:venera/pages/webdav_libraries_page.dart';
 import 'package:venera/utils/app_lock.dart';

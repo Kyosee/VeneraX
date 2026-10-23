@@ -7,12 +7,17 @@ class ReaderSettings extends StatefulWidget {
     this.comicId,
     this.comicSource,
     this.translationOnly = false,
+    this.currentPageImage,
   });
 
   final void Function(String key)? onChanged;
   final String? comicId;
   final String? comicSource;
   final bool translationOnly;
+
+  /// Caller-owned copy of the page open in the reader, for the image
+  /// enhancement preview. Null outside the reader.
+  final ImageInfo? Function()? currentPageImage;
 
   @override
   State<ReaderSettings> createState() => _ReaderSettingsState();
@@ -825,6 +830,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 },
               ),
               if (appdata.settings['enableReaderImageEnhance'] == true) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: ImageEnhancePreview(
+                    pageImage: widget.currentPageImage,
+                  ),
+                ),
                 _SliderSetting(
                   title: "Sharpen strength".tl,
                   settingsIndex: "readerImageEnhanceStrength",

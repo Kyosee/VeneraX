@@ -1022,6 +1022,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ReaderSettings(
         comicId: context.reader.cid,
         comicSource: context.reader.type.sourceKey,
+        currentPageImage: _snapshotCurrentPageImage,
         onChanged: (key) {
           final scopeChanged = key == 'enabled';
           if (key == "readerMode" || scopeChanged) {
@@ -1077,6 +1078,44 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ),
       width: 400,
     );
+  }
+
+  /// A caller-owned copy of the decoded page nearest the reader's centre, for
+  /// the enhancement preview. Null when no page has been decoded yet.
+  ImageInfo? _snapshotCurrentPageImage() {
+    if (!mounted) return null;
+    final readerBox = context.findRenderObject();
+    if (readerBox is! RenderBox || !readerBox.hasSize) return null;
+    final center = readerBox.localToGlobal(readerBox.size.center(Offset.zero));
+    final Iterable<State<ComicImage>> states =
+        switch (context.reader._imageViewController) {
+          final _GalleryModeState s => s.imageStates,
+          final _ContinuousModeState s => s.imageStates,
+          _ => const [],
+        };
+    ImageInfo? best;
+    var bestDistance = double.infinity;
+    for (final state in states.whereType<_ComicImageState>()) {
+      final info = state._imageInfo;
+      if (info == null || !state.mounted) continue;
+      final box = state.context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      // Kept-alive pages that aren't painted get a zero transform; their rect
+      // comes out empty or NaN and must not win.
+      final rect = MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+      if (!rect.isFinite || rect.isEmpty) continue;
+      final distance = rect.contains(center)
+          ? 0.0
+          : (rect.center - center).distance;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = info;
+      }
+    }
+    return best?.clone();
   }
 
   void _openSideBar(Widget widget, {double width = 400}) {
