@@ -35,6 +35,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     return switch (id) {
       'text_detector' => "Text detector".tl,
       'ocr_ja' => "Japanese OCR (manga)".tl,
+      'ocr_zh_v5' => "Chinese OCR (Simplified + Traditional)".tl,
       'ocr_zh' => "Chinese / Latin OCR".tl,
       'ocr_en' => "English OCR".tl,
       'ocr_ko' => "Korean OCR".tl,

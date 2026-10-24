@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
@@ -21,6 +22,8 @@ class WorkerModelPaths {
     this.recModels = const {},
     this.recDicts = const {},
     this.recHeights = const {},
+    this.recLanguages = const {},
+    this.engines = const [],
   });
 
   final String detector;
@@ -28,10 +31,141 @@ class WorkerModelPaths {
   final String? jaDecoder;
   final String? jaVocab;
 
-  /// lang -> rec model path ('zh', 'en', 'ko').
+  /// engine -> rec model path ('zh5', 'zh', 'en', 'ko', or `custom_` + hash).
   final Map<String, String> recModels;
   final Map<String, String> recDicts;
   final Map<String, int> recHeights;
+
+  /// engine -> language its text is labeled with when the script alone does
+  /// not decide.
+  final Map<String, String> recLanguages;
+
+  /// Engines to try, in order. For 'auto' only line engines; 'ja' is placed
+  /// by text direction.
+  final List<String> engines;
+}
+
+/// Why a user-supplied model was rejected after download.
+enum ModelCheckFailure {
+  cannotRun,
+  notRecognizer,
+  notDetector,
+  dictionaryMismatch,
+}
+
+class ModelCheckException implements Exception {
+  const ModelCheckException(this.failure, {this.classes = 0, this.entries = 0});
+
+  final ModelCheckFailure failure;
+  final int classes;
+  final int entries;
+
+  @override
+  String toString() => 'ModelCheckException($failure, $classes, $entries)';
+}
+
+/// Runs a PP-OCR recognition model once on a blank line and checks its output
+/// against the dictionary. Off the main isolate: loading a model takes long.
+Future<void> checkRecognitionModel(String model, String dict, int height) {
+  return Isolate.run(() {
+    var entries = File(dict).readAsLinesSync().length;
+    OrtFfiSession session;
+    OrtOutput output;
+    try {
+      session = OrtFfiSession.open(model, intraOpThreads: 1);
+    } catch (_) {
+      throw const ModelCheckException(ModelCheckFailure.cannotRun);
+    }
+    try {
+      output = session.run({
+        session.inputNames.first: OrtInput.float32(
+          Float32List(3 * height * 160),
+          [1, 3, height, 160],
+        ),
+      }).values.first;
+    } catch (_) {
+      throw const ModelCheckException(ModelCheckFailure.cannotRun);
+    } finally {
+      session.close();
+    }
+    if (output.shape.length != 3) {
+      throw const ModelCheckException(ModelCheckFailure.notRecognizer);
+    }
+    // Classes are blank + dictionary, plus a space class on most models.
+    var classes = output.shape.last;
+    if (classes != entries + 1 && classes != entries + 2) {
+      throw ModelCheckException(
+        ModelCheckFailure.dictionaryMismatch,
+        classes: classes,
+        entries: entries,
+      );
+    }
+  });
+}
+
+/// Runs a detection model once and checks it returns a DBNet probability map
+/// the size of its input.
+Future<void> checkDetectionModel(String model) {
+  return Isolate.run(() {
+    OrtFfiSession session;
+    OrtOutput output;
+    try {
+      session = OrtFfiSession.open(model, intraOpThreads: 1);
+    } catch (_) {
+      throw const ModelCheckException(ModelCheckFailure.cannotRun);
+    }
+    try {
+      output = session.run({
+        session.inputNames.first: OrtInput.float32(
+          Float32List(3 * 64 * 64),
+          const [1, 3, 64, 64],
+        ),
+      }).values.first;
+    } catch (_) {
+      throw const ModelCheckException(ModelCheckFailure.cannotRun);
+    } finally {
+      session.close();
+    }
+    var s = output.shape;
+    if (s.length != 4 || s[1] != 1 || s[2] != 64 || s[3] != 64) {
+      throw const ModelCheckException(ModelCheckFailure.notDetector);
+    }
+  });
+}
+
+final _letter = RegExp(r'[\p{L}\p{M}]', unicode: true);
+
+/// Whether [rune] is a letter of any script. Lets recognition and the
+/// translatable-text filter accept Cyrillic, Thai, Arabic and the like, not
+/// only CJK and ASCII.
+bool isScriptLetter(int rune) => _letter.hasMatch(String.fromCharCode(rune));
+
+/// Language of an OCR block from its script. Kana and Hangul decide on their
+/// own; Han follows a Chinese or Japanese engine; Latin is English for the
+/// built-in engines and the user's language for a custom one; any other
+/// script takes the engine's language.
+String detectBlockLanguage(String text, String engineLang) {
+  var kana = 0, hangul = 0, han = 0, latin = 0;
+  for (var r in text.runes) {
+    if ((r >= 0x3040 && r <= 0x30FF) || (r >= 0x31F0 && r <= 0x31FF)) {
+      kana++;
+    } else if ((r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF)) {
+      hangul++;
+    } else if ((r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF)) {
+      han++;
+    } else if ((r >= 0x41 && r <= 0x5A) || (r >= 0x61 && r <= 0x7A)) {
+      latin++;
+    }
+  }
+  const builtIn = {'ja', 'zh', 'en', 'ko'};
+  if (kana > 0) return 'ja';
+  if (hangul > 0) return 'ko';
+  if (han > 0) {
+    if (engineLang == 'ja' || engineLang.startsWith('zh')) return engineLang;
+    return 'zh';
+  }
+  if (latin > 0) return builtIn.contains(engineLang) ? 'en' : engineLang;
+  return engineLang;
 }
 
 class _OcrPageRequest {
@@ -508,13 +642,13 @@ class _WorkerState {
 
     List<String> engineOrder;
     if (req.sourceLang != 'auto') {
-      engineOrder = [req.sourceLang];
+      engineOrder = paths.engines;
     } else {
       var vertical = bounds.height > bounds.width * 1.3;
       engineOrder = <String>{
         if (preferredEngine != null) preferredEngine,
         if (vertical && hasJa) 'ja',
-        ...paths.recModels.keys,
+        ...paths.engines,
         if (!vertical && hasJa) 'ja',
       }.toList();
     }
@@ -530,9 +664,12 @@ class _WorkerState {
       }
       text = text.trim();
       if (_isPlausible(text)) {
+        var engineLang = engine == 'ja'
+            ? 'ja'
+            : paths.recLanguages[engine] ?? engine;
         return (
           text: text,
-          language: _detectLanguage(text, engine),
+          language: detectBlockLanguage(text, engineLang),
           engine: engine,
         );
       }
@@ -546,31 +683,11 @@ class _WorkerState {
   bool _isPlausible(String text) {
     if (text.length < 2) return false;
     var meaningful = text.runes
-        .where((r) => r > 0x2E80 || (r >= 0x30 && r <= 0x7A))
+        .where(
+          (r) => r > 0x2E80 || (r >= 0x30 && r <= 0x7A) || isScriptLetter(r),
+        )
         .length;
     return meaningful >= math.max(2, text.length ~/ 2);
-  }
-
-  /// Determines the language from the recognized script; falls back to the
-  /// engine's own language when the text is ambiguous.
-  String _detectLanguage(String text, String engineLang) {
-    var kana = 0, hangul = 0, han = 0, latin = 0;
-    for (var r in text.runes) {
-      if ((r >= 0x3040 && r <= 0x30FF) || (r >= 0x31F0 && r <= 0x31FF)) {
-        kana++;
-      } else if ((r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF)) {
-        hangul++;
-      } else if ((r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF)) {
-        han++;
-      } else if ((r >= 0x41 && r <= 0x5A) || (r >= 0x61 && r <= 0x7A)) {
-        latin++;
-      }
-    }
-    if (kana > 0) return 'ja';
-    if (hangul > 0) return 'ko';
-    if (han > 0) return engineLang == 'ja' ? 'ja' : 'zh';
-    if (latin > 0) return 'en';
-    return engineLang;
   }
 
   // ----- detection -----
@@ -703,17 +820,34 @@ class _WorkerState {
       return ['', ...dict.map((line) => line.isEmpty ? ' ' : line), ' '];
     });
     var height = paths.recHeights[lang] ?? 48;
-    var sorted = [...lines]..sort((a, b) => a.top.compareTo(b.top));
+    // Vertical columns read right to left; horizontal lines top to bottom.
+    var vertical = lines.any(_isVerticalLine);
+    var sorted = [...lines]
+      ..sort(
+        (a, b) => vertical
+            ? b.right.compareTo(a.right)
+            : a.top.compareTo(b.top),
+      );
     var parts = <String>[];
     for (var line in sorted) {
       var rect = line.inflated(2, 2, image.width, image.height);
       if (rect.width < 8 || rect.height < 8) continue;
-      var outW = (rect.width * height / math.max(1, rect.height)).round().clamp(
+      // The line models read left to right only: a column squeezed to one
+      // line height came out empty. Turned 90° counter-clockwise, its top
+      // glyph lands on the left, the way PP-OCR itself feeds vertical text.
+      var rotate = _isVerticalLine(rect);
+      var runLength = rotate ? rect.height : rect.width;
+      var thickness = rotate ? rect.width : rect.height;
+      var outW = (runLength * height / math.max(1, thickness)).round().clamp(
         16,
         960,
       );
       outW = (outW / 8).ceil() * 8;
-      var tensor = _cropNormalized(image, rect, outW, height);
+      var tensor = _normalize(
+        resizeTextLine(image, rect, outW, height, rotate: rotate),
+        outW,
+        height,
+      );
       var output = session
           .run({
             session.inputNames.first: OrtInput.float32(tensor, [
@@ -1093,9 +1227,56 @@ IntRect _boundsOf(List<IntRect> boxes) {
   return result;
 }
 
+/// A detected line taller than wide by PP-OCR's own margin: a vertical column.
+bool _isVerticalLine(IntRect r) => r.height >= r.width * 1.5;
+
+/// Resamples [region] to [outW]x[outH] RGBA. With [rotate] the region is
+/// turned 90° counter-clockwise first, so a vertical column reads left to
+/// right with its top glyph first.
+@visibleForTesting
+Uint8List resizeTextLine(
+  RgbaImage src,
+  IntRect region,
+  int outW,
+  int outH, {
+  bool rotate = false,
+}) {
+  if (!rotate) return _resizeRegion(src, region, outW, outH);
+  var out = Uint8List(outW * outH * 4);
+  var srcW = region.width;
+  var srcH = region.height;
+  for (var y = 0; y < outH; y++) {
+    // Output rows walk the source columns from right to left.
+    var fx = srcW - 0.5 - (y + 0.5) * srcW / outH;
+    var x0 = fx.floor().clamp(0, srcW - 1);
+    var x1 = (x0 + 1).clamp(0, srcW - 1);
+    var wx = fx - fx.floor();
+    for (var x = 0; x < outW; x++) {
+      // Output columns walk the source rows from top to bottom.
+      var fy = (x + 0.5) * srcH / outW - 0.5;
+      var y0 = fy.floor().clamp(0, srcH - 1);
+      var y1 = (y0 + 1).clamp(0, srcH - 1);
+      var wy = fy - fy.floor();
+      var outIndex = (y * outW + x) * 4;
+      for (var c = 0; c < 4; c++) {
+        int px(int sy, int sx) =>
+            src.pixels[((region.top + sy) * src.width + region.left + sx) * 4 +
+                c];
+        var top = px(y0, x0) + (px(y0, x1) - px(y0, x0)) * wx;
+        var bottom = px(y1, x0) + (px(y1, x1) - px(y1, x0)) * wx;
+        out[outIndex + c] = (top + (bottom - top) * wy).round().clamp(0, 255);
+      }
+    }
+  }
+  return out;
+}
+
 /// Crops a region and normalizes to (x/255 - 0.5) / 0.5, CHW.
 Float32List _cropNormalized(RgbaImage image, IntRect rect, int outW, int outH) {
-  var resized = _resizeRegion(image, rect, outW, outH);
+  return _normalize(_resizeRegion(image, rect, outW, outH), outW, outH);
+}
+
+Float32List _normalize(Uint8List resized, int outW, int outH) {
   var tensor = Float32List(3 * outH * outW);
   var plane = outH * outW;
   for (var i = 0; i < plane; i++) {

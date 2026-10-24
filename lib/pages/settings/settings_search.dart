@@ -203,7 +203,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("LLM providers", 8, keywords: ["API", "model"]),
   _SettingsSearchEntry('Source language', 8, keywords: ['language']),
   _SettingsSearchEntry('Target language', 8, keywords: ['language']),
-  _SettingsSearchEntry('Custom target languages', 8, keywords: ['language']),
+  _SettingsSearchEntry(
+    'Custom languages',
+    8,
+    keywords: ['language', 'OCR', 'model'],
+  ),
   _SettingsSearchEntry('Test translation', 8, keywords: ['API', 'test']),
   _SettingsSearchEntry(
     "Custom translation script",

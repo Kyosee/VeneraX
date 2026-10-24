@@ -287,7 +287,7 @@ void main() {
         await tester.pump(const Duration(seconds: 3));
       }
 
-      await pump(tester, const TranslationTargetsPage(), size);
+      await pump(tester, const TranslationLanguagesPage(), size);
       expect(
         find.text(
           "No custom languages yet. Tap + to add a language that is not in the list."
@@ -296,7 +296,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byTooltip('Add language'.tl));
+      await tester.tap(find.byTooltip('Add target language'.tl));
       await tester.pumpAndSettle();
       await tester.enterText(field('Language name'), 'Português');
       await tester.enterText(field('Language code'), 'pt@br');
@@ -324,7 +324,7 @@ void main() {
       await submit(find.text('Confirm'.tl));
       expect(stored(), isEmpty);
 
-      await openGuide(tester, find.byTooltip('Usage guide'.tl));
+      await openGuide(tester, find.byTooltip('Usage guide'.tl).first);
       expect(
         tester.widget<GuidePage>(find.byType(GuidePage)).anchor,
         GuideAnchor.translationTarget,

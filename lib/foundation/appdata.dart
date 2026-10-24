@@ -525,10 +525,16 @@ class Settings with ChangeNotifier {
     // ['imageTranslationEnabledComics']，不走这里的全局阅读器设置通道——翻译
     // 消耗 token，绝不能一开即对所有漫画全局生效。此键为历史遗留，已不再读取。
     'enableImageTranslation': false,
-    'imageTranslationSource': 'auto', // auto, ja, zh, en, ko
+    'imageTranslationSource': 'auto', // auto or a code from TranslationSources
     'imageTranslationTarget': 'zh', // a code from TranslationTargets
     // User-added target languages, [{code, name}]; synced like providers.
     'imageTranslationCustomTargets': <dynamic>[],
+    // User-added source languages with their own recognition model
+    // [{code, name, model, dict, height, size}], and an optional replacement
+    // detector {url, size}. Synced; the model files themselves are not, so
+    // each device downloads them.
+    'imageTranslationCustomSources': <dynamic>[],
+    'imageTranslationCustomDetector': <String, dynamic>{},
     'imageTranslationHfEndpoint':
         'https://huggingface.co', // model download endpoint (mirrorable)
     // 用户自己的 OpenAI 兼容端点；App 不预置任何站点或密钥。

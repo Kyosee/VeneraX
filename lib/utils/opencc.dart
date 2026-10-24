@@ -35,6 +35,20 @@ abstract class OpenCC {
     return false;
   }
 
+  /// Whether [text] has more Traditional-only than Simplified-only characters.
+  /// Characters both scripts share count for neither, so a tie (including
+  /// text with no such characters) reads as Simplified.
+  static bool isMostlyTraditional(String text) {
+    var traditional = 0, simplified = 0;
+    for (var rune in text.runes) {
+      var s = _t2s[rune];
+      var t = _s2t[rune];
+      if (s != null && s != rune) traditional++;
+      if (t != null && t != rune) simplified++;
+    }
+    return traditional > simplified;
+  }
+
   static bool hasChineseTraditional(String text) {
     for (var rune in text.runes) {
       if (_t2s.containsKey(rune)) {

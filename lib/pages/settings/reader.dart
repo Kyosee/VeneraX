@@ -115,6 +115,22 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     return options;
   }
 
+  /// Auto, built-in sources, then the user's own; a removed custom language
+  /// still selected shows under its code.
+  Map<String, String> _sourceLanguageOptions() {
+    var options = {
+      'auto': "Auto detect".tl,
+      for (var e in TranslationSources.builtIn.entries) e.key: e.value.tl,
+      for (var e in TranslationSources.custom) e.code: e.name,
+    };
+    var current = _effectiveSourceLang();
+    options.putIfAbsent(current, () => current);
+    return options;
+  }
+
+  int _customLanguageCount() =>
+      TranslationSources.custom.length + TranslationTargets.custom.length;
+
   /// Summary line for the LLM-providers entry: the active provider's name (or
   /// its URL when unnamed), how many others are configured, or "Not configured".
   String _activeProviderSubtitle() {
@@ -176,7 +192,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
               section(
                 "Target language".tl,
-                "Language not in the list? Open Custom target languages, tap + and enter a name (what the AI model translates into, e.g. ไทย) and a code (used by Google Translate and scripts, e.g. th). It then appears in Target language. Removing it later keeps the pages already translated."
+                "Language not in the list? Open Custom languages, tap + next to Target languages and enter a name (what the AI model translates into, e.g. ไทย) and a code (used by Google Translate and scripts, e.g. th). It then appears in Target language. Removing it later keeps the pages already translated."
                     .tl,
               ),
               section(
@@ -1127,13 +1143,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               SelectSetting(
                 title: "Source language".tl,
                 settingKey: "imageTranslationSource",
-                optionTranslation: {
-                  "auto": "Auto detect".tl,
-                  "ja": "Japanese".tl,
-                  "en": "English".tl,
-                  "ko": "Korean".tl,
-                  "zh": "Chinese".tl,
-                },
+                optionTranslation: _sourceLanguageOptions(),
                 onChanged: () {
                   setState(() {});
                   widget.onChanged?.call("imageTranslationSource");
@@ -1159,15 +1169,16 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
               _CallbackSetting(
-                title: "Custom target languages".tl,
-                subtitle: TranslationTargets.custom.isEmpty
-                    ? "Add a language that is not in the list".tl
+                title: "Custom languages".tl,
+                subtitle: _customLanguageCount() == 0
+                    ? "Add source or target languages that are not in the list"
+                          .tl
                     : "@count added".tlParams({
-                        'count': TranslationTargets.custom.length,
+                        'count': _customLanguageCount(),
                       }),
                 actionTitle: "Manage".tl,
                 callback: () async {
-                  await context.to(() => const TranslationTargetsPage());
+                  await context.to(() => const TranslationLanguagesPage());
                   if (mounted) setState(() {});
                 },
               ),

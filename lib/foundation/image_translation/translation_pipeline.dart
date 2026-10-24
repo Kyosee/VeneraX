@@ -98,37 +98,45 @@ class PageTranslationPipeline {
     required String targetLang,
   }) async {
     var image = await _decode(imageBytes);
-    var paths = TranslationModels.workerPaths();
+    var paths = TranslationModels.workerPaths(sourceLang);
     var blocks = await TranslationWorker.instance.ocrPage(
       image,
       sourceLang: sourceLang,
       paths: paths,
     );
     blocks = blocks.where((b) => _isTranslatable(b.text)).toList();
+    // The worker labels all Han text 'zh'; tell Traditional apart so it is
+    // not mistaken for an already-Simplified page, and so a Traditional
+    // comic locks as such.
+    var langs = [
+      for (var b in blocks)
+        b.language == 'zh' && OpenCC.isMostlyTraditional(b.text)
+            ? 'zh-TW'
+            : b.language,
+    ];
     var votes = <String, int>{};
-    for (var block in blocks) {
-      votes[block.language] = (votes[block.language] ?? 0) + 1;
+    for (var lang in langs) {
+      votes[lang] = (votes[lang] ?? 0) + 1;
     }
     if (blocks.isEmpty) {
       return PageOcr(const [], const [], votes);
     }
 
-    var targetBase = targetLang == 'zh-TW' ? 'zh' : targetLang;
     var ready = <TranslatedRegion>[];
     var pending = <OcrBlock>[];
-    for (var block in blocks) {
-      if (block.language == targetBase) {
-        // Already in the target language. The only useful transform left is
-        // the simplified/traditional conversion.
-        if (targetLang == 'zh-TW' && block.language == 'zh') {
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i];
+      switch (sameLanguageAction(langs[i], targetLang)) {
+        case SameLanguageAction.translate:
+          pending.add(block);
+        case SameLanguageAction.toTraditional:
           var converted = OpenCC.simplifiedToTraditional(block.text);
           if (converted != block.text) {
             ready.add(_region(block, converted));
           }
-        }
-        continue;
+        case SameLanguageAction.skip:
+          break;
       }
-      pending.add(block);
     }
     return PageOcr(ready, pending, votes);
   }
@@ -185,7 +193,7 @@ class PageTranslationPipeline {
     // Pure digits/punctuation (page numbers, sfx dashes) are not worth a
     // translation pass.
     return text.runes.any((r) {
-      return r > 0x2E80 || (r >= 0x41 && r <= 0x7A);
+      return r > 0x2E80 || (r >= 0x41 && r <= 0x7A) || isScriptLetter(r);
     });
   }
 
@@ -238,6 +246,21 @@ class PageTranslationPipeline {
   Future<void> release() async {
     TranslationWorker.instance.release();
   }
+}
+
+enum SameLanguageAction { translate, toTraditional, skip }
+
+/// What to do with a block already labeled [blockLang] when translating into
+/// [targetLang]. Simplified into Traditional is a lossless table lookup;
+/// Traditional into Simplified still goes to the model, because the bundled
+/// table only maps Simplified to Traditional and mangles the reverse
+/// (開 -> 𫔭, 為/裡/髮 untouched).
+SameLanguageAction sameLanguageAction(String blockLang, String targetLang) {
+  if (blockLang == targetLang) return SameLanguageAction.skip;
+  if (targetLang == 'zh-TW' && blockLang == 'zh') {
+    return SameLanguageAction.toTraditional;
+  }
+  return SameLanguageAction.translate;
 }
 
 /// Kept for logging clarity when a page fails half-way; the worker reports

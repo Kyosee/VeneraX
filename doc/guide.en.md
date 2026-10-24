@@ -7,6 +7,7 @@ This document covers the setup steps and controls for each feature. If a setting
 - [AI Translation](#ai-translation)
   - [Setup](#setup)
   - [Target languages](#target-languages)
+  - [Source languages and recognition models](#source-languages-and-recognition-models)
   - [Custom translation scripts](#custom-translation-scripts)
   - [Enabling](#enabling)
   - [Controls while reading](#controls-while-reading)
@@ -40,7 +41,8 @@ Detection and recognition run on the device; the recognized text is sent to an A
 | Language | Size |
 | --- | --- |
 | Japanese (incl. vertical text) | ~460 MB |
-| Chinese / Latin | ~11 MB |
+| Chinese (Simplified + Traditional) | ~17 MB |
+| Chinese / Latin (Simplified only) | ~11 MB |
 | English | ~9 MB |
 | Korean | ~8 MB |
 
@@ -51,7 +53,7 @@ With "Source language" set to "Auto detect", the detector plus any one recogniti
 
 "Target language" includes Simplified Chinese, Traditional Chinese, English, Japanese, Korean, French, German, Spanish, Russian and Vietnamese. You can add a language that is not listed:
 
-1. Settings → AI Translation → "Custom target languages" → "+" at the top right.
+1. Settings → AI Translation → "Custom languages" → "+" next to "Target languages".
 2. "Language name": the AI model translates into this name. Write it in that language, such as `ไทย` or `Bahasa Indonesia`.
 3. "Language code": sent to Google Translate and translation scripts, such as `th`, `id` or `pt-BR`. Use a code your service supports.
 4. Save, then select it under "Target language".
@@ -59,8 +61,54 @@ With "Source language" set to "Auto detect", the detector plus any one recogniti
 - Translated pages are stored by language code, so a code cannot be changed after it is added. The name can be changed at any time.
 - Removing a custom language does not delete pages already translated into it; adding the same code again brings them back.
 - Built-in languages cannot be removed or changed. The custom list travels with your backups across devices.
-- This extends target languages only; source languages are still limited to what the recognition models support.
+- Source languages are extended in the next section.
 - Translations are laid out left to right, so right-to-left languages such as Arabic or Hebrew may not display correctly.
+
+<!--anchor:translation-source-->
+### Source languages and recognition models
+
+Built-in source languages and the recognition model each uses:
+
+| Source language | Recognition model |
+| --- | --- |
+| Japanese | Japanese model (~460 MB), horizontal and vertical text |
+| Simplified Chinese | Chinese (Simplified + Traditional) model; the Chinese / Latin model if that is not downloaded |
+| Traditional Chinese | Chinese (Simplified + Traditional) model (~17 MB), required |
+| English | English model |
+| Korean | Korean model |
+
+- The Chinese / Latin model (~11 MB) only covers common Simplified characters and lacks about 3,800 Traditional ones, so Traditional comics come out with wrong characters. The Chinese (Simplified + Traditional) model covers about 18,000 characters, reads both scripts and also vertical Chinese; once downloaded, Simplified Chinese uses it too.
+- "Auto detect" tells Simplified and Traditional apart, so a Traditional comic is translated into Simplified Chinese as usual.
+- For a Traditional comic, choose "Traditional Chinese" as the source language. Under "Auto detect", vertical Chinese may be read by the Japanese model as Japanese; choosing the language avoids that.
+- Traditional pages opened before this update may have been recorded as having no text to translate. Long-press "Pre-translate" on the details page → "Retranslate" to translate them again.
+
+**Model size and accuracy**
+
+A larger model knows more characters and fonts, so it reads more accurately; the cost is a bigger download, a slower first load, more memory and more heat on phones. A character missing from the dictionary is always read as a look-alike, so dictionary coverage matters more than size. Character error rates measured on a desktop with rendered Traditional dialogue (real comic lettering and screentone are harder):
+
+| Model | Result |
+| --- | --- |
+| Chinese / Latin (~11 MB) | ~17% wrong Traditional characters; vertical text unreadable |
+| Chinese (Simplified + Traditional) (~17 MB) | No errors on Traditional, Simplified or vertical text |
+| PP-OCRv6 small (~21 MB) | Same as above, slightly slower |
+| PP-OCRv6 tiny (~4.5 MB) | About 3x faster, ~18% wrong Traditional characters |
+
+**Adding another source language**
+
+1. Settings → AI Translation → "Custom languages" → "+" next to "Source languages".
+2. Enter a language name and code (such as `fr`, `ru`, `th`).
+3. Enter the recognition model link (.onnx) and character dictionary link (.txt), or use "Fill in a tested model" for Latin script, Cyrillic or Thai.
+4. Saving reads the file sizes; the download starts after you confirm. Models over 100 MB get an extra warning.
+
+- Only PP-OCR text recognition models (CTC) in ONNX format work, together with the character dictionary they were trained with. Paddle, MNN or PyTorch files and encoder-decoder models such as manga-ocr do not.
+- "Input height": 48 for PP-OCRv3 and later, 32 for older models.
+- After download the model is run once; if it cannot run, is not a recognition model, or its class count does not match the dictionary, the files are deleted and the reason is shown.
+- Custom source languages must be selected under "Source language"; "Auto detect" only chooses among the built-in languages.
+- The language list travels with your backups; model files do not, so each device downloads its own.
+
+**Custom text detection model**
+
+"Text detection model" on the same page can be replaced with your own, shared by all languages. Only PP-OCR text detection models (DBNet) in ONNX format work; tested choices are PP-OCRv5 mobile (~4.8 MB) and PP-OCRv6 small (~9.9 MB). A larger detector finds small or stylized lettering more reliably but is slower on every page. The built-in detector is used until the download finishes.
 
 <!--anchor:translation-script-->
 ### Custom translation scripts
