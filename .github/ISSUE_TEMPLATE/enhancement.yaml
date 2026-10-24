@@ -21,6 +21,10 @@ body:
         **Issues are public. Please describe the capability you need, without including site names, addresses, keys, or parsing code.**
 
         **Issue 内容是公开的。请描述你需要的能力，不要附带站点名称、地址、密钥或解析代码。**
+
+        **Do not post links to other projects, other versions, or extension repositories; such content will be removed.**
+
+        **请勿发布其他项目、其他版本或扩展仓库的地址，此类内容会被删除。**
   - type: textarea
     id: what-happened
     attributes:

@@ -21,6 +21,14 @@ body:
         **Issues are public. Please describe the problem itself, without including site names, addresses, keys, or parsing code.**
 
         **Issue 内容是公开的。请描述问题本身，不要附带站点名称、地址、密钥或解析代码。**
+
+        **Do not post links to other projects, other versions, or extension repositories; such content will be removed.**
+
+        **请勿发布其他项目、其他版本或扩展仓库的地址，此类内容会被删除。**
+
+        **Please reproduce the problem on the latest build from this repository's Release page first; problems seen only on other builds (including third-party modified versions) will not be handled.**
+
+        **请先用本仓库 Release 页的最新版本复现问题；在其他版本（包括第三方修改版）上出现的问题不予处理。**
   - type: dropdown
     id: bugType
     attributes:

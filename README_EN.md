@@ -165,6 +165,8 @@ Any extension-sharing platform, website, forum, or chat group established or mai
 
 This project has not established and does not operate any official community, group, or public account, nor has it authorized any third party to advertise, promote, or publish in its name.
 
+This repository's issue tracker and other public channels are for feedback about this software itself only. They are not for posting, sharing, or discussing third-party extensions, extension repository addresses, or links to other projects or versions. Such content will be removed or hidden, and its presence does not constitute any acknowledgement, recommendation, or endorsement by this project.
+
 **4. Privacy and Data**
 
 1. All features of this software run on the user's local device. This project operates no server, does not collect or upload any user data (including reading content, extension lists, or browsing history) to the maintainers, and integrates no analytics, crash-reporting, or telemetry components. Optional features that the user explicitly enables (such as AI translation) may send data to third-party services the user configures; see item 3 below.
