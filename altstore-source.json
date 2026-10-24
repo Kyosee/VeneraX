@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.7",
+          "buildVersion": "250",
+          "date": "2026-10-24",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Image translation can now translate Traditional Chinese comics, including vertical text; choose Traditional Chinese as the source language or let auto-detect pick it.\n- Added a new Chinese text recognition model that reads both Traditional and Simplified Chinese; once downloaded it replaces the old one.\n- You can now add your own source languages and replace the text detector with your own models; their size is shown before download and they are checked after it.\n- Added Vietnamese as a translation target language.\n- You can now add translation target languages that are not in the built-in list, under Custom languages.\n- Image enhancement settings now show a live before/after preview; drag the divider to compare, and when opened from the reader it previews the current page.\n- Each local favorites folder can now keep its own sort order; \"Apply to All Folders\" sets the default for every folder.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed Traditional Chinese pages coming back untranslated or with wrong characters; pages that failed before can be fixed with \"Re-translate\".\n- Fixed the download button disappearing for comics with only some chapters downloaded.\n- Fixed the comic description appearing twice at the top of the details page.\n- Fixed dragging a zoomed-in image to the right on iOS sliding the whole reader page away.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.6...v2.3.7",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.7/VeneraX-ios-2.3.7%2B250.ipa",
+          "size": 38892754,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2.3.6",
           "buildVersion": "249",
           "date": "2026-10-09",
@@ -330,11 +339,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.6",
-      "versionDate": "2026-10-09",
-      "versionDescription": "## What's Changed\n\n### Added\n- No new features were added in this release.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed blank covers after opening details and returning when the same comic appears in multiple home sections, such as History, Read Later or Local.\n- Fixed the Tasks page showing an error instead of the empty list after an expanded upload task finishes.\n- Fixed task cards losing or sharing their expanded state after filtering the task list.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.5...v2.3.6",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.6/VeneraX-ios-2.3.6%2B249.ipa",
-      "size": 38818608
+      "version": "2.3.7",
+      "versionDate": "2026-10-24",
+      "versionDescription": "## What's Changed\n\n### Added\n- Image translation can now translate Traditional Chinese comics, including vertical text; choose Traditional Chinese as the source language or let auto-detect pick it.\n- Added a new Chinese text recognition model that reads both Traditional and Simplified Chinese; once downloaded it replaces the old one.\n- You can now add your own source languages and replace the text detector with your own models; their size is shown before download and they are checked after it.\n- Added Vietnamese as a translation target language.\n- You can now add translation target languages that are not in the built-in list, under Custom languages.\n- Image enhancement settings now show a live before/after preview; drag the divider to compare, and when opened from the reader it previews the current page.\n- Each local favorites folder can now keep its own sort order; \"Apply to All Folders\" sets the default for every folder.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed Traditional Chinese pages coming back untranslated or with wrong characters; pages that failed before can be fixed with \"Re-translate\".\n- Fixed the download button disappearing for comics with only some chapters downloaded.\n- Fixed the comic description appearing twice at the top of the details page.\n- Fixed dragging a zoomed-in image to the right on iOS sliding the whole reader page away.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.6...v2.3.7",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.7/VeneraX-ios-2.3.7%2B250.ipa",
+      "size": 38892754
     }
   ],
   "news": []
