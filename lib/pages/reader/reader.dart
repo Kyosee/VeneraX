@@ -113,6 +113,19 @@ List<DeviceOrientation> resolveReadingOrientations(bool? rotation) =>
       _ => const <DeviceOrientation>[],
     };
 
+/// How the page content moves when a gallery turns [forward]; null outside
+/// gallery modes.
+@visibleForTesting
+RippleSweep? galleryRippleSweep(ReaderMode mode, {required bool forward}) {
+  final sweep = switch (mode) {
+    ReaderMode.galleryLeftToRight => RippleSweep.leftward,
+    ReaderMode.galleryRightToLeft => RippleSweep.rightward,
+    ReaderMode.galleryTopToBottom => RippleSweep.upward,
+    _ => null,
+  };
+  return forward ? sweep : sweep?.opposite;
+}
+
 extension _ReaderContext on BuildContext {
   _ReaderState get reader => findAncestorStateOfType<_ReaderState>()!;
 
@@ -252,6 +265,9 @@ class _ReaderState extends State<Reader>
   /// Lives here rather than in the gallery so the refresh interval keeps
   /// counting across chapters, which remount the gallery.
   final _einkRefresher = EinkRefresher();
+
+  @override
+  bool get _flashesNextTurn => _einkRefresher.flashesNextTurn;
 
   /// Last (chapter, page) a gallery came to rest on.
   (int, int)? _settledPosition;
@@ -966,12 +982,62 @@ abstract mixin class _ReaderLocation {
 
   int _animationCount = 0;
 
+  ReaderMode get mode;
+
+  bool get mounted;
+
+  /// Whether the next settled turn will be covered by an e-ink refresh.
+  bool get _flashesNextTurn;
+
+  /// Ripple turns are on and the panel supports them in this mode.
+  bool get _rippleActive =>
+      mode.isGallery &&
+      appdata.settings['einkRipplePageTurn'] == true &&
+      EinkPanel.rippleSupported;
+
+  /// Sweep for a ripple turn to [page], or null for a plain turn: no real
+  /// change of page, or a full refresh about to cover the turn anyway.
+  RippleSweep? _rippleSweepTo(int page) {
+    if (!_rippleActive || page == this.page || _flashesNextTurn) return null;
+    return galleryRippleSweep(mode, forward: page > this.page);
+  }
+
+  bool _rippleTurnPending = false;
+
+  /// Arms the ripple before anything repaints, then jumps: the panel animates
+  /// the change itself, so the slide animation stays off.
+  Future<void> _turnWithRipple(int page, RippleSweep sweep) async {
+    _rippleTurnPending = true;
+    final view = _imageViewController;
+    try {
+      await EinkPanel.queueRipple(sweep);
+    } finally {
+      _rippleTurnPending = false;
+    }
+    // The reader closed, or a remount replaced the gallery, while waiting.
+    if (!mounted || view == null || !identical(view, _imageViewController)) {
+      return;
+    }
+    this.page = page;
+    update();
+    view.toPage(page);
+  }
+
   bool toPage(int page) {
     if (_validatePage(page)) {
       if (page == this.page && page != 1 && page != totalPages) {
         return false;
       }
-      final hasAnimation = enablePageAnimation(cid, type);
+      // Dropped while a ripple turn waits for its command. Reporting it as
+      // handled keeps callers from switching chapter instead.
+      if (_rippleTurnPending) return true;
+      final sweep = _rippleSweepTo(page);
+      if (sweep != null) {
+        unawaited(_turnWithRipple(page, sweep));
+        return true;
+      }
+      // The ripple stands in for the slide, also on the turns it skips.
+      final hasAnimation = enablePageAnimation(cid, type) && !_rippleActive;
       if (hasAnimation) {
         _pendingPage = page;
         _animationCount++;

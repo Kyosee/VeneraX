@@ -7,6 +7,7 @@ import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/eink_screen.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
@@ -200,6 +201,8 @@ void initAndroidExtras() {
   handleLinks();
   handleTextShare();
   handleNotificationRoute();
+  // Settled before settings or search ask whether to offer the ripple.
+  unawaited(EinkPanel.probeRipple());
 }
 
 Future<void> trySetHighRefreshRate() async {

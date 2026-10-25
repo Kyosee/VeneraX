@@ -32,6 +32,11 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     _translationAdvanced =
         TranslationPerformanceConfig.current ==
         TranslationPerformancePreset.custom;
+    // The startup probe normally finished long ago; if not, show the ripple
+    // rows as soon as it does.
+    if (!EinkPanel.rippleProbed) {
+      EinkPanel.probeRipple().then((_) => refreshSettings());
+    }
   }
 
   void _setTranslationPreset(String value) {
@@ -1089,6 +1094,26 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   min: 50,
                   max: 1000,
                 ),
+              ],
+              if (EinkPanel.rippleSupported) ...[
+                _SwitchSetting(
+                  title: "Ripple page turn".tl,
+                  subtitle:
+                      "Use the system ripple effect when turning pages by tap or key in gallery modes. Replaces the page animation"
+                          .tl,
+                  settingKey: "einkRipplePageTurn",
+                  onChanged: () => setState(() {}),
+                ),
+                if (appdata.settings['einkRipplePageTurn'] == true)
+                  SelectSetting(
+                    title: "Ripple speed".tl,
+                    settingKey: "einkRippleSpeed",
+                    optionTranslation: {
+                      "slower": "Slower".tl,
+                      "standard": "Standard".tl,
+                      "faster": "Faster".tl,
+                    },
+                  ),
               ],
             ],
           ).toSliver(),

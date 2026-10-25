@@ -13,6 +13,7 @@ import 'package:venera/foundation/battery_optimization.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/download_network_guard.dart';
+import 'package:venera/foundation/eink_screen.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';

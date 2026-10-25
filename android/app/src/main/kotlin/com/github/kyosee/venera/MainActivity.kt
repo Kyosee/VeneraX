@@ -373,6 +373,22 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/eink")
+            .setMethodCallHandler { call, res ->
+                when (call.method) {
+                    "rippleSupported" -> res.success(EinkPanel.rippleSupported)
+                    "queueRipple" -> {
+                        val codes = (call.arguments as? List<*>)
+                            ?.mapNotNull { (it as? Number)?.toInt() }
+                        res.success(
+                            codes != null && codes.size == 4 &&
+                                EinkPanel.queueRipple(codes, this)
+                        )
+                    }
+                    else -> res.notImplemented()
+                }
+            }
+
         val shareTextChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/text_share")
         shareTextChannel.setStreamHandler(
             object : EventChannel.StreamHandler {

@@ -53,6 +53,7 @@ class _SettingsSearchEntry {
     'Refresh color' ||
     'Refresh every N pages' ||
     'Refresh duration (ms)' => 'Full refresh on page turn',
+    'Ripple speed' => 'Ripple page turn',
     _ => null,
   };
 
@@ -106,6 +107,8 @@ class _SettingsSearchEntry {
         'Refresh color',
         'Refresh every N pages',
         'Refresh duration (ms)',
+        'Ripple page turn',
+        'Ripple speed',
       ].contains(title)) {
         return 'E-ink screen';
       }
@@ -214,6 +217,18 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Refresh color", 1, keywords: ["E-ink screen"]),
   _SettingsSearchEntry("Refresh every N pages", 1, keywords: ["E-ink screen"]),
   _SettingsSearchEntry("Refresh duration (ms)", 1, keywords: ["E-ink screen"]),
+  _SettingsSearchEntry(
+    "Ripple page turn",
+    1,
+    keywords: ["E-ink screen"],
+    visible: () => EinkPanel.rippleSupported,
+  ),
+  _SettingsSearchEntry(
+    "Ripple speed",
+    1,
+    keywords: ["E-ink screen"],
+    visible: () => EinkPanel.rippleSupported,
+  ),
   _SettingsSearchEntry(
     "AI Translation",
     8,

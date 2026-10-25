@@ -172,6 +172,8 @@ class Appdata with Init {
     "einkRefreshColor",
     "einkRefreshInterval",
     "einkRefreshDuration",
+    "einkRipplePageTurn",
+    "einkRippleSpeed",
     // Throughput presets and their raw values are device-local. A desktop's
     // custom concurrency must never replace a phone's memory-safe tuning.
     "imageTranslationPerformancePreset",
@@ -532,6 +534,10 @@ class Settings with ChangeNotifier {
     'einkRefreshColor': 'white', // white, black, blackThenWhite
     'einkRefreshInterval': 1, // page turns between refreshes, 1 - 10
     'einkRefreshDuration': 150, // ms per refresh frame, 50 - 1000
+    // Native page-turn ripple on supported e-readers (see EinkPanel). While
+    // on, it replaces the slide animation of tap and key turns in gallery modes.
+    'einkRipplePageTurn': false,
+    'einkRippleSpeed': 'standard', // slower, standard, faster
     // 本地漫画翻译（模型按需下载，见 foundation/image_translation/）。
     // 注意：翻译是否开启按漫画独立存储于 implicitData
     // ['imageTranslationEnabledComics']，不走这里的全局阅读器设置通道——翻译
