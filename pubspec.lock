@@ -471,10 +471,11 @@ packages:
   flutter_onnxruntime:
     dependency: "direct main"
     description:
-      name: flutter_onnxruntime
-      sha256: "4efb12e04c24ee653b3fbe2bbbf1955367c6c055a0967fb14c0440bf61293db6"
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: c0e5af7888a07d7d0ca1fcdbdf15d06023093f77
+      resolved-ref: c0e5af7888a07d7d0ca1fcdbdf15d06023093f77
+      url: "https://github.com/Kyosee/flutter_onnxruntime"
+    source: git
     version: "1.8.3"
   flutter_plugin_android_lifecycle:
     dependency: transitive

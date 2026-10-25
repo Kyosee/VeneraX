@@ -97,7 +97,11 @@ dependencies:
   flutter_slidable: ^4.0.0
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.2.3
-  flutter_onnxruntime: ^1.8.3
+  # 1.8.3 with the iOS minimum lowered from 16.0 to 15.1, matching ONNX Runtime 1.23.
+  flutter_onnxruntime:
+    git:
+      url: https://github.com/Kyosee/flutter_onnxruntime
+      ref: c0e5af7888a07d7d0ca1fcdbdf15d06023093f77
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
   pdfrx_engine: ^0.4.3

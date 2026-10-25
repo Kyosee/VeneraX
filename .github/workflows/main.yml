@@ -565,7 +565,7 @@ jobs:
           DOWNLOAD_URL: ${{ steps.meta.outputs.download_url }}
           SIZE: ${{ steps.meta.outputs.size }}
           PUB_DATE: ${{ steps.meta.outputs.pub_date }}
-          MIN_OS: '14.0'
+          MIN_OS: '15.1'
         run: |
           set -euo pipefail
           if [ -f "release-notes/${TAG}.en.md" ]; then
@@ -641,7 +641,7 @@ jobs:
           DOWNLOAD_URL: ${{ steps.meta.outputs.download_url }}
           SIZE: ${{ steps.meta.outputs.size }}
           PUB_DATE: ${{ steps.meta.outputs.pub_date }}
-          MIN_OS: '14.0'
+          MIN_OS: '15.1'
         run: |
           set -euo pipefail
           if [ -f "release-notes/${TAG}.en.md" ]; then
