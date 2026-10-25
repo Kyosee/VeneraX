@@ -50,6 +50,9 @@ class _SettingsSearchEntry {
     'The number of pic in screen for portrait (Only Gallery Mode)' ||
     'Show single image on first page' ||
     'Fill screen' => 'Reading mode',
+    'Refresh color' ||
+    'Refresh every N pages' ||
+    'Refresh duration (ms)' => 'Full refresh on page turn',
     _ => null,
   };
 
@@ -97,6 +100,14 @@ class _SettingsSearchEntry {
         'Show Comments at Chapter End',
       ].contains(title)) {
         return 'Display settings';
+      }
+      if (const [
+        'Full refresh on page turn',
+        'Refresh color',
+        'Refresh every N pages',
+        'Refresh duration (ms)',
+      ].contains(title)) {
+        return 'E-ink screen';
       }
     }
     return null;
@@ -195,6 +206,14 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     1,
     keywords: ["comment"],
   ),
+  _SettingsSearchEntry(
+    "Full refresh on page turn",
+    1,
+    keywords: ["E-ink screen", "Ghosting"],
+  ),
+  _SettingsSearchEntry("Refresh color", 1, keywords: ["E-ink screen"]),
+  _SettingsSearchEntry("Refresh every N pages", 1, keywords: ["E-ink screen"]),
+  _SettingsSearchEntry("Refresh duration (ms)", 1, keywords: ["E-ink screen"]),
   _SettingsSearchEntry(
     "AI Translation",
     8,

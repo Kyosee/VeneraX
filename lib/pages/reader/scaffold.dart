@@ -268,6 +268,17 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             child: RepaintBoundary(child: buildBottom()),
           ),
         ),
+        // Topmost: an e-ink refresh must cover the bars and page info as well.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ValueListenableBuilder<Color?>(
+              valueListenable: context.reader._einkRefresher.overlay,
+              builder: (context, color, _) => color == null
+                  ? const SizedBox.shrink()
+                  : ColoredBox(color: color),
+            ),
+          ),
+        ),
       ],
     );
   }

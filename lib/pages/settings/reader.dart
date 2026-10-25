@@ -1050,6 +1050,48 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 ),
             ],
           ).toSliver(),
+          // Device-local panel tuning (see _disableSync), so these rows edit
+          // the global value even when opened for a comic.
+          _SettingsExpansionTile(
+            expansionKey: const PageStorageKey('readerEinkGroup'),
+            icon: Icons.chrome_reader_mode_outlined,
+            title: "E-ink screen".tl,
+            children: [
+              _SwitchSetting(
+                title: "Full refresh on page turn".tl,
+                subtitle:
+                    "Briefly fill the screen with a solid color after turning a page to clear ghosting. Gallery modes only"
+                        .tl,
+                settingKey: "einkFullRefresh",
+                onChanged: () => setState(() {}),
+              ),
+              if (appdata.settings['einkFullRefresh'] == true) ...[
+                SelectSetting(
+                  title: "Refresh color".tl,
+                  settingKey: "einkRefreshColor",
+                  optionTranslation: {
+                    "white": "White".tl,
+                    "black": "Black".tl,
+                    "blackThenWhite": "Black, then white".tl,
+                  },
+                ),
+                _SliderSetting(
+                  title: "Refresh every N pages".tl,
+                  settingsIndex: "einkRefreshInterval",
+                  interval: 1,
+                  min: 1,
+                  max: 10,
+                ),
+                _SliderSetting(
+                  title: "Refresh duration (ms)".tl,
+                  settingsIndex: "einkRefreshDuration",
+                  interval: 50,
+                  min: 50,
+                  max: 1000,
+                ),
+              ],
+            ],
+          ).toSliver(),
         ],
         if (!widget.translationOnly)
           _CallbackSetting(

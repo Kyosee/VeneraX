@@ -25,6 +25,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
+import 'package:venera/foundation/eink_screen.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
@@ -248,6 +249,24 @@ class _ReaderState extends State<Reader>
 
   var focusNode = FocusNode();
 
+  /// Lives here rather than in the gallery so the refresh interval keeps
+  /// counting across chapters, which remount the gallery.
+  final _einkRefresher = EinkRefresher();
+
+  /// Last (chapter, page) a gallery came to rest on.
+  (int, int)? _settledPosition;
+
+  /// Counts a turn only when the resting position actually changed: a remount
+  /// on the same page or a bounce back at a chapter edge is not a turn.
+  void _onGallerySettled(int settledPage) {
+    final position = (chapter, settledPage);
+    final previous = _settledPosition;
+    _settledPosition = position;
+    if (previous != null && previous != position) {
+      _einkRefresher.onPageSettled();
+    }
+  }
+
   final ReadingTimeTracker _readingTimeTracker = ReadingTimeTracker();
   Timer? _readingCheckpointTimer;
   PageRoute<dynamic>? _readingRoute;
@@ -395,6 +414,7 @@ class _ReaderState extends State<Reader>
       unawaited(HistoryManager().addHistoryAsync(history!));
     }
     autoPageTurningTimer?.cancel();
+    _einkRefresher.dispose();
     focusNode.dispose();
     ImageTranslationService.instance.removeListener(_onPageTranslated);
     ImageTranslationService.instance.clearQueue();

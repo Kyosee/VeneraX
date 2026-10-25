@@ -233,6 +233,11 @@ class _GalleryModeState extends State<_GalleryMode>
       }
       context.readerScaffold.setFloatingButton(0);
     });
+    // A chapter entered by turning past the edge opens here, not through a
+    // pager settle, and still counts as a turn for the e-ink refresh.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) reader._onGallerySettled(reader.page);
+    });
     _schedulePrecache(reader.page);
     super.initState();
   }
@@ -362,9 +367,28 @@ class _GalleryModeState extends State<_GalleryMode>
     );
   }
 
+  /// Fires once the pager stops moving, whether it got there by swipe, jump or
+  /// animated turn — the point where the page on screen is final.
+  bool _onPagerSettled(ScrollEndNotification notification) {
+    // Scrollables inside a page (the comments list) bubble up here too.
+    if (notification.depth != 0 || !controller.hasClients) return false;
+    final position = controller.page;
+    if (position == null) return false;
+    final settled = position.round();
+    // Caught mid-flight by a new drag; the real settle follows.
+    if ((position - settled).abs() > 0.01) return false;
+    // Placeholder pages before the first and after the last page.
+    if (settled < 1 || settled > totalPages) return false;
+    // The neighbour hop that precedes a long animated jump.
+    final pending = reader._pendingPage;
+    if (pending != null && pending != settled) return false;
+    reader._onGallerySettled(settled);
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Listener(
+    final gallery = Listener(
       onPointerDown: (event) {
         _increaseFingers();
       },
@@ -502,6 +526,10 @@ class _GalleryModeState extends State<_GalleryMode>
           }
         },
       ),
+    );
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: _onPagerSettled,
+      child: gallery,
     );
   }
 

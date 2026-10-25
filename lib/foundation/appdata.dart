@@ -166,6 +166,12 @@ class Appdata with Init {
     // device's own system animations look like, so it stays with the device
     // (#194) rather than travelling from one phone to a tablet or desktop.
     "enablePredictiveBack",
+    // E-ink refresh is tuned to this device's panel; a phone or desktop
+    // receiving it would flash on every page turn.
+    "einkFullRefresh",
+    "einkRefreshColor",
+    "einkRefreshInterval",
+    "einkRefreshDuration",
     // Throughput presets and their raw values are device-local. A desktop's
     // custom concurrency must never replace a phone's memory-safe tuning.
     "imageTranslationPerformancePreset",
@@ -520,6 +526,12 @@ class Settings with ChangeNotifier {
     'readerImageEnhanceClarity': 0.0, // 0.0 - 1.0 mid-radius local contrast
     'readerImageEnhanceContrast': 0.0, // 0.0 - 1.0 level-stretch amount
     'readerImageEnhanceVibrance': 0.0, // 0.0 - 1.0 colour-page saturation lift
+    // E-ink full refresh in gallery modes (see EinkRefresher). Device-local:
+    // flashing only helps an e-ink panel, so it must not follow sync to a phone.
+    'einkFullRefresh': false,
+    'einkRefreshColor': 'white', // white, black, blackThenWhite
+    'einkRefreshInterval': 1, // page turns between refreshes, 1 - 10
+    'einkRefreshDuration': 150, // ms per refresh frame, 50 - 1000
     // 本地漫画翻译（模型按需下载，见 foundation/image_translation/）。
     // 注意：翻译是否开启按漫画独立存储于 implicitData
     // ['imageTranslationEnabledComics']，不走这里的全局阅读器设置通道——翻译
