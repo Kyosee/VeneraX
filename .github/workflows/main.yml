@@ -585,6 +585,45 @@ jobs:
           git commit -m "chore: 更新 AltStore 安装清单至 ${{ github.ref_name }}"
           git push origin HEAD:master
 
+  # Rebuilds CHANGELOG.md / CHANGELOG_EN.md from release-notes/ after a stable
+  # release. Runs after the AltStore job so the two pushes to master don't race,
+  # and still runs when that job failed.
+  Update_Changelog:
+    runs-on: ubuntu-22.04
+    needs: [Release, Update_AltStore_Source]
+    if: ${{ !cancelled() && needs.Release.result == 'success' && needs.Release.outputs.prerelease == 'false' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Regenerate changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export RELEASES_FILE="$RUNNER_TEMP/releases.tsv"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | "\(.tag_name)\t\(.published_at)"' \
+            > "$RELEASES_FILE"
+          node .github/scripts/gen-changelog.mjs
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- CHANGELOG.md CHANGELOG_EN.md)" ]; then
+            echo "Changelog unchanged; nothing to commit"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md CHANGELOG_EN.md
+          git commit -m "chore: update changelog for ${{ github.ref_name }}"
+          git push origin HEAD:master
+
   # Beta counterpart of Update_AltStore_Source: pre-releases update ONLY the
   # separate beta manifest, which testers subscribe to explicitly. Stable users
   # (altstore-source.json + the in-app updater) never see these builds.

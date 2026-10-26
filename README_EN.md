@@ -54,6 +54,10 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 
 </details>
 
+## Changelog
+
+See the **[Changelog](CHANGELOG_EN.md)** for what each version added, changed and fixed. It updates automatically after every stable release. When the app finds a new version, the update dialog also shows what changed.
+
 ## Guide
 
 Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.

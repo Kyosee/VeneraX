@@ -30,6 +30,14 @@ The dialog renders **one entry per line** as a bullet list. Parsing rules
 So keep every user-facing entry on its own line as a `- ` bullet under a
 section heading.
 
+## CHANGELOG.md
+
+`CHANGELOG.md` (Chinese) and `CHANGELOG_EN.md` (English) at the repo root are
+generated from these files by `.github/scripts/gen-changelog.mjs`, in the
+`Update_Changelog` job after each stable release. Only published stable
+releases are listed. Edit the files here, never the generated ones; the next
+stable release rewrites both.
+
 ## GitHub Release body
 
 The release body should link to both language files so users on the web can
