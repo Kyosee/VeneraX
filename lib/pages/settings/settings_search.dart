@@ -49,7 +49,11 @@ class _SettingsSearchEntry {
     'The number of pic in screen for landscape (Only Gallery Mode)' ||
     'The number of pic in screen for portrait (Only Gallery Mode)' ||
     'Show single image on first page' ||
-    'Fill screen' => 'Reading mode',
+    'Fill screen' ||
+    'Auto page turning mode' => 'Reading mode',
+    // Only one of the two shows at a time, by auto turning mode.
+    'Auto scroll speed' => 'Auto page turning interval',
+    'Auto page turning interval' => 'Auto scroll speed',
     'Refresh color' ||
     'Refresh every N pages' ||
     'Refresh duration (ms)' => 'Full refresh on page turn',
@@ -171,7 +175,13 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Follow system dark mode", 1, keywords: ["dark"]),
   _SettingsSearchEntry("Night mode color", 1, keywords: ["dark"]),
   _SettingsSearchEntry("Night mode intensity", 1, keywords: ["dark"]),
+  _SettingsSearchEntry(
+    "Auto page turning mode",
+    1,
+    keywords: ["auto", "scroll"],
+  ),
   _SettingsSearchEntry("Auto page turning interval", 1, keywords: ["auto"]),
+  _SettingsSearchEntry("Auto scroll speed", 1, keywords: ["auto", "scroll"]),
   _SettingsSearchEntry("Mouse scroll speed", 1, keywords: ["scroll"]),
   _SettingsSearchEntry("Number of images preloaded", 1, keywords: ["preload"]),
   _SettingsSearchEntry("Double tap to zoom", 1, keywords: ["gesture", "zoom"]),

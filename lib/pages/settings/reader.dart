@@ -271,21 +271,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   }
 
   void _writeEffectiveSetting(String key, dynamic value) {
-    if (appdata.settings.isComicSpecificSettingsEnabled(
+    appdata.settings.setEffectiveReaderSetting(
       widget.comicId,
       widget.comicSource,
-    )) {
-      appdata.settings.setReaderSetting(
-        widget.comicId!,
-        widget.comicSource!,
-        key,
-        value,
-      );
-    } else if (appdata.settings.isDeviceSpecificSettingsEnabled()) {
-      appdata.settings.setDeviceReaderSetting(key, value);
-    } else {
-      appdata.settings[key] = value;
-    }
+      key,
+      value,
+    );
   }
 
   void _onShowChapterCommentsChanged() {
@@ -551,22 +542,64 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
-              _SliderSetting(
-                title: "Auto page turning interval".tl,
-                settingsIndex: "autoPageTurningInterval",
-                interval: 1,
-                min: 1,
-                max: 20,
-                onChanged: () {
-                  setState(() {});
-                  widget.onChanged?.call("autoPageTurningInterval");
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
+              if ((_effectiveSetting('readerMode') as String?)?.startsWith(
+                    'continuous',
+                  ) ??
+                  false)
+                SelectSetting(
+                  title: "Auto page turning mode".tl,
+                  settingKey: "autoPageTurningMode",
+                  optionTranslation: {
+                    autoTurnModePage: "Turn pages".tl,
+                    autoTurnModeScroll: "Scroll".tl,
+                  },
+                  onChanged: () {
+                    setState(() {});
+                    widget.onChanged?.call("autoPageTurningMode");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+              // In scroll mode the interval gives way to a speed.
+              if (autoTurnScrolls(
+                (_effectiveSetting('readerMode') as String?) ?? '',
+                _effectiveSetting('autoPageTurningMode'),
+              ))
+                _SliderSetting(
+                  title: "Auto scroll speed".tl,
+                  settingsIndex: "autoScrollSpeed",
+                  interval: 1,
+                  min: autoScrollSpeedMin.toDouble(),
+                  max: autoScrollSpeedMax.toDouble(),
+                  onChanged: () {
+                    widget.onChanged?.call("autoScrollSpeed");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                )
+              else
+                _SliderSetting(
+                  title: "Auto page turning interval".tl,
+                  settingsIndex: "autoPageTurningInterval",
+                  interval: 1,
+                  min: autoTurnIntervalMin.toDouble(),
+                  max: autoTurnIntervalMax.toDouble(),
+                  onChanged: () {
+                    setState(() {});
+                    widget.onChanged?.call("autoPageTurningInterval");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
               if ((_effectiveSetting('readerMode') as String?)?.startsWith(
                     'continuous',
                   ) ??

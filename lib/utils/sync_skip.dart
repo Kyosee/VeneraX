@@ -68,6 +68,8 @@ const syncSkipCategories = <SyncSkipCategory>[
       "tapZoneRight",
       "enablePageAnimation",
       "autoPageTurningInterval",
+      "autoPageTurningMode",
+      "autoScrollSpeed",
       "enableLongPressToZoom",
       "longPressZoomPosition",
       "enableTurnPageByVolumeKey",

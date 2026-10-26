@@ -112,6 +112,11 @@ class _ReaderImagesState extends State<_ReaderImages> {
       }
     }
     if (!mounted) return;
+    if (error == null) {
+      reader._onChapterImagesLoaded();
+    } else {
+      reader._onChapterLoadFailed();
+    }
     context.readerScaffold.update();
   }
 
@@ -630,6 +635,9 @@ class _GalleryModeState extends State<_GalleryMode>
   bool jumpToChapter(int chapter, {bool toLastPage = false}) => false; // gallery keyed by chapter; uses the default remount path
 
   @override
+  void syncAutoScroll() {} // gallery always turns pages on the reader's countdown
+
+  @override
   bool get isImageZoomed {
     // 每页各自一个 PhotoViewController，取当前页的判断缩放；评论页等无控制器视为未缩放。
     final controller = photoViewControllers[reader.page];
@@ -1010,12 +1018,17 @@ class _ContinuousModeState extends State<_ContinuousMode>
         // Best-effort warm-up; never let it break reader startup.
       }
       _onScrollPositionSettled();
+      // A chapter switched to while auto scrolling carries on, after a beat
+      // to take in the new chapter's top.
+      if (reader.autoScrollRunning) _scheduleAutoScrollResume();
     });
     super.initState();
   }
 
   @override
   void dispose() {
+    _autoScrollResumeTimer?.cancel();
+    _autoScrollEndTimer?.cancel();
     _pageTurnCoordinator.cancel();
     _scrollController.removeListener(onScroll);
     _scrollController.dispose();
@@ -1446,6 +1459,199 @@ class _ContinuousModeState extends State<_ContinuousMode>
     _pageTurnCoordinator.cancel();
   }
 
+  // ----- Auto scroll -----
+  // Runs as a scroll activity, so a touch, fling, wheel or page turn simply
+  // replaces it; it comes back once the list has been left alone.
+
+  static const _autoScrollResumeDelay = Duration(milliseconds: 600);
+
+  AutoScrollActivity? _autoScrollActivity;
+  Timer? _autoScrollResumeTimer;
+
+  /// Holds the last page of a single chapter on screen before moving on.
+  Timer? _autoScrollEndTimer;
+
+  /// Sub-pixel distance owed from earlier frames.
+  double _autoScrollCarry = 0;
+
+  /// Image extent across the scroll axis; the speed is relative to it.
+  double _crossExtent = 0;
+
+  double _devicePixelRatio = 1;
+
+  @override
+  void syncAutoScroll() {
+    if (!mounted) return;
+    if (reader.autoScrollRunning) {
+      // A resume already pending keeps its delay, e.g. the beat after a touch.
+      if (_autoScrollResumeTimer == null) {
+        _scheduleAutoScrollResume(Duration.zero);
+      }
+    } else {
+      _stopAutoScroll();
+    }
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollResumeTimer?.cancel();
+    _autoScrollResumeTimer = null;
+    _autoScrollEndTimer?.cancel();
+    _autoScrollEndTimer = null;
+    _autoScrollActivity?.delegate.goBallistic(0.0);
+  }
+
+  void _scheduleAutoScrollResume([Duration delay = _autoScrollResumeDelay]) {
+    _autoScrollResumeTimer?.cancel();
+    _autoScrollResumeTimer = Timer(delay, _resumeAutoScroll);
+  }
+
+  void _resumeAutoScroll() {
+    _autoScrollResumeTimer = null;
+    if (!mounted ||
+        !reader.autoScrollRunning ||
+        _autoScrollActivity != null ||
+        _autoScrollEndTimer != null) {
+      return;
+    }
+    if (!_scrollController.hasClients) {
+      _scheduleAutoScrollResume();
+      return;
+    }
+    final position = _scrollController.position;
+    // A finger, a fling, the wheel, a page turn or a popup owns the list.
+    if (fingers > 0 ||
+        position.isScrollingNotifier.value ||
+        _pageTurnCoordinator.intendedTarget != null ||
+        reader._autoTurnInterrupted) {
+      _scheduleAutoScrollResume();
+      return;
+    }
+    // Don't carry the reader past a page that hasn't appeared yet.
+    if (_isVisibleImageLoading()) {
+      _scheduleAutoScrollResume(const Duration(milliseconds: 300));
+      return;
+    }
+    if (position.hasContentDimensions &&
+        position.pixels >= position.maxScrollExtent - 0.5) {
+      _onAutoScrollReachedEnd();
+      return;
+    }
+    if (position is! ScrollPositionWithSingleContext) return;
+    _futurePosition = null;
+    final activity = AutoScrollActivity(
+      position,
+      vsync: position.context.vsync,
+      nextPixels: _nextAutoScrollPixels,
+      onDispose: _onAutoScrollActivityEnded,
+    );
+    // Set first: the start notification fires inside beginActivity.
+    _autoScrollActivity = activity;
+    position.beginActivity(activity);
+  }
+
+  void _onAutoScrollActivityEnded() {
+    _autoScrollActivity = null;
+    if (mounted && reader.autoScrollRunning) _scheduleAutoScrollResume();
+  }
+
+  double? _nextAutoScrollPixels(double seconds) {
+    if (!mounted ||
+        !_scrollController.hasClients ||
+        fingers > 0 ||
+        reader._autoTurnInterrupted) {
+      return null;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions ||
+        position.pixels >= position.maxScrollExtent - 0.5 ||
+        _isVisibleImageLoading()) {
+      return null;
+    }
+    final (step, carry) = autoScrollStep(
+      _autoScrollSpeed() * seconds,
+      _autoScrollCarry,
+      _devicePixelRatio,
+    );
+    _autoScrollCarry = carry;
+    return math.min(position.pixels + step, position.maxScrollExtent);
+  }
+
+  /// Logical pixels per second.
+  double _autoScrollSpeed() {
+    final level = autoScrollSpeedOf(reader.effectiveSetting('autoScrollSpeed'));
+    return autoScrollWidthsPerSecond(level) * _crossExtent;
+  }
+
+  void _onAutoScrollReachedEnd() {
+    if (seamlessChapterReading) {
+      final last = _entries.lastOrNull;
+      if (last == null || !last.hasNext) {
+        reader.stopAutoPageTurning(
+          message: "Reached the end. Auto page turning stopped".tl,
+        );
+      } else if (last.error != null) {
+        reader.stopAutoPageTurning(message: "Auto page turning stopped".tl);
+      } else {
+        // The next chapter is loading in behind the join page.
+        _scheduleAutoScrollResume(const Duration(seconds: 1));
+      }
+      return;
+    }
+    // About as long as the last lines had while scrolling into view.
+    final viewExtent = _scrollController.position.viewportDimension;
+    final speed = _autoScrollSpeed();
+    final seconds = speed > 0 ? (viewExtent / speed / 2).clamp(1.5, 6.0) : 3.0;
+    _autoScrollEndTimer = Timer(
+      Duration(milliseconds: (seconds * 1000).round()),
+      _onAutoScrollEndHeld,
+    );
+  }
+
+  void _onAutoScrollEndHeld() {
+    _autoScrollEndTimer = null;
+    if (!mounted || !reader.autoScrollRunning) return;
+    final position = _scrollController.hasClients
+        ? _scrollController.position
+        : null;
+    if (position == null ||
+        position.pixels < position.maxScrollExtent - 0.5 ||
+        reader._autoTurnInterrupted) {
+      // Scrolled back up meanwhile, or a popup is up: decide again later.
+      _scheduleAutoScrollResume();
+      return;
+    }
+    context.readerScaffold.setFloatingButton(0);
+    if (!reader.toNextChapter()) {
+      reader.stopAutoPageTurning(
+        message: "Reached the end. Auto page turning stopped".tl,
+      );
+    }
+  }
+
+  /// Whether a page on screen is still waiting for its image.
+  bool _isVisibleImageLoading() {
+    final viewportBox = context.findRenderObject();
+    if (viewportBox is! RenderBox || !viewportBox.hasSize) return false;
+    final viewport = viewportBox.localToGlobal(Offset.zero) & viewportBox.size;
+    for (final state in imageStates.whereType<_ComicImageState>()) {
+      if (!state.mounted ||
+          state._imageInfo != null ||
+          state._lastException != null) {
+        continue;
+      }
+      final box = state.context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final rect = MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+      if (rect.isFinite && !rect.isEmpty && rect.overlaps(viewport)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Entry [_cacheAround] last ran for; the scroll listener settles every
   /// frame, and the entry list scan is wasted while the page has not moved.
   int _lastCacheAroundChapter = -1;
@@ -1774,6 +1980,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
             disableScroll = true;
           });
         }
+        // Don't leave the chapter from under a finger; releasing re-decides.
+        _autoScrollEndTimer?.cancel();
+        _autoScrollEndTimer = null;
         _futurePosition = null;
         if (_isMouseScrolling) {
           setState(() {
@@ -1787,6 +1996,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
           setState(() {
             disableScroll = false;
           });
+        }
+        if (fingers == 0 && reader.autoScrollRunning) {
+          _scheduleAutoScrollResume();
         }
         if (!seamlessChapterReading && fingers == 0) {
           if (jumpToPrevChapter) {
@@ -1804,6 +2016,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
           setState(() {
             disableScroll = false;
           });
+        }
+        if (fingers == 0 && reader.autoScrollRunning) {
+          _scheduleAutoScrollResume();
         }
       },
       onPointerPanZoomUpdate: (event) {
@@ -1844,12 +2059,15 @@ class _ContinuousModeState extends State<_ContinuousMode>
       onNotification: (notification) {
         if (_repivoting) return true;
         if (notification is ScrollStartNotification) {
-          delayedSetIsScrolling(true);
+          // A tap during auto scroll should open the menu, not just stop a
+          // fling the way it does after a swipe.
+          if (_autoScrollActivity == null) delayedSetIsScrolling(true);
           if (notification.dragDetails != null) {
             _cancelProgrammaticPageTurn();
           }
         } else if (notification is ScrollEndNotification) {
           delayedSetIsScrolling(false);
+          if (reader.autoScrollRunning) _scheduleAutoScrollResume();
         }
 
         var scale = photoViewController.scale ?? 1.0;
@@ -1914,6 +2132,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
         reader.mode == ReaderMode.continuousTopToBottom) {
       width = height * widthRatio;
     }
+    _crossExtent = _axis == Axis.vertical ? width : height;
+    _devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
 
     return buildPointerLayer(
       PhotoView.customChild(

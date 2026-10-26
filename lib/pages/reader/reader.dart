@@ -19,6 +19,7 @@ import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/auto_page_turning.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/chapter_duplicates.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -42,6 +43,7 @@ import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/pages/reader/auto_scroll_activity.dart';
 import 'package:venera/pages/reader/continuous_page_turn_coordinator.dart';
 import 'package:venera/pages/reader/shader_image.dart';
 import 'package:venera/pages/settings/settings_page.dart';
@@ -181,6 +183,7 @@ class _ReaderState extends State<Reader>
         _ReaderWindow,
         _VolumeListener,
         _ImagePerPageHandler,
+        _AutoPageTurner,
         WidgetsBindingObserver,
         RouteAware {
   dynamic effectiveSetting(String key) =>
@@ -285,7 +288,9 @@ class _ReaderState extends State<Reader>
 
   final ReadingTimeTracker _readingTimeTracker = ReadingTimeTracker();
   Timer? _readingCheckpointTimer;
+  @override
   PageRoute<dynamic>? _readingRoute;
+  @override
   bool _readerRouteVisible = false;
   bool _appIsForeground = true;
   bool _readingStatisticsChanged = false;
@@ -429,7 +434,7 @@ class _ReaderState extends State<Reader>
       _updateHistoryTimer = null;
       unawaited(HistoryManager().addHistoryAsync(history!));
     }
-    autoPageTurningTimer?.cancel();
+    _disposeAutoPageTurning();
     _einkRefresher.dispose();
     focusNode.dispose();
     ImageTranslationService.instance.removeListener(_onPageTranslated);
@@ -453,30 +458,40 @@ class _ReaderState extends State<Reader>
       _stopReadingTimer();
       _notifyReadingStatisticsChanged();
     }
+    // Inactive is still on screen: an unfocused desktop window, or a phone
+    // with the notification shade pulled down.
+    _appVisible =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    _syncAutoTurn();
   }
 
   @override
   void didPush() {
     _readerRouteVisible = true;
     _syncReadingTimer();
+    _syncAutoTurn();
   }
 
   @override
   void didPopNext() {
     _readerRouteVisible = true;
     _syncReadingTimer();
+    _syncAutoTurn();
   }
 
   @override
   void didPushNext() {
     _readerRouteVisible = false;
     _stopReadingTimer();
+    _syncAutoTurn();
   }
 
   @override
   void didPop() {
     _readerRouteVisible = false;
     _stopReadingTimer();
+    _syncAutoTurn();
   }
 
   void _syncReadingTimer() {
@@ -605,6 +620,8 @@ class _ReaderState extends State<Reader>
   @override
   void onPageChanged() {
     updateHistory();
+    // Any turn, manual or automatic, gives the new page a full interval.
+    _restartAutoTurnCountdown();
   }
 
   /// Prevent multiple history updates in a short time.
@@ -1110,31 +1127,167 @@ abstract mixin class _ReaderLocation {
     }
     return false;
   }
+}
 
-  Timer? autoPageTurningTimer;
+/// Auto turning: turns a page every interval, or in continuous modes set to
+/// scroll, scrolls the list at a steady speed (driven by the view). Pauses
+/// while the menu is open, the reader is covered or the app is hidden, and
+/// keeps the screen awake while switched on.
+abstract mixin class _AutoPageTurner {
+  String get cid;
 
-  void autoPageTurning(String cid, ComicType type) {
-    if (autoPageTurningTimer != null) {
-      autoPageTurningTimer!.cancel();
-      autoPageTurningTimer = null;
-    } else {
-      int interval = appdata.settings.getReaderSetting(
+  ComicType get type;
+
+  ReaderMode get mode;
+
+  bool get isLoading;
+
+  List<String>? get images;
+
+  bool get mounted;
+
+  BuildContext get context;
+
+  bool get _readerRouteVisible;
+
+  PageRoute<dynamic>? get _readingRoute;
+
+  _ImageViewController? get _imageViewController;
+
+  bool toNextPage();
+
+  bool toNextChapter();
+
+  void update();
+
+  /// The user's switch; stays on while paused.
+  bool autoPageTurning = false;
+
+  bool _readerMenuOpen = false;
+
+  bool _appVisible = true;
+
+  Timer? _autoTurnTimer;
+
+  bool _screenKeptOn = false;
+
+  static const _screenChannel = MethodChannel("venera/method_channel");
+
+  bool get _autoTurnActive =>
+      autoPageTurning && !_readerMenuOpen && _readerRouteVisible && _appVisible;
+
+  bool get _autoTurnScrolls => autoTurnScrolls(
+    mode.key,
+    appdata.settings.getReaderSetting(
+      cid,
+      type.sourceKey,
+      'autoPageTurningMode',
+    ),
+  );
+
+  /// Whether the continuous view should be scrolling right now.
+  bool get autoScrollRunning => _autoTurnActive && _autoTurnScrolls;
+
+  /// A popup over the reader (context menu, drawer, dialog). Those never
+  /// reach the route observer, so turning is skipped while one is up rather
+  /// than paused, and carries on once it closes.
+  bool get _autoTurnInterrupted => !(_readingRoute?.isCurrent ?? true);
+
+  void toggleAutoPageTurning() {
+    autoPageTurning = !autoPageTurning;
+    _syncAutoTurn(restartCountdown: true);
+  }
+
+  void stopAutoPageTurning({String? message}) {
+    if (!autoPageTurning) return;
+    autoPageTurning = false;
+    _syncAutoTurn();
+    if (message != null && mounted) {
+      context.showMessage(message: message);
+    }
+    update();
+  }
+
+  void _onMenuToggled(bool open) {
+    _readerMenuOpen = open;
+    // Closing the menu gives the page a fresh interval.
+    _syncAutoTurn(restartCountdown: true);
+  }
+
+  /// Brings the countdown, the view's scrolling and the screen lock in line
+  /// with the current state. Called on every change that can affect them.
+  void _syncAutoTurn({bool restartCountdown = false}) {
+    if (!_autoTurnActive || _autoTurnScrolls) {
+      _autoTurnTimer?.cancel();
+      _autoTurnTimer = null;
+    } else if (_autoTurnTimer == null || restartCountdown) {
+      _armAutoTurn();
+    }
+    _imageViewController?.syncAutoScroll();
+    _keepScreenOn(autoPageTurning && _readerRouteVisible);
+  }
+
+  void _armAutoTurn() {
+    _autoTurnTimer?.cancel();
+    final interval = autoTurnIntervalOf(
+      appdata.settings.getReaderSetting(
         cid,
         type.sourceKey,
         'autoPageTurningInterval',
-      );
-      autoPageTurningTimer = Timer.periodic(Duration(seconds: interval), (_) {
-        // Advance a page; at the end of a chapter continue into the next one
-        // (mirrors the manual tap-to-advance behaviour). Only stop when there
-        // is no next page AND no next chapter.
-        if (!toNextPage()) {
-          if (!toNextChapter()) {
-            autoPageTurningTimer?.cancel();
-            autoPageTurningTimer = null;
-          }
-        }
-      });
+      ),
+    );
+    _autoTurnTimer = Timer(Duration(seconds: interval), _onAutoTurnTick);
+  }
+
+  void _restartAutoTurnCountdown() {
+    if (_autoTurnTimer != null) _armAutoTurn();
+  }
+
+  void _onAutoTurnTick() {
+    _autoTurnTimer = null;
+    if (!mounted || !_autoTurnActive || _autoTurnScrolls) return;
+    // A chapter still loading re-arms once its images arrive.
+    if (isLoading) return;
+    if (_autoTurnInterrupted) {
+      _armAutoTurn();
+      return;
     }
+    if (images == null) {
+      stopAutoPageTurning(message: "Auto page turning stopped".tl);
+      return;
+    }
+    if (toNextPage() || toNextChapter()) {
+      _armAutoTurn();
+    } else {
+      stopAutoPageTurning(
+        message: "Reached the end. Auto page turning stopped".tl,
+      );
+    }
+  }
+
+  /// A chapter opened during auto turning starts its countdown only once
+  /// its pages can actually be shown.
+  void _onChapterImagesLoaded() => _syncAutoTurn(restartCountdown: true);
+
+  void _onChapterLoadFailed() {
+    stopAutoPageTurning(message: "Auto page turning stopped".tl);
+  }
+
+  void _disposeAutoPageTurning() {
+    _autoTurnTimer?.cancel();
+    _autoTurnTimer = null;
+    _keepScreenOn(false);
+  }
+
+  void _keepScreenOn(bool on) {
+    if (_screenKeptOn == on || !(App.isAndroid || App.isIOS)) return;
+    _screenKeptOn = on;
+    // The two native handlers read their argument differently.
+    _screenChannel
+        .invokeMethod('setScreenOn', App.isAndroid ? {'set': on} : on)
+        .catchError((e) {
+          Log.error("Reader", "Failed to keep the screen on: $e");
+        });
   }
 }
 
@@ -1231,6 +1384,9 @@ abstract interface class _ImageViewController {
   /// mode has a constant key and never remounts, so it scrolls to the target
   /// itself here. Returns false to let keyed modes fall back to the remount path.
   bool jumpToChapter(int chapter, {bool toLastPage = false});
+
+  /// Starts or stops scrolling to match [_AutoPageTurner.autoScrollRunning].
+  void syncAutoScroll();
 
   void handleDoubleTap(Offset location);
 

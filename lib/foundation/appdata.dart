@@ -392,6 +392,10 @@ class Settings with ChangeNotifier {
     'blockedCommentWords': [],
     'defaultSearchTarget': null,
     'autoPageTurningInterval': 5, // in seconds
+    // Continuous modes only: 'scroll' replaces page turns with steady
+    // scrolling at autoScrollSpeed. See foundation/auto_page_turning.dart.
+    'autoPageTurningMode': 'page', // page, scroll
+    'autoScrollSpeed': 15, // 1 - 30, higher is faster
     'readerMode': 'galleryLeftToRight', // values of [ReaderMode]
     'enableContinuousChapterReading': true,
     'readerScreenPicNumberForLandscape': 1, // 1 - 5
@@ -640,6 +644,23 @@ class Settings with ChangeNotifier {
       () => <String, dynamic>{},
     )[key] = value;
     notifyListeners();
+  }
+
+  /// Writes [key] into the scope [getReaderSetting] reads it from: the
+  /// comic's own settings when enabled, else this device's, else global.
+  void setEffectiveReaderSetting(
+    String? comicId,
+    String? sourceKey,
+    String key,
+    dynamic value,
+  ) {
+    if (isComicSpecificSettingsEnabled(comicId, sourceKey)) {
+      setReaderSetting(comicId!, sourceKey!, key, value);
+    } else if (isDeviceSpecificSettingsEnabled()) {
+      setDeviceReaderSetting(key, value);
+    } else {
+      this[key] = value;
+    }
   }
 
   void resetComicReaderSettings(String key) {

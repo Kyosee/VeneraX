@@ -153,6 +153,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     setState(() {
       _isOpen = !_isOpen;
     });
+    context.reader._onMenuToggled(_isOpen);
   }
 
   /// Reader-only orientation lock: null follows the device, false locks
@@ -759,16 +760,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       Tooltip(
         message: "Auto Page Turning".tl,
         child: IconButton(
-          icon: context.reader.autoPageTurningTimer != null
-              ? const Icon(Icons.timer)
-              : const Icon(Icons.timer_sharp),
-          onPressed: () {
-            context.reader.autoPageTurning(
-              context.reader.cid,
-              context.reader.type,
-            );
-            update();
-          },
+          isSelected: context.reader.autoPageTurning,
+          icon: const Icon(Icons.timer_outlined),
+          selectedIcon: const Icon(Icons.timer),
+          onPressed: toggleAutoPageTurning,
         ),
       ),
       if (context.reader.widget.chapters != null)
@@ -897,6 +892,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           )
         : SizedBox(height: bottomBarHeight, child: twoRowLayout());
 
+    if (context.reader.autoPageTurning) {
+      child = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [buildAutoTurnBar(), child],
+      );
+    }
+
     return BlurEffect(
       child: Container(
         decoration: BoxDecoration(
@@ -918,6 +921,82 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           ),
           child: child,
         ),
+      ),
+    );
+  }
+
+  void toggleAutoPageTurning() {
+    final reader = context.reader;
+    reader.toggleAutoPageTurning();
+    // Starting means reading on: close the menu so the countdown or the
+    // scrolling begins right away.
+    if (reader.autoPageTurning && _isOpen) {
+      openOrClose();
+    } else {
+      update();
+    }
+  }
+
+  /// Speed (scroll) or interval (page) controls, shown above the bottom bar
+  /// while auto turning is on, so it can be tuned without leaving the page.
+  Widget buildAutoTurnBar() {
+    final reader = context.reader;
+    final scrolls = reader._autoTurnScrolls;
+    final key = scrolls ? 'autoScrollSpeed' : 'autoPageTurningInterval';
+    final value = scrolls
+        ? autoScrollSpeedOf(reader.effectiveSetting(key))
+        : autoTurnIntervalOf(reader.effectiveSetting(key));
+    final min = scrolls ? autoScrollSpeedMin : autoTurnIntervalMin;
+    final max = scrolls ? autoScrollSpeedMax : autoTurnIntervalMax;
+
+    void set(int next) {
+      appdata.settings.setEffectiveReaderSetting(
+        reader.cid,
+        reader.type.sourceKey,
+        key,
+        next,
+      );
+      appdata.saveData();
+      update();
+    }
+
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              (scrolls ? "Auto scroll speed" : "Auto page turning interval").tl,
+              style: ts.s14,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            tooltip: "Decrease".tl,
+            icon: const Icon(Icons.remove),
+            onPressed: value > min ? () => set(value - 1) : null,
+          ),
+          SizedBox(
+            width: 40,
+            child: Text(
+              scrolls ? '$value' : '${value}s',
+              textAlign: TextAlign.center,
+              style: ts.s14,
+            ),
+          ),
+          IconButton(
+            tooltip: "Increase".tl,
+            icon: const Icon(Icons.add),
+            onPressed: value < max ? () => set(value + 1) : null,
+          ),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: () => reader.stopAutoPageTurning(),
+            child: Text("Stop".tl),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
     );
   }
@@ -1083,6 +1162,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               key == "enableImageTranslation" || scopeChanged) {
             PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
+          }
+          if (key == "autoPageTurningInterval" ||
+              key == "autoPageTurningMode" ||
+              key == "readerMode" ||
+              scopeChanged) {
+            context.reader._syncAutoTurn(restartCountdown: true);
           }
           context.reader.update();
         },

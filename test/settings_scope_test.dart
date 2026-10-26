@@ -148,4 +148,68 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  test('effective writes land in the scope reads come from', () {
+    final settings = appdata.settings;
+    addTearDown(() => settings['autoScrollSpeed'] = 15);
+    settings.setEffectiveReaderSetting('comic', 'source', 'autoScrollSpeed', 4);
+    expect(settings['autoScrollSpeed'], 4);
+
+    settings.setEnabledDeviceSpecificSettings(true);
+    settings.setEffectiveReaderSetting('comic', 'source', 'autoScrollSpeed', 8);
+    expect(settings['autoScrollSpeed'], 4);
+    expect(settings.getDeviceReaderSetting('autoScrollSpeed'), 8);
+
+    settings.setEnabledComicSpecificSettings('comic', 'source', true);
+    settings.setEffectiveReaderSetting(
+      'comic',
+      'source',
+      'autoScrollSpeed',
+      20,
+    );
+    expect(settings.getDeviceReaderSetting('autoScrollSpeed'), 8);
+    expect(settings.getReaderSetting('comic', 'source', 'autoScrollSpeed'), 20);
+    expect(settings.getReaderSetting('other', 'source', 'autoScrollSpeed'), 8);
+  });
+
+  testWidgets('scroll mode swaps the turning interval for a scroll speed', (
+    tester,
+  ) async {
+    addTearDown(() => appdata.settings['autoPageTurningMode'] = 'page');
+    appdata.settings['autoPageTurningMode'] = 'scroll';
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: ReaderSettings())),
+    );
+    await tester.pumpAndSettle();
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('Auto scroll speed'),
+      200,
+      scrollable: scrollable,
+    );
+    expect(find.text('Auto page turning mode'), findsOneWidget);
+    expect(
+      find.text('Auto page turning interval', skipOffstage: false),
+      findsNothing,
+    );
+
+    // Gallery pages can't scroll: back to the interval, no mode choice.
+    appdata.settings['readerMode'] = 'galleryLeftToRight';
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: ReaderSettings())),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Auto page turning interval'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.text('Auto page turning mode', skipOffstage: false),
+      findsNothing,
+    );
+    expect(find.text('Auto scroll speed', skipOffstage: false), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
