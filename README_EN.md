@@ -20,6 +20,9 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 
 ## New Features & Improvements
 
+<details open>
+<summary><b>Feature list</b></summary>
+
 - [x] Improved WebDAV backup & sync, with a per-item choice of settings to skip
 - [x] Automatic update checks on Windows and Android APK
 - [x] Seamless continuous-chapter reading
@@ -48,6 +51,8 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 - [x] Custom comic cache directory
 - [x] Auto page turning adds a steady scroll mode, plus an option to keep the screen on while reading
 - [x] E-ink screen support (experimental): full refresh on page turn to clear ghosting, and the system ripple page turn on iReader devices
+
+</details>
 
 ## Guide
 
