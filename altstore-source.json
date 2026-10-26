@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.8",
+          "buildVersion": "251",
+          "date": "2026-10-26",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Added a full refresh on page turn for e-ink screens: after a page turn the screen briefly flashes a solid color to clear ghosting. Color, interval and duration are adjustable. Gallery modes only.\n- Added a ripple page turn for iReader e-readers: tap and key page turns in gallery modes use the device's own ripple effect, with adjustable speed. The option only appears on supported devices.\n- Auto page turning can now scroll continuously in continuous reading modes, at an adjustable speed. Touching or scrolling takes over, and auto scrolling picks up again shortly after you let go.\n- While auto page turning is running, speed / interval controls and a stop button appear above the bottom bar.\n- Added \"Keep screen on while reading\" to the reader settings, which keeps the screen on for the whole reading session (mobile only).\n\n### Changed\n- Auto page turning now pauses while the menu, a popup or another page is open, or the app is in the background, and continues when you return.\n- Auto page turning now keeps the screen on while it runs (mobile only).\n- Auto page turning now waits for a page that is still loading, and restarts its countdown after you turn a page yourself.\n- The app now runs on iOS 15.1 and later; it previously required iOS 16.\n\n### Fixed\n- Fixed the app crashing on launch on iOS 15 devices.\n- Fixed auto page turning sometimes stopping on its own, with no notice, while the next chapter was loading. It now stops only at the end or when a chapter fails to load, and shows a notice.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.7...v2.3.8",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.8/VeneraX-ios-2.3.8%2B251.ipa",
+          "size": 38931594,
+          "minOSVersion": "15.1"
+        },
+        {
           "version": "2.3.7",
           "buildVersion": "250",
           "date": "2026-10-24",
@@ -339,11 +348,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.7",
-      "versionDate": "2026-10-24",
-      "versionDescription": "## What's Changed\n\n### Added\n- Image translation can now translate Traditional Chinese comics, including vertical text; choose Traditional Chinese as the source language or let auto-detect pick it.\n- Added a new Chinese text recognition model that reads both Traditional and Simplified Chinese; once downloaded it replaces the old one.\n- You can now add your own source languages and replace the text detector with your own models; their size is shown before download and they are checked after it.\n- Added Vietnamese as a translation target language.\n- You can now add translation target languages that are not in the built-in list, under Custom languages.\n- Image enhancement settings now show a live before/after preview; drag the divider to compare, and when opened from the reader it previews the current page.\n- Each local favorites folder can now keep its own sort order; \"Apply to All Folders\" sets the default for every folder.\n\n### Changed\n- No other feature changes in this release.\n\n### Fixed\n- Fixed Traditional Chinese pages coming back untranslated or with wrong characters; pages that failed before can be fixed with \"Re-translate\".\n- Fixed the download button disappearing for comics with only some chapters downloaded.\n- Fixed the comic description appearing twice at the top of the details page.\n- Fixed dragging a zoomed-in image to the right on iOS sliding the whole reader page away.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.6...v2.3.7",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.7/VeneraX-ios-2.3.7%2B250.ipa",
-      "size": 38892754
+      "version": "2.3.8",
+      "versionDate": "2026-10-26",
+      "versionDescription": "## What's Changed\n\n### Added\n- Added a full refresh on page turn for e-ink screens: after a page turn the screen briefly flashes a solid color to clear ghosting. Color, interval and duration are adjustable. Gallery modes only.\n- Added a ripple page turn for iReader e-readers: tap and key page turns in gallery modes use the device's own ripple effect, with adjustable speed. The option only appears on supported devices.\n- Auto page turning can now scroll continuously in continuous reading modes, at an adjustable speed. Touching or scrolling takes over, and auto scrolling picks up again shortly after you let go.\n- While auto page turning is running, speed / interval controls and a stop button appear above the bottom bar.\n- Added \"Keep screen on while reading\" to the reader settings, which keeps the screen on for the whole reading session (mobile only).\n\n### Changed\n- Auto page turning now pauses while the menu, a popup or another page is open, or the app is in the background, and continues when you return.\n- Auto page turning now keeps the screen on while it runs (mobile only).\n- Auto page turning now waits for a page that is still loading, and restarts its countdown after you turn a page yourself.\n- The app now runs on iOS 15.1 and later; it previously required iOS 16.\n\n### Fixed\n- Fixed the app crashing on launch on iOS 15 devices.\n- Fixed auto page turning sometimes stopping on its own, with no notice, while the next chapter was loading. It now stops only at the end or when a chapter fails to load, and shows a notice.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.7...v2.3.8",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.8/VeneraX-ios-2.3.8%2B251.ipa",
+      "size": 38931594
     }
   ],
   "news": []
