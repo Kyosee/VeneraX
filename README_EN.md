@@ -20,17 +20,17 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 
 ## New Features & Improvements
 
-- [x] Improved WebDAV backup & sync
+- [x] Improved WebDAV backup & sync, with a per-item choice of settings to skip
 - [x] Automatic update checks on Windows and Android APK
 - [x] Seamless continuous-chapter reading
-- [x] Improved local library, follow-updates & favorites
+- [x] Improved local library, follow-updates & favorites; follow updates across several favorite folders, with a check interval, a check on startup and a daily scheduled check
 - [x] Task system with background execution and related views
 - [x] Chapter read-status changes
 - [x] Reading background color (per-comic)
 - [x] Night-view mode (warm/black/dim-red overlay, adjustable intensity)
 - [x] Android background downloads, follow-update checks, comic import/export
 - [x] Windows tray minimize
-- [x] Simple image-quality enhancement
+- [x] Simple image-quality enhancement, with a live before/after preview
 - [x] Various UI & UX refinements
 - [x] Read-later
 - [x] Customizable automatic history cleanup
@@ -39,8 +39,15 @@ VeneraX is a free and open-source, multi-platform comic reader forked from Vener
 - [x] Multiple library management
 - [x] WebDAV comic library (experimental)
 - [x] App lock adds PIN, password and pattern unlock
-- [x] AI page translation while reading (experimental): images and OCR stay on-device, and only recognized text is sent to an LLM you configure; beginner provider templates/model fetching plus advanced custom settings, resource-saving/balanced/fast presets, whole-chapter pre-translation, smart erase and bounded text layout
+- [x] AI page translation while reading (experimental): images and OCR stay on-device, and only recognized text is sent to an LLM you configure; beginner provider templates/model fetching plus advanced custom settings, resource-saving/balanced/fast presets, whole-chapter pre-translation, smart erase and bounded text layout; Traditional Chinese (including vertical text), custom target languages, custom translation API scripts, and a "Translated Comics" section on the home page
 - [x] Custom collections: read comics published as separate volumes or parts as one, across sources
+- [x] Reading statistics: tracks reading time, with sorting and swipe-to-delete
+- [x] Draw a comic: pick a random comic from your favorites, with a selectable scope
+- [x] Custom chapter order: sort chapters in bulk by name, in reverse or by folder modified time, hide duplicate chapters; the order syncs
+- [x] Import local PDF comics
+- [x] Custom comic cache directory
+- [x] Auto page turning adds a steady scroll mode, plus an option to keep the screen on while reading
+- [x] E-ink screen support (experimental): full refresh on page turn to clear ghosting, and the system ripple page turn on iReader devices
 
 ## Guide
 
