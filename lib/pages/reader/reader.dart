@@ -390,6 +390,7 @@ class _ReaderState extends State<Reader>
       App.rootRouteObserver.subscribe(this, route);
       _readerRouteVisible = route.isCurrent;
       _syncReadingTimer();
+      _syncAutoTurn();
     }
     if (!_isInitialized) {
       initImagesPerPage(widget.initialPage ?? 1);
@@ -1167,9 +1168,15 @@ abstract mixin class _AutoPageTurner {
 
   bool _appVisible = true;
 
+  /// Set while the reader waits for a tap of its own, e.g. picking which
+  /// image of a page to save.
+  bool _autoTurnHeld = false;
+
   Timer? _autoTurnTimer;
 
-  bool _screenKeptOn = false;
+  /// Readers currently wanting the screen on. Shared, as the platform flag
+  /// is: a reader opened over another must not switch it off for both.
+  static final _screenOnHolders = <Object>{};
 
   static const _screenChannel = MethodChannel("venera/method_channel");
 
@@ -1191,7 +1198,8 @@ abstract mixin class _AutoPageTurner {
   /// A popup over the reader (context menu, drawer, dialog). Those never
   /// reach the route observer, so turning is skipped while one is up rather
   /// than paused, and carries on once it closes.
-  bool get _autoTurnInterrupted => !(_readingRoute?.isCurrent ?? true);
+  bool get _autoTurnInterrupted =>
+      _autoTurnHeld || !(_readingRoute?.isCurrent ?? true);
 
   void toggleAutoPageTurning() {
     autoPageTurning = !autoPageTurning;
@@ -1280,11 +1288,18 @@ abstract mixin class _AutoPageTurner {
   }
 
   void _keepScreenOn(bool on) {
-    if (_screenKeptOn == on || !(App.isAndroid || App.isIOS)) return;
-    _screenKeptOn = on;
+    if (!(App.isAndroid || App.isIOS)) return;
+    final wasOn = _screenOnHolders.isNotEmpty;
+    if (on) {
+      _screenOnHolders.add(this);
+    } else {
+      _screenOnHolders.remove(this);
+    }
+    final isOn = _screenOnHolders.isNotEmpty;
+    if (wasOn == isOn) return;
     // The two native handlers read their argument differently.
     _screenChannel
-        .invokeMethod('setScreenOn', App.isAndroid ? {'set': on} : on)
+        .invokeMethod('setScreenOn', App.isAndroid ? {'set': isOn} : isOn)
         .catchError((e) {
           Log.error("Reader", "Failed to keep the screen on: $e");
         });

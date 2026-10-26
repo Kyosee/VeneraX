@@ -1526,13 +1526,13 @@ class _ContinuousModeState extends State<_ContinuousMode>
       _scheduleAutoScrollResume();
       return;
     }
-    // Don't carry the reader past a page that hasn't appeared yet.
-    if (_isVisibleImageLoading()) {
+    // Don't carry the reader past a page that hasn't appeared yet, nor start
+    // before the list has its extents: settling then has nothing to go by.
+    if (_isVisibleImageLoading() || !position.hasContentDimensions) {
       _scheduleAutoScrollResume(const Duration(milliseconds: 300));
       return;
     }
-    if (position.hasContentDimensions &&
-        position.pixels >= position.maxScrollExtent - 0.5) {
+    if (position.pixels >= position.maxScrollExtent - 0.5) {
       _onAutoScrollReachedEnd();
       return;
     }

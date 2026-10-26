@@ -1474,11 +1474,15 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   Future<Offset?> _showSelectImageOverlay() {
+    final reader = context.reader;
+    // Closing the menu would resume auto turning under the picker.
+    reader._autoTurnHeld = true;
     if (_isOpen) {
       openOrClose();
     }
 
     var completer = Completer<Offset?>();
+    completer.future.whenComplete(() => reader._autoTurnHeld = false);
 
     var overlay = Overlay.of(context);
     OverlayEntry? entry;
