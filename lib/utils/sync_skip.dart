@@ -80,6 +80,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "reverseChapterOrder",
       "chapterOrderOverrides",
       "showSystemStatusBar",
+      "readerKeepScreenOn",
       "readerScrollSpeed",
       "readerCenterPageOnTurn",
       "readerPageSpacing",

@@ -100,6 +100,7 @@ class _SettingsSearchEntry {
         'Night mode intensity',
         'Display time & battery info in reader',
         'Show system status bar',
+        'Keep screen on while reading',
         'Show Page Number',
         'Show Chapter Comments',
         'Show Comments at Chapter End',
@@ -212,6 +213,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Color vibrance", 1, keywords: ["enhance"]),
   _SettingsSearchEntry("Display time & battery info in reader", 1),
   _SettingsSearchEntry("Show system status bar", 1),
+  _SettingsSearchEntry(
+    "Keep screen on while reading",
+    1,
+    keywords: ["screen", "awake", "sleep"],
+    visible: () => App.isMobile,
+  ),
   _SettingsSearchEntry("Show Page Number", 1),
   _SettingsSearchEntry("Show Chapter Comments", 1, keywords: ["comment"]),
   _SettingsSearchEntry(

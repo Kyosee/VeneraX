@@ -1041,6 +1041,19 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
+              if (App.isMobile)
+                _SwitchSetting(
+                  title: "Keep screen on while reading".tl,
+                  settingKey: "readerKeepScreenOn",
+                  onChanged: () {
+                    widget.onChanged?.call("readerKeepScreenOn");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
               _SwitchSetting(
                 title: "Show Page Number".tl,
                 settingKey: "showPageNumberInReader",

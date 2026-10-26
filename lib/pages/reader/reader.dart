@@ -1132,8 +1132,9 @@ abstract mixin class _ReaderLocation {
 
 /// Auto turning: turns a page every interval, or in continuous modes set to
 /// scroll, scrolls the list at a steady speed (driven by the view). Pauses
-/// while the menu is open, the reader is covered or the app is hidden, and
-/// keeps the screen awake while switched on.
+/// while the menu is open, the reader is covered or the app is hidden.
+/// Also owns keeping the screen awake, for auto turning and for the
+/// `readerKeepScreenOn` setting.
 abstract mixin class _AutoPageTurner {
   String get cid;
 
@@ -1232,7 +1233,22 @@ abstract mixin class _AutoPageTurner {
       _armAutoTurn();
     }
     _imageViewController?.syncAutoScroll();
-    _keepScreenOn(autoPageTurning && _readerRouteVisible);
+    _syncScreenOn();
+  }
+
+  /// On while the reader is visible and auto turning, or always while
+  /// reading when the user asked for it.
+  void _syncScreenOn() {
+    _keepScreenOn(
+      _readerRouteVisible &&
+          (autoPageTurning ||
+              appdata.settings.getReaderSetting(
+                    cid,
+                    type.sourceKey,
+                    'readerKeepScreenOn',
+                  ) ==
+                  true),
+    );
   }
 
   void _armAutoTurn() {

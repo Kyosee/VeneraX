@@ -502,6 +502,9 @@ class Settings with ChangeNotifier {
     // order and are synced with the rest of the user's settings.
     'chapterOrderOverrides': <String, dynamic>{},
     'showSystemStatusBar': false,
+    // Mobile only: hold off the screen timeout for the whole reading session,
+    // not just while auto page turning.
+    'readerKeepScreenOn': false,
     'comicSpecificSettings': <String, Map<String, dynamic>>{},
     'deviceSpecificSettings': <String, Map<String, dynamic>>{},
     'deviceId': '',

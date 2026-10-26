@@ -1138,6 +1138,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           if (key == "quickCollectImage" || scopeChanged) {
             addDragListener();
           }
+          if (key == "readerKeepScreenOn" || scopeChanged) {
+            context.reader._syncScreenOn();
+          }
           if (key == "showSystemStatusBar" || scopeChanged) {
             final showSystemStatusBar =
                 appdata.settings.getReaderSetting(
