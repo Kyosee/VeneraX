@@ -20,6 +20,8 @@ This document covers the setup steps and controls for each feature. If a setting
   - [Chapter layout](#chapter-layout)
   - [Editing](#editing)
   - [Limitations](#limitations)
+- [Auto page turning](#auto-page-turning)
+- [E-ink screens](#e-ink-screens)
 - [Non-obvious controls](#non-obvious-controls)
 
 <!--anchor:ai-translation-->
@@ -308,6 +310,45 @@ On a collection's detail page using "Chapter tabs", long-press a tab (right-clic
 - A member shown in red as "Unavailable" has an uninstalled source or missing local files; remove it or restore the source.
 - A collection's update time is the newest among its members.
 - Collection settings and custom covers are included in backup and sync.
+
+<!--anchor:auto-page-turning-->
+## Auto page turning
+
+Open the menu while reading and tap "Auto Page Turning" in the bottom bar to start it; tap it again to stop.
+
+- **Gallery modes**: turn a page at a fixed interval, 1–20 seconds, 5 by default.
+- **Continuous modes**: "Auto page turning mode" offers "Turn pages" or "Scroll". "Scroll" moves the page at a steady speed, 1–30, 15 by default. The speed is relative to the image width, so a level reads at the same pace on phones, tablets and desktop.
+
+Change the interval, mode and speed in Settings → Reading settings, or under "Settings" in the reader menu. Like other reading settings, they can be set per comic or per device.
+
+While it runs, opening the menu shows an extra row above the bottom bar: adjust the interval or speed there, or tap "Stop". Changes are saved to the settings.
+
+- **Pauses automatically**: while the menu, a popup or another page is open, or while the app is in the background. The countdown starts again when you return.
+- **You take over**: in scroll mode, a touch, drag, mouse wheel or tap turn takes over, and scrolling resumes shortly after you let go.
+- **Waits for loading**: a page that is still loading is waited for, not skipped. In page mode, a manual page turn or a newly loaded chapter restarts the countdown.
+- **Stops at the end**: at the end, or when a chapter fails to load, it stops and shows a notice.
+- **Screen stays on**: the screen stays on while it runs (phones and tablets only).
+
+To keep the screen on without auto page turning, turn on Settings → Reading settings → "Keep screen on while reading". Phones and tablets only, off by default, and it can be set per comic or per device.
+
+<!--anchor:eink-->
+## E-ink screens
+
+Settings → Reading settings → "E-ink screen". These settings stay on this device and are not synced, so a phone does not start flashing on every page turn.
+
+**Full refresh on page turn**: after a page turn settles, a solid color briefly fills the screen so the e-ink panel redraws every pixel and clears the ghost of the previous page. Gallery modes only.
+
+| Option | Effect |
+| --- | --- |
+| Refresh color | White (default), Black, or Black, then white |
+| Refresh every N pages | How often to refresh, 1–10, 1 by default |
+| Refresh duration (ms) | How long each color is shown, 50–1000, 150 by default |
+
+If some ghosting remains, try a longer duration or "Black, then white".
+
+**Ripple page turn**: shown only on iReader devices running SmartOS 4 or later. In gallery modes, tap and key page turns use the device's own ripple effect in place of the slide animation, following the reading direction and screen rotation. Dragging a page with your finger is unchanged. "Ripple speed" offers Slower, Standard or Faster. A page that is due for a full refresh skips the ripple.
+
+Neither feature has had much testing on real devices yet. If the refresh has no effect or the ripple runs the wrong way, please report your device model and system version.
 
 <!--anchor:gestures-->
 ## Non-obvious controls

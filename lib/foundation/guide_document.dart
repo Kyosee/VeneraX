@@ -31,6 +31,8 @@ enum GuideAnchor {
   collectionLayout('collection-layout'),
   collectionEdit('collection-edit'),
   collectionLimits('collection-limits'),
+  autoPageTurning('auto-page-turning'),
+  eink('eink'),
   gestures('gestures');
 
   const GuideAnchor(this.id);
