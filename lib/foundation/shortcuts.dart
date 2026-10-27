@@ -315,8 +315,9 @@ class AppShortcuts {
     // window; none of them may be taken over.
     if (key == LogicalKeyboardKey.escape ||
         key == LogicalKeyboardKey.tab ||
-        (binding.alt && key == LogicalKeyboardKey.f4)) {
-      return "This key is reserved";
+        (binding.alt && key == LogicalKeyboardKey.f4) ||
+        _isReservedCombination(binding)) {
+      return "This shortcut is reserved";
     }
     if (action.scope == ShortcutScope.global) {
       if (!binding.hasCommandModifier && !binding.isFunctionKey) {
@@ -327,6 +328,41 @@ class AppShortcuts {
       }
     }
     return null;
+  }
+
+  // Undo, redo, cut, copy, paste and select all. The app-scope handler can't
+  // keep these from a text field, so a binding would fire alongside them.
+  static final _editingKeys = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.keyA,
+    LogicalKeyboardKey.keyC,
+    LogicalKeyboardKey.keyV,
+    LogicalKeyboardKey.keyX,
+    LogicalKeyboardKey.keyZ,
+    LogicalKeyboardKey.keyY,
+  };
+
+  // macOS quit, close window, hide and minimize.
+  static final _macAppKeys = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.keyQ,
+    LogicalKeyboardKey.keyW,
+    LogicalKeyboardKey.keyH,
+    LogicalKeyboardKey.keyM,
+  };
+
+  static bool _isReservedCombination(KeyBinding b) {
+    // Ctrl on Windows / Linux, Cmd on macOS, with or without Shift (redo,
+    // plain-text paste).
+    final primary = App.isMacOS ? b.meta : b.control;
+    final other = App.isMacOS ? b.control : b.meta;
+    if (primary && !other && !b.alt && _editingKeys.contains(b.key)) {
+      return true;
+    }
+    return App.isMacOS &&
+        b.meta &&
+        !b.control &&
+        !b.alt &&
+        !b.shift &&
+        _macAppKeys.contains(b.key);
   }
 
   /// The action bound to [event] among [scopes]. While a text field has

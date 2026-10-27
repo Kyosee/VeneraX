@@ -122,6 +122,36 @@ void main() {
         ),
         isNotNull,
       );
+      // Text editing keeps its combinations.
+      expect(
+        AppShortcuts.validate(
+          fullscreen,
+          const KeyBinding(LogicalKeyboardKey.keyC, control: true),
+        ),
+        isNotNull,
+      );
+      expect(
+        AppShortcuts.validate(
+          fullscreen,
+          const KeyBinding(LogicalKeyboardKey.keyZ, control: true, shift: true),
+        ),
+        isNotNull,
+      );
+      expect(
+        AppShortcuts.validate(
+          fullscreen,
+          const KeyBinding(LogicalKeyboardKey.keyC, control: true, alt: true),
+        ),
+        isNull,
+      );
+      // Cmd+Q only quits on macOS.
+      expect(
+        AppShortcuts.validate(
+          fullscreen,
+          const KeyBinding(LogicalKeyboardKey.keyQ, control: true),
+        ),
+        isNull,
+      );
       // Taking a bare letter system-wide would break typing everywhere.
       expect(
         AppShortcuts.validate(
@@ -154,6 +184,38 @@ void main() {
           const KeyBinding(LogicalKeyboardKey.mediaPlay, control: true),
         ),
         isNotNull,
+      );
+    });
+  });
+
+  test('macOS reserves Cmd editing and app combinations', () {
+    _onPlatform(TargetPlatform.macOS, () {
+      const action = ShortcutAction.toggleFullscreen;
+      for (final key in [
+        LogicalKeyboardKey.keyV,
+        LogicalKeyboardKey.keyQ,
+        LogicalKeyboardKey.keyW,
+        LogicalKeyboardKey.keyH,
+        LogicalKeyboardKey.keyM,
+      ]) {
+        expect(
+          AppShortcuts.validate(action, KeyBinding(key, meta: true)),
+          isNotNull,
+          reason: key.keyLabel,
+        );
+      }
+      // Ctrl is not the editing modifier there.
+      expect(
+        AppShortcuts.validate(
+          action,
+          const KeyBinding(LogicalKeyboardKey.keyC, control: true),
+        ),
+        isNull,
+      );
+      // Ctrl+Cmd+F, the default, stays usable.
+      expect(
+        AppShortcuts.validate(action, AppShortcuts.defaultBinding(action)!),
+        isNull,
       );
     });
   });
