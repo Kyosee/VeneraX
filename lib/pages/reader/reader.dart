@@ -864,6 +864,10 @@ abstract mixin class _ImagePerPageHandler {
   /// How the current chapter's images are grouped into pages.
   GalleryLayout get galleryLayout => _layout = _layoutFor(imagesPerPage);
 
+  /// The 0-based [start, end) images on the page being read; empty on the
+  /// chapter comments page.
+  (int, int) get pageImageRange => galleryLayout.imagesOf(page);
+
   /// The grouping in use if it is for [perScreen], else a fresh one from the
   /// landscape images known so far, with no page held in place.
   GalleryLayout _layoutFor(int perScreen) {

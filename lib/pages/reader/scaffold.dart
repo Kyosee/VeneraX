@@ -362,26 +362,28 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     );
   }
 
-  /// Cache key of the currently visible page's translated variant plus the
+  /// Cache keys of the translated variants of the images on screen plus the
   /// comic's own render mode, or null when translation is not enabled for this
-  /// comic or the page can't be resolved. The mode travels with the key because
+  /// comic or no image is on screen. The mode travels with the keys because
   /// the status/error markers are per rendered image, and the mode is a
   /// per-comic setting.
-  ({String cacheKey, InpaintMode mode})? _currentTranslationTarget() {
+  ({List<String> cacheKeys, InpaintMode mode})? _currentTranslationTargets() {
     final reader = context.reader;
     if (!ImageTranslationService.enabledFor(reader.cid, reader.type.sourceKey)) {
       return null;
     }
-    final images = reader.images;
-    if (images == null || images.isEmpty) return null;
-    var index = (reader.page - 1).clamp(0, images.length - 1);
+    final (start, end) = reader.pageImageRange;
+    if (start >= end) return null;
     return (
-      cacheKey: ImageTranslationService.cacheKeyFor(
-        reader.type.comicSource?.key,
-        reader.cid,
-        reader.eid,
-        index + 1,
-      ),
+      cacheKeys: [
+        for (var i = start; i < end; i++)
+          ImageTranslationService.cacheKeyFor(
+            reader.type.comicSource?.key,
+            reader.cid,
+            reader.eid,
+            i + 1,
+          ),
+      ],
       mode: TranslationConfig.of(reader.cid, reader.type.sourceKey).mode,
     );
   }
@@ -395,7 +397,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       return const [];
     }
     final service = ImageTranslationService.instance;
-    final target = _currentTranslationTarget();
+    final targets = _currentTranslationTargets();
     final widgets = <Widget>[];
 
     // Show-original toggle: lets the reader compare against the source art
@@ -416,50 +418,57 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ),
     );
 
-    if (target != null && !reader.showOriginalPages) {
-      switch (service.statusOf(target.cacheKey, target.mode)) {
-        case PageTranslationStatus.translating:
-          widgets.add(
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+    if (targets != null && !reader.showOriginalPages) {
+      PageTranslationStatus statusOf(String key) =>
+          service.statusOf(key, targets.mode);
+      final failed = [
+        for (final key in targets.cacheKeys)
+          if (statusOf(key) == PageTranslationStatus.failed) key,
+      ];
+      // With several images on screen, a failure, which wants a tap, is shown
+      // before work still running on another.
+      if (failed.isNotEmpty) {
+        widgets.add(
+          Tooltip(
+            message:
+                service.errorOf(failed.first, targets.mode) ??
+                "Translation failed".tl,
+            child: IconButton(
+              icon: Icon(
+                Icons.error_outline,
+                color: context.colorScheme.error,
               ),
+              onPressed: () => _retryTranslation(failed, targets.mode),
             ),
-          );
-        case PageTranslationStatus.failed:
-          widgets.add(
-            Tooltip(
-              message:
-                  service.errorOf(target.cacheKey, target.mode) ??
-                  "Translation failed".tl,
-              child: IconButton(
-                icon: Icon(
-                  Icons.error_outline,
-                  color: context.colorScheme.error,
-                ),
-                onPressed: () =>
-                    _retryTranslation(target.cacheKey, target.mode),
-              ),
+          ),
+        );
+      } else if (targets.cacheKeys.any(
+        (key) => statusOf(key) == PageTranslationStatus.translating,
+      )) {
+        widgets.add(
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
-          );
-        case PageTranslationStatus.translated:
-        case PageTranslationStatus.noContent:
-        case PageTranslationStatus.idle:
-          break;
+          ),
+        );
       }
     }
     return widgets;
   }
 
-  void _retryTranslation(String cacheKey, InpaintMode mode) {
+  void _retryTranslation(List<String> cacheKeys, InpaintMode mode) {
     final service = ImageTranslationService.instance;
-    var error = service.errorOf(cacheKey, mode);
-    service.clearFailure(cacheKey, mode);
-    // Dropping the cached image entry makes the provider reload and re-schedule
-    // the page; the failure back-off was just cleared so it runs immediately.
+    var error = service.errorOf(cacheKeys.first, mode);
+    for (final key in cacheKeys) {
+      service.clearFailure(key, mode);
+    }
+    // Dropping the cached image entries makes the providers reload and
+    // re-schedule the pages; the failure back-off was just cleared so they run
+    // immediately.
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     if (mounted) setState(() {});
@@ -468,14 +477,22 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     }
   }
 
+  bool _isImageLiked(int imageNumber) => ImageFavoriteManager().has(
+    context.reader.cid,
+    context.reader.type.sourceKey,
+    context.reader.eid,
+    imageNumber,
+    context.reader.chapter,
+  );
+
+  /// Whether an image on screen is collected. Several can share the screen;
+  /// collecting asks which one.
   bool isLiked() {
-    return ImageFavoriteManager().has(
-      context.reader.cid,
-      context.reader.type.sourceKey,
-      context.reader.eid,
-      context.reader.page,
-      context.reader.chapter,
-    );
+    final (start, end) = context.reader.pageImageRange;
+    for (var i = start; i < end; i++) {
+      if (_isImageLiked(i + 1)) return true;
+    }
+    return false;
   }
 
   /// Whether the in-reader download button should show: only for online source
@@ -585,7 +602,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           "E${context.reader.chapter}";
       var translatedTags = tags.map((e) => e.translateTagsToCN).toList();
 
-      if (isLiked()) {
+      if (_isImageLiked(page)) {
         ImageFavoriteManager().deleteImageFavorite([
           ImageFavorite(page, imageKey, null, eid, id, ep, sourceKey, epName),
         ]);
