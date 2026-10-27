@@ -337,6 +337,13 @@ class DomainDatabase {
     return '${platform.platformId}:$sourceComicId';
   }
 
+  /// The work [ensureWorkForComic] creates for a comic that has none yet.
+  static String _ownWorkIdFor(String comicId) => 'work:$comicId';
+
+  /// [replaceMetadata] is for the caller that owns the comic's metadata (a
+  /// local comic's own files): empty fields then clear stale values, and the
+  /// comic's own work snapshot is refreshed. Other callers may pass partial
+  /// data, so their empty fields keep what is stored.
   String ensureComicSource({
     required SourcePlatformRef platform,
     required String sourceComicId,
@@ -353,11 +360,15 @@ class DomainDatabase {
     List<String>? tags,
     int? pageCount,
     int? timestamp,
+    bool replaceMetadata = false,
   }) {
     final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final comicId = comicIdFor(platform, sourceComicId);
     final tagsJson = tags == null ? null : jsonEncode(tags);
     final normalizedTitle = _normalizeForMatch(title);
+    String merged(String column) => replaceMetadata
+        ? 'excluded.$column'
+        : 'COALESCE(excluded.$column, comics.$column)';
     ensureSourcePlatform(platform, timestamp: now);
     db.execute(
       '''
@@ -382,13 +393,13 @@ class DomainDatabase {
         title = excluded.title,
         subtitle = excluded.subtitle,
         description = excluded.description,
-        author = COALESCE(excluded.author, comics.author),
-        status = COALESCE(excluded.status, comics.status),
-        update_time = COALESCE(excluded.update_time, comics.update_time),
+        author = ${merged('author')},
+        status = ${merged('status')},
+        update_time = ${merged('update_time')},
         language = excluded.language,
         cover_uri = excluded.cover_uri,
-        tags_json = COALESCE(excluded.tags_json, comics.tags_json),
-        page_count = COALESCE(excluded.page_count, comics.page_count),
+        tags_json = ${merged('tags_json')},
+        page_count = ${merged('page_count')},
         normalized_title = excluded.normalized_title,
         updated_at = excluded.updated_at,
         base_info_updated_at = excluded.base_info_updated_at;
@@ -440,6 +451,37 @@ class DomainDatabase {
         now,
       ],
     );
+    if (replaceMetadata) {
+      // The work row is a snapshot taken once and wins over the comic row in
+      // [getComicBaseInfo], so a stale snapshot would outlive the fix above.
+      db.execute(
+        '''
+        UPDATE works SET
+          title = ?,
+          author = ?,
+          status = ?,
+          update_time = ?,
+          cover_uri = ?,
+          description = ?,
+          tags_json = ?,
+          page_count = ?,
+          updated_at = ?
+        WHERE work_id = ?;
+        ''',
+        [
+          _emptyToNull(title),
+          _emptyToNull(author),
+          _emptyToNull(status),
+          _emptyToNull(updateTime),
+          _emptyToNull(coverUri),
+          _emptyToNull(description),
+          tags == null || tags.isEmpty ? null : tagsJson,
+          pageCount,
+          now,
+          _ownWorkIdFor(comicId),
+        ],
+      );
+    }
     _createAutoWorkCandidates(
       comicId: comicId,
       title: title,
@@ -697,7 +739,7 @@ class DomainDatabase {
 
     final now = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final baseInfo = getComicBaseInfo(comicId);
-    final workId = 'work:$comicId';
+    final workId = _ownWorkIdFor(comicId);
     db.execute(
       '''
       INSERT INTO works (
@@ -981,10 +1023,10 @@ class DomainDatabase {
   /// Removes a source comic and all of its dependent rows (work links, local
   /// library item, chapters, history events, favorites — via FK cascade).
   ///
-  /// Local comic ids are reused after deletion ([LocalManager.findValidId]),
-  /// so a stale mirror left behind would attach the old comic's work link —
-  /// and therefore its title/cover — to the next comic that gets the same id
-  /// (issue #135). Works left without any source are cleaned up as well.
+  /// Older versions reused local comic ids, so a stale mirror could attach the
+  /// old comic's work link — and therefore its title/cover — to the next comic
+  /// that got the same id (issue #135). Works left without any source are
+  /// cleaned up as well.
   void removeComicSource({
     required SourcePlatformRef platform,
     required String sourceComicId,

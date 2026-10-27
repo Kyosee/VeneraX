@@ -522,30 +522,48 @@ class LocalManager with ChangeNotifier {
     }
   }
 
+  /// Ids are never handed out twice. History, favorites and the domain mirror
+  /// are keyed by id and can outlive a deleted comic (restored backups, other
+  /// devices), so a reused id would inherit them (issues #135, #316).
+  /// Time-based so devices adding comics independently don't collide either.
   String findValidId(ComicType type) {
     final res = _db.select(
-      '''
-      SELECT id FROM comics WHERE comic_type = ?
-      ORDER BY CAST(id AS INTEGER) DESC
-      LIMIT 1;
-      ''',
+      'SELECT MAX(CAST(id AS INTEGER)) FROM comics WHERE comic_type = ?;',
       [type.value],
     );
-    if (res.isEmpty) {
-      return '1';
-    }
-    return (int.parse((res.first[0])) + 1).toString();
+    final maxId = (res.first[0] as int?) ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return (now > maxId ? now : maxId + 1).toString();
   }
 
   Future<void> add(LocalComic comic, [String? id]) async {
-    var old = find(id ?? comic.id, comic.comicType);
+    final storedId = id ?? comic.id;
+    var old = find(storedId, comic.comicType);
     var downloaded = List<String>.from(comic.downloadedChapters);
     if (old != null) {
       downloaded.addAll(old.downloadedChapters);
     }
-    _writeComic(comic, id ?? comic.id, downloaded);
+    _writeComic(comic, storedId, downloaded);
     try {
-      const ComicStateRepository().mirrorLocalComic(comic);
+      // Importers pass the real id separately from a placeholder on [comic];
+      // mirroring the placeholder would write another comic's domain row.
+      const ComicStateRepository().mirrorLocalComic(
+        storedId == comic.id
+            ? comic
+            : LocalComic(
+                id: storedId,
+                title: comic.title,
+                subtitle: comic.subtitle,
+                tags: comic.tags,
+                directory: comic.directory,
+                chapters: comic.chapters,
+                cover: comic.cover,
+                comicType: comic.comicType,
+                downloadedChapters: comic.downloadedChapters,
+                createdAt: comic.createdAt,
+                description: comic.description,
+              ),
+      );
     } catch (_) {}
     notifyListeners();
   }

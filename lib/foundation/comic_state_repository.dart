@@ -447,8 +447,8 @@ class ComicStateRepository {
     );
   }
 
-  /// Purges the domain mirror of a deleted local comic. Local ids are reused,
-  /// so leaving the mirror behind would let the next comic with the same id
+  /// Purges the domain mirror of a deleted local comic. Older versions reused
+  /// local ids, so a mirror left behind let the next comic with the same id
   /// inherit the old comic's work link (title/cover) — issue #135.
   void removeLocalComicMirror(String sourceComicId) {
     if (!_domainReady) {
@@ -490,6 +490,9 @@ class ComicStateRepository {
           tags: comic.tags,
           pageCount: metadata.pageCount,
           timestamp: comic.createdAt.millisecondsSinceEpoch,
+          // A local comic's own files are the whole truth about it; a
+          // downloaded comic also carries richer data from its source page.
+          replaceMetadata: identity.isLocal,
         );
         _db.markLocalLibraryItem(
           comicId: comicId,

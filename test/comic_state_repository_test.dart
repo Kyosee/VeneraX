@@ -11,6 +11,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/source_platform.dart';
+import 'package:venera/utils/translations.dart';
 
 void main() {
   setUpAll(() {
@@ -438,6 +439,110 @@ void main() {
         ),
         '12',
       );
+    });
+  });
+
+  group('local comic mirror owns its metadata', () {
+    // History.description goes through .tl.
+    setUpAll(() => AppTranslation.translations = {});
+
+    LocalComic localComic(
+      String id,
+      Directory dir, {
+      required String title,
+      String subtitle = '',
+    }) {
+      return LocalComic(
+        id: id,
+        title: title,
+        subtitle: subtitle,
+        tags: const [],
+        // Absolute, so baseDir does not need LocalManager.path.
+        directory: dir.path,
+        chapters: null,
+        cover: 'ch1/01.jpg',
+        comicType: ComicType.local,
+        downloadedChapters: const [],
+        createdAt: DateTime(2026),
+      );
+    }
+
+    // Issue #316: a comic without an author showed the author of the comic
+    // that held its id before.
+    test('re-mirroring replaces what an earlier comic with the id left', () async {
+      final tempDir = Directory.systemTemp.createTempSync('venera_local_mirror_');
+      final domain = DomainDatabase();
+
+      try {
+        await domain.init(tempDir.path);
+        final repository = ComicStateRepository(domain: domain);
+        final comicId = repository.mirrorLocalComic(
+          localComic('1', tempDir, title: 'Old Title', subtitle: 'Old Author'),
+        );
+        // Opening the details page snapshots the comic into its own work.
+        domain.ensureWorkForComic(comicId: comicId);
+
+        final current = localComic('1', tempDir, title: 'New Title');
+        repository.mirrorLocalComic(current);
+
+        final base = domain.getComicBaseInfo(comicId)!;
+        expect(base.title, 'New Title');
+        expect(base.author, isNull);
+        final link = domain.getRelatedSources(comicId).single;
+        expect(link.comicTitle, 'New Title');
+        expect(link.comicAuthor, isNull);
+        expect(repository.displayInfoFor(current).author, isNull);
+        final history = History.fromModel(model: current, ep: 1, page: 1);
+        expect(repository.displayInfoFor(history).author, isNull);
+      } finally {
+        domain.close();
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test('a downloaded comic keeps metadata from its source page', () async {
+      final tempDir = Directory.systemTemp.createTempSync('venera_download_mirror_');
+      final domain = DomainDatabase();
+
+      try {
+        await domain.init(tempDir.path);
+        final repository = ComicStateRepository(domain: domain);
+        final comicId = repository.mirrorComic(
+          Comic(
+            'Title',
+            'https://example.com/cover.jpg',
+            'remote-id',
+            'Source Author',
+            const ['status:连载中'],
+            '',
+            'Unknown:123',
+            null,
+            null,
+          ),
+        );
+
+        repository.mirrorLocalComic(
+          LocalComic(
+            id: 'remote-id',
+            title: 'Title',
+            subtitle: '',
+            tags: const [],
+            directory: tempDir.path,
+            chapters: null,
+            cover: 'cover.jpg',
+            comicType: const ComicType(123),
+            downloadedChapters: const [],
+            createdAt: DateTime(2026),
+          ),
+        );
+
+        final base = domain.getComicBaseInfo(comicId)!;
+        expect(base.author, 'Source Author');
+        expect(base.status, '连载中');
+      } finally {
+        domain.close();
+        tempDir.deleteSync(recursive: true);
+      }
     });
   });
 }
