@@ -66,7 +66,9 @@ class _SettingsSearchEntry {
       if (title == 'Language' || title == 'Authorization Required') {
         return 'User';
       }
-      if (title == 'Minimize to tray') return 'Window';
+      if (title == 'Minimize to tray' || title == 'Keyboard shortcuts') {
+        return 'Window';
+      }
       return 'Appearance';
     }
     if (category == 1) {
@@ -353,6 +355,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     0,
     keywords: ["tray", "window"],
     visible: () => App.isWindows,
+  ),
+  _SettingsSearchEntry(
+    "Keyboard shortcuts",
+    0,
+    keywords: ["hotkey", "shortcut", "keyboard", "Fullscreen"],
+    visible: () => App.isDesktop,
   ),
 
   // --- 5: Network ---

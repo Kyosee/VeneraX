@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/tray.dart';
 import 'package:venera/utils/io.dart';
 import 'package:window_manager/window_manager.dart';
@@ -54,6 +55,39 @@ class WindowFrame extends StatefulWidget {
 }
 
 typedef WindowCloseListener = bool Function();
+
+/// The window's fullscreen state, shared by the fullscreen shortcut and the
+/// reader. Requests run one at a time so a quick double toggle can't
+/// interleave the hide / switch / show steps.
+abstract final class WindowFullscreen {
+  static Future<void> _queue = Future.value();
+
+  static Future<void> toggle() => _enqueue(() async {
+    await _apply(!await windowManager.isFullScreen());
+  });
+
+  static Future<void> set(bool fullscreen) => _enqueue(() => _apply(fullscreen));
+
+  static Future<void> _enqueue(Future<void> Function() task) {
+    if (!App.isDesktop) return Future.value();
+    return _queue = _queue.then((_) => task()).catchError((Object e) {
+      Log.error("Window", "Failed to switch fullscreen: $e");
+    });
+  }
+
+  static Future<void> _apply(bool fullscreen) async {
+    if (await windowManager.isFullScreen() != fullscreen) {
+      await windowManager.hide();
+      await windowManager.setFullScreen(fullscreen);
+      await windowManager.show();
+    }
+    // The title bar is drawn by the app; fullscreen hides it.
+    final context = App.rootNavigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      WindowFrame.of(context).setWindowFrame(!fullscreen);
+    }
+  }
+}
 
 class _WindowFrameState extends State<WindowFrame> {
   bool isWindowFrameHidden = false;

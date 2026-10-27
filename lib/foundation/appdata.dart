@@ -181,6 +181,9 @@ class Appdata with Init {
     "imageTranslationOcrWorkers",
     "imageTranslationImageConcurrency",
     "imageTranslationLlmConcurrency",
+    // Shortcuts follow the machine: modifiers differ between macOS and the
+    // rest, and a global hotkey free on one PC may be taken on another.
+    "keyboardShortcuts",
   ];
 
   /// [customFields] are the user's `disableSyncFields` entries; category
@@ -432,6 +435,9 @@ class Settings with ChangeNotifier {
     'imageWidthPercent': 70,
     // Desktop only: enter fullscreen automatically when the reader opens.
     'autoFullscreenOnRead': false,
+    // Desktop keyboard shortcut overrides, action name -> encoded binding
+    // ('' = unbound). Absent actions use the defaults in AppShortcuts.
+    'keyboardShortcuts': <String, dynamic>{},
     // Drop a comic from "Read Later" once reading it starts; history takes over
     // from there.
     'autoRemoveFromReadLater': false,

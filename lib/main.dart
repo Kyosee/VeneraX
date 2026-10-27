@@ -17,6 +17,7 @@ import 'foundation/app.dart';
 import 'foundation/appdata.dart';
 import 'foundation/launcher_icon.dart';
 import 'foundation/download_keepalive.dart';
+import 'foundation/shortcuts.dart';
 import 'foundation/tray.dart';
 import 'headless.dart';
 import 'init.dart';
@@ -34,6 +35,7 @@ void main(List<String> args) {
       runApp(const MyApp());
       if (App.isDesktop) {
         await windowManager.ensureInitialized();
+        AppShortcuts.install();
         windowManager.waitUntilReadyToShow().then((_) async {
           await windowManager.setTitleBarStyle(
             TitleBarStyle.hidden,
@@ -54,6 +56,7 @@ void main(List<String> args) {
 
           WindowPlacement.loop();
           await TrayController.instance.init();
+          await GlobalHotkeys.sync();
           // WM_SETICON is per-process; re-apply the stored icon each launch so
           // the window/taskbar icon follows the user's choice (issue #134).
           await LauncherIconService.applyForStartup();

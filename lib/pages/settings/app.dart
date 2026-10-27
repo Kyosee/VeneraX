@@ -164,20 +164,32 @@ class _AppSettingsState extends State<AppSettings> {
             ],
           ],
         ).toSliver(),
-        if (App.isWindows)
+        if (App.isDesktop)
           _SettingsExpansionTile(
             expansionKey: const PageStorageKey('appWindowGroup'),
             initiallyExpanded: true,
             icon: Icons.web_asset,
             title: "Window".tl,
             children: [
-              _SwitchSetting(
-                title: "Minimize to tray".tl,
-                settingKey: "minimizeToTray",
-                onChanged: () {
-                  TrayController.instance.setEnabled(
-                    appdata.settings["minimizeToTray"] == true,
-                  );
+              if (App.isWindows)
+                _SwitchSetting(
+                  title: "Minimize to tray".tl,
+                  settingKey: "minimizeToTray",
+                  onChanged: () {
+                    TrayController.instance.setEnabled(
+                      appdata.settings["minimizeToTray"] == true,
+                    );
+                  },
+                ),
+              ListTile(
+                title: Text("Keyboard shortcuts".tl),
+                subtitle: Text(
+                  "Fullscreen, page turning and showing the window".tl,
+                ),
+                leading: const Icon(Icons.keyboard_outlined),
+                trailing: const Icon(Icons.arrow_right),
+                onTap: () {
+                  context.to(() => const KeyboardShortcutsSettings());
                 },
               ),
             ],

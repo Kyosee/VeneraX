@@ -398,7 +398,10 @@ class _ReaderGestureDetectorState
       ),
       MenuEntry(
         icon: Icons.fullscreen,
-        text: "Fullscreen".tl,
+        text: AppShortcuts.hint(
+          "Fullscreen".tl,
+          ShortcutAction.toggleFullscreen,
+        ),
         onClick: () {
           context.reader.fullscreen();
         },

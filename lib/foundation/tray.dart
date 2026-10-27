@@ -25,6 +25,10 @@ class TrayController with TrayListener, WindowListener {
   bool _enabled = false;
   bool _wired = false;
 
+  /// The icon also shows while the global shortcut keeps the window hidden
+  /// with the setting off, so there is always a way back.
+  bool _iconShown = false;
+
   /// 启动时调用（需在窗口就绪后）。按当前设置决定是否启用托盘。
   Future<void> init() async {
     if (!_supported) return;
@@ -38,10 +42,25 @@ class TrayController with TrayListener, WindowListener {
     trayManager.addListener(this);
     windowManager.addListener(this);
     // Keep the tray icon in step when the user switches the app icon preset
-    // (issue #134); no-op while the tray is disabled.
+    // (issue #134); no-op while no tray icon is shown.
     LauncherIconService.onWindowsIconChanged = (icoAsset) async {
-      if (_enabled) await trayManager.setIcon(icoAsset);
+      if (_iconShown) await trayManager.setIcon(icoAsset);
     };
+  }
+
+  Future<void> _showIcon() async {
+    if (_iconShown) return;
+    // Follow the chosen app-icon preset so the tray matches the window.
+    await trayManager.setIcon(LauncherIconService.current.windowsIcoAsset);
+    await trayManager.setToolTip('VeneraX');
+    await trayManager.setContextMenu(_buildMenu());
+    _iconShown = true;
+  }
+
+  Future<void> _removeIcon() async {
+    if (!_iconShown) return;
+    _iconShown = false;
+    await trayManager.destroy();
   }
 
   /// 切换开关时调用。启用即建立托盘并接管关闭；关闭即移除托盘并放行关闭。
@@ -52,17 +71,27 @@ class TrayController with TrayListener, WindowListener {
       // 先把托盘图标/菜单与关闭拦截都准备好，最后才置 _enabled=true。
       // 否则窗口可能在托盘尚未建好时就被隐藏，出现“窗口消失却没有托盘图标”
       // 的情况，只能重启恢复。
-      // Follow the chosen app-icon preset so the tray matches the window.
-      await trayManager.setIcon(LauncherIconService.current.windowsIcoAsset);
-      await trayManager.setToolTip('VeneraX');
-      await trayManager.setContextMenu(_buildMenu());
+      await _showIcon();
       await windowManager.setPreventClose(true);
       _enabled = true;
     } else {
       _enabled = false;
       await windowManager.setPreventClose(false);
-      await trayManager.destroy();
+      await _removeIcon();
       await windowManager.show();
+    }
+  }
+
+  /// The global show/hide shortcut. Hiding works with the setting off too:
+  /// the icon then stays only until the window comes back.
+  Future<void> toggleWindow() async {
+    if (!_supported) return;
+    _wire();
+    if (await windowManager.isVisible() && !await windowManager.isMinimized()) {
+      await _showIcon();
+      await windowManager.hide();
+    } else {
+      await _restoreWindow();
     }
   }
 
@@ -83,8 +112,12 @@ class TrayController with TrayListener, WindowListener {
       );
 
   Future<void> _restoreWindow() async {
+    if (await windowManager.isMinimized()) {
+      await windowManager.restore();
+    }
     await windowManager.show();
     await windowManager.focus();
+    if (!_enabled) await _removeIcon();
   }
 
   @override

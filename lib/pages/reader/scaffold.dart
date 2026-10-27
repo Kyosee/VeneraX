@@ -126,6 +126,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     // top bar lives in an OverlayEntry that a parent setState won't rebuild.
     ImageTranslationService.instance.addListener(_onTranslationStatusChanged);
     Future.delayed(const Duration(milliseconds: 200), addDragListener);
+    context.reader._scaffoldState = this;
   }
 
   void _onTranslationStatusChanged() {
@@ -696,7 +697,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       if (App.isDesktop)
         MenuEntry(
           icon: Icons.fullscreen,
-          text: "${"Full Screen".tl}(F12)",
+          text: AppShortcuts.hint(
+            "Full Screen".tl,
+            ShortcutAction.toggleFullscreen,
+          ),
           onClick: () => context.reader.fullscreen(),
         ),
       MenuEntry(icon: Icons.share, text: "Share".tl, onClick: share),
@@ -713,29 +717,24 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
     final buttons = [
       Tooltip(
-        message: "Night mode".tl,
+        message: AppShortcuts.hint(
+          "Night mode".tl,
+          ShortcutAction.toggleNightMode,
+        ),
         child: IconButton(
           icon: Icon(
             appdata.settings['readerNightMode'] == true
                 ? Icons.nightlight_round
                 : Icons.nightlight_outlined,
           ),
-          onPressed: () {
-            // Manual toggle takes over: stop following the system theme so the
-            // user's explicit choice isn't immediately overridden.
-            if (appdata.settings['readerNightModeFollowSystem'] == true) {
-              appdata.settings['readerNightModeFollowSystem'] = false;
-            }
-            appdata.settings['readerNightMode'] =
-                !(appdata.settings['readerNightMode'] == true);
-            appdata.saveData();
-            context.reader.update();
-            update();
-          },
+          onPressed: toggleNightMode,
         ),
       ),
       Tooltip(
-        message: "Collect the image".tl,
+        message: AppShortcuts.hint(
+          "Collect the image".tl,
+          ShortcutAction.collectImage,
+        ),
         child: IconButton(
           icon: Icon(isLiked() ? Icons.favorite : Icons.favorite_border),
           onPressed: addImageFavorite,
@@ -758,7 +757,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           ),
         ),
       Tooltip(
-        message: "Auto Page Turning".tl,
+        message: AppShortcuts.hint(
+          "Auto Page Turning".tl,
+          ShortcutAction.toggleAutoPageTurning,
+        ),
         child: IconButton(
           isSelected: context.reader.autoPageTurning,
           icon: const Icon(Icons.timer_outlined),
@@ -923,6 +925,19 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         ),
       ),
     );
+  }
+
+  void toggleNightMode() {
+    // Manual toggle takes over: stop following the system theme so the
+    // user's explicit choice isn't immediately overridden.
+    if (appdata.settings['readerNightModeFollowSystem'] == true) {
+      appdata.settings['readerNightModeFollowSystem'] = false;
+    }
+    appdata.settings['readerNightMode'] =
+        !(appdata.settings['readerNightMode'] == true);
+    appdata.saveData();
+    context.reader.update();
+    update();
   }
 
   void toggleAutoPageTurning() {

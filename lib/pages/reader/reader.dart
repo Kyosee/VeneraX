@@ -41,6 +41,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/shortcuts.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/pages/reader/auto_scroll_activity.dart';
@@ -427,9 +428,6 @@ class _ReaderState extends State<Reader>
     _stopReadingTimer();
     App.rootRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
-    if (isFullscreen) {
-      fullscreen();
-    }
     if (_updateHistoryTimer != null && history != null) {
       _updateHistoryTimer!.cancel();
       _updateHistoryTimer = null;
@@ -565,10 +563,63 @@ class _ReaderState extends State<Reader>
   }
 
   void onKeyEvent(KeyEvent event) {
-    if (event.logicalKey == LogicalKeyboardKey.f12 && event is KeyUpEvent) {
-      fullscreen();
+    if (event is! KeyUpEvent) {
+      final action = AppShortcuts.match(event, const {
+        ShortcutScope.app,
+        ShortcutScope.reader,
+      });
+      // App-scope actions run from the root handler; either way the key is
+      // taken, so the built-in arrow keys never act on it as well.
+      if (action != null) {
+        if (action.scope == ShortcutScope.reader) {
+          _runShortcut(action, event is KeyRepeatEvent);
+        }
+        return;
+      }
     }
     _imageViewController?.handleKeyEvent(event);
+  }
+
+  _ReaderScaffoldState? _scaffoldState;
+
+  DateTime _lastShortcutTurn = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _runShortcut(ShortcutAction action, bool isRepeat) {
+    final turnsPage =
+        action == ShortcutAction.nextPage || action == ShortcutAction.prevPage;
+    // Held keys turn pages at the arrow keys' pace; other actions fire once.
+    if (isRepeat) {
+      if (!turnsPage) return;
+      final gap = enablePageAnimation(cid, type)
+          ? const Duration(milliseconds: 200)
+          : const Duration(milliseconds: 50);
+      if (DateTime.now().difference(_lastShortcutTurn) < gap) return;
+    }
+    if (turnsPage) _lastShortcutTurn = DateTime.now();
+    final scaffold = _scaffoldState;
+    switch (action) {
+      // Same as the volume keys: past the last page, on to the next chapter.
+      // A held key stops at the chapter end instead of racing through them.
+      case ShortcutAction.nextPage:
+        isRepeat ? toNextPage() : onDown();
+      case ShortcutAction.prevPage:
+        isRepeat ? toPrevPage() : onUp();
+      case ShortcutAction.nextChapter:
+        toNextChapter();
+      case ShortcutAction.prevChapter:
+        toPrevChapter();
+      case ShortcutAction.toggleReaderMenu:
+        if (scaffold?.mounted == true) scaffold!.openOrClose();
+      case ShortcutAction.toggleAutoPageTurning:
+        if (scaffold?.mounted == true) scaffold!.toggleAutoPageTurning();
+      case ShortcutAction.toggleNightMode:
+        if (scaffold?.mounted == true) scaffold!.toggleNightMode();
+      case ShortcutAction.collectImage:
+        if (scaffold?.mounted == true) scaffold!.addImageFavorite();
+      case ShortcutAction.toggleFullscreen:
+      case ShortcutAction.toggleWindow:
+        break;
+    }
   }
 
   @override
@@ -1323,38 +1374,36 @@ abstract mixin class _AutoPageTurner {
 }
 
 mixin class _ReaderWindow {
-  bool isFullscreen = false;
-
   late WindowFrameController windowFrame;
 
   bool _isInit = false;
+
+  bool _windowDisposed = false;
+
+  /// Whether the window was already fullscreen when reading began; null until
+  /// known. Leaving the reader restores that state, so fullscreen entered
+  /// while reading (auto or by shortcut) ends with it, and one the user set
+  /// beforehand stays.
+  bool? _fullscreenBeforeReading;
 
   void initReaderWindow() {
     if (!App.isDesktop || _isInit) return;
     windowFrame = WindowFrame.of(App.rootContext);
     windowFrame.addCloseListener(onWindowClose);
     _isInit = true;
-    if (appdata.settings['autoFullscreenOnRead'] == true) {
-      _autoFullscreen();
+    _initFullscreen();
+  }
+
+  Future<void> _initFullscreen() async {
+    final wasFullscreen = await windowManager.isFullScreen();
+    if (_windowDisposed) return;
+    _fullscreenBeforeReading = wasFullscreen;
+    if (!wasFullscreen && appdata.settings['autoFullscreenOnRead'] == true) {
+      WindowFullscreen.set(true);
     }
   }
 
-  /// Enter fullscreen as the reader opens. A window the user already put
-  /// in fullscreen is left alone: [fullscreen] toggles, and toggling here would
-  /// make leaving the reader drop them out of their own fullscreen.
-  void _autoFullscreen() async {
-    if (await windowManager.isFullScreen()) return;
-    fullscreen();
-  }
-
-  void fullscreen() async {
-    if (!App.isDesktop) return;
-    await windowManager.hide();
-    await windowManager.setFullScreen(!isFullscreen);
-    await windowManager.show();
-    isFullscreen = !isFullscreen;
-    WindowFrame.of(App.rootContext).setWindowFrame(!isFullscreen);
-  }
+  void fullscreen() => WindowFullscreen.toggle();
 
   bool onWindowClose() {
     if (Navigator.of(App.rootContext).canPop()) {
@@ -1366,8 +1415,12 @@ mixin class _ReaderWindow {
   }
 
   void disposeReaderWindow() {
-    if (!App.isDesktop) return;
+    if (!_isInit) return;
+    _windowDisposed = true;
     windowFrame.removeCloseListener(onWindowClose);
+    if (_fullscreenBeforeReading == false) {
+      WindowFullscreen.set(false);
+    }
   }
 }
 

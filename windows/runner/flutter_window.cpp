@@ -144,6 +144,36 @@ bool FlutterWindow::OnCreate() {
     flutter_controller_->engine()->messenger(), "venera/clipboard",
     &flutter::StandardMethodCodec::GetInstance()
   );
+  hotkey_channel_ = std::make_unique<flutter::MethodChannel<>>(
+      flutter_controller_->engine()->messenger(), "venera/hotkey",
+      &flutter::StandardMethodCodec::GetInstance());
+  hotkey_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<>& call,
+             std::unique_ptr<flutter::MethodResult<>> result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        auto intArg = [args](const char* name) -> int {
+          if (args == nullptr) return 0;
+          auto it = args->find(flutter::EncodableValue(name));
+          if (it == args->end()) return 0;
+          const auto* value = std::get_if<int32_t>(&it->second);
+          return value == nullptr ? 0 : *value;
+        };
+        const int id = intArg("id");
+        if (call.method_name() == "register") {
+          UnregisterHotKey(GetHandle(), id);
+          const BOOL ok = RegisterHotKey(
+              GetHandle(), id,
+              static_cast<UINT>(intArg("modifiers")) | MOD_NOREPEAT,
+              static_cast<UINT>(intArg("vk")));
+          result->Success(flutter::EncodableValue(ok != FALSE));
+        } else if (call.method_name() == "unregister") {
+          UnregisterHotKey(GetHandle(), id);
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   channel3.SetMethodCallHandler(
     [](const flutter::MethodCall<>& call,const std::unique_ptr<flutter::MethodResult<>>& result) {
       if(call.method_name() == "writeImageToClipboard"){
@@ -196,6 +226,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  hotkey_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -228,6 +259,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     else if (button == XBUTTON2 && message == 528)
     {
         mouse_side_button_listener(1);
+    }
+    if (message == WM_HOTKEY && hotkey_channel_) {
+        hotkey_channel_->InvokeMethod(
+            "onHotkey", std::make_unique<flutter::EncodableValue>(
+                            static_cast<int32_t>(wparam)));
+        return 0;
     }
     if (flutter_controller_) {
         std::optional<LRESULT> result =
