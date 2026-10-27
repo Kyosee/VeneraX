@@ -520,6 +520,8 @@ class Settings with ChangeNotifier {
     'readerCenterPageOnTurn': false,
     // 连续模式相邻图片之间的间隙（逻辑像素，0 = 紧贴）。
     'readerPageSpacing': 0.0, // 0 - 50
+    // Continuous (top to bottom): cut landscape pages into stacked halves.
+    'splitWidePages': 'off', // off, rightFirst, leftFirst
     'localFavoritesFirst': true,
     'autoCloseFavoritePanel': false,
     'showChapterComments': true, // show chapter comments in reader

@@ -636,6 +636,28 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
+              if ((_effectiveSetting('readerMode') as String?) ==
+                  'continuousTopToBottom')
+                SelectSetting(
+                  title: "Split wide pages".tl,
+                  settingKey: "splitWidePages",
+                  optionTranslation: {
+                    "off": "Off".tl,
+                    "rightFirst": "Right half on top".tl,
+                    "leftFirst": "Left half on top".tl,
+                  },
+                  help:
+                      "Cuts a landscape page, usually two pages scanned as one, down the middle and stacks the halves so each fills the screen width. For comics read right to left, choose \"Right half on top\"."
+                          .tl,
+                  onChanged: () {
+                    widget.onChanged?.call("splitWidePages");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
               if ((_effectiveSetting('readerMode') as String?)?.startsWith(
                     'continuous',
                   ) ??

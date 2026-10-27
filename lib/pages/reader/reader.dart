@@ -2,6 +2,7 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -42,6 +43,7 @@ import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/shortcuts.dart';
+import 'package:venera/foundation/wide_page_split.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/pages/reader/auto_scroll_activity.dart';

@@ -183,7 +183,11 @@ class _CompareView extends StatelessWidget {
                 RawImage(image: image, fit: BoxFit.cover),
                 ClipRect(
                   clipper: _RightOfSplit(split),
-                  child: EnhancedComicImage(image: image, fit: BoxFit.cover),
+                  child: EnhancedComicImage(
+                    image: image,
+                    builder: (enhanced) =>
+                        RawImage(image: enhanced, fit: BoxFit.cover),
+                  ),
                 ),
                 Positioned(
                   left: x - 1,

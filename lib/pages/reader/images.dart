@@ -854,6 +854,11 @@ class _ContinuousReaderEntry {
   bool get isSeparator => !isImage;
 }
 
+/// Where a continuous-mode page turn comes to rest. [lowerHalf] is the second
+/// stop of a split page turned one half at a time; it reads as the page's top
+/// on any page that is not.
+typedef _TurnStop = ({_ContinuousReaderEntry entry, bool lowerHalf});
+
 class _ContinuousModeState extends State<_ContinuousMode>
     implements _ImageViewController {
   late _ReaderState reader;
@@ -891,6 +896,18 @@ class _ContinuousModeState extends State<_ContinuousMode>
     return 0.7;
   }
 
+  /// Only the vertical strip has a free axis to stack the halves along.
+  WidePageSplit get _widePageSplit =>
+      reader.mode == ReaderMode.continuousTopToBottom
+      ? WidePageSplit.fromSetting(
+          appdata.settings.getReaderSetting(
+            reader.cid,
+            reader.type.sourceKey,
+            'splitWidePages',
+          ),
+        )
+      : WidePageSplit.off;
+
   /// Whether the user was scrolling the page.
   /// The gesture detector has a delay to detect tap event.
   /// To handle the tap event, we need to know if the user was scrolling before the delay.
@@ -905,8 +922,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
   final _continuousChapterLoads = <int, Future<void>>{};
   final _continuousChapterErrors = <int, String>{};
   final _continuousCachedImages = <String>{};
-  late final ContinuousPageTurnCoordinator<_ContinuousReaderEntry>
-  _pageTurnCoordinator;
+  late final ContinuousPageTurnCoordinator<_TurnStop> _pageTurnCoordinator;
   int _turnInteractionGeneration = 0;
   int? _boundaryTurnChapter;
 
@@ -1278,6 +1294,26 @@ class _ContinuousModeState extends State<_ContinuousMode>
     });
   }
 
+  /// Distance from the viewport's leading edge to the line the current page is
+  /// resolved against. Normally the leading edge (offset 1). But with
+  /// center-on-turn on, a turned-to page is parked at the viewport center,
+  /// leaving the *previous* page straddling the leading edge — resolving
+  /// against the edge would write the page back to the previous one, so the
+  /// next tap re-centers the same target and the reader looks stuck one page
+  /// in (issue #117-2 regression). Probe the center instead so the centered
+  /// page resolves as current.
+  double _readingLine(double viewExtent) {
+    final center =
+        reader.mode == ReaderMode.continuousTopToBottom &&
+        appdata.settings.getReaderSetting(
+              reader.cid,
+              reader.type.sourceKey,
+              'readerCenterPageOnTurn',
+            ) ==
+            true;
+    return center ? viewExtent / 2 : 1.0;
+  }
+
   /// Resolves the current reading position from render-box geometry (replacing
   /// ScrollablePositionedList's itemPositions listener). Drives the scaffold
   /// page indicator for both modes, and chapter-window loading for seamless.
@@ -1287,24 +1323,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (box is! RenderBox) return;
     final viewportLeadingGlobal = box.localToGlobal(Offset.zero);
     final vertical = reader.mode == ReaderMode.continuousTopToBottom;
-
-    // Anchor line for resolving the current page. Normally the viewport's
-    // leading edge (offset 1). But with center-on-turn on, a turned-to page is
-    // parked at the viewport center, leaving the *previous* page straddling the
-    // leading edge — resolving against the edge would write the page back to
-    // the previous one, so the next tap re-centers the same target and the
-    // reader looks stuck one page in (issue #117-2 regression). Probe the
-    // center instead so the centered page resolves as current.
-    final center =
-        vertical &&
-        appdata.settings.getReaderSetting(
-              reader.cid,
-              reader.type.sourceKey,
-              'readerCenterPageOnTurn',
-            ) ==
-            true;
-    final viewExtent = vertical ? box.size.height : box.size.width;
-    final probe = center ? viewExtent / 2 : 1.0;
+    final probe = _readingLine(vertical ? box.size.height : box.size.width);
 
     _ContinuousReaderEntry? current;
     // Last image whose box lies entirely at/above the leading edge. When the
@@ -1842,6 +1861,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
           width: width,
           height: height,
           fit: BoxFit.contain,
+          widePageSplit: _widePageSplit,
           onInit: (state) => imageStates.add(state),
           onDispose: (state) => imageStates.remove(state),
         ),
@@ -2211,6 +2231,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     int page, {
     required bool animate,
     bool center = false,
+    bool lowerHalf = false,
     bool Function()? isCurrent,
     double? maxStepExtent,
   }) async {
@@ -2224,7 +2245,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       }
       // The pivot is the one entry whose offset is exact by construction.
       await _applyScroll(
-        0 - _centerAdjust(chapter, page, center),
+        _landingOffset(chapter, page, center, lowerHalf),
         animate: animate,
       );
       return;
@@ -2237,8 +2258,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (delta != null) {
       await _applyScroll(
         _scrollController.position.pixels +
-            delta -
-            _centerAdjust(chapter, page, center),
+            delta +
+            _landingOffset(chapter, page, center, lowerHalf),
         animate: animate,
       );
       return;
@@ -2273,7 +2294,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final refIdx = _indexOfEntry(ref.chapter, ref.page);
       if (refIdx == targetIdx) {
         await _applyScroll(
-          pos.pixels + refDelta - _centerAdjust(chapter, page, center),
+          pos.pixels +
+              refDelta +
+              _landingOffset(chapter, page, center, lowerHalf),
           animate: animate,
         );
         return;
@@ -2299,8 +2322,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
       if (d != null) {
         await _applyScroll(
           _scrollController.position.pixels +
-              d -
-              _centerAdjust(chapter, page, center),
+              d +
+              _landingOffset(chapter, page, center, lowerHalf),
           animate: animate,
         );
         return;
@@ -2352,23 +2375,67 @@ class _ContinuousModeState extends State<_ContinuousMode>
     }
   }
 
-  /// When [center] is on (and vertical), the extra scroll-back offset that
-  /// moves the target page from the viewport's leading edge to vertically
-  /// centered. Only when the page is shorter than the viewport; taller pages
-  /// stay pinned to the top so their top isn't clipped (issue #117-2).
-  double _centerAdjust(int chapter, int page, bool center) {
-    if (!center || reader.mode != ReaderMode.continuousTopToBottom) {
+  /// Where the viewport's leading edge comes to rest relative to the target
+  /// page's: half way down for the [lowerHalf] of a page turned by halves, and
+  /// with [center] on, above it so a page — or the half of one — shorter than
+  /// the viewport sits vertically centered. Taller pages stay pinned to the top
+  /// so their top isn't clipped (issue #117-2).
+  double _landingOffset(int chapter, int page, bool center, bool lowerHalf) {
+    if ((!center && !lowerHalf) ||
+        reader.mode != ReaderMode.continuousTopToBottom) {
       return 0;
     }
     final ctx = _itemKeys['$chapter:$page']?.currentContext;
     final box = ctx?.findRenderObject();
     if (box is! RenderBox || !box.attached) return 0;
-    final pageExtent = box.size.height;
+    final halves = _turnsByHalves(ctx!, box);
+    final stopExtent = halves ? box.size.height / 2 : box.size.height;
+    var offset = halves && lowerHalf ? stopExtent : 0.0;
     final viewExtent = reader.size.height;
-    if (pageExtent >= viewExtent) return 0;
-    // Positive value: subtracted from the leading-edge target so equal margins
-    // sit above and below the page.
-    return (viewExtent - pageExtent) / 2;
+    if (center && stopExtent < viewExtent) {
+      offset -= (viewExtent - stopExtent) / 2;
+    }
+    return offset;
+  }
+
+  /// Whether a page turn stops on each half of this page: it is shown split
+  /// and too tall for one screen, so a turn to the next page would skip the
+  /// part of its lower half that never came into view.
+  bool _turnsByHalves(BuildContext pageContext, RenderBox box) {
+    if (box.size.height <= reader.size.height) return false;
+    var split = false;
+    void visit(Element element) {
+      if (element is StatefulElement && element.state is _ComicImageState) {
+        split = (element.state as _ComicImageState).isShownSplit;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (pageContext as Element).visitChildren(visit);
+    return split;
+  }
+
+  bool _entryTurnsByHalves(_ContinuousReaderEntry entry) {
+    if (!entry.isImage || _widePageSplit == WidePageSplit.off) return false;
+    final ctx = _itemKeys['${entry.chapter}:${entry.page}']?.currentContext;
+    final box = ctx?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return false;
+    return _turnsByHalves(ctx!, box);
+  }
+
+  bool _isOnLowerHalf(_ContinuousReaderEntry entry) {
+    final ctx = _itemKeys['${entry.chapter}:${entry.page}']?.currentContext;
+    final box = ctx?.findRenderObject();
+    final start = _offsetDeltaToEntry(entry.chapter, entry.page);
+    if (box is! RenderBox || start == null) return false;
+    final viewExtent = reader.size.height;
+    return isReadingLowerHalf(
+      pageStart: start,
+      pageExtent: box.size.height,
+      viewExtent: viewExtent,
+      readingLine: _readingLine(viewExtent),
+    );
   }
 
   /// Continuous-mode page turn: move to the adjacent *image* entry in the flat
@@ -2383,21 +2450,25 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final intended = _pageTurnCoordinator.intendedTarget;
     final curIdx = intended == null
         ? _indexOfEntry(reader.chapter, reader.page)
-        : _indexOfEntry(intended.chapter, intended.page);
+        : _indexOfEntry(intended.entry.chapter, intended.entry.page);
+    final current = intended?.entry ?? _entries[curIdx];
+    // A split page taller than the screen takes two turns, one per half.
+    if (_entryTurnsByHalves(current)) {
+      final onLower = intended?.lowerHalf ?? _isOnLowerHalf(current);
+      if (forward != onLower) {
+        _requestTurn((entry: current, lowerHalf: forward));
+        return true;
+      }
+    }
     final step = forward ? 1 : -1;
     for (var i = curIdx + step; i >= 0 && i < _entries.length; i += step) {
       final entry = _entries[i];
       if (!entry.isImage) continue;
-      if (_boundaryTurnChapter != null) {
-        _turnInteractionGeneration++;
-        _boundaryTurnChapter = null;
-      }
-      _futurePosition = null;
-      unawaited(_pageTurnCoordinator.request(entry));
+      // Turning back lands on the previous page's last half.
+      _requestTurn((entry: entry, lowerHalf: !forward));
       return true;
     }
     if (seamlessChapterReading) {
-      final current = intended ?? _entries[curIdx];
       final chapterImages = _continuousChapterImages[current.chapter];
       final atBoundary =
           current.isImage &&
@@ -2416,10 +2487,20 @@ class _ContinuousModeState extends State<_ContinuousMode>
     return false;
   }
 
+  void _requestTurn(_TurnStop stop) {
+    if (_boundaryTurnChapter != null) {
+      _turnInteractionGeneration++;
+      _boundaryTurnChapter = null;
+    }
+    _futurePosition = null;
+    unawaited(_pageTurnCoordinator.request(stop));
+  }
+
   Future<void> _prepareTurnTarget(
-    _ContinuousReaderEntry entry,
+    _TurnStop stop,
     bool Function() isCurrent,
   ) async {
+    final entry = stop.entry;
     if (!mounted || !entry.isImage) return;
     try {
       await _precacheImageEntry(entry, context);
@@ -2429,9 +2510,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
   }
 
   Future<void> _navigateTurnTarget(
-    _ContinuousReaderEntry entry,
+    _TurnStop stop,
     bool Function() isCurrent,
   ) {
+    final entry = stop.entry;
     if (!mounted || !entry.isImage || !isCurrent()) return Future.value();
     final center =
         appdata.settings.getReaderSetting(
@@ -2447,6 +2529,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       entry.page,
       animate: animate,
       center: center,
+      lowerHalf: stop.lowerHalf,
       isCurrent: isCurrent,
       maxStepExtent:
           (reader.mode == ReaderMode.continuousTopToBottom
@@ -2478,8 +2561,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
                   entry.page == targetPage,
             );
             if (targets.isEmpty) return;
-            final target = targets.first;
-            unawaited(_pageTurnCoordinator.request(target));
+            final stop = (entry: targets.first, lowerHalf: !forward);
+            unawaited(_pageTurnCoordinator.request(stop));
           })
           .whenComplete(() {
             if (_boundaryTurnChapter == chapter) {

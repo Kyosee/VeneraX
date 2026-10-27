@@ -84,6 +84,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "readerScrollSpeed",
       "readerCenterPageOnTurn",
       "readerPageSpacing",
+      "splitWidePages",
       "comicListDisplayMode",
       "galleryFillScreen",
       "autoFullscreenOnRead",

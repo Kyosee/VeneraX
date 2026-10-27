@@ -25,6 +25,25 @@ double estimateContinuousTurnOffset({
   return estimate.clamp(minScrollExtent, maxScrollExtent).toDouble();
 }
 
+/// For a page shown as two stacked halves and turned one half at a time,
+/// whether the reader is on its lower half. [pageStart] is the page's leading
+/// edge relative to the viewport's, [readingLine] the line the current page is
+/// resolved against.
+///
+/// A page whose remainder already fits on screen also counts as lower, so a
+/// turn at the end of the content, where the list cannot scroll the midpoint
+/// up to the reading line, moves on instead of repeating the same half.
+bool isReadingLowerHalf({
+  required double pageStart,
+  required double pageExtent,
+  required double viewExtent,
+  required double readingLine,
+}) {
+  // 1px of slack absorbs rounding in the scroll offset a turn lands on.
+  if (pageStart + pageExtent / 2 <= readingLine + 1) return true;
+  return pageStart + pageExtent <= viewExtent + 1;
+}
+
 /// Serializes continuous-reader page turns and coalesces queued requests to
 /// the latest intended target.
 class ContinuousPageTurnCoordinator<T> {

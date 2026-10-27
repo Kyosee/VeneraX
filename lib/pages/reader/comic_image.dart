@@ -26,6 +26,7 @@ class ComicImage extends StatefulWidget {
     int? cacheHeight,
     this.onInit,
     this.onDispose,
+    this.widePageSplit = WidePageSplit.off,
   })  : image = ResizeImage.resizeIfNeeded(cacheWidth, cacheHeight, image),
         assert(cacheWidth == null || cacheWidth > 0),
         assert(cacheHeight == null || cacheHeight > 0);
@@ -66,6 +67,10 @@ class ComicImage extends StatefulWidget {
 
   final void Function(State<ComicImage> state)? onDispose;
 
+  /// Cuts a landscape page into two stacked halves. Only takes effect with an
+  /// unbounded [width], as in the vertical continuous reader.
+  final WidePageSplit widePageSplit;
+
   static void clear() => _ComicImageState.clear();
 
   @override
@@ -87,6 +92,14 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
   static final Map<int, Size> _cache = {};
 
   static clear() => _cache.clear();
+
+  /// Whether the page is laid out as two stacked halves.
+  bool get isShownSplit {
+    final size = _cache[widget.image.hashCode];
+    return size != null &&
+        widget.width == double.infinity &&
+        widget.widePageSplit.appliesTo(size);
+  }
 
   @override
   void initState() {
@@ -279,6 +292,59 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     _isListeningToStream = false;
   }
 
+  Widget _buildRawImage(
+    ui.Image image, {
+    required double? width,
+    required double? height,
+    required BoxFit? fit,
+    required AlignmentGeometry alignment,
+  }) {
+    return RawImage(
+      // Do not clone the image, because RawImage is a stateless wrapper.
+      // The image will be disposed by the state that owns it (this one, or the
+      // enhancement stage for its processed copy) when it is not needed
+      // anymore, such as when it is unmounted or when the image stream pushes
+      // a new image.
+      image: image,
+      debugImageLabel: _imageInfo?.debugLabel,
+      width: width,
+      height: height,
+      scale: _imageInfo?.scale ?? 1.0,
+      color: widget.color,
+      opacity: widget.opacity,
+      colorBlendMode: widget.colorBlendMode,
+      fit: fit,
+      alignment: alignment,
+      repeat: widget.repeat,
+      centerSlice: widget.centerSlice,
+      matchTextDirection: widget.matchTextDirection,
+      invertColors: _invertColors,
+      isAntiAlias: widget.isAntiAlias,
+      filterQuality: widget.filterQuality,
+    );
+  }
+
+  /// Both halves paint the same decoded image: each cell has exactly half the
+  /// page's aspect ratio, so `cover` crops it to one half and the alignment
+  /// picks which.
+  Widget _buildSplitHalves(ui.Image image, double width, double height) {
+    Widget half(Alignment side) => _buildRawImage(
+          image,
+          width: width,
+          height: height / 2,
+          fit: BoxFit.cover,
+          alignment: side,
+        );
+    final rightFirst = widget.widePageSplit == WidePageSplit.rightFirst;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        half(rightFirst ? Alignment.centerRight : Alignment.centerLeft),
+        half(rightFirst ? Alignment.centerLeft : Alignment.centerRight),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_lastException != null) {
@@ -346,10 +412,12 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       }
 
       Size? cacheSize = _cache[widget.image.hashCode];
+      final split = isShownSplit;
       if (cacheSize != null) {
         if (width == double.infinity) {
+          final layoutSize = widget.widePageSplit.layoutSize(cacheSize);
           width = constrains.maxWidth;
-          height = width * cacheSize.height / cacheSize.width;
+          height = width * layoutSize.height / layoutSize.width;
         } else if (height == double.infinity) {
           height = constrains.maxHeight;
           width = height * cacheSize.width / cacheSize.height;
@@ -367,47 +435,20 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       if (_imageInfo != null) {
         // build image
         final image = _imageInfo!.image;
-        Widget result = ImageEnhanceShader.instance.isEnabled
-            ? EnhancedComicImage(
-                image: image,
-                debugImageLabel: _imageInfo?.debugLabel,
+        // Split pages always come through the width branch above, so both
+        // dimensions are known here.
+        Widget paint(ui.Image image) => split
+            ? _buildSplitHalves(image, width!, height!)
+            : _buildRawImage(
+                image,
                 width: width,
                 height: height,
-                scale: _imageInfo?.scale ?? 1.0,
-                color: widget.color,
-                opacity: widget.opacity,
-                colorBlendMode: widget.colorBlendMode,
                 fit: widget.fit,
                 alignment: widget.alignment,
-                repeat: widget.repeat,
-                centerSlice: widget.centerSlice,
-                matchTextDirection: widget.matchTextDirection,
-                invertColors: _invertColors,
-                isAntiAlias: widget.isAntiAlias,
-                filterQuality: widget.filterQuality,
-              )
-            : RawImage(
-                // Do not clone the image, because RawImage is a stateless wrapper.
-                // The image will be disposed by this state object when it is not needed
-                // anymore, such as when it is unmounted or when the image stream pushes
-                // a new image.
-                image: image,
-                debugImageLabel: _imageInfo?.debugLabel,
-                width: width,
-                height: height,
-                scale: _imageInfo?.scale ?? 1.0,
-                color: widget.color,
-                opacity: widget.opacity,
-                colorBlendMode: widget.colorBlendMode,
-                fit: widget.fit,
-                alignment: widget.alignment,
-                repeat: widget.repeat,
-                centerSlice: widget.centerSlice,
-                matchTextDirection: widget.matchTextDirection,
-                invertColors: _invertColors,
-                isAntiAlias: widget.isAntiAlias,
-                filterQuality: widget.filterQuality,
               );
+        Widget result = ImageEnhanceShader.instance.isEnabled
+            ? EnhancedComicImage(image: image, builder: paint)
+            : paint(image);
 
         if (!widget.excludeFromSemantics) {
           result = Semantics(
