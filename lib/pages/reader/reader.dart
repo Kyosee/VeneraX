@@ -29,6 +29,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/eink_screen.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/gallery_layout.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
@@ -202,9 +203,7 @@ class _ReaderState extends State<Reader>
   @override
   int get maxPage {
     if (images == null) return 1;
-    return !showSingleImageOnFirstPage()
-        ? (images!.length / imagesPerPage).ceil()
-        : 1 + ((images!.length - 1) / imagesPerPage).ceil();
+    return galleryLayout.screenCount;
   }
 
   /// Total pages including chapter comments page (used for internal page control).
@@ -690,15 +689,7 @@ class _ReaderState extends State<Reader>
         history!.page = images?.length ?? 1;
       } else {
         /// Record the first image of the page
-        if (!showSingleImageOnFirstPage() || imagesPerPage == 1) {
-          history!.page = (page - 1) * imagesPerPage + 1;
-        } else {
-          if (page == 1) {
-            history!.page = 1;
-          } else {
-            history!.page = (page - 2) * imagesPerPage + 2;
-          }
-        }
+        history!.page = galleryLayout.imagesOf(page).$1 + 1;
       }
       history!.maxPage = images?.length ?? 1;
       if (widget.chapters?.isGrouped ?? false) {
@@ -853,12 +844,69 @@ abstract mixin class _ImagePerPageHandler {
     }
   }
 
+  /// Landscape images of the current chapter seen so far (0-based). Only
+  /// known once decoded, so the grouping is refined while reading.
+  final _wideImages = <int>{};
+
+  GalleryLayout? _layout;
+
+  List<String>? _layoutImages;
+
+  /// Landscape images belong to one chapter's image list.
+  void _syncLayoutChapter() {
+    if (!identical(_layoutImages, images)) {
+      _layoutImages = images;
+      _wideImages.clear();
+      _layout = null;
+    }
+  }
+
+  /// How the current chapter's images are grouped into pages.
+  GalleryLayout get galleryLayout => _layout = _layoutFor(imagesPerPage);
+
+  /// The grouping in use if it is for [perScreen], else a fresh one from the
+  /// landscape images known so far, with no page held in place.
+  GalleryLayout _layoutFor(int perScreen) {
+    _syncLayoutChapter();
+    final singleFirst = showSingleImageOnFirstPage();
+    final cached = _layout;
+    if (cached != null &&
+        cached.imagesPerScreen == perScreen &&
+        cached.singleFirst == singleFirst) {
+      return cached;
+    }
+    return GalleryLayout(
+      imageCount: images?.length ?? 0,
+      imagesPerScreen: perScreen,
+      singleFirst: singleFirst,
+      wide: _wideImages,
+    );
+  }
+
+  /// Records image [index] as landscape. True if that is new and pages hold
+  /// several images, i.e. the pages may need regrouping.
+  bool noteWideImage(int index) {
+    _syncLayoutChapter();
+    if (index < 0 || index >= (images?.length ?? 0)) return false;
+    return _wideImages.add(index) && imagesPerPage > 1;
+  }
+
+  /// Regroups pages with the landscape images found so far, keeping the page
+  /// being read in place. Returns its page number afterwards, or null when
+  /// the grouping did not change.
+  int? regroupGallery() {
+    final before = galleryLayout;
+    final after = before.regroupedAround(page, _wideImages);
+    if (after.sameScreensAs(before)) return null;
+    _layout = after;
+    if (page > before.screenCount) return after.screenCount + 1;
+    return after.screenOf(before.imagesOf(page).$1);
+  }
+
   /// Calculate maxPage with a specific imagesPerPage value
   int _calcMaxPage(int imagesPerPageValue) {
     if (images == null) return 1;
-    return !showSingleImageOnFirstPage()
-        ? (images!.length / imagesPerPageValue).ceil()
-        : 1 + ((images!.length - 1) / imagesPerPageValue).ceil();
+    return _layoutFor(imagesPerPageValue).screenCount;
   }
 
   /// Check if the number of images per page has changed
@@ -887,26 +935,33 @@ abstract mixin class _ImagePerPageHandler {
     int oldImagesPerPage,
     int newImagesPerPage,
   ) {
-    int previousImageIndex = 1;
-    if (!showSingleImageOnFirstPage() || oldImagesPerPage == 1) {
-      previousImageIndex = (page - 1) * oldImagesPerPage + 1;
-    } else {
-      if (page == 1) {
-        previousImageIndex = 1;
-      } else {
-        previousImageIndex = (page - 2) * oldImagesPerPage + 2;
-      }
-    }
-
     int newPage;
-    if (newImagesPerPage != 1) {
-      if (showSingleImageOnFirstPage()) {
-        newPage = ((previousImageIndex - 1) / newImagesPerPage).ceil() + 1;
-      } else {
-        newPage = (previousImageIndex / newImagesPerPage).ceil();
-      }
+    final imgs = images;
+    if (imgs != null && imgs.isNotEmpty) {
+      // The page that shows the image the old page started with.
+      final before = _layoutFor(oldImagesPerPage);
+      final first = before.imagesOf(page.clamp(1, before.screenCount)).$1;
+      newPage = galleryLayout.screenOf(first);
     } else {
-      newPage = previousImageIndex;
+      int previousImageIndex = 1;
+      if (!showSingleImageOnFirstPage() || oldImagesPerPage == 1) {
+        previousImageIndex = (page - 1) * oldImagesPerPage + 1;
+      } else {
+        if (page == 1) {
+          previousImageIndex = 1;
+        } else {
+          previousImageIndex = (page - 2) * oldImagesPerPage + 2;
+        }
+      }
+      if (newImagesPerPage != 1) {
+        if (showSingleImageOnFirstPage()) {
+          newPage = ((previousImageIndex - 1) / newImagesPerPage).ceil() + 1;
+        } else {
+          newPage = (previousImageIndex / newImagesPerPage).ceil();
+        }
+      } else {
+        newPage = previousImageIndex;
+      }
     }
 
     // Clamp to valid range (1 to maxPage)

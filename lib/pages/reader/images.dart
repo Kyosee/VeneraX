@@ -209,11 +209,7 @@ class _GalleryModeState extends State<_GalleryMode>
             true;
   }
 
-  int get totalImagePages {
-    return !reader.showSingleImageOnFirstPage()
-        ? (reader.images!.length / reader.imagesPerPage).ceil()
-        : 1 + ((reader.images!.length - 1) / reader.imagesPerPage).ceil();
-  }
+  int get totalImagePages => reader.maxPage;
 
   int get totalPages => reader.totalPages;
 
@@ -285,31 +281,12 @@ class _GalleryModeState extends State<_GalleryMode>
     } else {
       fingers = 0;
     }
+    if (fingers == 0) _scheduleRegroup();
   }
 
   /// Get the range of images for the given page. [page] is 1-based.
-  (int start, int end) getPageImagesRange(int page) {
-    var imagesPerPage = reader.imagesPerPage;
-    if (reader.showSingleImageOnFirstPage()) {
-      if (page == 1) {
-        return (0, 1);
-      } else {
-        int startIndex = (page - 2) * imagesPerPage + 1;
-        int endIndex = math.min(
-          startIndex + imagesPerPage,
-          reader.images!.length,
-        );
-        return (startIndex, endIndex);
-      }
-    } else {
-      int startIndex = (page - 1) * imagesPerPage;
-      int endIndex = math.min(
-        startIndex + imagesPerPage,
-        reader.images!.length,
-      );
-      return (startIndex, endIndex);
-    }
-  }
+  (int start, int end) getPageImagesRange(int page) =>
+      reader.galleryLayout.imagesOf(page);
 
   /// Get the image indices for current page. Returns null if no images.
   /// Returns a single index if only one image, or a range if multiple images.
@@ -335,6 +312,10 @@ class _GalleryModeState extends State<_GalleryMode>
     // 到 2。向后保留 1 页（返回上一页时同样流畅）。超出解码窗口的页仍只下载，
     // 由 [_cachePage] 走 _preDownloadImage。
     final decodeAhead = preCacheCount.clamp(1, 2);
+    final (shownStart, shownEnd) = getPageImagesRange(startPage);
+    for (var i = shownStart; i < shownEnd; i++) {
+      _measureImage(i);
+    }
     for (int i = startPage - 1; i <= startPage + preCacheCount; i++) {
       if (i == startPage ||
           i <= 0 ||
@@ -352,10 +333,113 @@ class _GalleryModeState extends State<_GalleryMode>
     if (isChapterCommentsPage(page)) return;
     var (startIndex, endIndex) = getPageImagesRange(page);
     for (int i = startIndex; i < endIndex; i++) {
-      shouldPreCache
-          ? _precacheImage(i + 1, context)
-          : _preDownloadImage(i + 1, context);
+      if (shouldPreCache) {
+        _precacheImage(i + 1, context);
+        _measureImage(i);
+      } else {
+        _preDownloadImage(i + 1, context);
+      }
     }
+  }
+
+  // ----- Landscape images on multi-image pages -----
+  // A landscape image gets a page to itself, but whether an image is
+  // landscape is only known once it has decoded. Images are measured off the
+  // decodes the reader does anyway (the page on screen and the precache
+  // window), and the pages regroup once the pager is at rest.
+
+  final _measuredImages = <int>{};
+
+  bool _regroupPending = false;
+
+  bool _regroupScheduled = false;
+
+  /// Swaps in a fresh pager on the next build, at the page being read.
+  bool _remountPager = false;
+
+  int _pagerGeneration = 0;
+
+  void _measureImage(int index) {
+    final images = reader.images;
+    if (reader.imagesPerPage <= 1 ||
+        images == null ||
+        index < 0 ||
+        index >= images.length ||
+        !_measuredImages.add(index)) {
+      return;
+    }
+    final stream = _createImageProvider(
+      index + 1,
+      context,
+    ).resolve(createLocalImageConfiguration(context));
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        final landscape = info.image.width > info.image.height;
+        info.dispose();
+        stream.removeListener(listener);
+        if (!mounted) return;
+        if (landscape && reader.noteWideImage(index)) {
+          _regroupPending = true;
+          _scheduleRegroup();
+        }
+      },
+      onError: (_, _) {
+        stream.removeListener(listener);
+        _measuredImages.remove(index);
+      },
+    );
+    stream.addListener(listener);
+  }
+
+  void _scheduleRegroup({bool wakeFrame = true}) {
+    if (!_regroupPending || _regroupScheduled) return;
+    _regroupScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _regroupScheduled = false;
+      _regroup();
+    });
+    if (wakeFrame) WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// Applies a pending regroup unless something is moving or the page is
+  /// zoomed; the pager settling, fingers lifting and later builds retry.
+  void _regroup() {
+    if (!mounted || !_regroupPending) return;
+    if (fingers > 0 ||
+        reader.isPageAnimating ||
+        reader._rippleTurnPending ||
+        !controller.hasClients ||
+        controller.position.isScrollingNotifier.value ||
+        isImageZoomed ||
+        reader.isOnChapterCommentsPage) {
+      return;
+    }
+    _regroupPending = false;
+    final oldPage = reader.page;
+    final oldImages = getPageImagesRange(oldPage);
+    final newPage = reader.regroupGallery();
+    if (newPage == null) return;
+    // The page can keep its number with fewer images on it; the pager is
+    // rebuilt whenever the page being read changed in any way.
+    final remount =
+        newPage != oldPage || getPageImagesRange(newPage) != oldImages;
+    if (newPage != oldPage) {
+      // Same images under a new number: not a turn for the e-ink refresh.
+      if (reader._settledPosition == (reader.chapter, oldPage)) {
+        reader._settledPosition = (reader.chapter, newPage);
+      }
+      reader.page = newPage;
+    }
+    setState(() {
+      if (remount) {
+        _remountPager = true;
+      } else {
+        photoViewControllers.removeWhere((key, _) => key != newPage);
+      }
+    });
+    context.readerScaffold.update();
+    _schedulePrecache(newPage);
   }
 
   Widget _buildChapterCommentsPage() {
@@ -377,6 +461,7 @@ class _GalleryModeState extends State<_GalleryMode>
   bool _onPagerSettled(ScrollEndNotification notification) {
     // Scrollables inside a page (the comments list) bubble up here too.
     if (notification.depth != 0 || !controller.hasClients) return false;
+    _scheduleRegroup();
     final position = controller.page;
     if (position == null) return false;
     final settled = position.round();
@@ -393,6 +478,19 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   Widget build(BuildContext context) {
+    if (_remountPager) {
+      _remountPager = false;
+      // The page being read changed number or images: a fresh pager there,
+      // with fresh zoom controllers, instead of reusing the old index's.
+      final old = controller;
+      controller = PageController(initialPage: reader.page);
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      photoViewControllers.clear();
+      _pagerGeneration++;
+    }
+    // A regroup held back by an animation or a zoom tries again after this
+    // frame; whatever cleared it is what caused the rebuild.
+    _scheduleRegroup(wakeFrame: false);
     final gallery = Listener(
       onPointerDown: (event) {
         _increaseFingers();
@@ -415,6 +513,7 @@ class _GalleryModeState extends State<_GalleryMode>
         }
       },
       child: PhotoViewGallery.builder(
+        key: ValueKey(_pagerGeneration),
         backgroundDecoration: BoxDecoration(
           color: reader.readerBackgroundColor,
         ),
