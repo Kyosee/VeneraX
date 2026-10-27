@@ -642,23 +642,24 @@ class _GalleryModeState extends State<_GalleryMode>
         ? Axis.vertical
         : Axis.horizontal;
 
-    bool reverse = reader.mode == ReaderMode.galleryRightToLeft;
-    if (reverse) {
-      images = images.reversed.toList();
-    }
+    final order = galleryPageOrder(
+      images,
+      startIndex,
+      rightToLeft: reader.mode == ReaderMode.galleryRightToLeft,
+    );
 
     List<Widget> imageWidgets;
 
-    if (images.length == 2) {
+    if (order.length == 2) {
       imageWidgets = [
         Expanded(
           child: ComicImage(
             width: double.infinity,
             height: double.infinity,
             image: _createImageProviderFromKey(
-              images[0],
+              order[0].$1,
               context,
-              startIndex + 1,
+              order[0].$2,
             ),
             fit: BoxFit.contain,
             alignment: axis == Axis.vertical
@@ -673,9 +674,9 @@ class _GalleryModeState extends State<_GalleryMode>
             width: double.infinity,
             height: double.infinity,
             image: _createImageProviderFromKey(
-              images[1],
+              order[1].$1,
               context,
-              startIndex + 2,
+              order[1].$2,
             ),
             fit: BoxFit.contain,
             alignment: axis == Axis.vertical
@@ -687,12 +688,12 @@ class _GalleryModeState extends State<_GalleryMode>
         ),
       ];
     } else {
-      imageWidgets = images.map((imageKey) {
-        startIndex++;
+      imageWidgets = order.map((entry) {
+        final (imageKey, number) = entry;
         ImageProvider imageProvider = _createImageProviderFromKey(
           imageKey,
           context,
-          startIndex,
+          number,
         );
         return Expanded(
           child: ComicImage(
@@ -903,6 +904,22 @@ class _GalleryModeState extends State<_GalleryMode>
 
     return reader.images![startIndex];
   }
+}
+
+/// The images of a multi-image gallery page in the order they are laid out,
+/// each with its 1-based number in the chapter. Right-to-left reading lays
+/// them out reversed, but every image keeps its own number: translations
+/// and custom image processing are addressed by it.
+List<(String, int)> galleryPageOrder(
+  List<String> imageKeys,
+  int startIndex, {
+  required bool rightToLeft,
+}) {
+  final order = [
+    for (var i = 0; i < imageKeys.length; i++)
+      (imageKeys[i], startIndex + i + 1),
+  ];
+  return rightToLeft ? order.reversed.toList() : order;
 }
 
 const Set<PointerDeviceKind> _kTouchLikeDeviceTypes = <PointerDeviceKind>{
