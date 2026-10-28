@@ -33,6 +33,10 @@ import 'package:venera/utils/translations.dart';
 part 'favorite_actions.dart';
 part 'side_bar.dart';
 part 'local_favorites_page.dart';
+part 'local_favorites_page/actions.dart';
+part 'local_favorites_page/reorder_comics_page.dart';
+part 'local_favorites_page/select_update_page_num.dart';
+part 'local_favorites_page/filter_dialog.dart';
 part 'network_favorites_page.dart';
 
 const _kLeftBarWidth = 256.0;
