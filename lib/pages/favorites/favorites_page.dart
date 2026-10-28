@@ -31,6 +31,8 @@ import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
 part 'favorite_actions.dart';
+part 'folder_actions.dart';
+part 'folder_widgets.dart';
 part 'side_bar.dart';
 part 'local_favorites_page.dart';
 part 'local_favorites_page/actions.dart';
@@ -39,9 +41,11 @@ part 'local_favorites_page/select_update_page_num.dart';
 part 'local_favorites_page/filter_dialog.dart';
 part 'network_favorites_page.dart';
 
-const _kLeftBarWidth = 256.0;
+const _kLeftBarWidth = 280.0;
 
-const _kTwoPanelChangeWidth = 720.0;
+/// The folder list docks beside the content only when the content keeps at
+/// least this much width; otherwise it opens as a drawer.
+const _kMinDockedContentWidth = 600.0;
 
 class FavoritesPage extends StatefulWidget {
   const FavoritesPage({super.key});
@@ -78,25 +82,42 @@ const localAllFolderLabel = _localAllFolderLabel;
   return (folder: folder, isNetwork: isNetwork);
 }
 
+/// Where the folder list sits for the current window width.
+class _FavoritesLayout extends InheritedWidget {
+  const _FavoritesLayout({
+    required this.docked,
+    required this.canDock,
+    required super.child,
+  });
+
+  /// Shown beside the content.
+  final bool docked;
+
+  /// The window leaves room for it beside the content; when it doesn't, the
+  /// list opens as a drawer instead.
+  final bool canDock;
+
+  static _FavoritesLayout? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_FavoritesLayout>();
+
+  static bool isDocked(BuildContext context) => of(context)?.docked ?? false;
+
+  @override
+  bool updateShouldNotify(_FavoritesLayout oldWidget) =>
+      docked != oldWidget.docked || canDock != oldWidget.canDock;
+}
+
 class _FavoritesPageState extends State<FavoritesPage> {
   String? folder;
 
   bool isNetwork = false;
 
-  FolderList? folderList;
+  /// Local folders whose subfolders the folder list shows.
+  final expandedFolders = <String>{};
 
-  void setFolder(bool isNetwork, String? folder) {
-    setState(() {
-      this.isNetwork = isNetwork;
-      this.folder = folder;
-    });
-    folderList?.update();
-    appdata.implicitData['favoriteFolder'] = {
-      'name': folder,
-      'isNetwork': isNetwork,
-    };
-    appdata.writeImplicitData();
-  }
+  /// Hidden by the user. Only applies where the list fits beside the content;
+  /// a narrow window always uses the drawer.
+  bool sidebarHidden = false;
 
   @override
   void initState() {
@@ -106,31 +127,139 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
     folder = restored.folder;
     isNetwork = restored.isNetwork;
+    var expanded = appdata.implicitData['favoriteExpandedFolders'];
+    if (expanded is List) {
+      expandedFolders.addAll(expanded.whereType<String>());
+    }
+    sidebarHidden = appdata.implicitData['favoriteSidebarHidden'] == true;
+    if (folder != null && !isNetwork) _revealFolder(folder!);
     super.initState();
+  }
+
+  void setFolder(bool isNetwork, String? folder) {
+    setState(() {
+      this.isNetwork = isNetwork;
+      this.folder = folder;
+      if (folder != null && !isNetwork) _revealFolder(folder);
+    });
+    appdata.implicitData['favoriteFolder'] = {
+      'name': folder,
+      'isNetwork': isNetwork,
+    };
+    _saveLayout();
+  }
+
+  /// Expands every ancestor of [folder] so the folder list shows it.
+  void _revealFolder(String folder) {
+    var tree = LocalFavoritesManager().folderTree;
+    for (var p = tree.parentOf(folder); p != null; p = tree.parentOf(p)) {
+      expandedFolders.add(p);
+    }
+  }
+
+  void _saveLayout() {
+    var manager = LocalFavoritesManager();
+    // Keep the set while the store is down; every folder would look deleted.
+    if (manager.isInitialized) {
+      expandedFolders.removeWhere((f) => !manager.existsFolder(f));
+    }
+    appdata.implicitData['favoriteExpandedFolders'] = expandedFolders.toList();
+    appdata.implicitData['favoriteSidebarHidden'] = sidebarHidden;
+    appdata.writeImplicitData();
+  }
+
+  void toggleExpanded(String folder) {
+    setState(() {
+      if (!expandedFolders.remove(folder)) expandedFolders.add(folder);
+    });
+    _saveLayout();
+  }
+
+  void setSidebarHidden(bool hidden) {
+    setState(() => sidebarHidden = hidden);
+    _saveLayout();
+  }
+
+  /// Creates a folder under [parent] (null for the top level) and shows it in
+  /// the folder list without opening it.
+  Future<void> createFolder(String? parent) async {
+    var created = await newFolder(parent: parent);
+    if (created == null || !mounted) return;
+    setState(() => _revealFolder(created));
+    _saveLayout();
+  }
+
+  Future<void> renameFolder(String name) async {
+    var renamed = await _showRenameFolderDialog(name);
+    if (renamed == null) return;
+    FavoriteFolderSort.rename(appdata.implicitData, name, renamed);
+    if (expandedFolders.remove(name)) expandedFolders.add(renamed);
+    if (mounted && folder == name && !isNetwork) {
+      setFolder(false, renamed);
+    } else {
+      _saveLayout();
+    }
+  }
+
+  Future<void> moveFolder(String name) async {
+    if (!await _showMoveFolderDialog(name) || !mounted) return;
+    setState(() => _revealFolder(name));
+    _saveLayout();
+  }
+
+  Future<void> deleteFolder(String name) async {
+    var parent = LocalFavoritesManager().folderTree.parentOf(name);
+    var deleted = await _showDeleteFolderDialog(name);
+    if (deleted == null) return;
+    for (var f in deleted) {
+      FavoriteFolderSort.remove(appdata.implicitData, f);
+      expandedFolders.remove(f);
+    }
+    if (mounted && !isNetwork && deleted.contains(folder)) {
+      // Back to where the folder was, rather than to nothing.
+      setFolder(false, parent);
+    } else {
+      if (mounted) setState(() {});
+      _saveLayout();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return IconTheme(
-      data: IconThemeData(color: context.colorScheme.onSurfaceVariant),
-      child: Stack(
-        children: [
-          AnimatedPositioned(
-            left: context.width <= _kTwoPanelChangeWidth ? -_kLeftBarWidth : 0,
-            top: 0,
-            bottom: 0,
-            duration: const Duration(milliseconds: 200),
-            child: (const _LeftBar()).fixWidth(_kLeftBarWidth),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var canDock =
+            constraints.maxWidth - _kLeftBarWidth >= _kMinDockedContentWidth;
+        var docked = canDock && !sidebarHidden;
+        const duration = Duration(milliseconds: 200);
+        return _FavoritesLayout(
+          docked: docked,
+          canDock: canDock,
+          child: IconTheme(
+            data: IconThemeData(color: context.colorScheme.onSurfaceVariant),
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  left: docked ? 0 : -_kLeftBarWidth,
+                  top: 0,
+                  bottom: 0,
+                  width: _kLeftBarWidth,
+                  duration: duration,
+                  child: _LeftBar(favPage: this),
+                ),
+                AnimatedPositioned(
+                  top: 0,
+                  left: docked ? _kLeftBarWidth : 0,
+                  right: 0,
+                  bottom: 0,
+                  duration: duration,
+                  child: buildBody(),
+                ),
+              ],
+            ),
           ),
-          Positioned(
-            top: 0,
-            left: context.width <= _kTwoPanelChangeWidth ? 0 : _kLeftBarWidth,
-            right: 0,
-            bottom: 0,
-            child: buildBody(),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -146,10 +275,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
             alignment: Alignment.centerLeft,
             child: Material(
               child: SizedBox(
-                width: min(300, context.width - 16),
+                width: min(_kLeftBarWidth, context.width - 16),
                 child: _LeftBar(
-                  withAppbar: true,
                   favPage: this,
+                  inDrawer: true,
                   onSelected: () {
                     context.pop();
                   },
@@ -174,30 +303,36 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 
+  /// Brings the folder list back: beside the content where it fits, as a
+  /// drawer otherwise.
+  void showFolders(BuildContext context) {
+    if (_FavoritesLayout.of(context)?.canDock ?? false) {
+      setSidebarHidden(false);
+    } else {
+      showFolderSelector();
+    }
+  }
+
+  /// The app bar's leading button: shows the folder list unless it is docked.
+  Widget folderButton(BuildContext context) {
+    var layout = _FavoritesLayout.of(context);
+    if (layout?.docked ?? false) return const SizedBox();
+    return Tooltip(
+      message: layout?.canDock ?? false ? "Show folder list".tl : "Folders".tl,
+      child: IconButton(
+        icon: const Icon(Icons.menu),
+        color: context.colorScheme.primary,
+        onPressed: () => showFolders(context),
+      ),
+    );
+  }
+
+  VoidCallback? onTitleTap(BuildContext context) =>
+      _FavoritesLayout.isDocked(context) ? null : () => showFolders(context);
+
   Widget buildBody() {
     if (folder == null) {
-      return CustomScrollView(
-        slivers: [
-          SliverAppbar(
-            leading: Tooltip(
-              message: "Folders".tl,
-              child: context.width <= _kTwoPanelChangeWidth
-                  ? IconButton(
-                      icon: const Icon(Icons.menu),
-                      color: context.colorScheme.primary,
-                      onPressed: showFolderSelector,
-                    )
-                  : null,
-            ),
-            title: GestureDetector(
-              onTap: context.width < _kTwoPanelChangeWidth
-                  ? showFolderSelector
-                  : null,
-              child: Text("Unselected".tl),
-            ),
-          ),
-        ],
-      );
+      return _FavoritesOverview(favPage: this);
     }
     if (!isNetwork) {
       return _LocalFavoritesPage(
@@ -217,10 +352,4 @@ class _FavoritesPageState extends State<FavoritesPage> {
       }
     }
   }
-}
-
-abstract interface class FolderList {
-  void update();
-
-  void updateFolders();
 }

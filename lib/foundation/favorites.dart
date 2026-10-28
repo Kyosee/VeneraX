@@ -1004,9 +1004,12 @@ class LocalFavoritesManager with ChangeNotifier {
     return _getFolderComicsAsync(folder, _dbPath);
   }
 
-  List<FavoriteItem> getAllComics() {
+  List<FavoriteItem> getAllComics() => getComicsIn(folderNames);
+
+  /// Comics of [folders], each listed once.
+  List<FavoriteItem> getComicsIn(List<String> folders) {
     var res = <FavoriteItem>{};
-    for (final folder in folderNames) {
+    for (final folder in folders) {
       var comics = _db.select("""
         select * from "$folder";
       """);
@@ -1031,17 +1034,38 @@ class LocalFavoritesManager with ChangeNotifier {
   ) {
     var res = <FavoriteItem>{};
     for (final folder in folders) {
-      var comics = db.select("""
-        select * from "$folder";
-      """);
+      ResultSet comics;
+      try {
+        comics = db.select("""
+          select * from "$folder";
+        """);
+      } on SqliteException {
+        // Deleted or renamed after this read was queued; failing here would
+        // leave the page waiting on a load that never finishes.
+        continue;
+      }
       res.addAll(comics.map((element) => FavoriteItem.fromRow(element)));
     }
     return res.toList();
   }
 
   /// Start a new isolate to get all the comics
-  Future<List<FavoriteItem>> getAllComicsAsync() {
-    return _getAllComicsAsync(folderNames, _dbPath);
+  Future<List<FavoriteItem>> getAllComicsAsync() =>
+      getComicsInAsync(folderNames);
+
+  Future<List<FavoriteItem>> getComicsInAsync(List<String> folders) {
+    return _getAllComicsAsync(folders, _dbPath);
+  }
+
+  /// The comic shown first in [folder], used as its cover.
+  FavoriteItem? firstComic(String folder) {
+    if (!existsFolder(folder)) return null;
+    var rows = _db.select("""
+      select * from "$folder"
+      order by display_order
+      limit 1;
+    """);
+    return rows.isEmpty ? null : FavoriteItem.fromRow(rows.first);
   }
 
   void addTagTo(String folder, String id, String tag) {

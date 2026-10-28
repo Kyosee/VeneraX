@@ -43,6 +43,28 @@ class _LocalFavoritesFilterDialog extends StatefulWidget {
       _LocalFavoritesFilterDialogState();
 }
 
+/// Stores the local favorites filters, shared by every folder.
+void saveLocalFavoritesFilters({
+  required String readFilter,
+  required String downloadFilter,
+  required Set<String> sourceFilter,
+  required Set<String> tagFilter,
+  required Set<String> authorFilter,
+  required bool tagMatchAll,
+  required bool authorMatchAll,
+}) {
+  appdata.implicitData["local_favorites_read_filter"] = readFilter;
+  appdata.implicitData["local_favorites_download_filter"] = downloadFilter;
+  appdata.implicitData["local_favorites_source_filter"] = sourceFilter
+      .toList();
+  appdata.implicitData["local_favorites_tag_filter"] = tagFilter.toList();
+  appdata.implicitData["local_favorites_author_filter"] = authorFilter
+      .toList();
+  appdata.implicitData["local_favorites_tag_match_all"] = tagMatchAll;
+  appdata.implicitData["local_favorites_author_match_all"] = authorMatchAll;
+  appdata.writeImplicitData();
+}
+
 const readFilterList = ['All', 'UnCompleted', 'Completed'];
 
 const downloadFilterList = ['All', 'Downloaded', 'Not Downloaded'];
@@ -376,19 +398,15 @@ class _LocalFavoritesFilterDialogState
         ),
         FilledButton(
           onPressed: () {
-            appdata.implicitData["local_favorites_read_filter"] = readFilter;
-            appdata.implicitData["local_favorites_download_filter"] =
-                downloadFilter;
-            appdata.implicitData["local_favorites_source_filter"] = sourceFilter
-                .toList();
-            appdata.implicitData["local_favorites_tag_filter"] = tagFilter
-                .toList();
-            appdata.implicitData["local_favorites_author_filter"] =
-                authorFilter.toList();
-            appdata.implicitData["local_favorites_tag_match_all"] = tagMatchAll;
-            appdata.implicitData["local_favorites_author_match_all"] =
-                authorMatchAll;
-            appdata.writeImplicitData();
+            saveLocalFavoritesFilters(
+              readFilter: readFilter,
+              downloadFilter: downloadFilter,
+              sourceFilter: sourceFilter,
+              tagFilter: tagFilter,
+              authorFilter: authorFilter,
+              tagMatchAll: tagMatchAll,
+              authorMatchAll: authorMatchAll,
+            );
             if (mounted) {
               Navigator.pop(context);
               WidgetsBinding.instance.addPostFrameCallback((_) {

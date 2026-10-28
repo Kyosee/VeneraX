@@ -46,7 +46,8 @@ class _LocalFavoritesSettingsState extends State<LocalFavoritesSettings> {
               "Long press on the favorite button to quickly add to this folder"
                   .tl,
           optionTranslation: {
-            for (var e in LocalFavoritesManager().folderNames) e: e
+            for (var e in LocalFavoritesManager().folderNames)
+              e: LocalFavoritesManager().folderTree.pathLabel(e)
           },
         ).toSliver(),
         _CallbackSetting(

@@ -534,8 +534,13 @@ class _LocalSectionState extends State<_LocalSection> {
         ),
         ...localFolders.map((folder) {
           var isAdded = localAdded.contains(folder);
+          var depth = LocalFavoritesManager().folderTree.depthOf(folder);
 
           return ListTile(
+            contentPadding: EdgeInsetsDirectional.only(
+              start: 16.0 + 16 * math.min(depth, 6),
+              end: 24,
+            ),
             title: Row(
               children: [
                 Flexible(

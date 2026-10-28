@@ -11,6 +11,10 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
 
   bool get isAllFolder;
 
+  bool get isAggregated;
+
+  List<String> get scopeFolders;
+
   LocalFavoritesManager get manager;
 
   String? get networkSource;
@@ -335,12 +339,16 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
                               disabled = true;
                             }
                           }
+                          var depth = manager.folderTree.depthOf(folder);
                           return CheckboxListTile(
-                            title: Row(
-                              children: [
-                                Text(folder),
-                                const SizedBox(width: 8),
-                              ],
+                            contentPadding: EdgeInsetsDirectional.only(
+                              start: 16.0 + 16 * (depth > 6 ? 6 : depth),
+                              end: 24,
+                            ),
+                            title: Text(
+                              folder,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             value: selectedLocalFolders.contains(folder),
                             onChanged: disabled
@@ -351,7 +359,7 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
                                         // Moving from the aggregated view can
                                         // only target a single folder, so keep
                                         // the selection single-choice.
-                                        if (option == 'move' && isAllFolder) {
+                                        if (option == 'move' && isAggregated) {
                                           selectedLocalFolders.clear();
                                         }
                                         selectedLocalFolders.add(folder);
@@ -375,14 +383,17 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
                               .toList();
                           void execute() {
                             if (option == 'move') {
-                              if (isAllFolder) {
+                              if (isAggregated) {
                                 // Aggregated view: each comic may live in a
                                 // different folder, so move it out of all its
-                                // source folders into the single target.
+                                // source folders into the single target. A
+                                // folder shown with its subfolders keeps the
+                                // comics' other folders.
                                 LocalFavoritesManager()
                                     .batchMoveFavoritesToFolder(
                                   selectedLocalFolders.first,
                                   comics,
+                                  fromFolders: isAllFolder ? null : scopeFolders,
                                 );
                               } else {
                                 for (var f in selectedLocalFolders) {
@@ -394,7 +405,7 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
                                 }
                               }
                             } else {
-                              if (isAllFolder) {
+                              if (isAggregated) {
                                 for (var f in selectedLocalFolders) {
                                   LocalFavoritesManager()
                                       .batchCopyFavoritesToFolder(f, comics);
@@ -417,11 +428,13 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
                           // Moving from the aggregated view removes the comics
                           // from every folder they currently belong to, so ask
                           // the user to confirm before doing it.
-                          if (option == 'move' && isAllFolder) {
+                          if (option == 'move' && isAggregated) {
                             showConfirmDialog(
                               context: App.rootContext,
                               title: "Move to folder".tl,
-                              content: "Move @c comics to \"@f\"? They will be removed from all other folders."
+                              content: (isAllFolder
+                                      ? "Move @c comics to \"@f\"? They will be removed from all other folders."
+                                      : "Move @c comics to \"@f\"? They will be removed from this folder and its subfolders.")
                                   .tlParams({
                                 "c": comics.length,
                                 "f": selectedLocalFolders.first,
@@ -458,8 +471,10 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
   /// Swipe-cancel a favorite from the list without opening the comic. In a
   /// specific folder it removes the comic from that folder; in the aggregated
   /// "All" view "cancel favorite" means a full unfavorite, so it removes the
-  /// comic from every folder it belongs to. Either way an undo toast restores
-  /// the exact membership (mirrors the read-later swipe-delete pattern).
+  /// comic from every folder it belongs to, and a folder shown with its
+  /// subfolders removes it from all of those. Either way an undo toast
+  /// restores the exact membership (mirrors the read-later swipe-delete
+  /// pattern).
   void _removeFavoriteSwipe(FavoriteItem c) {
     void showUndo(VoidCallback undo) {
       if (!mounted) return;
@@ -473,9 +488,15 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
       );
     }
 
-    if (isAllFolder) {
+    if (isAggregated) {
+      // A folder shown with its subfolders only clears the comic there.
+      var scope = isAllFolder ? null : scopeFolders;
       var folders = manager.find(c.id, c.type);
-      manager.batchDeleteComicsInAllFolders([ComicID(c.type, c.id)]);
+      if (scope != null) folders.retainWhere(scope.contains);
+      manager.batchDeleteComicsInAllFolders(
+        [ComicID(c.type, c.id)],
+        inFolders: scope,
+      );
       showUndo(() {
         for (var f in folders) {
           manager.addComic(f, c);

@@ -91,7 +91,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
   void showFolders() {
     context
         .findAncestorStateOfType<_FavoritesPageState>()!
-        .showFolderSelector();
+        .showFolders(context);
   }
 
   @override
@@ -103,18 +103,11 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
         style: context.width < changePoint
             ? AppbarStyle.shadow
             : AppbarStyle.blur,
-        leading: Tooltip(
-          message: "Folders".tl,
-          child: context.width <= _kTwoPanelChangeWidth
-              ? IconButton(
-                  icon: const Icon(Icons.menu),
-                  color: context.colorScheme.primary,
-                  onPressed: showFolders,
-                )
-              : null,
-        ),
+        leading: context
+            .findAncestorStateOfType<_FavoritesPageState>()!
+            .folderButton(context),
         title: GestureDetector(
-          onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
+          onTap: _FavoritesLayout.isDocked(context) ? null : showFolders,
           child: Text(widget.data.title),
         ),
         actions: [
@@ -143,20 +136,11 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
         ],
       ),
       errorLeading: Appbar(
-        leading: Tooltip(
-          message: "Folders".tl,
-          child: context.width <= _kTwoPanelChangeWidth
-              ? IconButton(
-                  icon: const Icon(Icons.menu),
-                  color: context.colorScheme.primary,
-                  onPressed: context
-                      .findAncestorStateOfType<_FavoritesPageState>()!
-                      .showFolderSelector,
-                )
-              : null,
-        ),
+        leading: context
+            .findAncestorStateOfType<_FavoritesPageState>()!
+            .folderButton(context),
         title: GestureDetector(
-          onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
+          onTap: _FavoritesLayout.isDocked(context) ? null : showFolders,
           child: Text(widget.data.title),
         ),
       ),
@@ -210,7 +194,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
   void showFolders() {
     context
         .findAncestorStateOfType<_FavoritesPageState>()!
-        .showFolderSelector();
+        .showFolders(context);
   }
 
   void loadPage() async {
@@ -239,35 +223,21 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
       style: context.width < changePoint
           ? AppbarStyle.shadow
           : AppbarStyle.blur,
-      leading: Tooltip(
-        message: "Folders".tl,
-        child: context.width <= _kTwoPanelChangeWidth
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                color: context.colorScheme.primary,
-                onPressed: showFolders,
-              )
-            : null,
-      ),
+      leading: context
+            .findAncestorStateOfType<_FavoritesPageState>()!
+            .folderButton(context),
       title: GestureDetector(
-        onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
+        onTap: _FavoritesLayout.isDocked(context) ? null : showFolders,
         child: Text(widget.data.title),
       ),
     );
 
     var appBar = Appbar(
-      leading: Tooltip(
-        message: "Folders".tl,
-        child: context.width <= _kTwoPanelChangeWidth
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                color: context.colorScheme.primary,
-                onPressed: showFolders,
-              )
-            : null,
-      ),
+      leading: context
+            .findAncestorStateOfType<_FavoritesPageState>()!
+            .folderButton(context),
       title: GestureDetector(
-        onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
+        onTap: _FavoritesLayout.isDocked(context) ? null : showFolders,
         child: Text(widget.data.title),
       ),
     );

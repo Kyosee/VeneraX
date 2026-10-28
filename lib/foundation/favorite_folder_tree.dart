@@ -106,6 +106,10 @@ class FavoriteFolderTree {
     return path.reversed.toList();
   }
 
+  /// "Parent › Child", for pickers that list folders flat.
+  String pathLabel(String folder) =>
+      contains(folder) ? pathOf(folder).join(' › ') : folder;
+
   /// Whether [folder] may move under [parent] (null for the top level). A
   /// folder can't move into itself or one of its own subfolders.
   bool canMove(String folder, String? parent) {

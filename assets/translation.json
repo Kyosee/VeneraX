@@ -1543,7 +1543,20 @@
     "Delete all translations": "删除本漫画翻译",
     "Delete all translations for this comic?": "删除本漫画的全部翻译？",
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。",
-    "This name is reserved": "该名称为保留名称，请换一个"
+    "This name is reserved": "该名称为保留名称，请换一个",
+    "Top level": "顶层",
+    "Location": "位置",
+    "Move Folder": "移动文件夹",
+    "New Subfolder": "新建子文件夹",
+    "Sort Subfolders": "子文件夹排序",
+    "Subfolders": "子文件夹",
+    "Include subfolder comics": "含子文件夹漫画",
+    "Also delete its @c subfolders": "同时删除其中 @c 个子文件夹",
+    "The comics saved in them are deleted too.": "其中收藏的漫画也会一并删除。",
+    "Subfolders move up one level.": "子文件夹会上移一级。",
+    "Move @c comics to \"@f\"? They will be removed from this folder and its subfolders.": "将 @c 本漫画移动到「@f」？它们会从当前文件夹及其子文件夹中移除。",
+    "Show folder list": "展开文件夹列表",
+    "Hide folder list": "收起文件夹列表"
   },
   "zh_TW": {
     "Current comic": "目前漫畫",
@@ -3089,6 +3102,19 @@
     "Delete all translations for this comic?": "刪除這部漫畫的全部翻譯？",
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "將移除這部漫畫已儲存的所有翻譯與嵌字頁面，原始圖片不受影響。",
     "Delete all translations": "刪除本漫畫翻譯",
-    "This name is reserved": "此名稱為保留名稱，請換一個"
+    "This name is reserved": "此名稱為保留名稱，請換一個",
+    "Top level": "頂層",
+    "Location": "位置",
+    "Move Folder": "移動資料夾",
+    "New Subfolder": "建立子資料夾",
+    "Sort Subfolders": "子資料夾排序",
+    "Subfolders": "子資料夾",
+    "Include subfolder comics": "含子資料夾漫畫",
+    "Also delete its @c subfolders": "一併刪除其中 @c 個子資料夾",
+    "The comics saved in them are deleted too.": "其中收藏的漫畫也會一併刪除。",
+    "Subfolders move up one level.": "子資料夾會上移一層。",
+    "Move @c comics to \"@f\"? They will be removed from this folder and its subfolders.": "將 @c 本漫畫移動到「@f」？它們會從目前資料夾及其子資料夾中移除。",
+    "Show folder list": "展開資料夾列表",
+    "Hide folder list": "收合資料夾列表"
   }
 }
