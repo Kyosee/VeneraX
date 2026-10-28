@@ -36,10 +36,34 @@ class _FolderCard extends StatelessWidget {
 
   final void Function(BuildContext context, Offset? position)? onMenu;
 
+  Widget buildCover(BuildContext context) {
+    var colors = context.colorScheme;
+    var image = cover == null ? null : findImageProvider(cover!);
+    return ColoredBox(
+      color: colors.surfaceContainerHighest,
+      child: image == null
+          ? Icon(icon, color: colors.onSurfaceVariant)
+          : AnimatedImage(
+              image: image,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    var image = cover == null ? null : findImageProvider(cover!);
     var colors = context.colorScheme;
+    Widget thumbnail = cover != null &&
+            ComicCollectionStore.isCollectionSourceKey(cover!.sourceKey)
+        // A collection's cover fills in once its members load, as on the
+        // comic tiles.
+        ? ListenableBuilder(
+            listenable: ComicCollectionStore.changes,
+            builder: (context, _) => buildCover(context),
+          )
+        : buildCover(context);
     return Material(
       color: colors.surfaceContainerLow,
       borderRadius: BorderRadius.circular(12),
@@ -58,17 +82,7 @@ class _FolderCard extends StatelessWidget {
                 aspectRatio: 0.72,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: ColoredBox(
-                    color: colors.surfaceContainerHighest,
-                    child: image == null
-                        ? Icon(icon, color: colors.onSurfaceVariant)
-                        : AnimatedImage(
-                            image: image,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                          ),
-                  ),
+                  child: thumbnail,
                 ),
               ),
               const SizedBox(width: 12),

@@ -159,6 +159,24 @@ void main() {
     expect(manager.folderNames, ['P', 'B']);
   });
 
+  test('a rename may change only the letter case', () {
+    manager.createFolder('abc');
+    manager.createFolder('abc1');
+    manager.moveFolder('abc1', 'abc');
+    manager.rename('abc', 'ABC');
+    expect(manager.folderNames, ['ABC', 'abc1']);
+    expect(manager.folderTree.parentOf('abc1'), 'ABC');
+    expect(manager.folderComics('ABC'), 0);
+  });
+
+  test('deleting a folder drops its network link', () {
+    manager.createFolder('A');
+    manager.linkFolderToNetwork('A', 'source', 'remote');
+    manager.deleteFolder('A');
+    manager.createFolder('A');
+    expect(manager.findLinked('A').$1, isNull);
+  });
+
   test('a stale sort list still applies', () {
     for (final f in ['A', 'B', 'C']) {
       manager.createFolder(f);

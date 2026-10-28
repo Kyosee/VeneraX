@@ -1519,6 +1519,11 @@ class LocalFavoritesManager with ChangeNotifier {
           "delete from folder_order where folder_name == ?;",
           [folder],
         );
+        // Otherwise a later folder of this name would inherit the link.
+        _db.execute(
+          "delete from folder_sync where folder_name == ?;",
+          [folder],
+        );
         if (_folderTreeUsable) {
           _db.execute(
             "delete from $_folderTreeTable where folder_name == ?;",
@@ -1701,8 +1706,15 @@ class LocalFavoritesManager with ChangeNotifier {
     }
     _db.execute("BEGIN TRANSACTION");
     try {
+      var table = before;
+      if (before.toLowerCase() == after.toLowerCase()) {
+        // Table names ignore letter case, so SQLite refuses a rename that only
+        // changes it; going through another name gets there.
+        table = "$before\u0001renaming";
+        _db.execute('ALTER TABLE "$before" RENAME TO "$table";');
+      }
       _db.execute("""
-        ALTER TABLE "$before"
+        ALTER TABLE "$table"
         RENAME TO "$after";
       """);
       _db.execute(

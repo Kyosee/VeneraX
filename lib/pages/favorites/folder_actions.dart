@@ -214,9 +214,14 @@ Future<String?> _showRenameFolderDialog(String folder) async {
       // Pre-filled with the current name: confirming it unchanged is a
       // no-op, not a "folder exists" error.
       if (value == folder) return null;
-      var err = validateFolderName(value);
+      var err = validateFolderName(value, renaming: folder);
       if (err != null) return err;
-      LocalFavoritesManager().rename(folder, value);
+      try {
+        LocalFavoritesManager().rename(folder, value);
+      } catch (e) {
+        Log.error("Rename Folder", e.toString());
+        return e.toString();
+      }
       renamed = value;
       return null;
     },

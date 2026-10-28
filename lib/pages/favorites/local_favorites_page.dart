@@ -199,11 +199,28 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
     });
   }
 
+  bool _leavingMissingFolder = false;
+
   @override
   void updateComics() {
     if (isLoading) return;
-    // Deleted or renamed elsewhere; the page is replaced on the next build.
-    if (!isAllFolder && !manager.existsFolder(widget.folder)) return;
+    if (!isAllFolder && !manager.existsFolder(widget.folder)) {
+      // Gone through a sync or a restore. A rename or delete made here moves
+      // the page itself first, so only leave if nothing else did.
+      if (!_leavingMissingFolder) {
+        _leavingMissingFolder = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _leavingMissingFolder = false;
+          if (mounted &&
+              favPage.folder == widget.folder &&
+              !favPage.isNetwork &&
+              !manager.existsFolder(widget.folder)) {
+            favPage.setFolder(false, null);
+          }
+        });
+      }
+      return;
+    }
     if (isAggregated) {
       var folders = scopeFolders;
       var total = 0;

@@ -66,13 +66,25 @@ Future<String?> newFolder({String? parent}) async {
                     setState(() {
                       error = e;
                     });
-                  } else {
+                    return;
+                  }
+                  try {
                     created = manager.createFolder(controller.text);
-                    if (location != null && manager.existsFolder(location!)) {
+                    if (location != null &&
+                        manager.supportsFolderNesting &&
+                        manager.existsFolder(location!)) {
                       manager.moveFolder(created!, location);
                     }
-                    context.pop();
+                  } catch (err) {
+                    Log.error("Create Folder", err.toString());
+                    // A folder created but not moved stays at the top level,
+                    // so the dialog closes as usual; a failed create stays.
+                    if (created == null) {
+                      setState(() => error = err.toString());
+                      return;
+                    }
                   }
+                  context.pop();
                 },
                 child: Text("Create".tl),
               ),
@@ -83,13 +95,19 @@ Future<String?> newFolder({String? parent}) async {
   return created;
 }
 
-String? validateFolderName(String newFolderName) {
-  var folders = LocalFavoritesManager().folderNames;
+/// [renaming] is the folder being renamed, which may keep its own name in
+/// another letter case.
+String? validateFolderName(String newFolderName, {String? renaming}) {
+  // Folders are tables, and table names ignore letter case.
+  var lower = newFolderName.toLowerCase();
+  var taken = LocalFavoritesManager().folderNames.any(
+        (f) => f != renaming && f.toLowerCase() == lower,
+      );
   if (newFolderName.isEmpty) {
     return "Folder name cannot be empty".tl;
   } else if (newFolderName.length > 50) {
     return "Folder name is too long".tl;
-  } else if (folders.contains(newFolderName)) {
+  } else if (taken) {
     return "Folder already exists".tl;
   } else if (LocalFavoritesManager.isReservedFolderName(newFolderName)) {
     return "This name is reserved".tl;

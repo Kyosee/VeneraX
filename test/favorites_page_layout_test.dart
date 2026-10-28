@@ -93,6 +93,31 @@ void main() {
     'isNetwork': false,
   };
 
+  test('folder names clash regardless of letter case', () {
+    manager.createFolder('abc');
+    expect(validateFolderName('ABC'), isNotNull);
+    expect(validateFolderName('ABC', renaming: 'abc'), isNull);
+    expect(validateFolderName('folder_tree'), isNotNull);
+  });
+
+  testWidgets('a folder removed by a sync falls back to the overview', (
+    tester,
+  ) async {
+    manager.createFolder('Gone');
+    manager.createFolder('Kept');
+    appdata.implicitData['favoriteFolder'] = selected('Gone');
+    await openPage(tester, 1200);
+
+    manager.deleteFolder('Gone');
+    await tester.pumpAndSettle();
+    expect(appdata.implicitData['favoriteFolder'], {
+      'name': null,
+      'isNetwork': false,
+    });
+    expect(find.text('Favorites'), findsOneWidget);
+    await settleWrites(tester);
+  });
+
   testWidgets('a wide window hides and shows the folder list in place', (
     tester,
   ) async {
