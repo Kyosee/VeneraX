@@ -1542,7 +1542,8 @@
     "Chapter translation canceled": "已取消该章节翻译",
     "Delete all translations": "删除本漫画翻译",
     "Delete all translations for this comic?": "删除本漫画的全部翻译？",
-    "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。"
+    "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "将删除本漫画所有已存的翻译和嵌字页面，原图不受影响。",
+    "This name is reserved": "该名称为保留名称，请换一个"
   },
   "zh_TW": {
     "Current comic": "目前漫畫",
@@ -3087,6 +3088,7 @@
     "Chapter translation canceled": "已取消該章節的翻譯",
     "Delete all translations for this comic?": "刪除這部漫畫的全部翻譯？",
     "This removes every stored translation and rendered page of this comic. The original images are unaffected.": "將移除這部漫畫已儲存的所有翻譯與嵌字頁面，原始圖片不受影響。",
-    "Delete all translations": "刪除本漫畫翻譯"
+    "Delete all translations": "刪除本漫畫翻譯",
+    "This name is reserved": "此名稱為保留名稱，請換一個"
   }
 }

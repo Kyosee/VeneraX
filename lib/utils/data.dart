@@ -829,12 +829,16 @@ Future<void> importPicaData(
           }
         }
         for (var folderName in folderNames) {
-          if (!LocalFavoritesManager().existsFolder(folderName)) {
+          // A folder whose name is now reserved imports under a suffixed one.
+          var target = folderName;
+          if (LocalFavoritesManager.isReservedFolderName(folderName)) {
+            target = LocalFavoritesManager().createFolder(folderName, true);
+          } else if (!LocalFavoritesManager().existsFolder(folderName)) {
             LocalFavoritesManager().createFolder(folderName);
           }
           for (var comic in db.select("SELECT * FROM \"$folderName\";")) {
             LocalFavoritesManager().addComic(
-              folderName,
+              target,
               FavoriteItem(
                 id: comic['target'],
                 name: comic['name'],

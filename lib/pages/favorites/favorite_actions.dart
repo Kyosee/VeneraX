@@ -73,6 +73,8 @@ String? validateFolderName(String newFolderName) {
     return "Folder name is too long".tl;
   } else if (folders.contains(newFolderName)) {
     return "Folder already exists".tl;
+  } else if (LocalFavoritesManager.isReservedFolderName(newFolderName)) {
+    return "This name is reserved".tl;
   }
   return null;
 }
@@ -268,8 +270,9 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
   return comics;
 }
 
-Future<void> sortFolders() async {
-  var folders = LocalFavoritesManager().folderNames;
+/// Reorders the subfolders of [parent] (null for the top level).
+Future<void> sortFolders([String? parent]) async {
+  var folders = [...LocalFavoritesManager().folderTree.childrenOf(parent)];
 
   await showPopUpWidget(
     App.rootContext,
@@ -310,7 +313,7 @@ Future<void> sortFolders() async {
     }),
   );
 
-  LocalFavoritesManager().updateOrder(folders);
+  LocalFavoritesManager().reorderFolders(parent, folders);
 }
 
 Future<void> importNetworkFolder(
