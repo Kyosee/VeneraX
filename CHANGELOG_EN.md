@@ -4,6 +4,37 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v2.3.9](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.9) - 2026-10-28
+
+### Added
+- Local favorites can now have subfolders. Long-press or right-click a folder to create a subfolder, rename, move, sort its subfolders or delete it; when you delete a folder, you can move its subfolders up a level or delete them too.
+- Opening a folder shows its path, its subfolders and then its comics. A switch also shows the comics in its subfolders, and Back goes up one folder at a time.
+- Added a Keyboard shortcuts page on desktop (App settings > Window): change, clear or reset any shortcut, with a warning when two actions share one.
+- The reader's shortcuts can be changed: next/previous page, next/previous chapter, menu, auto page turning, night mode and collect image.
+- Windows: you can set a shortcut that hides the window to the tray and brings it back, even when "Minimize to tray" is off. It has no key by default.
+- Added "Split wide pages" for continuous top-to-bottom reading, set per comic: a landscape page (usually two pages scanned as one) is cut down the middle and the halves are stacked, each filling the screen width. Choose which half goes on top.
+
+### Changed
+- Fullscreen now toggles anywhere in the app with F11 (Ctrl+Cmd+F on macOS), replacing F12, which worked only in the reader.
+- Leaving the reader restores the fullscreen state you had before opening it.
+- With several images per page in gallery modes, a landscape image now gets a page of its own instead of sharing one with a portrait image.
+- In a narrow window, the favorites folder list opens as a side panel instead of squeezing the comics into a single column. Where it sits beside the comics, you can hide and show it.
+- With no folder selected, the favorites page shows all folders and network favorites as cards.
+
+### Fixed
+- Fixed right-to-left gallery pages with several images showing each image's translation on its neighbor. Pages translated before this update may need to be translated again.
+- Fixed the collect heart and translation status in the reader toolbar pointing at the wrong image when several images are shown per page. Collecting now acts on the image you picked.
+- Fixed newly imported local comics sometimes showing the author and links of a deleted comic. Comics already affected correct themselves when opened.
+- Fixed the cover of some local comics not showing in History.
+- Fixed creating or renaming a favorites folder silently failing when another folder's name differs only in letter case. It now says "Folder already exists", and renaming a folder to change only its letter case works.
+- Fixed a new favorites folder taking over the network favorites link of a deleted folder with the same name.
+- Fixed the favorites page still showing a folder after a sync or restore removed it.
+
+### Removed
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.8...v2.3.9
+
 ## [v2.3.8](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.8) - 2026-10-26
 
 ### Added
