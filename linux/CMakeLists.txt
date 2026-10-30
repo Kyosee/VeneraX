@@ -123,12 +123,23 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
   if(IS_SYMLINK "${bundled_library}")
-    # Prebuilt libs ship as lib.so -> lib.so.1 -> lib.so.1.x; copying only the
-    # first link leaves it dangling.
-    install(CODE "
-      file(INSTALL \"${bundled_library}\"
-        DESTINATION \"${INSTALL_BUNDLE_LIB_DIR}\" FOLLOW_SYMLINK_CHAIN)
-      " COMPONENT Runtime)
+    # Prebuilt libs ship as lib.so -> lib.so.1 -> lib.so.1.x. Install the real
+    # file once, under the last link name (the soname): copying the first link
+    # leaves it dangling, and packagers that flatten links would ship every
+    # name as a full copy.
+    set(lib_name "")
+    set(lib_path "${bundled_library}")
+    while(IS_SYMLINK "${lib_path}")
+      get_filename_component(lib_name "${lib_path}" NAME)
+      get_filename_component(lib_dir "${lib_path}" DIRECTORY)
+      file(READ_SYMLINK "${lib_path}" lib_path)
+      if(NOT IS_ABSOLUTE "${lib_path}")
+        set(lib_path "${lib_dir}/${lib_path}")
+      endif()
+    endwhile()
+    install(FILES "${lib_path}" RENAME "${lib_name}"
+      DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+      COMPONENT Runtime)
   else()
     install(FILES "${bundled_library}"
       DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
