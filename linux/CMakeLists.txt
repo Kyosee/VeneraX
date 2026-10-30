@@ -87,6 +87,10 @@ set_target_properties(${BINARY_NAME}
 )
 
 
+# Plugin libraries are copied into lib/ as plain files, so their RUNPATH is
+# never rewritten for the bundle. Let them find sibling libraries in lib/.
+set(CMAKE_BUILD_RPATH "$ORIGIN")
+
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
@@ -118,9 +122,18 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
-  install(FILES "${bundled_library}"
-    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-    COMPONENT Runtime)
+  if(IS_SYMLINK "${bundled_library}")
+    # Prebuilt libs ship as lib.so -> lib.so.1 -> lib.so.1.x; copying only the
+    # first link leaves it dangling.
+    install(CODE "
+      file(INSTALL \"${bundled_library}\"
+        DESTINATION \"${INSTALL_BUNDLE_LIB_DIR}\" FOLLOW_SYMLINK_CHAIN)
+      " COMPONENT Runtime)
+  else()
+    install(FILES "${bundled_library}"
+      DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+      COMPONENT Runtime)
+  endif()
 endforeach(bundled_library)
 
 # Copy the native assets provided by the build.dart from all packages.
