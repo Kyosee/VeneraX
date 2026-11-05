@@ -97,6 +97,26 @@ void main() {
     expect(find.text('Show Comments at Chapter End'), findsOneWidget);
   });
 
+  for (final (mode, first) in [
+    ('galleryRightToLeft', 'Right half first'),
+    ('continuousTopToBottom', 'Right half on top'),
+  ]) {
+    testWidgets('wide page split option is worded for $mode', (tester) async {
+      appdata.settings['readerMode'] = mode;
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: ReaderSettings())),
+      );
+      await tester.pumpAndSettle();
+      final rows = tester.widgetList<SelectSetting>(
+        find.byWidgetPredicate(
+          (w) => w is SelectSetting && w.settingKey == 'splitWidePages',
+        ),
+      );
+      expect(rows, hasLength(1));
+      expect(rows.single.optionTranslation['rightFirst'], first);
+    });
+  }
+
   test(
     'translation summary follows device defaults without changing global settings',
     () {

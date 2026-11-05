@@ -1,16 +1,18 @@
 import 'dart:ui' show Size;
 
-/// How the vertical continuous reader cuts a landscape page (usually a
-/// two-page spread) into two halves stacked top to bottom, so each half is
-/// laid out at the full column width instead of the whole spread shrinking
-/// to it. Stored as the `splitWidePages` reader setting.
+/// How the reader cuts a landscape page (usually a two-page spread) into two
+/// halves. The vertical continuous reader stacks them top to bottom, so each
+/// half is laid out at the full column width instead of the whole spread
+/// shrinking to it; the gallery gives each half a screen. Stored as the
+/// `splitWidePages` reader setting.
 enum WidePageSplit {
   off,
 
-  /// Right half on top: the order of right-to-left comics.
+  /// Right half first (on top, or the earlier screen): the order of
+  /// right-to-left comics.
   rightFirst,
 
-  /// Left half on top.
+  /// Left half first.
   leftFirst;
 
   static WidePageSplit fromSetting(Object? value) => switch (value) {

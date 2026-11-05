@@ -186,4 +186,177 @@ void main() {
       );
     });
   });
+
+  group('cut landscape images', () {
+    test('without landscape images nothing changes', () {
+      for (var n = 0; n <= 8; n++) {
+        for (var per = 1; per <= 3; per++) {
+          final plain = GalleryLayout(imageCount: n, imagesPerScreen: per);
+          final split = GalleryLayout(
+            imageCount: n,
+            imagesPerScreen: per,
+            splitWide: true,
+          );
+          expect(split.sameScreensAs(plain), isTrue, reason: 'n=$n per=$per');
+        }
+      }
+    });
+
+    test('a landscape image takes two screens, one per half', () {
+      final layout = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 1,
+        splitWide: true,
+        wide: {1},
+      );
+
+      expect(_screens(layout), [(0, 1), (1, 2), (1, 2), (2, 3), (3, 4)]);
+      expect(layout.halfOf(1), isNull);
+      expect(layout.halfOf(2), GalleryHalf.first);
+      expect(layout.halfOf(3), GalleryHalf.second);
+      expect(layout.halfOf(4), isNull);
+      expect(layout.screenOf(1), 2);
+      expect(layout.screenOf(1, GalleryHalf.second), 3);
+      expect(layout.screenOf(2), 4);
+      // An uncut image has one screen, whichever half is asked for.
+      expect(layout.screenOf(2, GalleryHalf.second), 4);
+    });
+
+    test('first, last and neighbouring landscape images', () {
+      final layout = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 1,
+        splitWide: true,
+        wide: {0, 1, 3},
+      );
+
+      expect(layout.screenCount, 7);
+      expect(_screens(layout), [
+        (0, 1),
+        (0, 1),
+        (1, 2),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (3, 4),
+      ]);
+      expect(layout.halfOf(1), GalleryHalf.first);
+      expect(layout.halfOf(2), GalleryHalf.second);
+      expect(layout.halfOf(3), GalleryHalf.first);
+      expect(layout.halfOf(7), GalleryHalf.second);
+      expect(layout.screenOf(3), 6);
+      expect(layout.screenOf(3, GalleryHalf.second), 7);
+    });
+
+    test('only cuts with one image per screen', () {
+      final layout = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 2,
+        splitWide: true,
+        wide: {1},
+      );
+
+      expect(layout.splitWide, isFalse);
+      expect(_screens(layout), [(0, 1), (1, 2), (2, 4)]);
+      expect(layout.halfOf(2), isNull);
+    });
+
+    test('a landscape image behind keeps the half being read', () {
+      final before = GalleryLayout(
+        imageCount: 5,
+        imagesPerScreen: 1,
+        splitWide: true,
+        wide: {3},
+      );
+      expect(before.halfOf(5), GalleryHalf.second);
+
+      final after = before.regroupedAround(5, {1, 3});
+      final screen = after.screenMatching(before, 5);
+
+      expect(screen, 6);
+      expect(after.imagesOf(screen), (3, 4));
+      expect(after.halfOf(screen), GalleryHalf.second);
+    });
+
+    test('the image being read opens on its first half once cut', () {
+      final before = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 1,
+        splitWide: true,
+      );
+      final after = before.regroupedAround(2, {1});
+      final screen = after.screenMatching(before, 2);
+
+      expect(screen, 2);
+      expect(after.imagesOf(screen), (1, 2));
+      expect(after.halfOf(screen), GalleryHalf.first);
+    });
+
+    test('turned back to, an image opens on its later half once cut', () {
+      final before = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 1,
+        splitWide: true,
+      );
+      final after = before.regroupedAround(4, {3});
+      final screen = after.screenMatching(before, 4, backward: true);
+
+      expect(screen, 5);
+      expect(after.halfOf(screen), GalleryHalf.second);
+      // An image cut already keeps its half whichever way the reader came.
+      final again = after.regroupedAround(screen, {1, 3});
+      expect(again.screenMatching(after, screen), 6);
+      expect(again.screenMatching(after, screen, backward: true), 6);
+    });
+
+    test('turning the cut off lands on the whole image', () {
+      final cut = GalleryLayout(
+        imageCount: 4,
+        imagesPerScreen: 1,
+        splitWide: true,
+        wide: {1},
+      );
+      final whole = GalleryLayout(imageCount: 4, imagesPerScreen: 1, wide: {1});
+
+      expect(whole.screenMatching(cut, 2), 2);
+      expect(whole.screenMatching(cut, 3), 2);
+      expect(whole.screenMatching(cut, 4), 3);
+      expect(cut.screenMatching(whole, 3), 4);
+    });
+
+    test('regrouping keeps what is on screen for any landscape set', () {
+      const n = 8;
+      for (var mask = 0; mask < 1 << n; mask++) {
+        final wide = {
+          for (var i = 0; i < n; i++)
+            if (mask & (1 << i) != 0) i,
+        };
+        final subsets = [<int>{}, wide.where((i) => i.isEven).toSet(), wide];
+        for (final known in subsets) {
+          final before = GalleryLayout(
+            imageCount: n,
+            imagesPerScreen: 1,
+            splitWide: true,
+            wide: known,
+          );
+          for (var s = 1; s <= before.screenCount; s++) {
+            final after = before.regroupedAround(s, wide);
+            final kept = after.screenMatching(before, s);
+            final reason = 'wide=$wide known=$known screen=$s';
+            expect(after.imagesOf(kept), before.imagesOf(s), reason: reason);
+            expect(
+              after.halfOf(kept) ?? GalleryHalf.first,
+              before.halfOf(s) ?? GalleryHalf.first,
+              reason: reason,
+            );
+          }
+          expect(
+            before.regroupedAround(1, wide).screenCount,
+            n + wide.length,
+            reason: 'wide=$wide known=$known',
+          );
+        }
+      }
+    });
+  });
 }

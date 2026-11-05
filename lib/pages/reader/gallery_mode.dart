@@ -172,11 +172,12 @@ class _GalleryModeState extends State<_GalleryMode>
     }
   }
 
-  // ----- Landscape images on multi-image pages -----
-  // A landscape image gets a page to itself, but whether an image is
-  // landscape is only known once it has decoded. Images are measured off the
-  // decodes the reader does anyway (the page on screen and the precache
-  // window), and the pages regroup once the pager is at rest.
+  // ----- Landscape images -----
+  // A landscape image gets a page to itself on multi-image pages, and is cut
+  // in two when wide pages are split; whether an image is landscape is only
+  // known once it has decoded. Images are measured off the decodes the
+  // reader does anyway (the page on screen and the precache window), and the
+  // pages regroup once the pager is at rest.
 
   final _measuredImages = <int>{};
 
@@ -191,7 +192,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   void _measureImage(int index) {
     final images = reader.images;
-    if (reader.imagesPerPage <= 1 ||
+    if (!reader.measuresWideImages ||
         images == null ||
         index < 0 ||
         index >= images.length ||
@@ -205,11 +206,14 @@ class _GalleryModeState extends State<_GalleryMode>
     late final ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
-        final landscape = info.image.width > info.image.height;
+        final size = Size(
+          info.image.width.toDouble(),
+          info.image.height.toDouble(),
+        );
         info.dispose();
         stream.removeListener(listener);
         if (!mounted) return;
-        if (landscape && reader.noteWideImage(index)) {
+        if (size.width > size.height && reader.noteWideImage(index, size)) {
           _regroupPending = true;
           _scheduleRegroup();
         }
@@ -248,12 +252,16 @@ class _GalleryModeState extends State<_GalleryMode>
     _regroupPending = false;
     final oldPage = reader.page;
     final oldImages = getPageImagesRange(oldPage);
-    final newPage = reader.regroupGallery();
+    final oldHalf = reader.galleryLayout.halfOf(oldPage);
+    final newPage = reader.regroupGallery(backward: reader._turnedBack);
     if (newPage == null) return;
-    // The page can keep its number with fewer images on it; the pager is
-    // rebuilt whenever the page being read changed in any way.
+    // The page can keep its number with fewer images on it, or with half of
+    // its image; the pager is rebuilt whenever the page being read changed
+    // in any way.
     final remount =
-        newPage != oldPage || getPageImagesRange(newPage) != oldImages;
+        newPage != oldPage ||
+        getPageImagesRange(newPage) != oldImages ||
+        reader.galleryLayout.halfOf(newPage) != oldHalf;
     if (newPage != oldPage) {
       // Same images under a new number: not a turn for the e-ink refresh.
       if (reader._settledPosition == (reader.chapter, oldPage)) {
@@ -372,6 +380,18 @@ class _GalleryModeState extends State<_GalleryMode>
 
             photoViewControllers[index] ??= PhotoViewController();
 
+            final half = reader.galleryLayout.halfOf(index);
+            final wideSize = reader._wideImages[startIndex];
+            if (half != null && wideSize != null) {
+              return _buildHalfPage(
+                pageImages[0],
+                startIndex,
+                half,
+                wideSize,
+                photoViewControllers[index],
+              );
+            }
+
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
               final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
               return PhotoViewGalleryPageOptions(
@@ -464,6 +484,46 @@ class _GalleryModeState extends State<_GalleryMode>
     return NotificationListener<ScrollEndNotification>(
       onNotification: _onPagerSettled,
       child: gallery,
+    );
+  }
+
+  /// One half of a cut landscape image as a page of its own. It keeps the
+  /// half's shape, so zoom and "Fill screen" act as on a whole image; `cover`
+  /// and the alignment crop the image to the half.
+  PhotoViewGalleryPageOptions _buildHalfPage(
+    String imageKey,
+    int imageIndex,
+    GalleryHalf half,
+    Size imageSize,
+    PhotoViewController? controller,
+  ) {
+    final viewport = MediaQuery.sizeOf(context);
+    final halfSize = Size(imageSize.width / 2, imageSize.height);
+    final childSize = applyBoxFit(
+      BoxFit.contain,
+      halfSize,
+      viewport,
+    ).destination;
+    final rightFirst = reader.galleryWidePageSplit == WidePageSplit.rightFirst;
+    final showsRight = rightFirst == (half == GalleryHalf.first);
+    final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
+    return PhotoViewGalleryPageOptions.customChild(
+      controller: controller,
+      childSize: childSize,
+      initialScale: fillScreen
+          ? PhotoViewComputedScale.covered
+          : PhotoViewComputedScale.contained,
+      minScale: fillScreen ? PhotoViewComputedScale.contained * 1.0 : null,
+      maxScale: PhotoViewComputedScale.covered * 10.0,
+      child: ComicImage(
+        image: _createImageProviderFromKey(imageKey, context, imageIndex + 1),
+        width: childSize.width,
+        height: childSize.height,
+        fit: BoxFit.cover,
+        alignment: showsRight ? Alignment.centerRight : Alignment.centerLeft,
+        onInit: (state) => imageStates.add(state),
+        onDispose: (state) => imageStates.remove(state),
+      ),
     );
   }
 

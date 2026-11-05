@@ -785,6 +785,8 @@ abstract mixin class _ImagePerPageHandler {
 
   late bool _lastOrientation;
 
+  late bool _lastSplitWide;
+
   /// Track if we were on the chapter comments page before orientation change
   bool _wasOnCommentsPage = false;
 
@@ -812,6 +814,7 @@ abstract mixin class _ImagePerPageHandler {
   void initImagesPerPage(int initialPage) {
     _lastImagesPerPage = imagesPerPage;
     _lastOrientation = isPortrait;
+    _lastSplitWide = _splitsWide(_lastImagesPerPage);
     _wasOnCommentsPage = false;
     if (imagesPerPage != 1) {
       if (showSingleImageOnFirstPage()) {
@@ -848,9 +851,30 @@ abstract mixin class _ImagePerPageHandler {
     }
   }
 
-  /// Landscape images of the current chapter seen so far (0-based). Only
-  /// known once decoded, so the grouping is refined while reading.
-  final _wideImages = <int>{};
+  /// Landscape images of the current chapter seen so far (0-based), with
+  /// their decoded size. Only known once decoded, so the grouping is refined
+  /// while reading.
+  final _wideImages = <int, Size>{};
+
+  /// How the gallery cuts landscape images, from the comic's settings.
+  WidePageSplit get galleryWidePageSplit => mode.isGallery
+      ? WidePageSplit.fromSetting(
+          appdata.settings.getReaderSetting(
+            cid,
+            type.sourceKey,
+            'splitWidePages',
+          ),
+        )
+      : WidePageSplit.off;
+
+  /// Whether a gallery with [perScreen] images per screen cuts landscape
+  /// images; it only does with one.
+  bool _splitsWide(int perScreen) =>
+      perScreen == 1 && galleryWidePageSplit != WidePageSplit.off;
+
+  /// Whether the gallery has to find out which images are landscape.
+  bool get measuresWideImages =>
+      imagesPerPage > 1 || _splitsWide(imagesPerPage);
 
   GalleryLayout? _layout;
 
@@ -872,61 +896,74 @@ abstract mixin class _ImagePerPageHandler {
   /// chapter comments page.
   (int, int) get pageImageRange => galleryLayout.imagesOf(page);
 
-  /// The grouping in use if it is for [perScreen], else a fresh one from the
-  /// landscape images known so far, with no page held in place.
-  GalleryLayout _layoutFor(int perScreen) {
+  /// The grouping in use if it is for [perScreen] and [splitWide], else a
+  /// fresh one from the landscape images known so far, with no page held in
+  /// place. [splitWide] defaults to the current setting.
+  GalleryLayout _layoutFor(int perScreen, {bool? splitWide}) {
     _syncLayoutChapter();
     final singleFirst = showSingleImageOnFirstPage();
+    final split = (splitWide ?? _splitsWide(perScreen)) && perScreen == 1;
     final cached = _layout;
     if (cached != null &&
         cached.imagesPerScreen == perScreen &&
-        cached.singleFirst == singleFirst) {
+        cached.singleFirst == singleFirst &&
+        cached.splitWide == split) {
       return cached;
     }
     return GalleryLayout(
       imageCount: images?.length ?? 0,
       imagesPerScreen: perScreen,
       singleFirst: singleFirst,
-      wide: _wideImages,
+      splitWide: split,
+      wide: _wideImages.keys.toSet(),
     );
   }
 
-  /// Records image [index] as landscape. True if that is new and pages hold
-  /// several images, i.e. the pages may need regrouping.
-  bool noteWideImage(int index) {
+  /// Records image [index] of [size] as landscape. True if that is new and
+  /// the layout depends on it, i.e. the pages may need regrouping.
+  bool noteWideImage(int index, Size size) {
     _syncLayoutChapter();
     if (index < 0 || index >= (images?.length ?? 0)) return false;
-    return _wideImages.add(index) && imagesPerPage > 1;
+    if (_wideImages.containsKey(index)) return false;
+    _wideImages[index] = size;
+    return measuresWideImages;
   }
 
   /// Regroups pages with the landscape images found so far, keeping the page
   /// being read in place. Returns its page number afterwards, or null when
-  /// the grouping did not change.
-  int? regroupGallery() {
+  /// the grouping did not change. [backward]: the reader turned back to the
+  /// page, so if its image is now cut it opens on the later half.
+  int? regroupGallery({bool backward = false}) {
     final before = galleryLayout;
-    final after = before.regroupedAround(page, _wideImages);
+    final after = before.regroupedAround(page, _wideImages.keys.toSet());
     if (after.sameScreensAs(before)) return null;
     _layout = after;
     if (page > before.screenCount) return after.screenCount + 1;
-    return after.screenOf(before.imagesOf(page).$1);
+    return after.screenMatching(before, page, backward: backward);
   }
 
   /// Calculate maxPage with a specific imagesPerPage value
-  int _calcMaxPage(int imagesPerPageValue) {
+  int _calcMaxPage(int imagesPerPageValue, {bool? splitWide}) {
     if (images == null) return 1;
-    return _layoutFor(imagesPerPageValue).screenCount;
+    return _layoutFor(imagesPerPageValue, splitWide: splitWide).screenCount;
   }
 
-  /// Check if the number of images per page has changed
+  /// Check if the number of images per page, or whether landscape images
+  /// are cut, has changed
   void _checkImagesPerPageChange() {
     int currentImagesPerPage = imagesPerPage;
     bool currentOrientation = isPortrait;
+    bool currentSplitWide = _splitsWide(currentImagesPerPage);
 
     if (_lastImagesPerPage != currentImagesPerPage ||
-        _lastOrientation != currentOrientation) {
+        _lastOrientation != currentOrientation ||
+        _lastSplitWide != currentSplitWide) {
       // Calculate old maxPage using old imagesPerPage to correctly determine
       // if we were on the comments page before the orientation change
-      int oldMaxPage = _calcMaxPage(_lastImagesPerPage);
+      int oldMaxPage = _calcMaxPage(
+        _lastImagesPerPage,
+        splitWide: _lastSplitWide,
+      );
       _wasOnCommentsPage = page > oldMaxPage;
 
       _adjustPageForImagesPerPageChange(
@@ -935,6 +972,7 @@ abstract mixin class _ImagePerPageHandler {
       );
       _lastImagesPerPage = currentImagesPerPage;
       _lastOrientation = currentOrientation;
+      _lastSplitWide = currentSplitWide;
     }
   }
 
@@ -946,10 +984,13 @@ abstract mixin class _ImagePerPageHandler {
     int newPage;
     final imgs = images;
     if (imgs != null && imgs.isNotEmpty) {
-      // The page that shows the image the old page started with.
-      final before = _layoutFor(oldImagesPerPage);
-      final first = before.imagesOf(page.clamp(1, before.screenCount)).$1;
-      newPage = galleryLayout.screenOf(first);
+      // The page that shows what the old page showed: the image it started
+      // with, and the same half of it when that is cut in both.
+      final before = _layoutFor(oldImagesPerPage, splitWide: _lastSplitWide);
+      newPage = galleryLayout.screenMatching(
+        before,
+        page.clamp(1, before.screenCount),
+      );
     } else {
       int previousImageIndex = 1;
       if (!showSingleImageOnFirstPage() || oldImagesPerPage == 1) {
@@ -1033,6 +1074,10 @@ abstract mixin class _ReaderLocation {
   /// Flag to indicate that the page should jump to the last page after images are loaded.
   bool _jumpToLastPageOnLoad = false;
 
+  /// Whether the reader got to the page being read by turning back, page by
+  /// page or into the previous chapter.
+  bool _turnedBack = false;
+
   int get page => _page;
 
   set page(int value) {
@@ -1089,6 +1134,7 @@ abstract mixin class _ReaderLocation {
     if (_animationCount > 0 && _pendingPage != null && page != _pendingPage) {
       return;
     }
+    _turnedBack = page < _page;
     this.page = page;
   }
 
@@ -1229,6 +1275,7 @@ abstract mixin class _ReaderLocation {
 
   bool toChapter(int c, {bool toLastPage = false}) {
     if (_validateChapter(c) && !isLoading) {
+      _turnedBack = toLastPage;
       // Seamless mode scrolls to the chapter in place when it's loaded; if it
       // handles the jump we're done. Otherwise fall through to the remount path.
       if (_imageViewController?.jumpToChapter(c, toLastPage: toLastPage) ==

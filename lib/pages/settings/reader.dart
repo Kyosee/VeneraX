@@ -543,6 +543,30 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
               if ((_effectiveSetting('readerMode') as String?)?.startsWith(
+                    'gallery',
+                  ) ??
+                  false)
+                SelectSetting(
+                  title: "Split wide pages".tl,
+                  settingKey: "splitWidePages",
+                  optionTranslation: {
+                    "off": "Off".tl,
+                    "rightFirst": "Right half first".tl,
+                    "leftFirst": "Left half first".tl,
+                  },
+                  help:
+                      "Cuts a landscape page, usually two pages scanned as one, down the middle and shows each half on a screen of its own. Only applies with one image per screen. For comics read right to left, choose \"Right half first\"."
+                          .tl,
+                  onChanged: () {
+                    widget.onChanged?.call("splitWidePages");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+              if ((_effectiveSetting('readerMode') as String?)?.startsWith(
                     'continuous',
                   ) ??
                   false)
