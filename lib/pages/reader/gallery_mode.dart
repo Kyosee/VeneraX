@@ -172,14 +172,22 @@ class _GalleryModeState extends State<_GalleryMode>
     }
   }
 
-  // ----- Landscape images -----
-  // A landscape image gets a page to itself on multi-image pages, and is cut
-  // in two when wide pages are split; whether an image is landscape is only
-  // known once it has decoded. Images are measured off the decodes the
-  // reader does anyway (the page on screen and the precache window), and the
-  // pages regroup once the pager is at rest.
+  // ----- Decoded images -----
+  // An image's size is only known once it has decoded: whether it is
+  // landscape (a page to itself on multi-image pages, or cut in two when wide
+  // pages are split), and the size a single image is drawn at. Images are
+  // measured off the decodes the reader does anyway (the page on screen and
+  // the precache window), and the pages regroup once the pager is at rest.
 
-  final _measuredImages = <int>{};
+  /// Providers whose image has decoded since the gallery opened.
+  final _decoded = <ImageProvider>{};
+
+  /// Providers with a listener waiting for them to decode.
+  final _watching = <ImageProvider>{};
+
+  /// Images of single-image pages built before they had decoded; those pages
+  /// are rebuilt once they have.
+  final _awaitingDecode = <int>{};
 
   bool _regroupPending = false;
 
@@ -192,17 +200,27 @@ class _GalleryModeState extends State<_GalleryMode>
 
   void _measureImage(int index) {
     final images = reader.images;
-    if (!reader.measuresWideImages ||
-        images == null ||
-        index < 0 ||
-        index >= images.length ||
-        !_measuredImages.add(index)) {
+    if (images == null || index < 0 || index >= images.length) return;
+    _watchImage(_createImageProvider(index + 1, context), index);
+  }
+
+  /// Whether [provider]'s image has decoded and is still in memory, so a
+  /// [ComicImage] shows it at once. Reader providers are their own cache key.
+  bool _isDecoded(ImageProvider provider) {
+    if (!_decoded.contains(provider)) return false;
+    final status = PaintingBinding.instance.imageCache.statusForKey(provider);
+    return !status.pending && (status.keepAlive || status.live);
+  }
+
+  /// Records image [index]'s size once [provider] has decoded, and rebuilds
+  /// its page if that was built before.
+  void _watchImage(ImageProvider provider, int index) {
+    if (_watching.contains(provider) ||
+        (_isDecoded(provider) && reader.imageSizeOf(index) != null)) {
       return;
     }
-    final stream = _createImageProvider(
-      index + 1,
-      context,
-    ).resolve(createLocalImageConfiguration(context));
+    _watching.add(provider);
+    final stream = provider.resolve(createLocalImageConfiguration(context));
     late final ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
@@ -212,15 +230,24 @@ class _GalleryModeState extends State<_GalleryMode>
         );
         info.dispose();
         stream.removeListener(listener);
+        _watching.remove(provider);
         if (!mounted) return;
-        if (size.width > size.height && reader.noteWideImage(index, size)) {
+        _decoded.add(provider);
+        if (reader.noteImageSize(index, size)) {
           _regroupPending = true;
           _scheduleRegroup();
+        }
+        if (_awaitingDecode.remove(index)) {
+          // May run inside a build when the image was already cached.
+          scheduleMicrotask(() {
+            if (mounted) setState(() {});
+          });
         }
       },
       onError: (_, _) {
         stream.removeListener(listener);
-        _measuredImages.remove(index);
+        _watching.remove(provider);
+        _decoded.remove(provider);
       },
     );
     stream.addListener(listener);
@@ -380,38 +407,12 @@ class _GalleryModeState extends State<_GalleryMode>
 
             photoViewControllers[index] ??= PhotoViewController();
 
-            final half = reader.galleryLayout.halfOf(index);
-            final wideSize = reader._wideImages[startIndex];
-            if (half != null && wideSize != null) {
-              return _buildHalfPage(
+            if (reader.imagesPerPage == 1 || pageImages.length == 1) {
+              return _buildSingleImagePage(
+                index,
                 pageImages[0],
                 startIndex,
-                half,
-                wideSize,
                 photoViewControllers[index],
-              );
-            }
-
-            if (reader.imagesPerPage == 1 || pageImages.length == 1) {
-              final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
-              return PhotoViewGalleryPageOptions(
-                filterQuality: FilterQuality.medium,
-                controller: photoViewControllers[index],
-                imageProvider: _createImageProviderFromKey(
-                  pageImages[0],
-                  context,
-                  startIndex + 1,
-                ),
-                initialScale: fillScreen
-                    ? PhotoViewComputedScale.covered
-                    : PhotoViewComputedScale.contained,
-                minScale: fillScreen
-                    ? PhotoViewComputedScale.contained * 1.0
-                    : null,
-                maxScale: PhotoViewComputedScale.covered * 10.0,
-                errorBuilder: (_, error, s, retry) {
-                  return NetworkError(message: error.toString(), retry: retry);
-                },
               );
             }
 
@@ -487,40 +488,74 @@ class _GalleryModeState extends State<_GalleryMode>
     );
   }
 
-  /// One half of a cut landscape image as a page of its own. It keeps the
-  /// half's shape, so zoom and "Fill screen" act as on a whole image; `cover`
-  /// and the alignment crop the image to the half.
-  PhotoViewGalleryPageOptions _buildHalfPage(
+  /// A page with one image, or one half of a cut landscape image. Once
+  /// decoded, a [ComicImage] draws it, so the enhancement applies and copying,
+  /// saving and the enhancement preview find it. Until then PhotoView loads
+  /// it, since a custom child is scaled with the page and would shrink the
+  /// loading and error views. The child keeps the image's pixel size, so the
+  /// zoom steps (fit, fill, one image pixel per pixel) are unchanged.
+  PhotoViewGalleryPageOptions _buildSingleImagePage(
+    int page,
     String imageKey,
     int imageIndex,
-    GalleryHalf half,
-    Size imageSize,
     PhotoViewController? controller,
   ) {
-    final viewport = MediaQuery.sizeOf(context);
-    final halfSize = Size(imageSize.width / 2, imageSize.height);
-    final childSize = applyBoxFit(
-      BoxFit.contain,
-      halfSize,
-      viewport,
-    ).destination;
+    final provider = _createImageProviderFromKey(
+      imageKey,
+      context,
+      imageIndex + 1,
+    );
+    final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
+    final initialScale = fillScreen
+        ? PhotoViewComputedScale.covered
+        : PhotoViewComputedScale.contained;
+    final minScale = fillScreen ? PhotoViewComputedScale.contained * 1.0 : null;
+    final maxScale = PhotoViewComputedScale.covered * 10.0;
+    // Watched first: a cached image reports its size right away.
+    _watchImage(provider, imageIndex);
+    final size = reader.imageSizeOf(imageIndex);
+    if (size == null || !_isDecoded(provider)) {
+      _awaitingDecode.add(imageIndex);
+      return PhotoViewGalleryPageOptions(
+        filterQuality: FilterQuality.medium,
+        controller: controller,
+        imageProvider: provider,
+        initialScale: initialScale,
+        minScale: minScale,
+        maxScale: maxScale,
+        errorBuilder: (_, error, s, retry) {
+          return NetworkError(
+            message: error.toString(),
+            retry: () {
+              retry();
+              _watchImage(provider, imageIndex);
+            },
+          );
+        },
+      );
+    }
+    final half = reader.galleryLayout.halfOf(page);
+    final childSize = half == null ? size : Size(size.width / 2, size.height);
     final rightFirst = reader.galleryWidePageSplit == WidePageSplit.rightFirst;
     final showsRight = rightFirst == (half == GalleryHalf.first);
-    final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
     return PhotoViewGalleryPageOptions.customChild(
       controller: controller,
       childSize: childSize,
-      initialScale: fillScreen
-          ? PhotoViewComputedScale.covered
-          : PhotoViewComputedScale.contained,
-      minScale: fillScreen ? PhotoViewComputedScale.contained * 1.0 : null,
-      maxScale: PhotoViewComputedScale.covered * 10.0,
+      initialScale: initialScale,
+      minScale: minScale,
+      maxScale: maxScale,
+      // A box of the image's (or the half's) shape: `cover` draws the image
+      // whole, or crops it to the half the alignment picks.
       child: ComicImage(
-        image: _createImageProviderFromKey(imageKey, context, imageIndex + 1),
+        image: provider,
         width: childSize.width,
         height: childSize.height,
         fit: BoxFit.cover,
-        alignment: showsRight ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: half == null
+            ? Alignment.center
+            : showsRight
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
         onInit: (state) => imageStates.add(state),
         onDispose: (state) => imageStates.remove(state),
       ),

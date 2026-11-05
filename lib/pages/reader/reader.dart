@@ -851,10 +851,12 @@ abstract mixin class _ImagePerPageHandler {
     }
   }
 
-  /// Landscape images of the current chapter seen so far (0-based), with
-  /// their decoded size. Only known once decoded, so the grouping is refined
-  /// while reading.
-  final _wideImages = <int, Size>{};
+  /// Landscape images of the current chapter seen so far (0-based). Only
+  /// known once decoded, so the grouping is refined while reading.
+  final _wideImages = <int>{};
+
+  /// Decoded sizes of the current chapter's images seen so far (0-based).
+  final _imageSizes = <int, Size>{};
 
   /// How the gallery cuts landscape images, from the comic's settings.
   WidePageSplit get galleryWidePageSplit => mode.isGallery
@@ -872,19 +874,20 @@ abstract mixin class _ImagePerPageHandler {
   bool _splitsWide(int perScreen) =>
       perScreen == 1 && galleryWidePageSplit != WidePageSplit.off;
 
-  /// Whether the gallery has to find out which images are landscape.
-  bool get measuresWideImages =>
+  /// Whether the grouping depends on which images are landscape.
+  bool get _layoutUsesWideImages =>
       imagesPerPage > 1 || _splitsWide(imagesPerPage);
 
   GalleryLayout? _layout;
 
   List<String>? _layoutImages;
 
-  /// Landscape images belong to one chapter's image list.
+  /// Landscape images and sizes belong to one chapter's image list.
   void _syncLayoutChapter() {
     if (!identical(_layoutImages, images)) {
       _layoutImages = images;
       _wideImages.clear();
+      _imageSizes.clear();
       _layout = null;
     }
   }
@@ -915,18 +918,25 @@ abstract mixin class _ImagePerPageHandler {
       imagesPerScreen: perScreen,
       singleFirst: singleFirst,
       splitWide: split,
-      wide: _wideImages.keys.toSet(),
+      wide: _wideImages,
     );
   }
 
-  /// Records image [index] of [size] as landscape. True if that is new and
-  /// the layout depends on it, i.e. the pages may need regrouping.
-  bool noteWideImage(int index, Size size) {
+  /// The decoded size of image [index], once it has been seen.
+  Size? imageSizeOf(int index) {
+    _syncLayoutChapter();
+    return _imageSizes[index];
+  }
+
+  /// Records the decoded [size] of image [index]. True if that shows a new
+  /// landscape image the grouping depends on, i.e. the pages may need
+  /// regrouping.
+  bool noteImageSize(int index, Size size) {
     _syncLayoutChapter();
     if (index < 0 || index >= (images?.length ?? 0)) return false;
-    if (_wideImages.containsKey(index)) return false;
-    _wideImages[index] = size;
-    return measuresWideImages;
+    _imageSizes[index] = size;
+    if (size.width <= size.height || !_wideImages.add(index)) return false;
+    return _layoutUsesWideImages;
   }
 
   /// Regroups pages with the landscape images found so far, keeping the page
@@ -935,7 +945,7 @@ abstract mixin class _ImagePerPageHandler {
   /// page, so if its image is now cut it opens on the later half.
   int? regroupGallery({bool backward = false}) {
     final before = galleryLayout;
-    final after = before.regroupedAround(page, _wideImages.keys.toSet());
+    final after = before.regroupedAround(page, _wideImages);
     if (after.sameScreensAs(before)) return null;
     _layout = after;
     if (page > before.screenCount) return after.screenCount + 1;
