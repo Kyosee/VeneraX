@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/pages/home_page.dart';
@@ -70,6 +71,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
     expect(find.text('Your library is empty'), findsOneWidget);
+  });
+
+  testWidgets('library keeps comics matched by block rules', (tester) async {
+    final previous = appdata.settings['blockedWords'];
+    appdata.settings['blockedWords'] = ['Blocked'];
+    final comic = LocalComic(
+      id: '1',
+      title: 'Blocked Title',
+      subtitle: '',
+      tags: const [],
+      directory: '',
+      chapters: null,
+      cover: '',
+      comicType: ComicType.local,
+      downloadedChapters: const [],
+      createdAt: DateTime(2026),
+    );
+    await LocalManager().add(comic);
+    addTearDown(() {
+      LocalManager().removeComic(comic);
+      appdata.settings['blockedWords'] = previous;
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: LocalComicsPage()));
+    await tester.pump();
+
+    expect(find.text('Blocked Title'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 
   for (final language in ['en-US', 'zh-CN', 'zh-TW']) {

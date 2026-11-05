@@ -322,6 +322,7 @@ class _TranslatedComicsPageState extends State<TranslatedComicsPage>
             SliverGridComics(
               comics: comics,
               enableHero: false,
+              hideBlocked: false,
               badgeBuilder: (comic) {
                 var item = items.firstWhere(
                   (entry) =>

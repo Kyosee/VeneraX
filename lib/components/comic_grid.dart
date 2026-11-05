@@ -15,9 +15,14 @@ class SliverGridComics extends StatefulWidget {
     this.enableHero = true,
     this.enableContextMenu = true,
     this.swipeActionBuilder,
+    this.hideBlocked = true,
   });
 
   final List<Comic> comics;
+
+  /// Library pages pass false: their items live on this device, and a hidden
+  /// one could no longer be opened or deleted (issues #323, #324).
+  final bool hideBlocked;
 
   final Map<Comic, bool>? selections;
 
@@ -62,12 +67,15 @@ class _SliverGridComicsState extends State<SliverGridComics> {
     }
   }
 
+  bool _isVisible(Comic comic) =>
+      !widget.hideBlocked || isBlocked(comic) == null;
+
   @override
   void didUpdateWidget(covariant SliverGridComics oldWidget) {
     if (!comics.isEqualTo(widget.comics)) {
       comics.clear();
       for (var comic in widget.comics) {
-        if (isBlocked(comic) == null) {
+        if (_isVisible(comic)) {
           comics.add(comic);
         }
       }
@@ -79,7 +87,7 @@ class _SliverGridComicsState extends State<SliverGridComics> {
   @override
   void initState() {
     for (var comic in widget.comics) {
-      if (isBlocked(comic) == null) {
+      if (_isVisible(comic)) {
         comics.add(comic);
       }
     }
@@ -102,7 +110,7 @@ class _SliverGridComicsState extends State<SliverGridComics> {
     setState(() {
       comics.clear();
       for (var comic in widget.comics) {
-        if (isBlocked(comic) == null) {
+        if (_isVisible(comic)) {
           comics.add(comic);
         }
       }

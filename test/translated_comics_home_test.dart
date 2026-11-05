@@ -217,4 +217,18 @@ void main() {
     expect(find.text('Translated edition'), findsNothing);
     expect(find.text('Pending edition'), findsOneWidget);
   });
+
+  testWidgets('library page keeps comics matched by block rules', (
+    tester,
+  ) async {
+    final previous = appdata.settings['blockedWords'];
+    appdata.settings['blockedWords'] = ['Comic'];
+    addTearDown(() => appdata.settings['blockedWords'] = previous);
+
+    await tester.pumpWidget(const MaterialApp(home: TranslatedComicsPage()));
+    await tester.pump();
+
+    expect(find.text('Comic'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
