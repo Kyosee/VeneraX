@@ -10,6 +10,10 @@ import 'package:venera/utils/translations.dart';
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key, this.onSuccessfulAuth});
 
+  /// True while the lock screen pushed over the running app is up. Set by the
+  /// pusher, not from State: the page isn't built while the app is hidden.
+  static bool isActive = false;
+
   final void Function()? onSuccessfulAuth;
 
   @override

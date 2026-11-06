@@ -89,8 +89,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
   }
 
-  bool isAuthPageActive = false;
-
   OverlayEntry? hideContentOverlay;
 
   @override
@@ -127,14 +125,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       hideContentOverlay = null;
     }
     if (state == AppLifecycleState.hidden &&
-        !isAuthPageActive &&
+        !AuthPage.isActive &&
         !IO.isSelectingFiles) {
-      isAuthPageActive = true;
+      AuthPage.isActive = true;
       App.rootContext.to(
         () => AuthPage(
           onSuccessfulAuth: () {
             App.rootContext.pop();
-            isAuthPageActive = false;
+            AuthPage.isActive = false;
           },
         ),
       );
