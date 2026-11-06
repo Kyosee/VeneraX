@@ -507,6 +507,9 @@ class Settings with ChangeNotifier {
     // Per-comic chapter order overrides. Values are chapter IDs in display
     // order and are synced with the rest of the user's settings.
     'chapterOrderOverrides': <String, dynamic>{},
+    // Gallery pairing moved by hand, per chapter; see GalleryPageShifts.
+    // Synced like chapter order.
+    'galleryPageShifts': <String, dynamic>{},
     'showSystemStatusBar': false,
     // Mobile only: hold off the screen timeout for the whole reading session,
     // not just while auto page turning.

@@ -30,6 +30,7 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/eink_screen.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/gallery_layout.dart';
+import 'package:venera/foundation/gallery_page_shifts.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
@@ -252,6 +253,7 @@ class _ReaderState extends State<Reader>
   @override
   String get cid => widget.cid;
 
+  @override
   String get eid => widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
 
   @override
@@ -325,6 +327,7 @@ class _ReaderState extends State<Reader>
         page = 1;
       }
     }
+    _openingImage = page;
     // mode = ReaderMode.fromKey(appdata.settings['readerMode']);
     mode = ReaderMode.fromKey(
       appdata.settings.getReaderSetting(cid, type.sourceKey, 'readerMode'),
@@ -919,7 +922,32 @@ abstract mixin class _ImagePerPageHandler {
       singleFirst: singleFirst,
       splitWide: split,
       wide: _wideImages,
+      shifts: GalleryPageShifts.load(cid, type.sourceKey, eid),
     );
+  }
+
+  String get eid;
+
+  /// Whether the pairing was moved to the page being read.
+  bool get isPairingShifted => galleryLayout.isShiftedAt(page);
+
+  bool get isLoading;
+
+  /// Whether the pairing can be moved on, or moved back, at the page being
+  /// read. Not while a chapter loads: the layout is still the previous one's.
+  bool get canShiftPairing =>
+      !isLoading && !isOnChapterCommentsPage && galleryLayout.canShiftAt(page);
+
+  /// Moves the pairing on by one image at the page being read, or undoes the
+  /// shift it starts at, and saves it for the chapter. Returns the page to
+  /// show, or null when nothing changed.
+  int? shiftGalleryPairing() {
+    final result = galleryLayout.shiftedAt(page, _wideImages);
+    if (result == null) return null;
+    final (after, newPage) = result;
+    _layout = after;
+    GalleryPageShifts.save(cid, type.sourceKey, eid, after.shifts);
+    return newPage;
   }
 
   /// The decoded size of image [index], once it has been seen.
@@ -1083,6 +1111,10 @@ abstract mixin class _ReaderLocation {
 
   /// Flag to indicate that the page should jump to the last page after images are loaded.
   bool _jumpToLastPageOnLoad = false;
+
+  /// The 1-based image the reader opened at, until the chapter's images load
+  /// and the page showing it can be worked out from the saved pairing.
+  int? _openingImage;
 
   /// Whether the reader got to the page being read by turning back, page by
   /// page or into the previous chapter.
@@ -1286,6 +1318,7 @@ abstract mixin class _ReaderLocation {
   bool toChapter(int c, {bool toLastPage = false}) {
     if (_validateChapter(c) && !isLoading) {
       _turnedBack = toLastPage;
+      _openingImage = null;
       // Seamless mode scrolls to the chapter in place when it's loaded; if it
       // handles the jump we're done. Otherwise fall through to the remount path.
       if (_imageViewController?.jumpToChapter(c, toLastPage: toLastPage) ==

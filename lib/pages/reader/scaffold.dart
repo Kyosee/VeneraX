@@ -785,6 +785,18 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           onPressed: toggleAutoPageTurning,
         ),
       ),
+      if (context.reader.mode.isGallery && context.reader.imagesPerPage > 1)
+        Tooltip(
+          message: context.reader.isPairingShifted
+              ? "Undo page shift".tl
+              : "Shift pages by one".tl,
+          child: IconButton(
+            isSelected: context.reader.isPairingShifted,
+            icon: const Icon(Icons.auto_stories_outlined),
+            selectedIcon: const Icon(Icons.auto_stories),
+            onPressed: context.reader.canShiftPairing ? shiftPairing : null,
+          ),
+        ),
       if (context.reader.widget.chapters != null)
         Tooltip(
           message: "Chapters".tl,
@@ -955,6 +967,11 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     appdata.saveData();
     context.reader.update();
     update();
+  }
+
+  void shiftPairing() {
+    final view = context.reader._imageViewController;
+    if (view is _GalleryModeState) view.shiftPairing();
   }
 
   void toggleAutoPageTurning() {

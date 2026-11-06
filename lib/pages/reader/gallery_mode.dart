@@ -307,6 +307,29 @@ class _GalleryModeState extends State<_GalleryMode>
     _schedulePrecache(newPage);
   }
 
+  /// Moves the pairing on by one image at the page being read, or undoes the
+  /// shift there, and shows the page the pairing now starts on.
+  void shiftPairing() {
+    if (!mounted ||
+        !reader.canShiftPairing ||
+        reader.isPageAnimating ||
+        reader._rippleTurnPending ||
+        (controller.hasClients &&
+            controller.position.isScrollingNotifier.value)) {
+      return;
+    }
+    final oldPage = reader.page;
+    final newPage = reader.shiftGalleryPairing();
+    if (newPage == null) return;
+    if (reader._settledPosition == (reader.chapter, oldPage)) {
+      reader._settledPosition = (reader.chapter, newPage);
+    }
+    if (newPage != oldPage) reader.page = newPage;
+    setState(() => _remountPager = true);
+    context.readerScaffold.update();
+    _schedulePrecache(newPage);
+  }
+
   Widget _buildChapterCommentsPage() {
     var source = ComicSource.find(reader.type.sourceKey);
     var chapters = reader.widget.chapters;

@@ -79,6 +79,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "enableDoubleTapToZoom",
       "reverseChapterOrder",
       "chapterOrderOverrides",
+      "galleryPageShifts",
       "showSystemStatusBar",
       "readerKeepScreenOn",
       "readerScrollSpeed",

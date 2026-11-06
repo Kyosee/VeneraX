@@ -3,9 +3,10 @@
 ///
 /// Images go [imagesPerScreen] to a screen in order, except that a landscape
 /// image (usually a spread) never shares one: it gets a screen to itself and
-/// grouping starts over after it. [singleFirst] keeps the first image alone,
-/// like a cover. With [splitWide] and one image per screen, a landscape image
-/// is cut in two and each half gets a screen.
+/// grouping starts over after it. Grouping also starts over at each image in
+/// [shifts]. [singleFirst] keeps the first image alone, like a cover. With
+/// [splitWide] and one image per screen, a landscape image is cut in two and
+/// each half gets a screen.
 class GalleryLayout {
   GalleryLayout({
     required int imageCount,
@@ -13,6 +14,7 @@ class GalleryLayout {
     bool singleFirst = false,
     bool splitWide = false,
     Set<int> wide = const {},
+    Set<int> shifts = const {},
     Set<int> breaks = const {},
   }) : this._(
          imageCount,
@@ -20,6 +22,7 @@ class GalleryLayout {
          singleFirst,
          splitWide && imagesPerScreen == 1,
          wide,
+         Set.unmodifiable(shifts.where((i) => i > 0 && i < imageCount)),
          breaks,
        );
 
@@ -29,6 +32,7 @@ class GalleryLayout {
     this.singleFirst,
     this.splitWide,
     Set<int> wide,
+    this.shifts,
     Set<int> breaks,
   ) : _starts = _group(
         imageCount,
@@ -36,7 +40,7 @@ class GalleryLayout {
         singleFirst,
         splitWide,
         wide,
-        breaks,
+        {...shifts, ...breaks},
       );
 
   final int imageCount;
@@ -44,6 +48,11 @@ class GalleryLayout {
   final int imagesPerScreen;
 
   final bool singleFirst;
+
+  /// Images the reader moved the pairing to, so a screen starts there. Saved
+  /// per chapter, unlike [breaks], which only hold a screen in place while
+  /// reading.
+  final Set<int> shifts;
 
   /// Whether landscape images are cut in two. Only ever true with one image
   /// per screen: a landscape image already has a screen to itself otherwise.
@@ -152,8 +161,62 @@ class GalleryLayout {
       singleFirst: singleFirst,
       splitWide: splitWide,
       wide: wide,
+      shifts: shifts,
       breaks: inRange ? {start, end} : const {},
     );
+  }
+
+  /// Whether [screen] starts where the reader moved the pairing to.
+  bool isShiftedAt(int screen) =>
+      imagesPerScreen > 1 &&
+      screen >= 1 &&
+      screen <= screenCount &&
+      shifts.contains(_starts[screen - 1]);
+
+  /// Whether [shiftedAt] can act on [screen]: undo the shift it starts at,
+  /// or move its pairing on by one image, which takes two on it.
+  bool canShiftAt(int screen) {
+    if (isShiftedAt(screen)) return true;
+    if (imagesPerScreen < 2) return false;
+    final (start, end) = imagesOf(screen);
+    return end - start >= 2;
+  }
+
+  /// The grouping with the pairing moved on by one image at [screen]: its
+  /// first image stays alone and the next one starts a screen. If [screen]
+  /// starts at a shift, that shift is undone instead. Screens before the one
+  /// that changes keep their images. Returns the new grouping and the screen
+  /// to show: the one starting at the moved image, or after an undo, the one
+  /// now holding [screen]'s first image. Null when [canShiftAt] is false.
+  (GalleryLayout, int)? shiftedAt(int screen, Set<int> wide) {
+    if (!canShiftAt(screen)) return null;
+    final start = _starts[screen - 1];
+    final undo = isShiftedAt(screen);
+    final next = {...shifts};
+    final int hold;
+    final int target;
+    if (undo) {
+      next.remove(start);
+      hold = _starts[screen - 2];
+      target = start;
+    } else {
+      next.add(start + 1);
+      hold = start;
+      target = start + 1;
+    }
+    final after = GalleryLayout(
+      imageCount: imageCount,
+      imagesPerScreen: imagesPerScreen,
+      singleFirst: singleFirst,
+      splitWide: splitWide,
+      wide: wide,
+      shifts: next,
+      breaks: {
+        for (final s in _starts)
+          if (s <= hold) s,
+      },
+    );
+    return (after, after.screenOf(target));
   }
 
   bool sameScreensAs(GalleryLayout other) {

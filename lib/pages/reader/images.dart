@@ -29,11 +29,19 @@ class _ReaderImagesState extends State<_ReaderImages> {
     ImageDownloader.cancelAllLoadingImages();
   }
 
-  /// Handle jumping to last page when _jumpToLastPageOnLoad is true
-  void _handleJumpToLastPage() {
+  /// Puts the reader on its page once the chapter's images are in: the last
+  /// one when turning back into the chapter, or the one showing the image it
+  /// opened at, which depends on the chapter's saved pairing.
+  void _placePageOnLoad() {
+    final opening = reader._openingImage;
+    reader._openingImage = null;
     if (reader._jumpToLastPageOnLoad) {
       reader._page = reader.maxPage;
       reader._jumpToLastPageOnLoad = false;
+    } else if (opening != null &&
+        reader.imagesPerPage > 1 &&
+        reader.galleryLayout.shifts.isNotEmpty) {
+      reader._page = reader.galleryLayout.screenOf(opening - 1);
     }
   }
 
@@ -58,7 +66,7 @@ class _ReaderImagesState extends State<_ReaderImages> {
           reader.images = images;
           reader.isLoading = false;
           inProgress = false;
-          _handleJumpToLastPage();
+          _placePageOnLoad();
           Future.microtask(() {
             reader.updateHistory();
           });
@@ -96,7 +104,7 @@ class _ReaderImagesState extends State<_ReaderImages> {
             reader.images = res.data;
             reader.isLoading = false;
             inProgress = false;
-            _handleJumpToLastPage();
+            _placePageOnLoad();
             Future.microtask(() {
               reader.updateHistory();
             });
