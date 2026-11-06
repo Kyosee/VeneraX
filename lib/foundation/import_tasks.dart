@@ -57,6 +57,10 @@ class ImportTask {
   String? error;
   DateTime? finishedAt;
 
+  /// The file was a translation export, so only translations were merged.
+  bool translationsOnly = false;
+  int translatedPages = 0;
+
   bool get isRunning => status == ImportTaskStatus.running;
 
   /// Value for a loading-dialog progress bar; null => indeterminate. The
@@ -196,13 +200,16 @@ class ImportTaskManager with ChangeNotifier {
         // imported data would be echoed to WebDAV once by them AND once by
         // the explicit force upload below. Suppression keeps the publish
         // single and intentional.
-        await DataSync().applyBackup(
+        var outcome = await DataSync().applyBackup(
           () => importAppData(
             File(task.filePath),
             onProgress: onProgress,
             shouldCancel: shouldCancel,
+            userRestore: true,
           ),
         );
+        task.translationsOnly = outcome.translationsOnly;
+        task.translatedPages = outcome.translatedPages;
       }
       // Cancellation during extraction throws ImportCanceledException (handled
       // below). Returning normally means the data was applied, so even a late
@@ -233,7 +240,11 @@ class ImportTaskManager with ChangeNotifier {
         // settings flow and runs even when the task was sent to the background.
         App.forceRebuild();
       }
-      if (task.status == ImportTaskStatus.completed && !task.isPica) {
+      if (task.status == ImportTaskStatus.completed && task.translationsOnly) {
+        // Only translations were merged; the rest of this device's data is
+        // not a restore and must not be forced over newer remote data.
+        DataSync().onTranslationsChanged();
+      } else if (task.status == ImportTaskStatus.completed && !task.isPica) {
         // A manual import is an explicit "make this the source of truth", so
         // push it back up to WebDAV, winning even if this device trails the
         // server — force past the #86 fall-behind guard (no-op when sync is

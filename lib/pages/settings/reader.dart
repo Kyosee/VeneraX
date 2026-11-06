@@ -1451,7 +1451,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   context: App.rootContext,
                   title: "Clear translation results".tl,
                   content:
-                      "Deletes every stored page translation and rendered image. Translating them again will spend API tokens."
+                      "Deletes every stored page translation and rendered image. Translating them again will spend API tokens. Devices syncing translations over WebDAV delete them too."
                           .tl,
                   btnColor: context.colorScheme.error,
                   onConfirm: () async {

@@ -211,6 +211,40 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
               actionTitle: 'Export'.tl,
             ),
             _CallbackSetting(
+              title: "Export Translation Results".tl,
+              subtitle:
+                  "Saves only translated pages. Importing it with Import App Data on another device adds them and leaves that device's other data unchanged."
+                      .tl,
+              callback: () async {
+                var controller = showLoadingDialog(context);
+                File? file;
+                Object? error;
+                try {
+                  file = await exportTranslations();
+                } catch (e, s) {
+                  error = e;
+                  Log.error("Export Translations", "$e", s);
+                }
+                controller.close();
+                if (error != null) {
+                  App.rootContext.showMessage(message: "Export failed".tl);
+                  return;
+                }
+                if (file == null) {
+                  App.rootContext.showMessage(
+                    message: "No translation results to export".tl,
+                  );
+                  return;
+                }
+                try {
+                  await saveFile(filename: "translations.venera", file: file);
+                } finally {
+                  file.deleteIgnoreError();
+                }
+              },
+              actionTitle: 'Export'.tl,
+            ),
+            _CallbackSetting(
               title: "Import App Data".tl,
               callback: () async {
                 var file = await selectFile(ext: ['venera', 'picadata']);
@@ -249,7 +283,11 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
                     controller.close();
                     if (task.status == ImportTaskStatus.completed) {
                       App.rootContext.showMessage(
-                        message: "Import completed".tl,
+                        message: task.translationsOnly
+                            ? "Imported translations for @n pages".tlParams({
+                                'n': task.translatedPages,
+                              })
+                            : "Import completed".tl,
                       );
                     } else if (task.status == ImportTaskStatus.failed) {
                       App.rootContext.showMessage(

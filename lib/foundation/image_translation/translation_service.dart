@@ -12,6 +12,7 @@ import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/source_platform.dart';
+import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/io.dart';
 
 /// Per-page translation state exposed to the reader UI for status feedback.
@@ -362,8 +363,63 @@ class ImageTranslationService with ChangeNotifier {
     _completed.removeWhere((k) => k.startsWith(scopePrefix));
     _noContent.removeWhere((k) => k.startsWith(scopePrefix));
     _failures.removeWhere((k, _) => k.startsWith(scopePrefix));
+    // Publish the deletion so other devices drop these pages too.
+    DataSync().onTranslationsChanged();
     return removed;
   }
+
+  /// Merges another device's stored translations (see
+  /// [TranslationStore.mergeFrom]) and drops the rendered images of pages whose
+  /// text changed, which the reader would otherwise keep serving. [restore] and
+  /// [adoptLocalLanguages] (see [TranslationStore.mergeFrom]) are for imports the
+  /// user asked for, as opposed to a background sync.
+  Future<TranslationMergeResult> mergeStoreFrom(
+    String path, {
+    bool restore = false,
+    bool adoptLocalLanguages = false,
+  }) async {
+    var result = await TranslationStore().mergeFrom(
+      path,
+      restore: restore,
+      // Page keys spell a local comic's missing key as 'null'.
+      languageFor: adoptLocalLanguages
+          ? (sourceKey, cid) => TranslationConfig.of(
+              cid,
+              sourceKey == 'null' ? null : sourceKey,
+            ).sourceLang
+          : null,
+    );
+    await _forgetRendered(result.changedKeys);
+    return result;
+  }
+
+  Future<void> _forgetRendered(Set<String> keys) async {
+    if (keys.isEmpty) return;
+    // A wide change (e.g. a clear from another device): one prefix pass is
+    // cheaper than a lookup per page.
+    if (keys.length > 256) {
+      await CacheManager().deleteByPrefix(_pageKeyPrefix);
+      _completed.clear();
+      _noContent.clear();
+      _failures.clear();
+      _errors.clear();
+    } else {
+      for (var key in keys) {
+        for (var mode in InpaintMode.values) {
+          var renderKey = renderedKey(key, mode);
+          await CacheManager().delete(renderKey);
+          _completed.remove(renderKey);
+          _failures.remove(renderKey);
+          _errors.remove(renderKey);
+        }
+        _noContent.remove(key);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Leading segment shared by every translated page key.
+  static const _pageKeyPrefix = 'pageTranslation@';
 
   /// Re-translates a whole comic: drops every stored page + rendered image for
   /// the current language pair AND the comic's learned glossary, so the next
@@ -383,12 +439,13 @@ class ImageTranslationService with ChangeNotifier {
   /// and the durable stored text both go. The learned per-comic language locks
   /// and glossaries are left intact. Returns the rendered-image count removed.
   Future<int> clearAllTranslationCache() async {
-    var removed = await CacheManager().deleteByPrefix('pageTranslation@');
+    var removed = await CacheManager().deleteByPrefix(_pageKeyPrefix);
     TranslationStore().clearAll();
     _completed.clear();
     _noContent.clear();
     _failures.clear();
     notifyListeners();
+    DataSync().onTranslationsChanged();
     return removed;
   }
 

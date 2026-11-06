@@ -21,6 +21,7 @@ import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/init.dart' show deferredInitCompleter;
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/sync_protocol.dart';
+import 'package:venera/utils/sync_skip.dart' show translationResultsField;
 import 'package:venera/utils/venera_comics.dart';
 import 'package:venera/utils/webdav_upload.dart';
 import 'package:webdav_client/webdav_client.dart' hide File;
@@ -356,6 +357,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
   void onDataChanged() {
     requestAutoUpload();
+  }
+
+  /// Stored translations changed on this device. Translation writes don't
+  /// notify per page (a chapter would upload once per page group), so callers
+  /// report finished work here instead.
+  void onTranslationsChanged() {
+    if (_syncTranslations()) requestAutoUpload();
   }
 
   bool _handleWindowClose() {
@@ -773,6 +781,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         data = await exportAppData(
           sync: true,
           includeLocalComics: _syncLocalComics(),
+          includeTranslations: _syncTranslations(),
         );
 
         final fileSize = await data.length();
@@ -1090,6 +1099,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
               localFile,
               checkVersion: false,
               restoreLocalComics: _syncLocalComics(),
+              mergeTranslations: _syncTranslations(),
             ),
           );
           if (!_hasCompletedInitialSync()) {
@@ -1254,6 +1264,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
               localFile,
               checkVersion: false,
               restoreLocalComics: _syncLocalComics(),
+              mergeTranslations: _syncTranslations(),
+              userRestore: true,
             ),
           );
         } finally {
@@ -1307,6 +1319,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// Defaults on to preserve prior behavior.
   static bool _syncLocalComics() =>
       appdata.settings['syncLocalComics'] != false;
+
+  /// Whether stored translations ride this device's sync. Off when the user
+  /// keeps them on this device via the skip-sync picker.
+  static bool _syncTranslations() =>
+      !appdata.isSyncSkipped(translationResultsField);
 
   bool _shouldSyncImages() {
     // Image packs are keyed to the local-comic manifest (local.db): a device

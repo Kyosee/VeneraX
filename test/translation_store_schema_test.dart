@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -201,72 +202,60 @@ void main() {
   // counts only that chapter's pages, and LIKE wildcards inside a stored key
   // cannot widen the match.
   group('countByPrefix scoping', () {
-    late CommonDatabase db;
+    late Directory tempDir;
+    late String originalDataPath;
+    late TranslationStore store;
 
-    // The exact query TranslationStore.countByPrefix issues.
-    int countByPrefix(String scopePrefix) {
-      var escaped = scopePrefix
-          .replaceAll('\\', '\\\\')
-          .replaceAll('%', '\\%')
-          .replaceAll('_', '\\_');
-      var rows = db.select(
-        "select count(*) from translated_page "
-        "where cache_key like ? escape '\\';",
-        ['$escaped%'],
-      );
-      return rows.first[0] as int;
-    }
+    void put(String key) => store.put(key, const []);
 
-    void put(String key) => db.execute(
-      "insert into translated_page (cache_key, regions, time) "
-      "values (?, '[]', 0);",
-      [key],
-    );
-
-    setUp(() {
-      db = sqlite3.open(':memory:');
-      db.execute('''
-        create table translated_page (
-          cache_key text primary key,
-          regions text,
-          time int
-        );
-      ''');
+    setUp(() async {
+      originalDataPath = App.dataPath;
+      tempDir = await Directory.systemTemp.createTemp('venera-count-');
+      App.dataPath = tempDir.path;
+      store = TranslationStore.create();
+      await store.init();
     });
 
-    tearDown(() => db.dispose());
+    tearDown(() async {
+      store.close();
+      App.dataPath = originalDataPath;
+      await tempDir.delete(recursive: true);
+    });
 
     test('counts only pages under the chapter prefix', () {
       // Two chapters of one comic; the prefix ends at the chapter boundary.
-      put('pageTr@ja>zh@src@cid@ch1@img1');
-      put('pageTr@ja>zh@src@cid@ch1@img2');
-      put('pageTr@ja>zh@src@cid@ch2@img1');
+      put('pageTranslation@2@ja>zh@src@cid@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@cid@ch1@p2@');
+      put('pageTranslation@2@ja>zh@src@cid@ch2@p1@');
 
-      expect(countByPrefix('pageTr@ja>zh@src@cid@ch1@'), 2);
-      expect(countByPrefix('pageTr@ja>zh@src@cid@ch2@'), 1);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@ch1@'), 2);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@ch2@'), 1);
       // Whole-comic prefix spans both chapters.
-      expect(countByPrefix('pageTr@ja>zh@src@cid@'), 3);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@'), 3);
     });
 
     test('a sibling chapter whose id is a prefix of another does not leak', () {
       // 'ch1' must not match rows of 'ch10' — the trailing '@' in the scope
       // prefix is what prevents it.
-      put('pageTr@ja>zh@src@cid@ch1@img1');
-      put('pageTr@ja>zh@src@cid@ch10@img1');
-      put('pageTr@ja>zh@src@cid@ch10@img2');
+      put('pageTranslation@2@ja>zh@src@cid@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@cid@ch10@p1@');
+      put('pageTranslation@2@ja>zh@src@cid@ch10@p2@');
 
-      expect(countByPrefix('pageTr@ja>zh@src@cid@ch1@'), 1);
-      expect(countByPrefix('pageTr@ja>zh@src@cid@ch10@'), 2);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@ch1@'), 1);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@ch10@'), 2);
     });
 
-    test('LIKE wildcards inside a key are escaped, not matched', () {
-      // A comic id containing '%' must be matched literally.
-      put('pageTr@ja>zh@src@100%@ch1@img1');
-      put('pageTr@ja>zh@src@100X@ch1@img1');
+    test('wildcard characters and letter case match literally', () {
+      put('pageTranslation@2@ja>zh@src@100%@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@100X@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@a_b@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@aXb@ch1@p1@');
+      put('pageTranslation@2@ja>zh@src@CID@ch1@p1@');
 
-      // Without escaping the '%' the first prefix would also swallow the
-      // second row; escaping keeps them distinct.
-      expect(countByPrefix('pageTr@ja>zh@src@100%@ch1@'), 1);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@100%@ch1@'), 1);
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@a_b@'), 1);
+      // Comic ids are case sensitive.
+      expect(store.countByPrefix('pageTranslation@2@ja>zh@src@cid@'), 0);
     });
   });
 
@@ -534,7 +523,7 @@ void main() {
         );
         source.dispose();
 
-        expect(await store.mergeFrom(sourcePath), 1);
+        expect((await store.mergeFrom(sourcePath)).applied, 1);
         expect(store.chapters.single.pageCount, 1);
         expect(store.chapters.single.identity.comicTitle, 'Comic');
 
@@ -554,7 +543,7 @@ void main() {
         ]);
         legacy.dispose();
 
-        expect(await store.mergeFrom(legacyPath), 1);
+        expect((await store.mergeFrom(legacyPath)).applied, 1);
         expect(store.count, 2);
         expect(store.chapters, hasLength(2));
         expect(
@@ -565,5 +554,232 @@ void main() {
         );
       },
     );
+  });
+
+  group('TranslationStore merge', () {
+    const ch1 = 'pageTranslation@2@ja>zh@src@comic@ch1@';
+    const ch2 = 'pageTranslation@2@ja>zh@src@comic@ch2@';
+    const p1 = '${ch1}p1@';
+    const p2 = '${ch2}p1@';
+
+    late Directory tempDir;
+    late String originalDataPath;
+    late TranslationStore store;
+    var opened = <TranslationStore>[];
+
+    int now() => DateTime.now().millisecondsSinceEpoch;
+
+    String regions(String text) => jsonEncode([
+      {'l': 0, 't': 0, 'r': 10, 'b': 10, 'text': text, 'bg': 0, 'fg': 0},
+    ]);
+
+    List<TranslatedRegion> region(String text) => [
+      TranslatedRegion(
+        rect: IntRect(0, 0, 10, 10),
+        text: text,
+        backgroundColor: 0,
+        textColor: 0,
+      ),
+    ];
+
+    String? textOf(TranslationStore s, String key) => s.get(key)?.single.text;
+
+    // A store file as another device would upload it.
+    String source(
+      String name, {
+      List<(String, String, int)> pages = const [],
+      List<(String, int)> deletions = const [],
+      List<(String, String)> index = const [],
+    }) {
+      var path = '${tempDir.path}/$name.db';
+      var db = sqlite3.open(path);
+      db.execute('''
+        create table translated_page (
+          cache_key text primary key, regions text, time int);
+        create table translated_tombstone (
+          scope_prefix text primary key, deleted_at int not null);
+        create table translated_chapter_index (
+          scope_prefix text primary key, source_key text not null,
+          comic_id text not null, chapter_id text not null,
+          source_lang text not null, target_lang text not null,
+          comic_title text not null default '',
+          comic_cover text not null default '',
+          chapter_title text not null default '',
+          page_count int not null default 0,
+          updated_at int not null default 0);
+      ''');
+      for (var (key, value, time) in pages) {
+        db.execute('insert into translated_page values (?, ?, ?);', [
+          key,
+          value,
+          time,
+        ]);
+      }
+      for (var (prefix, at) in deletions) {
+        db.execute('insert into translated_tombstone values (?, ?);', [
+          prefix,
+          at,
+        ]);
+      }
+      for (var (scope, title) in index) {
+        db.execute(
+          'insert into translated_chapter_index values '
+          "(?, 'src', 'comic', 'ch1', 'ja', 'zh', ?, '', 'Chapter 1', 1, 1);",
+          [scope, title],
+        );
+      }
+      db.dispose();
+      return path;
+    }
+
+    Future<TranslationStore> openStore(String name) async {
+      var dir = Directory('${tempDir.path}/$name')..createSync();
+      App.dataPath = dir.path;
+      var s = TranslationStore.create();
+      await s.init();
+      opened.add(s);
+      return s;
+    }
+
+    setUp(() async {
+      originalDataPath = App.dataPath;
+      tempDir = await Directory.systemTemp.createTemp('venera-merge-');
+      opened = [];
+      store = await openStore('local');
+    });
+
+    tearDown(() async {
+      for (var s in opened) {
+        s.close();
+      }
+      App.dataPath = originalDataPath;
+      await tempDir.delete(recursive: true);
+    });
+
+    test('the newer copy of a page wins on both sides', () async {
+      store.put(p1, region('old'));
+      var newer = source('newer', pages: [(p1, regions('new'), now() + 60000)]);
+      var result = await store.mergeFrom(newer);
+      expect(textOf(store, p1), 'new');
+      expect(result.applied, 1);
+      expect(result.changedKeys, {p1});
+
+      var older = source('older', pages: [(p1, regions('stale'), 5)]);
+      result = await store.mergeFrom(older);
+      expect(textOf(store, p1), 'new');
+      expect(result.applied, 0);
+      expect(result.changedKeys, isEmpty);
+    });
+
+    test('a deletion from another device removes what it covers', () async {
+      store.put(p1, region('a'));
+      store.put(p2, region('b'));
+      var result = await store.mergeFrom(
+        source('deleted', deletions: [(ch1, now() + 60000)]),
+      );
+      expect(store.get(p1), isNull);
+      expect(textOf(store, p2), 'b');
+      expect(result.changedKeys, {p1});
+      expect(store.chapters.map((c) => c.identity.chapterId), ['ch2']);
+    });
+
+    test('deleted pages do not come back from a device that kept them', () async {
+      store.put(p1, region('a'));
+      store.deleteByPrefix(ch1);
+      var result = await store.mergeFrom(
+        source('stale', pages: [(p1, regions('a'), 5)]),
+      );
+      expect(store.get(p1), isNull);
+      expect(result.applied, 0);
+
+      store.put(p2, region('b'));
+      store.clearAll();
+      await store.mergeFrom(source('stale2', pages: [(p2, regions('b'), 5)]));
+      expect(store.count, 0);
+    });
+
+    test('a page translated after a deletion survives it', () async {
+      store.deleteByPrefix(ch1);
+      await store.mergeFrom(
+        source('fresh', pages: [(p1, regions('fresh'), now() + 60000)]),
+      );
+      expect(textOf(store, p1), 'fresh');
+
+      // A deletion stamped ahead by a fast clock must not swallow a page
+      // written here afterwards.
+      var ahead = source('ahead', deletions: [(ch2, now() + 3600000)]);
+      await store.mergeFrom(ahead);
+      store.put(p2, region('mine'));
+      await store.mergeFrom(ahead);
+      expect(textOf(store, p2), 'mine');
+    });
+
+    test('a user import outranks local deletions and deletes nothing', () async {
+      store.put(p1, region('a'));
+      store.deleteByPrefix(ch1);
+      store.put(p2, region('kept'));
+      var file = source(
+        'backup',
+        pages: [(p1, regions('restored'), 5)],
+        deletions: [(ch2, now() + 60000)],
+      );
+      var result = await store.mergeFrom(file, restore: true);
+      expect(textOf(store, p1), 'restored');
+      expect(textOf(store, p2), 'kept');
+      expect(result.applied, 1);
+
+      // Still there after the next background merge re-applies deletions.
+      await store.mergeFrom(source('empty'));
+      expect(textOf(store, p1), 'restored');
+    });
+
+    test('pages can be filed under this device\'s comic language', () async {
+      var file = source(
+        'export',
+        pages: [(p1, regions('x'), 5)],
+        index: [(ch1, 'Comic')],
+      );
+      await store.mergeFrom(file, languageFor: (_, _) => 'auto');
+      expect(store.get(p1), isNull);
+      expect(
+        textOf(store, 'pageTranslation@2@auto>zh@src@comic@ch1@p1@'),
+        'x',
+      );
+      var chapter = store.chapters.single.identity;
+      expect(chapter.scopePrefix, 'pageTranslation@2@auto>zh@src@comic@ch1@');
+      expect(chapter.sourceLang, 'auto');
+      expect(chapter.comicTitle, 'Comic');
+    });
+
+    test('a malformed deletion in a foreign file is ignored', () async {
+      store.put(p1, region('a'));
+      await store.mergeFrom(
+        source('bad', deletions: [('p', now() + 60000), ('', now() + 60000)]),
+      );
+      expect(textOf(store, p1), 'a');
+    });
+
+    test('a deletion travels between two devices via snapshots', () async {
+      store.put(p1, region('a'));
+      store.put(p2, region('b'));
+      var upload = '${tempDir.path}/upload_a.db';
+      await store.exportSnapshot(upload);
+
+      var other = await openStore('other');
+      await other.mergeFrom(upload);
+      expect(other.count, 2);
+      other.deleteByPrefix(ch1);
+      var reply = '${tempDir.path}/upload_b.db';
+      await other.exportSnapshot(reply);
+
+      var result = await store.mergeFrom(reply);
+      expect(store.get(p1), isNull);
+      expect(textOf(store, p2), 'b');
+      expect(result.changedKeys, {p1});
+
+      // The first upload, still holding the page, does not undo it.
+      await store.mergeFrom(upload);
+      expect(store.get(p1), isNull);
+    });
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -273,10 +274,12 @@ void _rewriteLegacySourceTypes(Directory cacheDir, Map<int, String> typeMap) {
 /// [includeLocalComics] controls whether the local comic library manifest
 /// (local.db) is bundled. WebDAV sync passes the device-local `syncLocalComics`
 /// setting so a device can opt out of pushing its manifest to the fleet (#145);
-/// manual file export always includes it.
+/// manual file export always includes it. [includeTranslations] does the same
+/// for stored translations, following the skip-sync picker.
 Future<File> exportAppData({
   bool sync = true,
   bool includeLocalComics = true,
+  bool includeTranslations = true,
 }) async {
   var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   var cacheFilePath = FilePath.join(App.cachePath, '$time.venera');
@@ -338,24 +341,9 @@ Future<File> exportAppData({
       jsonEncode({'types': sourceTypeRegistry}),
     );
   }
-  // Per-comic image-translation state (enable switch, learned language lock,
-  // glossary, blocked terms). It lives in implicitData, which is NOT part of
-  // appdata.json, so — like the source-type registry above — it must be
-  // serialized out explicitly to ride the backup. Import merges it back
-  // (see [_importTranslationPrefs]).
-  Uint8List? translationPrefsBytes;
-  {
-    final prefs = <String, dynamic>{};
-    for (final key in ImageTranslationService.syncedPrefKeys) {
-      final value = appdata.implicitData[key];
-      if (value is Map && value.isNotEmpty) {
-        prefs[key] = value;
-      }
-    }
-    if (prefs.isNotEmpty) {
-      translationPrefsBytes = utf8.encode(jsonEncode(prefs));
-    }
-  }
+  var translationPrefsBytes = includeTranslations
+      ? _translationPrefsBytes()
+      : null;
   await Isolate.run(() {
     var zipFile = ZipFile.open(cacheFilePath);
     var coverDirName = ComicCollectionStore.coverDirName;
@@ -383,7 +371,7 @@ Future<File> exportAppData({
       );
     }
     var translationStoreFile = FilePath.join(dataPath, "image_translation.db");
-    if (File(translationStoreFile).existsSync()) {
+    if (includeTranslations && File(translationStoreFile).existsSync()) {
       zipFile.addFile("image_translation.db", translationStoreFile);
     }
     if (File(domainFile).existsSync()) {
@@ -424,6 +412,73 @@ Future<File> exportAppData({
   });
   });
   return cacheFile;
+}
+
+/// Per-comic image-translation state (enable switch, learned language lock,
+/// glossary, blocked terms). It lives in implicitData, which is NOT part of
+/// appdata.json, so it is serialized out explicitly to ride the backup. Import
+/// applies it back (see [_importTranslationPrefs]).
+Uint8List? _translationPrefsBytes() {
+  final prefs = <String, dynamic>{};
+  for (final key in ImageTranslationService.syncedPrefKeys) {
+    final value = appdata.implicitData[key];
+    if (value is Map && value.isNotEmpty) {
+      prefs[key] = value;
+    }
+  }
+  return prefs.isEmpty ? null : utf8.encode(jsonEncode(prefs));
+}
+
+/// Marks an archive written by [exportTranslations]. Import merges such an
+/// archive into the translation store and leaves everything else alone.
+const translationExportMarker = 'venera_translations.json';
+
+/// Packs every stored page translation and per-comic translation state into a
+/// `.venera` archive for another device's "Import App Data". Returns null when
+/// nothing is stored.
+Future<File?> exportTranslations() async {
+  var store = TranslationStore();
+  var pages = store.count;
+  if (pages == 0) return null;
+  var stamp = DateTime.now().microsecondsSinceEpoch;
+  var workDir = Directory(
+    FilePath.join(App.cachePath, 'translation_export_$stamp'),
+  );
+  await workDir.create(recursive: true);
+  var output = File(FilePath.join(App.cachePath, 'translations_$stamp.venera'));
+  try {
+    var snapshot = FilePath.join(workDir.path, 'image_translation.db');
+    await store.exportSnapshot(snapshot);
+    await _zipTranslationExport(
+      output.path,
+      snapshot,
+      utf8.encode(jsonEncode({'type': 'translations', 'version': 1, 'pages': pages})),
+      _translationPrefsBytes(),
+    );
+  } catch (_) {
+    output.deleteIgnoreError();
+    rethrow;
+  } finally {
+    workDir.deleteIgnoreError(recursive: true);
+  }
+  return output;
+}
+
+Future<void> _zipTranslationExport(
+  String outputPath,
+  String storePath,
+  Uint8List manifest,
+  Uint8List? prefs,
+) {
+  return Isolate.run(() {
+    var zip = ZipFile.open(outputPath);
+    zip.addFileFromBytes(translationExportMarker, manifest);
+    zip.addFile('image_translation.db', storePath);
+    if (prefs != null) {
+      zip.addFileFromBytes('image_translation_prefs.json', prefs);
+    }
+    zip.close();
+  });
 }
 
 /// Whether every SQLite-backed store the import path restores into is alive.
@@ -483,16 +538,33 @@ Future<void> _restoreWebdavConfigIfAbsent(Map<String, dynamic> data) async {
 /// extracted files out from under the other mid-apply.
 Future<void>? _importInProgress;
 
+/// What an [importAppData] call applied.
+class ImportOutcome {
+  const ImportOutcome({this.translationsOnly = false, this.translatedPages = 0});
+
+  /// The file came from [exportTranslations]: only translations were merged.
+  final bool translationsOnly;
+
+  /// Pages stored by a translation-only import.
+  final int translatedPages;
+}
+
 /// [restoreLocalComics] controls whether a bundled `local.db` is restored.
 /// WebDAV download passes the device-local `syncLocalComics` setting so a
 /// device opted out of manifest sync ignores the local library even in older
 /// backups that still carry it (#145); manual file import always restores it.
-Future<void> importAppData(
+/// [mergeTranslations] does the same for stored translations. [userRestore]
+/// marks an import the user asked for (not a background sync): its translations
+/// outrank deletions recorded on this device. A file from [exportTranslations]
+/// is recognized and only merged, whatever the flags.
+Future<ImportOutcome> importAppData(
   File file, {
   bool checkVersion = false,
   ImportProgressCallback? onProgress,
   bool Function()? shouldCancel,
   bool restoreLocalComics = true,
+  bool mergeTranslations = true,
+  bool userRestore = false,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -501,12 +573,14 @@ Future<void> importAppData(
   final completer = Completer<void>();
   _importInProgress = completer.future;
   try {
-    await _importAppDataLocked(
+    return await _importAppDataLocked(
       file,
       checkVersion: checkVersion,
       onProgress: onProgress,
       shouldCancel: shouldCancel,
       restoreLocalComics: restoreLocalComics,
+      mergeTranslations: mergeTranslations,
+      userRestore: userRestore,
     );
   } finally {
     _importInProgress = null;
@@ -514,12 +588,84 @@ Future<void> importAppData(
   }
 }
 
-Future<void> _importAppDataLocked(
+/// Applies an archive from [exportTranslations]: merges its pages and fills in
+/// translation state this device has none of. Nothing else is touched, so it
+/// is safe on a device with its own history and settings.
+Future<ImportOutcome> _importTranslationPackage(
+  Directory dir,
+  void Function(ImportPhase phase, [String? message, int? bytes]) report,
+) async {
+  report(ImportPhase.applying, 'Importing translations');
+  var pages = 0;
+  var storeFile = dir.joinFile("image_translation.db");
+  if (await storeFile.exists()) {
+    // Same exclusion as the full import: a concurrent backup export must not
+    // copy the file while this merge commits.
+    var result = await DatabaseGateway.instance.runExclusive(
+      () => ImageTranslationService.instance.mergeStoreFrom(
+        storeFile.path,
+        restore: true,
+        adoptLocalLanguages: true,
+      ),
+    );
+    pages = result.applied;
+  }
+  await _importTranslationPrefs(
+    dir.joinFile("image_translation_prefs.json"),
+    replace: false,
+  );
+  return ImportOutcome(translationsOnly: true, translatedPages: pages);
+}
+
+/// Per-comic translation preferences (enable switch / language lock / glossary
+/// / blocked terms). A full restore adopts the backup's maps (newest backup
+/// wins, matching the agreed policy); a translation-only import keeps this
+/// device's entries and adds only comics it has none for. The service caches
+/// these maps lazily, so its caches are dropped afterwards.
+Future<void> _importTranslationPrefs(File file, {required bool replace}) async {
+  if (!await file.exists()) return;
+  try {
+    var prefs = jsonDecode(await file.readAsString());
+    if (prefs is! Map) return;
+    for (final key in ImageTranslationService.syncedPrefKeys) {
+      final incoming = prefs[key];
+      if (incoming is! Map) continue;
+      appdata.implicitData[key] = mergeTranslationPrefs(
+        appdata.implicitData[key],
+        incoming,
+        replace: replace,
+      );
+    }
+    appdata.writeImplicitData();
+    ImageTranslationService.instance.reloadSyncedPrefs();
+  } catch (e, s) {
+    Log.warning('Import Data', 'Failed to import translation prefs: $e\n$s');
+  }
+}
+
+/// One per-comic translation map after an import: the incoming map when
+/// [replace], otherwise [local] with only the comics it lacks added.
+@visibleForTesting
+Map<dynamic, dynamic> mergeTranslationPrefs(
+  Object? local,
+  Map<dynamic, dynamic> incoming, {
+  required bool replace,
+}) {
+  if (replace || local is! Map) return incoming;
+  return <String, dynamic>{
+    for (final e in incoming.entries) e.key.toString(): e.value,
+    for (final e in local.entries) e.key.toString(): e.value,
+  };
+}
+
+Future<ImportOutcome> _importAppDataLocked(
   File file, {
   bool checkVersion = false,
   ImportProgressCallback? onProgress,
   bool Function()? shouldCancel,
   bool restoreLocalComics = true,
+  bool mergeTranslations = true,
+  bool userRestore = false,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -545,6 +691,9 @@ Future<void> _importAppDataLocked(
       onBytes: (b) => report(ImportPhase.extracting, null, b),
       shouldCancel: () => shouldCancel?.call() ?? false,
     );
+    if (cacheDir.joinFile(translationExportMarker).existsSync()) {
+      return await _importTranslationPackage(cacheDir, report);
+    }
     var legacySourceTypeMap = _loadLegacySourceTypeMap(
       cacheDir,
       "source_type_map.json",
@@ -560,7 +709,7 @@ Future<void> _importAppDataLocked(
       var data = jsonDecode(await appdataFile.readAsString());
       var version = data["settings"]["dataVersion"];
       if (version is int && version <= appdata.settings["dataVersion"]) {
-        return;
+        return const ImportOutcome();
       }
     }
     // Hold every background-isolate DB reader off while the store restores run:
@@ -635,7 +784,11 @@ Future<void> _importAppDataLocked(
             'follow_update_task_history',
           ];
           final merged = Map<String, dynamic>.from(implicitData);
-          for (final key in deviceLocalKeys) {
+          for (final key in [
+            ...deviceLocalKeys,
+            // Kept out of sync on this device, like the store itself.
+            if (!mergeTranslations) ...ImageTranslationService.syncedPrefKeys,
+          ]) {
             if (appdata.implicitData.containsKey(key)) {
               merged[key] = appdata.implicitData[key];
             } else {
@@ -670,36 +823,25 @@ Future<void> _importAppDataLocked(
     }
     // Finished per-page translation text. Unlike the wholesale-replaced stores
     // above, this MERGES: two devices that translated different chapters keep
-    // both halves, and a shared page keeps the local row (see [mergeFrom]). No
-    // file swap, so it runs on the live handle rather than close-swap-reopen.
+    // both halves, and a page both hold keeps the newer text (see
+    // [TranslationStore.mergeFrom]). No file swap, so it runs on the live
+    // handle rather than close-swap-reopen.
     var translationStoreFile = cacheDir.joinFile("image_translation.db");
-    if (await translationStoreFile.exists()) {
+    if (mergeTranslations && await translationStoreFile.exists()) {
       report(ImportPhase.applying, 'Importing translations');
-      await TranslationStore().mergeFrom(translationStoreFile.path);
+      await ImageTranslationService.instance.mergeStoreFrom(
+        translationStoreFile.path,
+        restore: userRestore,
+      );
     }
     });
-    // Per-comic translation preferences (enable switch / language lock /
-    // glossary / blocked terms). They live in implicitData, so they ride the
-    // backup as their own JSON rather than in appdata.json. Applied AFTER the
-    // implicitData.json block above so a foreign backup carrying both can't
-    // clobber these, and wholesale-replaced (newest backup wins, matching the
-    // agreed policy). The service caches these maps lazily, so drop its caches.
-    var translationPrefsFile = cacheDir.joinFile("image_translation_prefs.json");
-    if (await translationPrefsFile.exists()) {
-      try {
-        var prefs = jsonDecode(await translationPrefsFile.readAsString());
-        if (prefs is Map) {
-          for (final key in ImageTranslationService.syncedPrefKeys) {
-            if (prefs[key] is Map) {
-              appdata.implicitData[key] = prefs[key];
-            }
-          }
-          appdata.writeImplicitData();
-          ImageTranslationService.instance.reloadSyncedPrefs();
-        }
-      } catch (e, s) {
-        Log.warning('Import Data', 'Failed to import translation prefs: $e\n$s');
-      }
+    // Applied AFTER the implicitData.json block above so a foreign backup
+    // carrying both can't clobber these.
+    if (mergeTranslations) {
+      await _importTranslationPrefs(
+        cacheDir.joinFile("image_translation_prefs.json"),
+        replace: true,
+      );
     }
     // Cover images picked for a collection. The collection config in
     // appdata.json only names the file, so the files have to be laid down for
@@ -769,6 +911,7 @@ Future<void> _importAppDataLocked(
       // restart, since nothing else re-sorts the registered sources.
       ComicSourceManager().reapplySourceOrder();
     }
+    return const ImportOutcome();
   } finally {
     cacheDir.deleteIgnoreError(recursive: true);
   }

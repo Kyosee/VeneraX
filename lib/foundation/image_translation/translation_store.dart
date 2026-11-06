@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/common.dart';
@@ -28,8 +29,11 @@ import 'package:venera/foundation/sqlite_connection.dart';
 ///
 /// It lives in its own database file so it rides the WebDAV/backup pipeline like
 /// every other store: exporting the file and merging it on another device
-/// carries a comic's translations across. Import merges (INSERT OR IGNORE) so
-/// two devices that translated different chapters keep both halves.
+/// carries a comic's translations across. Import merges page by page (see
+/// [TranslationStore.mergeFrom]): two devices that translated different
+/// chapters keep both halves, a re-translated page replaces the older text, and
+/// a deletion recorded in `translated_tombstone` keeps the deleted pages from
+/// coming back from a device that still holds them.
 class TranslationChapterIdentity {
   const TranslationChapterIdentity({
     required this.scopePrefix,
@@ -90,6 +94,20 @@ class StoredTranslationComic {
   final DateTime updatedAt;
 }
 
+class TranslationMergeResult {
+  const TranslationMergeResult({
+    this.applied = 0,
+    this.changedKeys = const {},
+  });
+
+  /// Incoming pages that are now stored here (new or newer than ours).
+  final int applied;
+
+  /// Pages whose stored text was replaced or removed by the merge. Their
+  /// rendered images were drawn from the old text and must be dropped.
+  final Set<String> changedKeys;
+}
+
 class TranslationStore with ChangeNotifier {
   static TranslationStore? _cache;
 
@@ -111,60 +129,127 @@ class TranslationStore with ChangeNotifier {
     _db = DatabaseGateway.instance.openManaged(_dbPath);
     _db.execute(_createTableSql);
     _db.execute(_createIndexTableSql);
+    _db.execute(_createTombstoneTableSql);
     _migrateSchema();
     migrateLegacyKeys(_db);
     _backfillChapterIndex();
     isInitialized = true;
   }
 
-  /// Merges the rows of another translation database at [sourcePath] into this
-  /// one without dropping local rows — the WebDAV/backup import path. A device
-  /// that translated chapters 1-5 and one that did 6-10 end up with all ten, and
-  /// where both hold the same page the local row wins (INSERT OR IGNORE). The
-  /// source is opened read-only and disposed before returning. Tolerates a
-  /// foreign/absent file: an incompatible table simply merges nothing.
-  Future<int> mergeFrom(String sourcePath) async {
+  /// Merges another translation database at [sourcePath] into this one — the
+  /// WebDAV/backup import path. A device that translated chapters 1-5 and one
+  /// that did 6-10 end up with all ten. Where both hold the same page, the row
+  /// written later wins, so a re-translation reaches the other device instead of
+  /// being ignored there. Deletions recorded on either side are then applied to
+  /// the merged rows, so pages cleared on one device are not restored by
+  /// another that still had them. The source is opened read-only and disposed
+  /// before returning. Tolerates a foreign/absent file: an incompatible table
+  /// simply merges nothing.
+  ///
+  /// With [restore] the user explicitly asked for this file's contents, so they
+  /// must stick: its pages outrank deletions recorded here (they are re-stamped
+  /// past them, so later merges keep them too), and its own deletions are not
+  /// applied, so an import can only add.
+  ///
+  /// [languageFor] files incoming pages under the language this device reads
+  /// the comic with. A page key embeds the language the comic was set to when
+  /// translated, so a file from a device set to Japanese would otherwise be
+  /// invisible to one left on auto-detect, which would pay to translate it all
+  /// again. The target language is kept: text in another language isn't a match.
+  Future<TranslationMergeResult> mergeFrom(
+    String sourcePath, {
+    bool restore = false,
+    String Function(String sourceKey, String comicId)? languageFor,
+  }) async {
     if (!isInitialized) {
       throw StateError("TranslationStore is not initialized; cannot merge");
     }
     var src = openRawDatabase(sourcePath, mode: OpenMode.readOnly);
-    var merged = 0;
+    var applied = <String>{};
+    var changed = <String>{};
+    var languages = <String, String>{};
+    String localKey(String key) {
+      if (languageFor == null) return key;
+      var match = _currentKeyPattern.firstMatch(key);
+      if (match == null) return key;
+      var language = languages.putIfAbsent(
+        '${match.group(3)}@${match.group(4)}',
+        () => languageFor(match.group(3)!, match.group(4)!),
+      );
+      var from = match.group(1)!;
+      var to = match.group(2)!;
+      if (language == from) return key;
+      var pair = _currentPrefix.length + from.length + 1 + to.length + 1;
+      return '$_currentPrefix$language>$to@${key.substring(pair)}';
+    }
+
     try {
-      var cols = src
-          .select("PRAGMA table_info(translated_page);")
-          .map((c) => c["name"] as String)
-          .toSet();
-      if (!_requiredColumns.every(cols.contains)) {
-        return 0;
+      if (!_requiredColumns.every(_columnsOf(src, 'translated_page').contains)) {
+        return const TranslationMergeResult();
       }
       var rows = src.select(
         "select cache_key, regions, time from translated_page;",
       );
-      var indexColumns = src
-          .select("PRAGMA table_info(translated_chapter_index);")
-          .map((c) => c["name"] as String)
-          .toSet();
-      var indexRows = _indexColumns.every(indexColumns.contains)
+      var indexRows =
+          _indexColumns.every(_columnsOf(src, 'translated_chapter_index').contains)
           ? src.select("select * from translated_chapter_index;")
+          : const <Row>[];
+      var tombstoneRows =
+          !restore &&
+              _columnsOf(
+                src,
+                'translated_tombstone',
+              ).containsAll(_tombstoneColumns)
+          ? src.select(
+              "select scope_prefix, deleted_at from translated_tombstone;",
+            )
+          : const <Row>[];
+      var localDeletions = restore
+          ? _db.select(
+              "select scope_prefix, deleted_at from translated_tombstone;",
+            )
           : const <Row>[];
       _db.execute("BEGIN TRANSACTION;");
       try {
-        for (var r in rows) {
-          _db.execute(_insertIgnoreSql, [
-            r["cache_key"],
-            r["regions"],
-            r["time"],
-          ]);
-          merged++;
+        var lookup = _db.prepare(
+          "select time from translated_page where cache_key = ?;",
+        );
+        var write = _db.prepare(_insertReplaceSql);
+        try {
+          for (var r in rows) {
+            var incoming = r["cache_key"];
+            if (incoming is! String) continue;
+            var key = localKey(incoming);
+            var time = r["time"] is int ? r["time"] as int : 0;
+            for (var d in localDeletions) {
+              if (key.startsWith(d['scope_prefix'] as String)) {
+                time = max(time, (d['deleted_at'] as int) + 1);
+              }
+            }
+            var local = lookup.select([key]);
+            if (local.isNotEmpty) {
+              var localTime = local.first["time"];
+              if (localTime is int && localTime >= time) continue;
+              changed.add(key);
+            }
+            write.execute([key, r["regions"], time]);
+            applied.add(key);
+          }
+        } finally {
+          lookup.dispose();
+          write.dispose();
         }
         for (var r in indexRows) {
+          var scope = localKey(r['scope_prefix'] as String);
           _upsertChapterRow(
             TranslationChapterIdentity(
-              scopePrefix: r['scope_prefix'] as String,
+              scopePrefix: scope,
               sourceKey: r['source_key'] as String,
               comicId: r['comic_id'] as String,
               chapterId: r['chapter_id'] as String,
-              sourceLang: r['source_lang'] as String,
+              sourceLang:
+                  _currentKeyPattern.firstMatch(scope)?.group(1) ??
+                  r['source_lang'] as String,
               targetLang: r['target_lang'] as String,
               comicTitle: r['comic_title'] as String? ?? '',
               comicCover: r['comic_cover'] as String? ?? '',
@@ -174,7 +259,22 @@ class TranslationStore with ChangeNotifier {
             updatedAt: r['updated_at'] as int? ?? 0,
           );
         }
+        for (var r in tombstoneRows) {
+          var prefix = r['scope_prefix'];
+          var deletedAt = r['deleted_at'];
+          // Only scopes this code writes: a malformed entry in a foreign file
+          // must not widen into deleting unrelated pages.
+          if (prefix is String &&
+              prefix.startsWith(_keyPrefix) &&
+              prefix.endsWith('@') &&
+              deletedAt is int) {
+            _recordTombstone(prefix, deletedAt);
+          }
+        }
         migrateLegacyKeys(_db);
+        var removed = _applyTombstones();
+        applied.removeAll(removed);
+        changed.addAll(removed);
         _backfillChapterIndex();
         _recountIndex();
         _db.execute("COMMIT;");
@@ -184,12 +284,73 @@ class TranslationStore with ChangeNotifier {
       }
     } catch (e, s) {
       Log.error("TranslationStore", "merge failed: $e", s);
+      return const TranslationMergeResult();
     } finally {
       src.dispose();
     }
-    if (merged > 0) _notifyChanged();
-    return merged;
+    if (applied.isNotEmpty || changed.isNotEmpty) _notifyChanged();
+    return TranslationMergeResult(applied: applied.length, changedKeys: changed);
   }
+
+  static Set<String> _columnsOf(CommonDatabase db, String table) => db
+      .select("PRAGMA table_info($table);")
+      .map((c) => c["name"] as String)
+      .toSet();
+
+  /// Records that every page under [scopePrefix] written at or before
+  /// [deletedAt] is deleted. Keeps the later time when one is already recorded,
+  /// and drops narrower records the new one already covers.
+  void _recordTombstone(String scopePrefix, int deletedAt) {
+    _db.execute(
+      """
+      insert into translated_tombstone (scope_prefix, deleted_at) values (?, ?)
+      on conflict(scope_prefix) do update set deleted_at =
+        max(translated_tombstone.deleted_at, excluded.deleted_at);
+      """,
+      [scopePrefix, deletedAt],
+    );
+    var effective =
+        _db.select(
+              "select deleted_at from translated_tombstone where scope_prefix = ?;",
+              [scopePrefix],
+            ).first['deleted_at']
+            as int;
+    _db.execute(
+      "delete from translated_tombstone "
+      "where scope_prefix > ? and scope_prefix < ? and deleted_at <= ?;",
+      [scopePrefix, _prefixEnd(scopePrefix), effective],
+    );
+  }
+
+  /// Deletes every page a recorded deletion covers and returns their keys.
+  Set<String> _applyTombstones() {
+    var removed = <String>{};
+    var tombstones = _db.select(
+      "select scope_prefix, deleted_at from translated_tombstone;",
+    );
+    for (var t in tombstones) {
+      var prefix = t['scope_prefix'] as String;
+      var args = [prefix, _prefixEnd(prefix), t['deleted_at'] as int];
+      const where =
+          "cache_key >= ? and cache_key < ? and ifnull(time, 0) <= ?";
+      for (var row in _db.select(
+        "select cache_key from translated_page where $where;",
+        args,
+      )) {
+        removed.add(row['cache_key'] as String);
+      }
+      _db.execute("delete from translated_page where $where;", args);
+    }
+    return removed;
+  }
+
+  /// Exclusive upper bound of the keys that start with [prefix], so a prefix
+  /// match runs as an indexed range scan (`>= prefix and < end`) instead of a
+  /// LIKE that scans the whole table. Every scope prefix ends with `@`, so
+  /// bumping the last code unit never lands inside a surrogate pair.
+  static String _prefixEnd(String prefix) =>
+      prefix.substring(0, prefix.length - 1) +
+      String.fromCharCode(prefix.codeUnitAt(prefix.length - 1) + 1);
 
   static const String _createTableSql = """
       create table if not exists translated_page (
@@ -228,6 +389,18 @@ class TranslationStore with ChangeNotifier {
     'page_count',
     'updated_at',
   };
+
+  /// Scopes deleted by a re-translate or a clear. A merge removes pages under a
+  /// recorded scope that are not newer than its deletion; without this a page
+  /// deleted here came back from any device that still held it.
+  static const String _createTombstoneTableSql = """
+      create table if not exists translated_tombstone (
+        scope_prefix text primary key,
+        deleted_at int not null
+      );
+    """;
+
+  static const _tombstoneColumns = {'scope_prefix', 'deleted_at'};
 
   /// Columns a foreign database must have for [mergeFrom] to read it.
   static const _requiredColumns = ["cache_key", "regions", "time"];
@@ -361,12 +534,18 @@ class TranslationStore with ChangeNotifier {
     TranslationChapterIdentity? chapter,
   }) {
     if (!isInitialized) return;
-    var timestamp = DateTime.now().millisecondsSinceEpoch;
+    // Written after any deletion covering it, even one stamped by a device
+    // whose clock runs ahead; otherwise the next merge would delete it.
+    var timestamp = max(
+      DateTime.now().millisecondsSinceEpoch,
+      _coveringDeletion(cacheKey) + 1,
+    );
     _db.execute(_insertReplaceSql, [
       cacheKey,
       jsonEncode([for (var r in regions) r.toJson()]),
       timestamp,
     ]);
+    _localRevision++;
     if (chapter != null) {
       _upsertChapterRow(
         chapter,
@@ -377,13 +556,28 @@ class TranslationStore with ChangeNotifier {
     }
   }
 
+  /// Bumped by every page written or deleted on this device (merges excluded),
+  /// so a caller can tell whether its work left anything to upload.
+  int get localRevision => _localRevision;
+  int _localRevision = 0;
+
+  /// Newest deletion time covering [cacheKey], or -1.
+  int _coveringDeletion(String cacheKey) {
+    var row = _db.select(
+      "select max(deleted_at) as t from translated_tombstone "
+      "where substr(?, 1, length(scope_prefix)) = scope_prefix;",
+      [cacheKey],
+    ).first;
+    return row['t'] as int? ?? -1;
+  }
+
   int recordExistingChapter(TranslationChapterIdentity chapter) {
     if (!isInitialized) return 0;
-    var escaped = _escapeLike(chapter.scopePrefix);
+    var prefix = chapter.scopePrefix;
     var stats = _db.select(
       "select count(*) as page_count, max(time) as updated_at "
-      "from translated_page where cache_key like ? escape '\\';",
-      ['$escaped%'],
+      "from translated_page where cache_key >= ? and cache_key < ?;",
+      [prefix, _prefixEnd(prefix)],
     ).first;
     var pages = stats['page_count'] as int? ?? 0;
     if (pages <= 0) return 0;
@@ -690,34 +884,76 @@ class TranslationStore with ChangeNotifier {
 
   /// Deletes every stored page whose key starts with [scopePrefix] — the same
   /// comic/chapter scope prefixes the rendered-image cache is cleared by, so a
-  /// re-translate or "clear" drops both levels in lockstep. Returns rows removed.
+  /// re-translate or "clear" drops both levels in lockstep. The deletion is
+  /// recorded so a merge drops the same pages on other devices instead of
+  /// bringing them back. Returns rows removed.
   int deleteByPrefix(String scopePrefix) {
     if (!isInitialized) return 0;
-    // Escape LIKE wildcards in the prefix so a '%' or '_' inside a key can't
-    // widen the match; '\' is the explicit escape char below.
-    var escaped = _escapeLike(scopePrefix);
+    var args = [scopePrefix, _prefixEnd(scopePrefix)];
+    var newest =
+        _db.select(
+              "select max(time) as t from translated_page "
+              "where cache_key >= ? and cache_key < ?;",
+              args,
+            ).first['t']
+            as int? ??
+        0;
+    // Recorded first: a crash right after still removes these pages on the next
+    // merge, while the reverse order would lose the deletion for good.
+    _recordTombstone(
+      scopePrefix,
+      max(DateTime.now().millisecondsSinceEpoch, newest),
+    );
     _db.execute(
-      "delete from translated_page where cache_key like ? escape '\\';",
-      ['$escaped%'],
+      "delete from translated_page where cache_key >= ? and cache_key < ?;",
+      args,
     );
     var removed = _db.select("select changes();").first[0] as int;
     _db.execute(
       "delete from translated_chapter_index "
-      "where scope_prefix like ? escape '\\';",
-      ['$escaped%'],
+      "where scope_prefix >= ? and scope_prefix < ?;",
+      args,
     );
+    _localRevision++;
     if (removed > 0) _notifyChanged();
     return removed;
   }
 
-  /// Wipes every stored translation across all comics.
+  /// Wipes every stored translation across all comics, and records the wipe
+  /// so other devices drop their copies on the next merge too.
   int clearAll() {
     if (!isInitialized) return 0;
+    var newest =
+        _db.select("select max(time) as t from translated_page;").first['t']
+            as int? ??
+        0;
+    _recordTombstone(
+      _keyPrefix,
+      max(DateTime.now().millisecondsSinceEpoch, newest),
+    );
     _db.execute("delete from translated_page;");
     var removed = _db.select("select changes();").first[0] as int;
     _db.execute("delete from translated_chapter_index;");
+    _localRevision++;
     if (removed > 0) _notifyChanged();
     return removed;
+  }
+
+  /// Writes a self-contained copy of the store to [path] (which must not
+  /// exist), for the translation-only export. Runs on a background isolate: a
+  /// large store takes long enough to drop frames on the main one.
+  Future<void> exportSnapshot(String path) {
+    if (!isInitialized) {
+      throw StateError("TranslationStore is not initialized; cannot export");
+    }
+    return _writeSnapshot(_dbPath, path);
+  }
+
+  // Static so the isolate closure can't capture this store and its timer.
+  static Future<void> _writeSnapshot(String dbPath, String path) {
+    return DatabaseGateway.instance.isolateOp(dbPath, (db) async {
+      db.execute("vacuum into ?;", [path]);
+    });
   }
 
   int get count {
@@ -738,14 +974,11 @@ class TranslationStore with ChangeNotifier {
   /// so a chapter translated on another device shows as done here too.
   int countByPrefix(String scopePrefix) {
     if (!isInitialized) return 0;
-    // Escape LIKE wildcards so a '%' or '_' inside a key can't widen the match;
-    // '\' is the explicit escape char below. Same rule as [deleteByPrefix].
-    var escaped = _escapeLike(scopePrefix);
     try {
       var rows = _db.select(
         "select count(*) from translated_page "
-        "where cache_key like ? escape '\\';",
-        ['$escaped%'],
+        "where cache_key >= ? and cache_key < ?;",
+        [scopePrefix, _prefixEnd(scopePrefix)],
       );
       return rows.first[0] as int;
     } catch (e, s) {
@@ -753,11 +986,6 @@ class TranslationStore with ChangeNotifier {
       return 0;
     }
   }
-
-  static String _escapeLike(String value) => value
-      .replaceAll('\\', '\\\\')
-      .replaceAll('%', '\\%')
-      .replaceAll('_', '\\_');
 
   void close() {
     if (!isInitialized) return;

@@ -94,6 +94,26 @@ void main() {
     expect(all.withAll(false).serialize(), isEmpty);
   });
 
+  test('translation results have their own category', () {
+    expect(
+      Appdata.syncDisabledFields(const ['@translationResults']),
+      contains(translationResultsField),
+    );
+    // Skipping the settings group leaves the stored pages syncing.
+    expect(
+      Appdata.syncDisabledFields(const ['@translation']),
+      isNot(contains(translationResultsField)),
+    );
+    final original = appdata.settings['disableSyncFields'];
+    addTearDown(() => appdata.settings['disableSyncFields'] = original);
+    appdata.settings['disableSyncFields'] = SyncSkipSelection.parse(
+      '',
+    ).withCategory(_cat('translationResults'), true).serialize();
+    expect(appdata.isSyncSkipped(translationResultsField), isTrue);
+    appdata.settings['disableSyncFields'] = '';
+    expect(appdata.isSyncSkipped(translationResultsField), isFalse);
+  });
+
   group('search history', () {
     late Directory tempDir;
     late String originalDataPath;

@@ -194,6 +194,11 @@ class Appdata with Init {
     ...SyncSkipSelection.fromEntries(customFields).skippedFields,
   };
 
+  /// Whether this device keeps [field] out of WebDAV sync.
+  bool isSyncSkipped(String field) => syncDisabledFields(
+    splitField(settings["disableSyncFields"] as String),
+  ).contains(field);
+
   /// Sync data from another device.
   ///
   /// This is the "apply remote data locally" path (download / import), so it

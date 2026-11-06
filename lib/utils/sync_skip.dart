@@ -11,6 +11,10 @@ library;
 /// the synced snapshot rather than inside it.
 const searchHistoryField = 'searchHistory';
 
+/// Stands for the stored page translations and per-comic translation state,
+/// which ride the backup as their own files rather than as settings.
+const translationResultsField = 'translationResults';
+
 /// A user-facing group of synced settings that can be kept on this device.
 class SyncSkipCategory {
   const SyncSkipCategory(this.id, this.label, this.description, this.keys);
@@ -131,6 +135,12 @@ const syncSkipCategories = <SyncSkipCategory>[
       "imageTranslationLlmModel",
       "enableImageTranslation",
     ],
+  ),
+  SyncSkipCategory(
+    'translationResults',
+    "Translation Results",
+    "Translated pages, and each comic's translation switch, detected language and glossary",
+    [translationResultsField],
   ),
   SyncSkipCategory(
     'explore',

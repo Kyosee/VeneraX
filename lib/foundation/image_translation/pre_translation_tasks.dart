@@ -14,10 +14,12 @@ import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/utils/data_sync.dart';
 
 enum PreTranslationTaskStatus { running, paused, completed, canceled, failed }
 
@@ -581,6 +583,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     _runningIds.add(task.id);
     _activities[task.id] = PreTranslationActivity();
     _refreshKeepAlive(task);
+    var revision = TranslationStore().localRevision;
     try {
       for (var chapter in task.chapters) {
         if (_canceledIds.contains(task.id)) break;
@@ -616,6 +619,11 @@ class PreTranslationTaskManager with ChangeNotifier {
         BackgroundKeepAlive.instance.remove(
           BackgroundKeepAlive.tagPreTranslate,
         );
+      }
+      // Page writes don't schedule an upload. Publish once per job, not per
+      // chapter: each upload carries the whole backup.
+      if (TranslationStore().localRevision != revision) {
+        DataSync().onTranslationsChanged();
       }
       onTaskFinished?.call(task);
       notifyListeners();
