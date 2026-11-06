@@ -4,6 +4,31 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v2.3.10](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.10) - 2026-11-06
+
+### Added
+- "Split wide pages" now works in gallery modes too: a landscape page (usually two pages scanned as one) is cut down the middle and each half gets a screen of its own. Choose "Right half first" or "Left half first"; pick "Right half first" for comics read right to left. It applies only with one image per screen.
+- With two or more images per screen in gallery modes, a new "Shift pages by one" button in the reader's bottom bar helps when an extra single page in a chapter, such as a color page or an ad, throws every later two-page spread out of line. Tap it and the current screen shows only its first image, and the pages after it are paired again from the next screen. Tap "Undo page shift" on the same screen to undo it. Shifts are saved per chapter and synced with your other reading settings.
+- Added "Export Translation Results" under Data & Sync. The file holds only translated pages; open it with "Import App Data" on another device to add them without changing anything else there.
+- "Skip Sync Items" has a new "Translation Results" entry that keeps translations on this device only, out of WebDAV sync.
+
+### Changed
+- When translations sync over WebDAV, translations you delete on one device (a chapter's, a whole comic's, or all of them with "Clear translation results") are now deleted on your other devices too, instead of being synced back.
+- With WebDAV sync on, translations are uploaded automatically when a pre-translation finishes.
+
+### Fixed
+- Fixed re-translated pages not reaching other devices over WebDAV sync. When two devices both have a page's translation, the newer one is now kept.
+- Fixed some pages failing AI translation over and over while still spending API tokens: replies that took a long time were cut off midway.
+- Fixed image enhancement not applying in gallery modes with one image per screen, and "Copy Image" and "Save Image" in the right-click menu reporting "No Image" there.
+- Fixed comics matching a block rule missing from the Local and Translation Library pages (while still showing on the home page), so they couldn't be opened or deleted.
+- Fixed tapping a follow-updates, sync, import/export or download notification on Android sometimes only bringing the app forward without opening the matching page. Tapping one while reading now closes the reader first, keeping your progress.
+- Fixed the Linux deb and Arch packages failing to start because of missing libraries.
+
+### Removed
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.9...v2.3.10
+
 ## [v2.3.9](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.9) - 2026-10-28
 
 ### Added
