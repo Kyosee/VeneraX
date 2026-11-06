@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/public_translator.dart';
@@ -552,13 +553,15 @@ abstract class LlmTranslator {
         Duration? retryAfter;
         var contentFailure = false;
         try {
-          var response = await dio.post(
+          var response = await dio.post<ResponseBody>(
             _endpoint,
+            options: Options(responseType: ResponseType.stream),
             data: {
               'model': _model,
               // No sampling params: some endpoints only accept their model's
               // fixed values (e.g. "only 1 is allowed") and reject the request
               // outright; the server-side default works everywhere.
+              'stream': true,
               'messages': [
                 {'role': 'system', 'content': systemPrompt},
                 {'role': 'user', 'content': payload},
@@ -566,20 +569,27 @@ abstract class LlmTranslator {
             },
           );
           var status = response.statusCode ?? 0;
+          var body = response.data!;
           if (status == 200) {
-            // The endpoint answered and was billed; anything wrong from here on
-            // is the reply's content, not the transport.
+            // The endpoint answered and is billing; anything wrong from here on
+            // (including a cut-off body) costs tokens, so it is a content
+            // failure, not a free transport retry.
             contentFailure = true;
-            var content =
-                response.data['choices']?[0]?['message']?['content'] as String?;
-            if (content == null || content.isEmpty) {
+            var content = await readCompletion(
+              body.stream,
+              isEventStream: (response.headers.value('content-type') ?? '')
+                  .contains('event-stream'),
+              maxContentChars: maxReplyChars(payload.length),
+            );
+            if (content.isEmpty) {
               throw Exception('LLM response has no content');
             }
             _aimd.onSuccess(bucket);
             return _parse(content, texts.length);
           }
+          var errorBody = await _readSmallBody(body.stream);
           lastError = Exception(
-            'LLM endpoint returned $status: ${_briefBody(response.data)}',
+            'LLM endpoint returned $status: ${_briefBody(errorBody)}',
           );
           cls = classifyStatus(status);
           retryAfter = parseRetryAfter(response.headers.value('retry-after'));
@@ -658,6 +668,106 @@ abstract class LlmTranslator {
   /// bare `[{"id","text"}]` array (ignoring the wrapper). Both shapes are
   /// accepted so a slightly non-compliant model still works; a bare array
   /// simply yields no new glossary entries.
+  /// No bytes for this long while streaming means the endpoint stalled.
+  static const streamIdleTimeout = Duration(seconds: 90);
+
+  /// Upper bound on reply text for a payload of [payloadChars]. A reply is
+  /// roughly the size of its input; one far beyond that is the model looping,
+  /// and letting it run only burns tokens until the request times out.
+  static int maxReplyChars(int payloadChars) => payloadChars * 4 + 4000;
+
+  /// Collects the reply text from a chat-completions body. Handles both an
+  /// SSE stream (`stream: true` honored) and a plain JSON body (ignored).
+  /// Reasoning deltas keep the stream alive but are not part of the reply.
+  @visibleForTesting
+  static Future<String> readCompletion(
+    Stream<List<int>> bytes, {
+    required bool isEventStream,
+    required int maxContentChars,
+    Duration idleTimeout = streamIdleTimeout,
+  }) async {
+    var lines = bytes
+        .timeout(idleTimeout, onTimeout: (sink) {
+          sink.addError(Exception('LLM stream stalled for $idleTimeout'));
+          sink.close();
+        })
+        .cast<List<int>>()
+        .transform(utf8.decoder);
+    if (!isEventStream) {
+      var raw = StringBuffer();
+      await for (var chunk in lines) {
+        raw.write(chunk);
+        if (raw.length > maxContentChars * 2 + 65536) {
+          throw Exception('LLM response too long');
+        }
+      }
+      var text = raw.toString();
+      // Some endpoints stream SSE without the matching content type.
+      if (text.trimLeft().startsWith('data:')) {
+        return _collectSse(LineSplitter.split(text), maxContentChars);
+      }
+      var data = jsonDecode(text);
+      if (data is! Map) return '';
+      var content = data['choices']?[0]?['message']?['content'];
+      return content is String ? content : '';
+    }
+    var out = StringBuffer();
+    await for (var line in lines.transform(const LineSplitter())) {
+      if (_appendSseLine(line, out, maxContentChars)) break;
+    }
+    return out.toString();
+  }
+
+  static String _collectSse(Iterable<String> lines, int maxContentChars) {
+    var out = StringBuffer();
+    for (var line in lines) {
+      if (_appendSseLine(line, out, maxContentChars)) break;
+    }
+    return out.toString();
+  }
+
+  /// Returns true at the end-of-stream marker.
+  static bool _appendSseLine(String line, StringBuffer out, int maxChars) {
+    line = line.trim();
+    if (!line.startsWith('data:')) return false;
+    var data = line.substring(5).trim();
+    if (data == '[DONE]') return true;
+    Object? json;
+    try {
+      json = jsonDecode(data);
+    } catch (_) {
+      return false;
+    }
+    if (json is! Map) return false;
+    if (json['error'] != null) {
+      throw Exception('LLM stream error: ${_briefBody(json)}');
+    }
+    var delta = json['choices']?[0]?['delta']?['content'];
+    if (delta is String) {
+      out.write(delta);
+      if (out.length > maxChars) {
+        throw Exception('LLM reply exceeded $maxChars characters');
+      }
+    }
+    return false;
+  }
+
+  static Future<Object?> _readSmallBody(Stream<List<int>> bytes) async {
+    var buf = <int>[];
+    try {
+      await for (var chunk in bytes.timeout(const Duration(seconds: 15))) {
+        buf.addAll(chunk);
+        if (buf.length > 16384) break;
+      }
+    } catch (_) {}
+    var text = utf8.decode(buf, allowMalformed: true);
+    try {
+      return jsonDecode(text);
+    } catch (_) {
+      return text;
+    }
+  }
+
   static LlmTranslationResult _parse(String content, int count) {
     var object = _extractJsonObject(content);
     List<dynamic>? lines;
