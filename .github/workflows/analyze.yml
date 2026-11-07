@@ -14,6 +14,8 @@ jobs:
         run: |
           python3 -m unittest discover -s linux/appimage -p 'test_*.py'
           bash -n linux/appimage/AppRun
+          bash -n linux/appimage/smoke_test.sh
+          python3 -m py_compile linux/appimage/smoke_test.py
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"

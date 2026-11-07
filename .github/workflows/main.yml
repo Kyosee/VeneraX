@@ -276,6 +276,16 @@ jobs:
           name: appimage_build
           path: build/linux/x64/release/appimage/*.AppImage
           if-no-files-found: error
+      - name: Test AppImage GUI and WebView
+        timeout-minutes: 10
+        run: bash linux/appimage/smoke_test.sh build/linux/x64/release/appimage/*.AppImage
+      - name: Upload AppImage runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage_smoke_x64
+          path: build/linux/x64/release/appimage/smoke-test/
+          if-no-files-found: ignore
       - run: dart run flutter_to_arch
       - run: |
           sudo rm -rf build/linux/arch/app.tar.gz
@@ -332,6 +342,16 @@ jobs:
           name: appimage_arm64_build
           path: build/linux/arm64/release/appimage/*.AppImage
           if-no-files-found: error
+      - name: Test AppImage GUI and WebView
+        timeout-minutes: 10
+        run: bash linux/appimage/smoke_test.sh build/linux/arm64/release/appimage/*.AppImage
+      - name: Upload AppImage runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage_smoke_arm64
+          path: build/linux/arm64/release/appimage/smoke-test/
+          if-no-files-found: ignore
       - name: Rename Linux packages
         run: |
           set -euo pipefail
