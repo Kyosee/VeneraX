@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/custom_slider.dart';
+import 'package:venera/pages/reader/reader.dart' show readerPageFromSliderValue;
 
 void main() {
   const pages = 244;
@@ -55,6 +56,26 @@ void main() {
     await tester.pump();
   }
 
+  for (final reversed in [false, true]) {
+    testWidgets('middle pages remain selectable with reversed=$reversed', (
+      tester,
+    ) async {
+      final changes = await pumpSlider(tester, reversed: reversed);
+      final track = tester.getRect(find.byType(Slider));
+      for (final page in [64, 65, 127, 128, 129, 172]) {
+        final fraction = (page - 1) / (pages - 1);
+        await tester.tapAt(
+          Offset(
+            track.left + track.width * (reversed ? 1 - fraction : fraction),
+            track.center.dy,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(readerPageFromSliderValue(changes.last), page);
+      }
+    });
+  }
+
   testWidgets('dragging past the right edge lands on the last page', (
     tester,
   ) async {
@@ -90,9 +111,7 @@ void main() {
     expect(changes.where((v) => v == pages.toDouble()).length, 1);
   });
 
-  testWidgets('a later drag can reach the same end page again', (
-    tester,
-  ) async {
+  testWidgets('a later drag can reach the same end page again', (tester) async {
     final changes = await pumpSlider(tester);
     await dragPastEdge(tester, toRight: true);
     await dragPastEdge(tester, toRight: false);

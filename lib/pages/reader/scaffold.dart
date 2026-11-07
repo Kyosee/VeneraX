@@ -2,6 +2,10 @@ part of 'reader.dart';
 
 const _readerChromeAnimationDuration = Duration(milliseconds: 140);
 
+// Native sliders can return values just below an integer page.
+@visibleForTesting
+int readerPageFromSliderValue(double value) => value.round();
+
 class _ReaderScaffold extends StatefulWidget {
   const _ReaderScaffold({required this.child});
 
@@ -1060,7 +1064,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       reversed: isReversed,
       divisions: (context.reader.maxPage - 1).clamp(2, 1 << 16),
       onChanged: (i) {
-        context.reader.toPage(i.toInt());
+        context.reader.toPage(readerPageFromSliderValue(i));
       },
     );
   }
