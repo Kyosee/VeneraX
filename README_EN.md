@@ -117,6 +117,8 @@ Actions → **Build ALL** → Run workflow → pick `windows` / `linux` / `macos
 
 Linux builds produce deb and Arch packages plus AppImages. The AppImages are in `appimage_build` (x86_64) and `appimage_arm64_build` (ARM64); version-tag builds attach them to the Release automatically.
 
+CI also launches both AppImages in Ubuntu 22.04 containers without system GTK or WebKit, then exercises the real web login flow to verify page JavaScript and native callbacks. Screenshots and logs are in `appimage_smoke_x64` and `appimage_smoke_arm64`. To retest existing packages, select `linux` and set `appimage_run_id` to the original build run ID; leave it empty to build and test normally.
+
 Windows, Linux, macOS and iOS build with no configuration, but the output is unsigned:
 
 - iOS produces an unsigned ipa; sign it yourself before sideloading.

@@ -117,6 +117,8 @@ Actions → **Build ALL** → Run workflow → 在 platform 里选 `windows` / `
 
 Linux 同时生成 deb、Arch 包及 AppImage；AppImage 分别在 `appimage_build`（x86_64）和 `appimage_arm64_build`（ARM64）中，版本标签构建会自动附加到 Release。
 
+CI 还会在未安装 GTK／WebKit 的 Ubuntu 22.04 容器中启动两个 AppImage，通过真实网页登录验证页面脚本及原生回调；截图和日志保存在 `appimage_smoke_x64`、`appimage_smoke_arm64`。仅重测已有安装包时，选择 `linux`，在 `appimage_run_id` 填入原构建运行 ID；留空则正常构建并验证。
+
 Windows、Linux、macOS、iOS 不需要任何配置就能构建，但产物没有签名：
 
 - iOS 是未签名 ipa，需要自行签名后侧载。
