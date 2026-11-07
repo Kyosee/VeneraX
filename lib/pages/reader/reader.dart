@@ -238,18 +238,9 @@ class _ReaderState extends State<Reader>
     if (widget.chapters == null) return false;
     var source = ComicSource.find(type.sourceKey);
     if (source?.chapterCommentsLoader == null) return false;
-    return appdata.settings.getReaderSetting(
-              cid,
-              type.sourceKey,
-              'showChapterComments',
-            ) ==
-            true &&
-        appdata.settings.getReaderSetting(
-              cid,
-              type.sourceKey,
-              'showChapterCommentsAtEnd',
-            ) ==
-            true;
+    return effectiveSetting('showChapterComments') == true &&
+        (mode.isContinuous ||
+            effectiveSetting('showChapterCommentsAtEnd') == true);
   }
 
   @override

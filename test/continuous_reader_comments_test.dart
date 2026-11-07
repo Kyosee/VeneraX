@@ -144,7 +144,7 @@ void main() {
     appdata.settings['language'] = 'en-US';
     appdata.settings['readerMode'] = 'continuousTopToBottom';
     appdata.settings['showChapterComments'] = true;
-    appdata.settings['showChapterCommentsAtEnd'] = true;
+    appdata.settings['showChapterCommentsAtEnd'] = false;
     appdata.settings['enableContinuousChapterReading'] = true;
     appdata.settings['enableClockAndBatteryInfoInReader'] = false;
     appdata.settings['enableTurnPageByVolumeKey'] = false;
@@ -299,10 +299,10 @@ void main() {
 
   Future<void> checkSettings(WidgetTester tester) async {
     appdata.settings['enableContinuousChapterReading'] = false;
-    appdata.settings['showChapterCommentsAtEnd'] = false;
+    appdata.settings['showChapterComments'] = false;
     await openReader(tester);
     expect(find.byType(EmbeddedChapterCommentsPage), findsNothing);
-    appdata.settings['showChapterCommentsAtEnd'] = true;
+    appdata.settings['showChapterComments'] = true;
     final dynamic reader = tester.state(find.byType(Reader));
     reader.update();
     await tester.pumpAndSettle();

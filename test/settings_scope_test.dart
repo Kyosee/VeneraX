@@ -77,14 +77,18 @@ void main() {
     },
   );
 
-  for (final mode in [
-    'galleryLeftToRight',
-    'continuousTopToBottom',
-    'continuousLeftToRight',
-    'continuousRightToLeft',
+  for (final (mode, hasEndSwitch) in [
+    ('galleryLeftToRight', true),
+    ('galleryRightToLeft', true),
+    ('galleryTopToBottom', false),
+    ('continuousTopToBottom', false),
+    ('continuousLeftToRight', false),
+    ('continuousRightToLeft', false),
   ]) {
     testWidgets('chapter-end options follow device mode $mode', (tester) async {
-      appdata.settings['readerMode'] = 'galleryTopToBottom';
+      appdata.settings['readerMode'] = hasEndSwitch
+          ? 'continuousTopToBottom'
+          : 'galleryLeftToRight';
       appdata.settings.setEnabledDeviceSpecificSettings(true);
       appdata.settings.setDeviceReaderSetting('readerMode', mode);
       await tester.pumpWidget(
@@ -99,7 +103,11 @@ void main() {
       );
       await tester.tap(display);
       await tester.pumpAndSettle();
-      expect(find.text('Show Comments at Chapter End'), findsOneWidget);
+      expect(find.text('Show Chapter Comments'), findsOneWidget);
+      expect(
+        find.text('Show Comments at Chapter End'),
+        hasEndSwitch ? findsOneWidget : findsNothing,
+      );
     });
   }
 
