@@ -77,25 +77,31 @@ void main() {
     },
   );
 
-  testWidgets('chapter-end options follow device mode instead of global mode', (
-    tester,
-  ) async {
-    appdata.settings.setEnabledDeviceSpecificSettings(true);
-    appdata.settings.setDeviceReaderSetting('readerMode', 'galleryLeftToRight');
-    await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: ReaderSettings())),
-    );
-    await tester.pumpAndSettle();
-    final display = find.text('Display settings');
-    await tester.scrollUntilVisible(
-      display,
-      400,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(display);
-    await tester.pumpAndSettle();
-    expect(find.text('Show Comments at Chapter End'), findsOneWidget);
-  });
+  for (final mode in [
+    'galleryLeftToRight',
+    'continuousTopToBottom',
+    'continuousLeftToRight',
+    'continuousRightToLeft',
+  ]) {
+    testWidgets('chapter-end options follow device mode $mode', (tester) async {
+      appdata.settings['readerMode'] = 'galleryTopToBottom';
+      appdata.settings.setEnabledDeviceSpecificSettings(true);
+      appdata.settings.setDeviceReaderSetting('readerMode', mode);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: ReaderSettings())),
+      );
+      await tester.pumpAndSettle();
+      final display = find.text('Display settings');
+      await tester.scrollUntilVisible(
+        display,
+        400,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(display);
+      await tester.pumpAndSettle();
+      expect(find.text('Show Comments at Chapter End'), findsOneWidget);
+    });
+  }
 
   for (final (mode, first) in [
     ('galleryRightToLeft', 'Right half first'),

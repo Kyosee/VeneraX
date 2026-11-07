@@ -17,27 +17,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   late _ReaderState reader;
 
-  bool get showChapterCommentsAtEnd {
-    if (reader.mode != ReaderMode.galleryLeftToRight &&
-        reader.mode != ReaderMode.galleryRightToLeft) {
-      return false;
-    }
-    if (reader.widget.chapters == null) return false;
-    var source = ComicSource.find(reader.type.sourceKey);
-    if (source?.chapterCommentsLoader == null) return false;
-    return appdata.settings.getReaderSetting(
-              reader.cid,
-              reader.type.sourceKey,
-              'showChapterComments',
-            ) ==
-            true &&
-        appdata.settings.getReaderSetting(
-              reader.cid,
-              reader.type.sourceKey,
-              'showChapterCommentsAtEnd',
-            ) ==
-            true;
-  }
+  bool get showChapterCommentsAtEnd => reader._shouldShowChapterCommentsAtEnd;
 
   int get totalImagePages => reader.maxPage;
 
@@ -335,7 +315,7 @@ class _GalleryModeState extends State<_GalleryMode>
     var chapters = reader.widget.chapters;
     if (source == null || chapters == null) return const SizedBox();
     var chapterIndex = reader.chapter - 1;
-    return _EmbeddedChapterCommentsPage(
+    return EmbeddedChapterCommentsPage(
       comicId: reader.cid,
       epId: chapters.ids.elementAt(chapterIndex),
       source: source,

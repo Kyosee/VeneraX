@@ -164,9 +164,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (seamlessChapterReading) {
       _entries = _continuousEntries();
     } else {
-      // Single-chapter continuous mode: just this chapter's pages. Chapter
-      // changes happen via the edge-swipe gesture, which rebuilds the whole
-      // widget with the new chapter — no separators or cross-chapter joining.
+      // Single-chapter mode keeps the edge-swipe navigation and optionally
+      // appends this chapter's comments.
       final imgs = reader.images ?? const <String>[];
       _entries = [
         for (var i = 0; i < imgs.length; i++)
@@ -174,6 +173,12 @@ class _ContinuousModeState extends State<_ContinuousMode>
             chapter: reader.chapter,
             page: i + 1,
             imageKey: imgs[i],
+          ),
+        if (reader.showChapterCommentsAtEnd)
+          _ContinuousReaderEntry.separator(
+            chapter: reader.chapter,
+            hasNext: reader.visibleChapterFrom(reader.chapter, 1) != null,
+            nextChapter: reader.visibleChapterFrom(reader.chapter, 1),
           ),
       ];
     }
@@ -316,7 +321,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
     // Images from lowestChapter up through all consecutively loaded chapters,
     // skipping chapters hidden as duplicates.
-    for (int? chapter = lowestChapter; chapter != null; ) {
+    for (int? chapter = lowestChapter; chapter != null;) {
       final images = _continuousChapterImages[chapter];
       if (images == null) {
         break;
@@ -520,6 +525,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final probe = _readingLine(vertical ? box.size.height : box.size.width);
 
     _ContinuousReaderEntry? current;
+    var onComments = false;
     // Last image whose box lies entirely at/above the leading edge. When the
     // edge falls on a chapter separator (a mid-chapter join page or the final
     // "no next chapter" page) no image straddles it, and the next image begins
@@ -530,7 +536,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
     _ContinuousReaderEntry? lastAbove;
     // Find the image entry whose box straddles the viewport's leading edge.
     for (final entry in _entries) {
-      if (!entry.isImage) continue;
+      if (entry.isSeparator &&
+          (entry.chapter == 0 || !reader.showChapterCommentsAtEnd)) {
+        continue;
+      }
       final key = _itemKeys['${entry.chapter}:${entry.page}'];
       final ctx = key?.currentContext;
       if (ctx == null) continue;
@@ -543,9 +552,18 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final extent = vertical ? itemBox.size.height : itemBox.size.width;
       // The entry crossing the anchor line: starts at/above it and ends below.
       if (start <= probe && start + extent > probe) {
-        current = entry;
+        onComments = entry.isSeparator;
+        final images = _continuousChapterImages[entry.chapter];
+        current = entry.isImage || images == null || images.isEmpty
+            ? entry
+            : _ContinuousReaderEntry.image(
+                chapter: entry.chapter,
+                page: images.length,
+                imageKey: images.last,
+              );
         break;
       }
+      if (!entry.isImage) continue;
       if (start <= probe) {
         // Wholly above the anchor; remember as the running "last above".
         lastAbove = entry;
@@ -564,7 +582,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // 29/30 — never equalling maxPage, so the read-complete mark never shows
     // (issue #115, non-seamless case). Snap to the last laid-out image.
     final pos = _scrollController.position;
-    if (pos.hasContentDimensions &&
+    if (!onComments &&
+        pos.hasContentDimensions &&
         pos.maxScrollExtent > pos.minScrollExtent &&
         pos.pixels >= pos.maxScrollExtent - 1) {
       current = _lastLaidOutImageEntry() ?? current;
@@ -661,8 +680,17 @@ class _ContinuousModeState extends State<_ContinuousMode>
       if (isCTRLPressed) {
         return;
       }
-      _cancelProgrammaticPageTurn();
-      smoothTo(event.scrollDelta.dy);
+      void scroll(PointerSignalEvent _) {
+        _cancelProgrammaticPageTurn();
+        smoothTo(event.scrollDelta.dy);
+      }
+
+      if (_axis == Axis.horizontal && reader.showChapterCommentsAtEnd) {
+        // Let the comments' vertical list consume the wheel first.
+        GestureBinding.instance.pointerSignalResolver.register(event, scroll);
+      } else {
+        scroll(event);
+      }
     }
   }
 
@@ -950,6 +978,31 @@ class _ContinuousModeState extends State<_ContinuousMode>
     BuildContext context,
     _ContinuousReaderEntry entry,
   ) {
+    if (entry.chapter > 0 && reader.showChapterCommentsAtEnd) {
+      final chapters = reader.widget.chapters!;
+      final vertical = reader.mode == ReaderMode.continuousTopToBottom;
+      return KeyedSubtree(
+        key: _itemKeyFor(entry.chapter, 0),
+        child: SizedBox(
+          width: MediaQuery.sizeOf(context).width,
+          height: vertical ? null : MediaQuery.sizeOf(context).height,
+          child: Listener(
+            onPointerDown: (_) =>
+                context.readerScaffold._gestureDetectorState?.ignoreNextTap(),
+            child: EmbeddedChapterCommentsPage(
+              key: ValueKey('chapter-comments-${entry.chapter}'),
+              comicId: reader.cid,
+              epId: chapters.ids.elementAt(entry.chapter - 1),
+              source: reader.type.comicSource!,
+              comicTitle: reader.widget.name,
+              chapterTitle: _chapterTitle(entry.chapter),
+              scrollWithReader: vertical,
+              chapterNavigation: _buildCommentsNavigation(entry),
+            ),
+          ),
+        ),
+      );
+    }
     // chapter == 0 means this is a "previous chapter" separator at the top
     final isPrevChapterSeparator = entry.chapter == 0;
     final title = !entry.hasNext
@@ -1029,6 +1082,54 @@ class _ContinuousModeState extends State<_ContinuousMode>
     );
   }
 
+  Widget _buildCommentsNavigation(_ContinuousReaderEntry entry) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton.icon(
+            onPressed: entry.hasNext && !entry.isLoading
+                ? () async {
+                    final next = entry.nextChapter!;
+                    if (seamlessChapterReading) {
+                      await _ensureContinuousChapterLoaded(next);
+                      if (!mounted ||
+                          !_continuousChapterImages.containsKey(next)) {
+                        return;
+                      }
+                    }
+                    reader.toChapter(next);
+                  }
+                : null,
+            icon: Icon(
+              entry.hasNext
+                  ? Icons.arrow_forward_rounded
+                  : Icons.done_all_rounded,
+            ),
+            label: Text(
+              entry.error != null
+                  ? 'Tap to retry'.tl
+                  : entry.isLoading
+                  ? 'Loading'.tl
+                  : entry.hasNext
+                  ? 'Next Chapter'.tl
+                  : 'No next chapter'.tl,
+            ),
+          ),
+          if (entry.nextChapter != null)
+            Text(
+              _chapterTitle(entry.nextChapter!),
+              style: ts.s12.withColor(context.colorScheme.outline),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Builds a single image entry widget, tagged with its position key so the
   /// scroll listener can read its render box.
   Widget _buildImageEntry(_ContinuousReaderEntry entry) {
@@ -1067,7 +1168,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// non-seamless single page).
   Widget _buildEntry(_ContinuousReaderEntry entry) {
     if (entry.isSeparator) {
-      if (entry.hasNext && entry.nextChapter != null) {
+      if (seamlessChapterReading &&
+          entry.hasNext &&
+          entry.nextChapter != null) {
         Future.microtask(
           () => _ensureContinuousChapterLoaded(entry.nextChapter!),
         );
@@ -1476,7 +1579,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
         // Nothing measurable yet: step toward the target so an unresolved
         // middle target cannot be mistaken for the scroll tail.
         await _applyScroll(
-          pos.pixels + (targetIdx < currentIdx ? -maxStepExtent : maxStepExtent),
+          pos.pixels +
+              (targetIdx < currentIdx ? -maxStepExtent : maxStepExtent),
           animate: false,
         );
         await WidgetsBinding.instance.endOfFrame;
@@ -1703,10 +1807,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     }
   }
 
-  Future<void> _navigateTurnTarget(
-    _TurnStop stop,
-    bool Function() isCurrent,
-  ) {
+  Future<void> _navigateTurnTarget(_TurnStop stop, bool Function() isCurrent) {
     final entry = stop.entry;
     if (!mounted || !entry.isImage || !isCurrent()) return Future.value();
     final center =
@@ -1863,7 +1964,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void handleLongPressDown(Offset location) {
-    if (!reader.effectiveSetting('enableLongPressToZoom') || delayedIsScrolling) {
+    if (!reader.effectiveSetting('enableLongPressToZoom') ||
+        delayedIsScrolling) {
       return;
     }
     double target = photoViewController.getInitialScale!.call()! * 1.75;

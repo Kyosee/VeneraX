@@ -609,14 +609,17 @@ class _CommentContent extends StatelessWidget {
   }
 }
 
-/// Embedded chapter comments page for displaying at end of chapter in gallery mode.
-class _EmbeddedChapterCommentsPage extends StatefulWidget {
-  const _EmbeddedChapterCommentsPage({
+/// Chapter-end comments, optionally sharing the vertical reader's scroll view.
+class EmbeddedChapterCommentsPage extends StatefulWidget {
+  const EmbeddedChapterCommentsPage({
+    super.key,
     required this.comicId,
     required this.epId,
     required this.source,
     required this.comicTitle,
     required this.chapterTitle,
+    this.scrollWithReader = false,
+    this.chapterNavigation,
   });
 
   final String comicId;
@@ -625,19 +628,23 @@ class _EmbeddedChapterCommentsPage extends StatefulWidget {
   final String comicTitle;
   final String chapterTitle;
 
+  final bool scrollWithReader;
+  final Widget? chapterNavigation;
+
   @override
-  State<_EmbeddedChapterCommentsPage> createState() =>
+  State<EmbeddedChapterCommentsPage> createState() =>
       _EmbeddedChapterCommentsPageState();
 }
 
 class _EmbeddedChapterCommentsPageState
-    extends State<_EmbeddedChapterCommentsPage> {
+    extends State<EmbeddedChapterCommentsPage> {
   bool _loading = true;
   List<Comment>? _comments;
   String? _error;
   int _page = 1;
   int? maxPage;
   var textController = TextEditingController();
+  final inputFocusNode = FocusNode();
   final scrollController = ScrollController();
   bool sending = false;
 
@@ -649,6 +656,7 @@ class _EmbeddedChapterCommentsPageState
   @override
   void dispose() {
     textController.dispose();
+    inputFocusNode.dispose();
     scrollController.dispose();
     super.dispose();
   }
@@ -684,7 +692,11 @@ class _EmbeddedChapterCommentsPageState
 
   void loadMore() async {
     if (_requestInFlight) return;
-    _requestInFlight = true;
+    if (widget.scrollWithReader) {
+      setState(() => _requestInFlight = true);
+    } else {
+      _requestInFlight = true;
+    }
     var res = await widget.source.chapterCommentsLoader!(
       widget.comicId,
       widget.epId,
@@ -694,6 +706,7 @@ class _EmbeddedChapterCommentsPageState
     _requestInFlight = false;
     if (res.error) {
       if (mounted) {
+        if (widget.scrollWithReader) setState(() {});
         context.showMessage(message: res.errorMessage ?? "Unknown Error");
       }
     } else if (mounted) {
@@ -716,17 +729,31 @@ class _EmbeddedChapterCommentsPageState
       color: context.colorScheme.surface,
       child: SafeArea(
         child: Column(
+          mainAxisSize: widget.scrollWithReader
+              ? MainAxisSize.min
+              : MainAxisSize.max,
           children: [
             _buildHeader(),
-            Expanded(child: _buildBody()),
+            if (widget.scrollWithReader)
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 160),
+                child: _buildBody(),
+              )
+            else
+              Expanded(child: _buildBody()),
             _buildBottom(),
+            if (widget.chapterNavigation != null) widget.chapterNavigation!,
             // Only this spacer may depend on the keyboard inset: reading it at
             // the page root rebuilt the whole comments grid on every frame of
             // the IME animation (#107). Scoped here, those frames only resize
             // an empty box and relayout the column.
-            Builder(
-              builder: (context) =>
-                  SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
+            ListenableBuilder(
+              listenable: inputFocusNode,
+              builder: (context, _) => SizedBox(
+                height: widget.scrollWithReader && !inputFocusNode.hasFocus
+                    ? 0
+                    : MediaQuery.viewInsetsOf(context).bottom,
+              ),
             ),
           ],
         ),
@@ -747,13 +774,14 @@ class _EmbeddedChapterCommentsPageState
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            tooltip: "Exit".tl,
-          ),
+          if (widget.chapterNavigation == null)
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              tooltip: "Exit".tl,
+            ),
           const SizedBox(width: 4),
           Icon(Icons.comment, size: 24),
           const SizedBox(width: 12),
@@ -799,6 +827,36 @@ class _EmbeddedChapterCommentsPageState
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final crossAxisCount = isLandscape ? 2 : 1;
+
+    if (widget.scrollWithReader) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MasonryGridView.count(
+            primary: false,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: crossAxisCount,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: _comments!.length,
+            itemBuilder: (context, index) => _ChapterCommentTile(
+              comment: _comments![index],
+              source: widget.source,
+              comicId: widget.comicId,
+              epId: widget.epId,
+              showAvatar: showAvatar,
+            ),
+          ),
+          if (_page < (maxPage ?? _page + 1))
+            TextButton(
+              onPressed: _requestInFlight ? null : loadMore,
+              child: Text(
+                _requestInFlight ? 'Loading'.tl : 'Load more comments'.tl,
+              ),
+            ),
+        ],
+      );
+    }
 
     return AppScrollBar(
       controller: scrollController,
@@ -856,6 +914,7 @@ class _EmbeddedChapterCommentsPageState
             Expanded(
               child: TextField(
                 controller: textController,
+                focusNode: inputFocusNode,
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   isCollapsed: true,
@@ -889,6 +948,7 @@ class _EmbeddedChapterCommentsPageState
                     textController.text,
                     null,
                   );
+                  if (!mounted) return;
                   if (!b.error) {
                     textController.text = "";
                     setState(() {

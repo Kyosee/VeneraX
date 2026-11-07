@@ -231,6 +231,10 @@ class _ReaderState extends State<Reader>
         mode != ReaderMode.galleryRightToLeft) {
       return false;
     }
+    return showChapterCommentsAtEnd;
+  }
+
+  bool get showChapterCommentsAtEnd {
     if (widget.chapters == null) return false;
     var source = ComicSource.find(type.sourceKey);
     if (source?.chapterCommentsLoader == null) return false;

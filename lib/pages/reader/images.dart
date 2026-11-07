@@ -172,7 +172,9 @@ class _ReaderImagesState extends State<_ReaderImages> {
           ),
         );
       } else {
-        return _ContinuousMode(key: Key(reader.mode.key));
+        return _ContinuousMode(
+          key: Key('${reader.mode.key}_${reader.showChapterCommentsAtEnd}'),
+        );
       }
     }
   }
