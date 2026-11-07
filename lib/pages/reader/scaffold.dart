@@ -774,17 +774,21 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             onPressed: toggleReadingOrientation,
           ),
         ),
-      Tooltip(
-        message: AppShortcuts.hint(
+      ReaderAutoPageTurningButton(
+        tooltip: AppShortcuts.hint(
           "Auto Page Turning".tl,
           ShortcutAction.toggleAutoPageTurning,
         ),
-        child: IconButton(
-          isSelected: context.reader.autoPageTurning,
-          icon: const Icon(Icons.timer_outlined),
-          selectedIcon: const Icon(Icons.timer),
-          onPressed: toggleAutoPageTurning,
-        ),
+        isSelected: context.reader.autoPageTurning,
+        readerMode: context.reader.mode.name,
+        comicId: context.reader.cid,
+        comicSource: context.reader.type.sourceKey,
+        onPressed: toggleAutoPageTurning,
+        onChanged: () {
+          context.reader._syncAutoTurn(restartCountdown: true);
+          context.reader.update();
+          update();
+        },
       ),
       if (context.reader.mode.isGallery && context.reader.imagesPerPage > 1)
         Tooltip(
