@@ -2,6 +2,7 @@
 """Exercise the shipped AppImage and its real WebView login flow under Xvfb."""
 
 import csv
+from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
@@ -76,6 +77,7 @@ def click_label(label, screenshot, process):
         run('scrot', '--overwrite', str(screenshot))
         tsv = run('tesseract', str(screenshot), 'stdout', '--psm', '11', 'tsv',
                   stderr=subprocess.DEVNULL)
+        screenshot.with_suffix('.tsv').write_text(tsv)
         lines = {}
         for word in csv.DictReader(io.StringIO(tsv), delimiter='\t'):
             if not word['text'].strip():
@@ -85,7 +87,9 @@ def click_label(label, screenshot, process):
         for words in lines.values():
             text = [re.sub(r'[^a-z0-9]', '', w['text'].lower()) for w in words]
             for i in range(len(text) - len(wanted) + 1):
-                if text[i:i + len(wanted)] != wanted:
+                candidate = ''.join(text[i:i + len(wanted)])
+                # Small antialiased text can confuse OCR (for example, i/l).
+                if SequenceMatcher(None, candidate, ''.join(wanted)).ratio() < 0.9:
                     continue
                 selected = words[i:i + len(wanted)]
                 left = int(selected[0]['left'])
