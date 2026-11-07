@@ -4,6 +4,26 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v2.3.11](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.11) - 2026-11-07
+
+### Added
+- The reading settings sidebar now has a search box at the top. Search in your display language or English, then select a result to jump to the setting, including options inside collapsed groups.
+- Long-press the night mode button to adjust its intensity in a compact popup. Changes appear immediately and are saved automatically.
+- Long-press the auto page turning button to choose between turning pages and scrolling. Scrolling is available in continuous reading modes; a short press still starts or stops automatic reading.
+- Linux users can now download AppImage packages for x86_64 and ARM64, alongside the existing installation packages.
+
+### Changed
+- Settings sliders and the reading progress bar now use rounded handles and gradient tracks that follow the app's theme color.
+
+### Fixed
+- Fixed the reading progress slider occasionally jumping to the page before the one selected.
+- Fixed chapter comments not appearing at the end of chapters in continuous reading modes when Show Chapter Comments is enabled.
+
+### Removed
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.10...v2.3.11
+
 ## [v2.3.10](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.10) - 2026-11-06
 
 ### Added
