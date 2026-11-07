@@ -28,6 +28,8 @@ SOURCE = """class AppImageSmoke extends ComicSource {
     key = 'appimage_smoke';
     version = '1.0.0';
     minAppVersion = '1.0.0';
+    comic = {};
+    search = {};
     account = {
         logout() {},
         loginWithWebview: {
@@ -107,8 +109,8 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory(prefix='venerax-smoke-') as tmp:
         root = Path(tmp)
-        # path_provider preserves an existing executable-name profile on Linux.
-        data = root / 'data/venera'
+        # Reading this profile also checks that bundled GIO preserves the app ID.
+        data = root / 'data/io.github.kyosee.venera'
         (data / 'comic_source').mkdir(parents=True)
         (data / 'comic_source/appimage_smoke.js').write_text(SOURCE)
         (data / 'appdata.json').write_text(json.dumps({

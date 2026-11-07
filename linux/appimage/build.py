@@ -143,6 +143,11 @@ def main():
             "--custom-apprun", str(repo / "linux/appimage/AppRun"),
             "--plugin", "gtk",
         ], env=env, check=True)
+        # path_provider dlopens the unversioned name. It must share GIO's
+        # GApplication state with GTK, not load the GTK plugin's second copy.
+        gio_alias = appdir / "usr/lib/libgio-2.0.so"
+        gio_alias.unlink(missing_ok=True)
+        gio_alias.symlink_to("libgio-2.0.so.0")
         relocate_webkit(appdir, system_libdir, system_datadir)
         subprocess.run([
             str(linuxdeploy), "--appdir", str(appdir), "--output", "appimage",
