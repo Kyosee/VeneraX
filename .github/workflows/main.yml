@@ -18,6 +18,10 @@ on:
           - windows
           - macos
           - linux
+      appimage_run_id:
+        description: "Existing build run to test AppImages without rebuilding (platform: linux)"
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -256,7 +260,7 @@ jobs:
           path: build/windows/VeneraX-*
   Build_Linux:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    if: ${{ !inputs.appimage_run_id && (github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux') }}
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -276,16 +280,6 @@ jobs:
           name: appimage_build
           path: build/linux/x64/release/appimage/*.AppImage
           if-no-files-found: error
-      - name: Test AppImage GUI and WebView
-        timeout-minutes: 10
-        run: bash linux/appimage/smoke_test.sh build/linux/x64/release/appimage/*.AppImage
-      - name: Upload AppImage runtime diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: appimage_smoke_x64
-          path: build/linux/x64/release/appimage/smoke-test/
-          if-no-files-found: ignore
       - run: dart run flutter_to_arch
       - run: |
           sudo rm -rf build/linux/arch/app.tar.gz
@@ -319,7 +313,7 @@ jobs:
           path: build/linux/arch/
   Build_Linux_ARM64:
     runs-on: ubuntu-22.04-arm
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    if: ${{ !inputs.appimage_run_id && (github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux') }}
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -342,16 +336,6 @@ jobs:
           name: appimage_arm64_build
           path: build/linux/arm64/release/appimage/*.AppImage
           if-no-files-found: error
-      - name: Test AppImage GUI and WebView
-        timeout-minutes: 10
-        run: bash linux/appimage/smoke_test.sh build/linux/arm64/release/appimage/*.AppImage
-      - name: Upload AppImage runtime diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: appimage_smoke_arm64
-          path: build/linux/arm64/release/appimage/smoke-test/
-          if-no-files-found: ignore
       - name: Rename Linux packages
         run: |
           set -euo pipefail
@@ -365,9 +349,47 @@ jobs:
           name: deb_arm64_build
           path: build/linux/x64/release/debian # This is a bug related to flutter_to_debian, but it's not a big deal.
 
+  Test_AppImage:
+    needs: [Build_Linux, Build_Linux_ARM64]
+    if: ${{ !cancelled() && ((inputs.platform == 'linux' && inputs.appimage_run_id != '') || (needs.Build_Linux.result == 'success' && needs.Build_Linux_ARM64.result == 'success')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+            artifact: appimage_build
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            artifact: appimage_arm64_build
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/appimage
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.appimage_run_id || github.run_id }}
+      - name: Test AppImage GUI and WebView
+        timeout-minutes: 10
+        run: |
+          chmod +x build/appimage/*.AppImage
+          bash linux/appimage/smoke_test.sh build/appimage/*.AppImage
+      - name: Upload AppImage runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage_smoke_${{ matrix.arch }}
+          path: build/appimage/smoke-test/
+          if-no-files-found: ignore
+
   Release:
     runs-on: ubuntu-22.04
-    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64]
+    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64, Test_AppImage]
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     outputs:
       prerelease: ${{ steps.release_meta.outputs.prerelease }}

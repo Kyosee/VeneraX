@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -106,7 +107,8 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory(prefix='venerax-smoke-') as tmp:
         root = Path(tmp)
-        data = root / 'data/io.github.kyosee.venera'
+        # path_provider preserves an existing executable-name profile on Linux.
+        data = root / 'data/venera'
         (data / 'comic_source').mkdir(parents=True)
         (data / 'comic_source/appimage_smoke.js').write_text(SOURCE)
         (data / 'appdata.json').write_text(json.dumps({
@@ -174,10 +176,15 @@ def main():
                     os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-                process.wait(timeout=15)
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
             wm.terminate()
             wm.wait(timeout=15)
             server.shutdown()
+            shutil.copytree(root / 'data', output / 'profile', dirs_exist_ok=True)
             print((output / 'app.log').read_text(errors='replace'), flush=True)
             for path in data.rglob('*.log'):
                 print(f'{path.name}:\n{path.read_text(errors="replace")}', flush=True)
