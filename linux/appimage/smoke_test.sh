@@ -15,7 +15,7 @@ docker run --rm \
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y --no-install-recommends \
-      python3 xvfb xauth xdotool openbox scrot tesseract-ocr dbus-x11 \
+      python3 xvfb xauth xdotool openbox scrot dbus-x11 \
       libgl1 libegl1 libgles2 libgl1-mesa-dri libxkbcommon0 libasound2 \
       ca-certificates fonts-dejavu-core procps
     test -z "$(find /usr/lib -name "libwebkit2gtk*" -o -name "libgtk-3.so*")"

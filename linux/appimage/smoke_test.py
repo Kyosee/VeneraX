@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Exercise the shipped AppImage and its real WebView login flow under Xvfb."""
 
-import csv
-from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import signal
 import subprocess
@@ -67,44 +63,6 @@ def run(*args, **kwargs):
     return subprocess.check_output(args, text=True, **kwargs).strip()
 
 
-def click_label(label, screenshot, process):
-    """Locate rendered text so font metrics and window placement do not matter."""
-    wanted = label.lower().split()
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError(f'AppImage exited with {process.returncode}')
-        run('scrot', '--overwrite', str(screenshot))
-        tsv = run('tesseract', str(screenshot), 'stdout', '--psm', '11', 'tsv',
-                  stderr=subprocess.DEVNULL)
-        screenshot.with_suffix('.tsv').write_text(tsv)
-        lines = {}
-        for word in csv.DictReader(io.StringIO(tsv), delimiter='\t'):
-            if not word['text'].strip():
-                continue
-            key = tuple(word[k] for k in ('block_num', 'par_num', 'line_num'))
-            lines.setdefault(key, []).append(word)
-        for words in lines.values():
-            text = [re.sub(r'[^a-z0-9]', '', w['text'].lower()) for w in words]
-            for i in range(len(text) - len(wanted) + 1):
-                candidate = ''.join(text[i:i + len(wanted)])
-                # Small antialiased text can confuse OCR (for example, i/l).
-                if SequenceMatcher(None, candidate, ''.join(wanted)).ratio() < 0.9:
-                    continue
-                selected = words[i:i + len(wanted)]
-                left = int(selected[0]['left'])
-                right = int(selected[-1]['left']) + int(selected[-1]['width'])
-                top = int(selected[0]['top'])
-                height = int(selected[0]['height'])
-                run('xdotool', 'mousemove', str((left + right) // 2),
-                    str(top + height // 2), 'click', '1')
-                print(f'Clicked {label}', flush=True)
-                time.sleep(1)
-                return
-        time.sleep(1)
-    raise RuntimeError(f'Could not find rendered label: {label}; see {screenshot}')
-
-
 def main():
     appimage = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
@@ -156,11 +114,19 @@ def main():
                     raise RuntimeError('AppImage did not show its main window')
                 run('xdotool', 'windowsize', '--sync', window, '1000', '800')
                 run('xdotool', 'windowmove', '--sync', window, '30', '30')
-                time.sleep(2)
-                for number, label in enumerate(
-                    ('Comic Source', 'Smoke Test', 'Log in', 'Login with webview'), 1,
-                ):
-                    click_label(label, output / f'{number:02d}-before-click.png', process)
+                time.sleep(5)
+                # Coordinates are relative to the fixed 1000x800 English window.
+                clicks = (
+                    ('Comic Source', 300, 136), ('Smoke Test', 300, 416),
+                    ('Log in', 300, 494), ('Login with webview', 536, 562),
+                )
+                for number, (label, x, y) in enumerate(clicks, 1):
+                    if process.poll() is not None:
+                        raise RuntimeError(f'AppImage exited with {process.returncode}')
+                    run('scrot', '--overwrite', str(output / f'{number:02d}-before-click.png'))
+                    run('xdotool', 'mousemove', '--window', window, str(x), str(y), 'click', '1')
+                    print(f'Clicked {label}', flush=True)
+                    time.sleep(2)
                 if not PAGE_READY.wait(60) or not NATIVE_READY.wait(30):
                     raise RuntimeError('WebView page JavaScript or native title callback did not complete')
                 run('scrot', '--overwrite', str(output / '05-webview.png'))
