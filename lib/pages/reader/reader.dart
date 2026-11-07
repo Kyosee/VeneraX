@@ -50,6 +50,7 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/pages/reader/auto_scroll_activity.dart';
 import 'package:venera/pages/reader/continuous_page_turn_coordinator.dart';
+import 'package:venera/pages/reader/night_mode_button.dart';
 import 'package:venera/pages/reader/shader_image.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/clipboard_image.dart';

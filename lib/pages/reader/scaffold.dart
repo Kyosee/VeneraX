@@ -733,19 +733,16 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     }
 
     final buttons = [
-      Tooltip(
-        message: AppShortcuts.hint(
+      ReaderNightModeButton(
+        tooltip: AppShortcuts.hint(
           "Night mode".tl,
           ShortcutAction.toggleNightMode,
         ),
-        child: IconButton(
-          icon: Icon(
-            appdata.settings['readerNightMode'] == true
-                ? Icons.nightlight_round
-                : Icons.nightlight_outlined,
-          ),
-          onPressed: toggleNightMode,
-        ),
+        onPressed: toggleNightMode,
+        onChanged: () {
+          context.reader.update();
+          update();
+        },
       ),
       Tooltip(
         message: AppShortcuts.hint(
