@@ -11,6 +11,7 @@ import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:window_manager/window_manager.dart';
+import 'components/app_slider_theme.dart';
 import 'components/components.dart';
 import 'components/window_frame.dart';
 import 'foundation/app.dart';
@@ -213,14 +214,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         'sans-serif'
       ];
     }
+    final colors = SeedColorScheme.fromSeeds(
+      primaryKey: primary,
+      secondaryKey: secondary,
+      tertiaryKey: tertiary,
+      brightness: brightness,
+      tones: FlexTones.vividBackground(brightness),
+    );
     return ThemeData(
-      colorScheme: SeedColorScheme.fromSeeds(
-        primaryKey: primary,
-        secondaryKey: secondary,
-        tertiaryKey: tertiary,
-        brightness: brightness,
-        tones: FlexTones.vividBackground(brightness),
-      ),
+      colorScheme: colors,
+      sliderTheme: appSliderTheme(colors),
       fontFamily: font,
       fontFamilyFallback: fallback,
       // ExpansionTile shows top/bottom divider lines when expanded by default.

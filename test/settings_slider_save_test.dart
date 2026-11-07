@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/app_slider_theme.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/translations.dart';
@@ -33,6 +34,10 @@ class _SettingsFile implements File {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final defaultTheme = ThemeData();
+  final theme = defaultTheme.copyWith(
+    sliderTheme: appSliderTheme(defaultTheme.colorScheme),
+  );
   setUpAll(AppTranslation.init);
   setUp(() {
     appdata.settings['language'] = 'en-US';
@@ -48,7 +53,10 @@ void main() {
         final writes = <Map<String, dynamic>>[];
         await IOOverrides.runZoned(() async {
           await tester.pumpWidget(
-            const MaterialApp(home: Scaffold(body: NetworkSettings())),
+            MaterialApp(
+              theme: theme,
+              home: const Scaffold(body: NetworkSettings()),
+            ),
           );
           await tester.pumpAndSettle();
           final slider = find.byType(Slider).first;
@@ -82,8 +90,9 @@ void main() {
       final writes = <Map<String, dynamic>>[];
       await IOOverrides.runZoned(() async {
         await tester.pumpWidget(
-          const MaterialApp(
-            home: Scaffold(body: ReaderSettings(translationOnly: true)),
+          MaterialApp(
+            theme: theme,
+            home: const Scaffold(body: ReaderSettings(translationOnly: true)),
           ),
         );
         await tester.pumpAndSettle();
