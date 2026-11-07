@@ -1160,6 +1160,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   void openSetting() {
     _openSideBar(
       ReaderSettings(
+        showSearch: true,
         comicId: context.reader.cid,
         comicSource: context.reader.type.sourceKey,
         currentPageImage: _snapshotCurrentPageImage,

@@ -7,6 +7,7 @@ class ReaderSettings extends StatefulWidget {
     this.comicId,
     this.comicSource,
     this.translationOnly = false,
+    this.showSearch = false,
     this.currentPageImage,
   });
 
@@ -14,6 +15,7 @@ class ReaderSettings extends StatefulWidget {
   final String? comicId;
   final String? comicSource;
   final bool translationOnly;
+  final bool showSearch;
 
   /// Caller-owned copy of the page open in the reader, for the image
   /// enhancement preview. Null outside the reader.
@@ -25,6 +27,15 @@ class ReaderSettings extends StatefulWidget {
 
 class _ReaderSettingsState extends State<ReaderSettings> {
   late bool _translationAdvanced;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  _SettingsSearchEntry? _searchTarget;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -291,6 +302,68 @@ class _ReaderSettingsState extends State<ReaderSettings> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.showSearch) return _buildSettings(context);
+    final target = _searchTarget;
+    return Column(
+      children: [
+        Appbar(title: Text('Reading settings'.tl)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: AppSearchField(
+            controller: _searchController,
+            hintText: 'Search settings'.tl,
+            onChanged: (query) => setState(() {
+              _searchQuery = query;
+              _searchTarget = null;
+            }),
+          ),
+        ),
+        Expanded(
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: _searchQuery.trim().isNotEmpty
+                ? _buildSettingsSearchResults(
+                    context,
+                    _searchQuery,
+                    (entry) {
+                      FocusScope.of(context).unfocus();
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _searchTarget = entry;
+                      });
+                    },
+                    entries: [
+                      if (widget.comicId != null && widget.comicSource != null)
+                        const _SettingsSearchEntry(
+                          'Enable comic specific settings',
+                          1,
+                        ),
+                      ..._settingsSearchIndex.where(
+                        (entry) =>
+                            (entry.category == 1 &&
+                                (widget.comicId == null ||
+                                    entry.title !=
+                                        'Enable device specific settings')) ||
+                            entry.title == 'AI Translation',
+                      ),
+                    ],
+                  )
+                : target == null
+                ? Builder(builder: _buildSettings)
+                : _SettingsDestination(
+                    title: target.targetTitle,
+                    fallback: target.fallbackTitle,
+                    child: Builder(builder: _buildSettings),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettings(BuildContext context) {
     final comicId = widget.comicId;
     final sourceKey = widget.comicSource;
     final key = "$comicId@$sourceKey";
@@ -303,13 +376,15 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         appdata.settings.isDeviceSpecificSettingsEnabled();
 
     return SmoothCustomScrollView(
-      scrollbarTopPadding: context.padding.top + 56,
+      scrollbarTopPadding: widget.showSearch ? 0 : context.padding.top + 56,
       slivers: [
-        SliverAppbar(
-          title: Text(
-            (widget.translationOnly ? 'AI Translation' : 'Reading settings').tl,
+        if (!widget.showSearch)
+          SliverAppbar(
+            title: Text(
+              (widget.translationOnly ? 'AI Translation' : 'Reading settings')
+                  .tl,
+            ),
           ),
-        ),
         ListTile(
           leading: const Icon(Icons.tune),
           title: Text(

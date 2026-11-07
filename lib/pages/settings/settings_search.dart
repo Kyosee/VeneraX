@@ -41,6 +41,12 @@ class _SettingsSearchEntry {
   String? get fallbackTitle => switch (title) {
     'Night mode color' || 'Night mode intensity' => 'Night mode',
     'Long press zoom position' => 'Long press to zoom',
+    'Custom tap-to-turn zones' => 'Page turn mode',
+    'Top edge tap' ||
+    'Bottom edge tap' ||
+    'Left edge tap' ||
+    'Right edge tap' => 'Page turn mode',
+    'Image width (% of screen height)' => 'Limit image width',
     'Show Comments at Chapter End' => 'Show Chapter Comments',
     'Sharpen strength' ||
     'Clarity' ||
@@ -50,6 +56,10 @@ class _SettingsSearchEntry {
     'The number of pic in screen for portrait (Only Gallery Mode)' ||
     'Show single image on first page' ||
     'Fill screen' ||
+    'Split wide pages' ||
+    'Center page after turning' ||
+    'Spacing between pages' ||
+    'Mouse scroll speed' ||
     'Auto page turning mode' => 'Reading mode',
     // Only one of the two shows at a time, by auto turning mode.
     'Auto scroll speed' => 'Auto page turning interval',
@@ -78,13 +88,23 @@ class _SettingsSearchEntry {
         'Long press to zoom',
         'Long press zoom position',
         'Turn page by volume keys',
-        'Also collect chapter cover when collecting image',
-        'Quick collect image',
+        'Custom tap-to-turn zones',
+        'Top edge tap',
+        'Bottom edge tap',
+        'Left edge tap',
+        'Right edge tap',
       ].contains(title)) {
         return 'Gesture settings';
       }
       if (const [
+        'Also collect chapter cover when collecting image',
+        'Quick collect image',
+      ].contains(title)) {
+        return 'Favorites settings';
+      }
+      if (const [
         'Limit image width',
+        'Image width (% of screen height)',
         'Custom Image Processing',
         'Image enhancement',
         'Sharpen strength',
@@ -105,6 +125,7 @@ class _SettingsSearchEntry {
         'Keep screen on while reading',
         'Show Page Number',
         'Show Chapter Comments',
+        'Comment font size',
         'Show Comments at Chapter End',
       ].contains(title)) {
         return 'Display settings';
@@ -173,6 +194,15 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
   _SettingsSearchEntry("Show single image on first page", 1),
   _SettingsSearchEntry("Fill screen", 1),
+  _SettingsSearchEntry('Split wide pages', 1, keywords: ['split']),
+  _SettingsSearchEntry('Center page after turning', 1),
+  _SettingsSearchEntry('Spacing between pages', 1),
+  _SettingsSearchEntry(
+    'Enter fullscreen when reading starts',
+    1,
+    visible: () => App.isDesktop,
+  ),
+  _SettingsSearchEntry('Remove from read later when reading starts', 1),
   _SettingsSearchEntry("Reading background color", 1, keywords: ["background"]),
   _SettingsSearchEntry("Night mode", 1, keywords: ["dark", "eye"]),
   _SettingsSearchEntry("Follow system dark mode", 1, keywords: ["dark"]),
@@ -190,6 +220,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Double tap to zoom", 1, keywords: ["gesture", "zoom"]),
   _SettingsSearchEntry("Long press to zoom", 1, keywords: ["gesture", "zoom"]),
   _SettingsSearchEntry("Long press zoom position", 1, keywords: ["zoom"]),
+  _SettingsSearchEntry('Custom tap-to-turn zones', 1, keywords: ['gesture']),
+  _SettingsSearchEntry('Top edge tap', 1, keywords: ['gesture']),
+  _SettingsSearchEntry('Bottom edge tap', 1, keywords: ['gesture']),
+  _SettingsSearchEntry('Left edge tap', 1, keywords: ['gesture']),
+  _SettingsSearchEntry('Right edge tap', 1, keywords: ['gesture']),
   _SettingsSearchEntry(
     "Turn page by volume keys",
     1,
@@ -199,6 +234,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Also collect chapter cover when collecting image", 1),
   _SettingsSearchEntry("Quick collect image", 1),
   _SettingsSearchEntry("Limit image width", 1),
+  _SettingsSearchEntry('Image width (% of screen height)', 1),
   _SettingsSearchEntry(
     "Custom Image Processing",
     1,
@@ -223,6 +259,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
   _SettingsSearchEntry("Show Page Number", 1),
   _SettingsSearchEntry("Show Chapter Comments", 1, keywords: ["comment"]),
+  _SettingsSearchEntry('Comment font size', 1, keywords: ['comment']),
   _SettingsSearchEntry(
     "Show Comments at Chapter End",
     1,
@@ -402,11 +439,14 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
 
 /// Returns the entries matching [query] (case-insensitive substring over the
 /// localized title, the English source, the category name, and keywords).
-List<_SettingsSearchEntry> _matchSettingsSearch(String query) {
+List<_SettingsSearchEntry> _matchSettingsSearch(
+  String query, {
+  Iterable<_SettingsSearchEntry>? entries,
+}) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
   final result = <_SettingsSearchEntry>[];
-  for (final e in _settingsSearchIndex) {
+  for (final e in entries ?? _settingsSearchIndex) {
     if (e.visible != null && !e.visible!()) continue;
     if (_settingsEntryMatches(e, q)) result.add(e);
   }
@@ -416,6 +456,12 @@ List<_SettingsSearchEntry> _matchSettingsSearch(String query) {
 bool _settingsEntryMatches(_SettingsSearchEntry e, String q) {
   if (e.title.toLowerCase().contains(q)) return true;
   if (e.title.tl.toLowerCase().contains(q)) return true;
+  final section = e.section;
+  if (section != null &&
+      (section.toLowerCase().contains(q) ||
+          section.tl.toLowerCase().contains(q))) {
+    return true;
+  }
   final catName = _settingsCategories[e.category];
   if (catName.toLowerCase().contains(q) ||
       catName.tl.toLowerCase().contains(q)) {
@@ -434,9 +480,10 @@ bool _settingsEntryMatches(_SettingsSearchEntry e, String q) {
 Widget _buildSettingsSearchResults(
   BuildContext context,
   String query,
-  void Function(_SettingsSearchEntry entry) onOpen,
-) {
-  final results = _matchSettingsSearch(query);
+  void Function(_SettingsSearchEntry entry) onOpen, {
+  Iterable<_SettingsSearchEntry>? entries,
+}) {
+  final results = _matchSettingsSearch(query, entries: entries);
   if (results.isEmpty) {
     return Center(
       child: Text("No matching settings".tl, style: ts.s14),
