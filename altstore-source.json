@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.11",
+          "buildVersion": "254",
+          "date": "2026-11-07",
+          "localizedDescription": "## What's Changed\n\n### Added\n- The reading settings sidebar now has a search box at the top. Search in your display language or English, then select a result to jump to the setting, including options inside collapsed groups.\n- Long-press the night mode button to adjust its intensity in a compact popup. Changes appear immediately and are saved automatically.\n- Long-press the auto page turning button to choose between turning pages and scrolling. Scrolling is available in continuous reading modes; a short press still starts or stops automatic reading.\n- Linux users can now download AppImage packages for x86_64 and ARM64, alongside the existing installation packages.\n\n### Changed\n- Settings sliders and the reading progress bar now use rounded handles and gradient tracks that follow the app's theme color.\n\n### Fixed\n- Fixed the reading progress slider occasionally jumping to the page before the one selected.\n- Fixed chapter comments not appearing at the end of chapters in continuous reading modes when Show Chapter Comments is enabled.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.10...v2.3.11",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.11/VeneraX-ios-2.3.11%2B254.ipa",
+          "size": 39064421,
+          "minOSVersion": "15.1"
+        },
+        {
           "version": "2.3.10",
           "buildVersion": "253",
           "date": "2026-11-06",
@@ -366,11 +375,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.10",
-      "versionDate": "2026-11-06",
-      "versionDescription": "## What's Changed\n\n### Added\n- \"Split wide pages\" now works in gallery modes too: a landscape page (usually two pages scanned as one) is cut down the middle and each half gets a screen of its own. Choose \"Right half first\" or \"Left half first\"; pick \"Right half first\" for comics read right to left. It applies only with one image per screen.\n- With two or more images per screen in gallery modes, a new \"Shift pages by one\" button in the reader's bottom bar helps when an extra single page in a chapter, such as a color page or an ad, throws every later two-page spread out of line. Tap it and the current screen shows only its first image, and the pages after it are paired again from the next screen. Tap \"Undo page shift\" on the same screen to undo it. Shifts are saved per chapter and synced with your other reading settings.\n- Added \"Export Translation Results\" under Data & Sync. The file holds only translated pages; open it with \"Import App Data\" on another device to add them without changing anything else there.\n- \"Skip Sync Items\" has a new \"Translation Results\" entry that keeps translations on this device only, out of WebDAV sync.\n\n### Changed\n- When translations sync over WebDAV, translations you delete on one device (a chapter's, a whole comic's, or all of them with \"Clear translation results\") are now deleted on your other devices too, instead of being synced back.\n- With WebDAV sync on, translations are uploaded automatically when a pre-translation finishes.\n\n### Fixed\n- Fixed re-translated pages not reaching other devices over WebDAV sync. When two devices both have a page's translation, the newer one is now kept.\n- Fixed some pages failing AI translation over and over while still spending API tokens: replies that took a long time were cut off midway.\n- Fixed image enhancement not applying in gallery modes with one image per screen, and \"Copy Image\" and \"Save Image\" in the right-click menu reporting \"No Image\" there.\n- Fixed comics matching a block rule missing from the Local and Translation Library pages (while still showing on the home page), so they couldn't be opened or deleted.\n- Fixed tapping a follow-updates, sync, import/export or download notification on Android sometimes only bringing the app forward without opening the matching page. Tapping one while reading now closes the reader first, keeping your progress.\n- Fixed the Linux deb and Arch packages failing to start because of missing libraries.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.9...v2.3.10",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.10/VeneraX-ios-2.3.10%2B253.ipa",
-      "size": 39013148
+      "version": "2.3.11",
+      "versionDate": "2026-11-07",
+      "versionDescription": "## What's Changed\n\n### Added\n- The reading settings sidebar now has a search box at the top. Search in your display language or English, then select a result to jump to the setting, including options inside collapsed groups.\n- Long-press the night mode button to adjust its intensity in a compact popup. Changes appear immediately and are saved automatically.\n- Long-press the auto page turning button to choose between turning pages and scrolling. Scrolling is available in continuous reading modes; a short press still starts or stops automatic reading.\n- Linux users can now download AppImage packages for x86_64 and ARM64, alongside the existing installation packages.\n\n### Changed\n- Settings sliders and the reading progress bar now use rounded handles and gradient tracks that follow the app's theme color.\n\n### Fixed\n- Fixed the reading progress slider occasionally jumping to the page before the one selected.\n- Fixed chapter comments not appearing at the end of chapters in continuous reading modes when Show Chapter Comments is enabled.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.10...v2.3.11",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.11/VeneraX-ios-2.3.11%2B254.ipa",
+      "size": 39064421
     }
   ],
   "news": []
