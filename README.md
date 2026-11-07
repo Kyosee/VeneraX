@@ -62,6 +62,24 @@ VeneraX 是一个 Fork 自 Venera 并在原版基础上进行维护与增强，�
 
 各功能的配置步骤与操作方式详见 **[使用说明](doc/guide.zh.md)**。应用内亦可查阅：设置 → 关于 → 使用说明。
 
+### Linux AppImage
+
+在 [Releases](https://github.com/Kyosee/VeneraX/releases) 下载 `VeneraX-<版本>-x86_64.AppImage`（Intel / AMD 64 位）或 `VeneraX-<版本>-aarch64.AppImage`（ARM64）。赋予执行权限后直接运行，无需安装 deb 包：
+
+```bash
+chmod +x VeneraX-<版本>-x86_64.AppImage
+./VeneraX-<版本>-x86_64.AppImage
+```
+
+请替换示例中的版本号和架构。AppImage 包含 GTK、WebKitGTK、ONNX Runtime 及托盘运行库，基于 Ubuntu 22.04 构建；需要 glibc 2.35 或更新版本、桌面图形驱动及 X11／XWayland，不支持旧版 glibc 或 Alpine 等 musl 系统。系统缺少 FUSE 时可解包运行：
+
+```bash
+./VeneraX-<版本>-x86_64.AppImage --appimage-extract
+./squashfs-root/AppRun
+```
+
+更新时下载新版 AppImage 并替换旧文件；应用数据仍保存在原有用户数据目录。
+
 ## 构建
 
 <details>
@@ -80,6 +98,8 @@ flutter build macos      # macOS
 
 Android 需要先准备签名密钥，见下一节的「Android 签名」。
 
+Linux AppImage 在对应架构的 Ubuntu 22.04 上构建。除 Flutter Linux 编译依赖外，需安装 `webkit2gtk-4.1 libayatana-appindicator3-dev librsvg2-dev libglib2.0-bin glib-networking`。执行 `flutter build linux --release` 后运行 `python3 linux/appimage/build.py x64`（ARM64 用 `arm64`），产物位于 `build/linux/<架构>/release/appimage/`。打包脚本会下载 linuxdeploy 和 GTK 插件，需要联网。
+
 </details>
 
 <details>
@@ -94,6 +114,8 @@ fork 出来的仓库默认停用工作流，进 Actions 页点一下按钮启用
 **2. 构建单个平台**
 
 Actions → **Build ALL** → Run workflow → 在 platform 里选 `windows` / `linux` / `macos` / `ios` / `android`，跑完在这次 run 的 Artifacts 里下载。
+
+Linux 同时生成 deb、Arch 包及 AppImage；AppImage 分别在 `appimage_build`（x86_64）和 `appimage_arm64_build`（ARM64）中，版本标签构建会自动附加到 Release。
 
 Windows、Linux、macOS、iOS 不需要任何配置就能构建，但产物没有签名：
 

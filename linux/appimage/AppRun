@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+APPDIR="$(dirname "$(readlink -f "$0")")"
+export APPDIR
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export GIO_MODULE_DIR="$APPDIR/usr/lib/gio/modules"
+
+# WebKit's relocated process and resource paths are relative to usr/.
+cd "$APPDIR/usr"
+exec "$APPDIR/usr/bin/venera" "$@"

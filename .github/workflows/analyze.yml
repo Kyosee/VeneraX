@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Check AppImage packaging
+        run: |
+          python3 -m unittest discover -s linux/appimage -p 'test_*.py'
+          bash -n linux/appimage/AppRun
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"

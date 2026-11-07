@@ -62,6 +62,24 @@ See the **[Changelog](CHANGELOG_EN.md)** for what each version added, changed an
 
 Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.
 
+### Linux AppImage
+
+Download `VeneraX-<version>-x86_64.AppImage` (64-bit Intel / AMD) or `VeneraX-<version>-aarch64.AppImage` (ARM64) from [Releases](https://github.com/Kyosee/VeneraX/releases). Make it executable and run it directly:
+
+```bash
+chmod +x VeneraX-<version>-x86_64.AppImage
+./VeneraX-<version>-x86_64.AppImage
+```
+
+Replace the version and architecture in these examples. AppImages bundle GTK, WebKitGTK, ONNX Runtime and tray libraries, and are built on Ubuntu 22.04. They require glibc 2.35 or newer, desktop graphics drivers and X11 / XWayland; older glibc and musl-based systems such as Alpine are not supported. If FUSE is unavailable, extract and run:
+
+```bash
+./VeneraX-<version>-x86_64.AppImage --appimage-extract
+./squashfs-root/AppRun
+```
+
+To update, download the new AppImage and replace the old file. Application data stays in the existing user data directory.
+
 ## Building
 
 <details>
@@ -80,6 +98,8 @@ flutter build macos      # macOS
 
 Android needs a signing key first — see "Android signing" in the next section.
 
+Build Linux AppImages on Ubuntu 22.04 for the matching architecture. In addition to Flutter's Linux build dependencies, install `webkit2gtk-4.1 libayatana-appindicator3-dev librsvg2-dev libglib2.0-bin glib-networking`. After `flutter build linux --release`, run `python3 linux/appimage/build.py x64` (`arm64` for ARM64). Output is in `build/linux/<architecture>/release/appimage/`. Packaging downloads linuxdeploy and its GTK plugin and requires internet access.
+
 </details>
 
 <details>
@@ -94,6 +114,8 @@ Workflows are disabled in a fresh fork. Open the Actions tab and enable them.
 **2. Build a single platform**
 
 Actions → **Build ALL** → Run workflow → pick `windows` / `linux` / `macos` / `ios` / `android` under platform. Download the result from that run's Artifacts.
+
+Linux builds produce deb and Arch packages plus AppImages. The AppImages are in `appimage_build` (x86_64) and `appimage_arm64_build` (ARM64); version-tag builds attach them to the Release automatically.
 
 Windows, Linux, macOS and iOS build with no configuration, but the output is unsigned:
 
