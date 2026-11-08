@@ -676,6 +676,19 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                   },
                 ),
               ),
+              IconButton(
+                icon: const Icon(Icons.checklist),
+                tooltip: "Multi-Select".tl,
+                onPressed: isLoading || currentComics.isEmpty
+                    ? null
+                    : () {
+                        setState(() {
+                          selectedItems.clear();
+                          lastSelectedIndex = null;
+                          multiSelectMode = true;
+                        });
+                      },
+              ),
               MenuButton(
                 entries: [
                   if (networkSource != null && !isAllFolder)
