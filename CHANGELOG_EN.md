@@ -4,6 +4,35 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v2.3.12](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.12) - 2026-11-08
+
+### Added
+- Added a Multi-Select button to the local favorites toolbar for organizing comics in bulk.
+- Added Read and Continue reading actions to comic menus so you can start reading or resume your last position directly.
+- Added an Actions button to detailed comic lists on mobile for opening a comic's menu with a tap.
+
+### Changed
+- Improved compatibility with iOS 27 and iPhone Duo, including full-screen layouts on the unfolded inner display.
+- Organized settings into 10 categories, with category navigation on the left on desktop and a category list on mobile.
+- Settings pages now show common options first, with further options such as page layout and gestures under More settings.
+- Improved settings layouts on large screens, made single options fill their row, and tightened mobile header spacing to reduce empty space and duplicate titles.
+- Settings now switch between one and two panes based on the available width, improving layouts on foldables, split-screen views and smaller desktop windows.
+- Enlarged desktop comic menu text and click targets, and grouped actions such as favorites and collections more clearly.
+- Mobile comic menus now open as bottom sheets that emphasize reading and show shortcuts and current states for favorites, read later and downloads.
+- Updated the English and Chinese guides with the new settings paths, search, reader sidebar and menu controls.
+
+### Fixed
+- Fixed overlapping and overflowing text in the reading settings sidebar on high-resolution windows.
+- Fixed secondary settings opening full screen from the reader sidebar; navigation and Back now stay inside the sidebar.
+- Fixed duplicate spacing along screen edges on some devices and cramped settings content in narrow windows.
+- Fixed keyboard navigation not becoming available immediately after opening a desktop menu.
+- Fixed some guide contents entries failing to jump to their sections.
+
+### Removed
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.11...v2.3.12
+
 ## [v2.3.11](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.11) - 2026-11-07
 
 ### Added
