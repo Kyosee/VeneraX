@@ -92,7 +92,8 @@ jobs:
           name: macos_build
           path: result/
   Build_IOS:
-    runs-on: macos-15
+    # The iOS 27.1 SDK enables the full iPhone Duo display.
+    runs-on: xcode-27
     if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'ios' }}
     steps:
       - uses: actions/checkout@v7
@@ -100,8 +101,12 @@ jobs:
         with:
           channel: "stable"
           flutter-version-file: pubspec.yaml
-          architecture: x64
-      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+          architecture: arm64
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
       - run: |
