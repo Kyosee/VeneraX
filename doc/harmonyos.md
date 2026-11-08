@@ -1,7 +1,7 @@
 # HarmonyOS development
 
-Experimental platform bootstrap. The storage probe runs on a HarmonyOS x64
-emulator; the complete reader is not ready. QuickJS, HTTP, files, WebView,
+Experimental platform bootstrap. The native probe runs on a HarmonyOS x64
+emulator; the complete reader is not ready. HTTP, files, WebView,
 biometric authentication and PDF/native asset support still need adaptation.
 Do not distribute this debug HAP as a working Venera release.
 
@@ -30,9 +30,10 @@ and a HarmonyOS 7 x86_64 phone emulator. Run in the isolated checkout:
 This builds `tool/ohos_smoke.dart`. Install
 `build/ohos/hap/entry-default-unsigned.hap` with the SDK's `hdc`, then start
 `com.github.kyosee.venera` / `EntryAbility`. The probe checks sandbox directories,
-package information, file read/write, SQLite WAL and connections on separate
-isolates. Restart it: the launch counter must increase. It writes only a
-dedicated `ohos_smoke.db` inside the app sandbox.
+package information, file read/write, SQLite WAL, QuickJS values/Promises on
+separate isolates, Unicode ZIP entries, 7z extraction and PNG pixel round trips.
+Restart it: the launch counter must increase. Persistent probe data uses only
+a dedicated `ohos_smoke.db` inside the app sandbox.
 
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
@@ -47,9 +48,16 @@ No SQLite binary is added to shared Flutter assets or other platform builds.
 The older 3.52.0 source referenced by the existing platform plugin was withdrawn
 upstream and is not reused for this new target.
 
+QuickJS, ZIP, 7z and PNG use the source already included in the locked packages.
+`prepare_ohos.dart` copies their Dart libraries and licenses into `.dart_tool/ohos`
+and adds only the OHOS dynamic-library loader branch. It updates the isolated
+checkout's generated package config; it does not modify the shared Pub cache.
+CMake compiles the original locked C/C++ sources for both ARM64 and x86_64.
+
 The script enforces `pubspec.lock`, uses only process environment variables and
-restores them afterwards. Upstream Dart native hooks currently identify OHOS as
-Linux; the experimental build disables those code assets and builds SQLite with
-the HarmonyOS toolchain. PDF and other missing native libraries are not supported
-by this bootstrap. Do not disable TLS validation, app-lock checks or signature
+restores them afterwards. Always run preparation after `pub get`; the build script
+does both. Upstream Dart native hooks currently identify OHOS as Linux; the
+experimental build disables those code assets and builds the supported libraries
+with the HarmonyOS toolchain. PDF and other missing native libraries are not
+supported by this bootstrap. Do not disable TLS validation, app-lock checks or signature
 requirements to work around missing platform implementations.

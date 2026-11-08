@@ -34,6 +34,8 @@ try {
 
     & $flutter pub get --enforce-lockfile
     if ($LASTEXITCODE -ne 0) { throw 'Flutter dependency resolution failed.' }
+    & (Join-Path $FlutterSdk 'bin/dart.bat') tool/prepare_ohos.dart
+    if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS dependency preparation failed.' }
     & $flutter build hap --debug --target-platform $TargetPlatform --no-codesign --no-pub -t $Target
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP build failed.' }
 } finally {
