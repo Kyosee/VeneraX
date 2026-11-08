@@ -70,6 +70,24 @@ origin isolation, reloads, custom/direct/system proxy switching and rejection
 of an untrusted TLS certificate. It uses local servers and no user account.
 Passing it does not verify every source's login or anti-bot flow.
 
+Use `-Target tool/ohos_system_smoke.dart` for battery, power-saving state,
+connectivity methods/events, screen wake requests, system proxy and available
+authentication types. The authentication bridge cancels on backgrounding and
+only accepts the official success result. The current emulator has no enrolled
+credential; real PIN/biometric success still needs a suitable device.
+
+Use `-Target tool/ohos_file_smoke.dart` for an interactive file export/import
+round trip and picker cancellation. The share check opens the system panel;
+cancel it without choosing a recipient. Persistent directories and incoming
+shares remain separate work.
+
+`-Target tool/ohos_pdf_smoke.dart` exercises PDF conversion through the official
+PDF Kit. Huawei does not support this kit on the x86 emulator; an ARM emulator
+or real device is required for native rendering verification. Lifecycle checks
+can run locally with `node --test test/ohos/pdf_bridge_test.cjs`; Dart import
+cleanup is covered by `test/ohos_pdf_import_test.dart` under the OH Flutter SDK.
+Those tests do not substitute for native PDF rendering.
+
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
 
@@ -120,6 +138,6 @@ The script enforces `pubspec.lock`, uses only process environment variables and
 restores them afterwards. Always run preparation after `pub get`; the build script
 does both. Upstream Dart native hooks currently identify OHOS as Linux; the
 experimental build disables those code assets and builds the supported libraries
-with the HarmonyOS toolchain. PDF and other missing native libraries are not
-supported by this bootstrap. Do not disable TLS validation, app-lock checks or signature
+with the HarmonyOS toolchain. PDF uses the official system kit on supported
+devices instead of a Linux PDFium binary. Do not disable TLS validation, app-lock checks or signature
 requirements to work around missing platform implementations.

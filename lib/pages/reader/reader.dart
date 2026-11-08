@@ -1507,7 +1507,7 @@ abstract mixin class _AutoPageTurner {
   }
 
   void _keepScreenOn(bool on) {
-    if (!(App.isAndroid || App.isIOS)) return;
+    if (!App.isMobile) return;
     final wasOn = _screenOnHolders.isNotEmpty;
     if (on) {
       _screenOnHolders.add(this);

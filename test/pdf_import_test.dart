@@ -9,6 +9,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/import_comic.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/pdf_import.dart';
+import 'fixtures/pdf_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,7 +61,7 @@ void main() {
     'renders PDF pages in reader order, with a cover and bounded sizes',
     () async {
       final source = File(FilePath.join(root.path, '漫画.PDF'))
-        ..writeAsBytesSync(_pdf(pageCount: 12));
+        ..writeAsBytesSync(pdfFixture(pageCount: 12));
       final original = source.readAsBytesSync();
       final progress = <double>[];
       final comic = await import(source, onProgress: progress.add);
@@ -118,7 +119,7 @@ void main() {
     'failed conversion removes its pages without touching existing folders',
     () async {
       final source = File(FilePath.join(root.path, 'comic.pdf'))
-        ..writeAsBytesSync(_pdf(pageCount: 2));
+        ..writeAsBytesSync(pdfFixture(pageCount: 2));
       final existing = Directory(FilePath.join(library.path, 'comic'))
         ..createSync();
       var rendered = 0;
@@ -147,7 +148,10 @@ void main() {
     'rejects damaged and empty PDFs without leaving a comic directory',
     () async {
       final source = File(FilePath.join(root.path, 'invalid.pdf'));
-      for (final bytes in [utf8.encode('not a PDF'), _pdf(pageCount: 0)]) {
+      for (final bytes in [
+        utf8.encode('not a PDF'),
+        pdfFixture(pageCount: 0),
+      ]) {
         source.writeAsBytesSync(bytes);
         await expectLater(import(source), throwsA(anything));
         expect(library.listSync(), isEmpty);
@@ -169,38 +173,4 @@ class _RoutingImporter extends ImportComic {
   @override
   Future<bool> cbzFile(File file) =>
       throw StateError('PDF routed to archive importer');
-}
-
-/// Minimal vector PDF fixture with distinct colors, rotation, and page sizes.
-List<int> _pdf({required int pageCount}) {
-  final objects = <String>[
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Count $pageCount /Kids [${List.generate(pageCount, (i) => '${3 + i * 2} 0 R').join(' ')}] >>',
-  ];
-  for (var i = 0; i < pageCount; i++) {
-    final (width, height) = i == 2 ? (10000, 5000) : (100, 200);
-    final color = ['1 0 0', '0 1 0', '0 0 1'][i % 3];
-    final stream = '$color rg 0 0 $width $height re f\n';
-    objects.add(
-      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $width $height] '
-      '/Rotate ${i == 1 ? 90 : 0} /Resources << >> /Contents ${4 + i * 2} 0 R >>',
-    );
-    objects.add('<< /Length ${stream.length} >>\nstream\n${stream}endstream');
-  }
-  final result = StringBuffer('%PDF-1.7\n');
-  final offsets = <int>[0];
-  for (var i = 0; i < objects.length; i++) {
-    offsets.add(result.length);
-    result.write('${i + 1} 0 obj\n${objects[i]}\nendobj\n');
-  }
-  final xref = result.length;
-  result.write('xref\n0 ${offsets.length}\n0000000000 65535 f \n');
-  for (final offset in offsets.skip(1)) {
-    result.write('${offset.toString().padLeft(10, '0')} 00000 n \n');
-  }
-  result.write(
-    'trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\n'
-    'startxref\n$xref\n%%EOF\n',
-  );
-  return ascii.encode(result.toString());
 }

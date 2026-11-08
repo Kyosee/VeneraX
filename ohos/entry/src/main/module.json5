@@ -11,6 +11,7 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "querySchemes": ["http", "https"],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -35,6 +36,8 @@
     ],
     "requestPermissions": [
       {"name" :  "ohos.permission.INTERNET"},
+      {"name" :  "ohos.permission.GET_NETWORK_INFO"},
+      {"name" :  "ohos.permission.ACCESS_BIOMETRIC"},
     ]
   }
 }

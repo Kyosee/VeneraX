@@ -1,9 +1,12 @@
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:pdfrx_engine/pdfrx_engine.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/io.dart';
 
 /// Converts one PDF into the same image directory used by local comics.
@@ -13,12 +16,25 @@ Future<LocalComic> importPdfComic(
   required String cachePath,
   void Function(double progress)? onProgress,
 }) async {
-  await pdfrxInitialize(tmpPath: cachePath);
-  final document = await PdfDocument.openFile(file.path);
+  const ohos = MethodChannel('venera/pdf');
+  PdfDocument? document;
+  int? ohosId;
+  final int pageCount;
+  if (App.isOhos) {
+    final info = await ohos.invokeMapMethod<String, int>('open', {
+      'path': file.path,
+    });
+    ohosId = info!['id']!;
+    pageCount = info['pages']!;
+  } else {
+    await pdfrxInitialize(tmpPath: cachePath);
+    document = await PdfDocument.openFile(file.path);
+    pageCount = document.pages.length;
+  }
   Directory? destination;
   var completed = false;
   try {
-    if (document.pages.isEmpty) {
+    if (pageCount == 0) {
       throw const FormatException('PDF has no pages');
     }
     final title = file.basenameWithoutExt;
@@ -30,8 +46,21 @@ Future<LocalComic> importPdfComic(
     }
     destination = Directory(FilePath.join(localPath, name));
     await destination.create(recursive: true);
-    for (var index = 0; index < document.pages.length; index++) {
-      final page = document.pages[index];
+    for (var index = 0; index < pageCount; index++) {
+      if (ohosId != null) {
+        final bytes = await ohos.invokeMethod<Uint8List>('render', {
+          'id': ohosId,
+          'index': index,
+        });
+        if (bytes == null)
+          throw const FormatException('PDF page render failed');
+        await File(
+          FilePath.join(destination.path, '${index + 1}.png'),
+        ).writeAsBytes(bytes);
+        onProgress?.call((index + 1) / pageCount);
+        continue;
+      }
+      final page = document!.pages[index];
       if (!page.width.isFinite ||
           !page.height.isFinite ||
           page.width <= 0 ||
@@ -56,7 +85,7 @@ Future<LocalComic> importPdfComic(
       } finally {
         image.dispose();
       }
-      onProgress?.call((index + 1) / document.pages.length);
+      onProgress?.call((index + 1) / pageCount);
     }
     completed = true;
     return LocalComic(
@@ -73,7 +102,13 @@ Future<LocalComic> importPdfComic(
     );
   } finally {
     try {
-      await document.dispose();
+      if (ohosId != null) {
+        await ohos.invokeMethod<void>('close', {'id': ohosId});
+      } else {
+        await document?.dispose();
+      }
+    } catch (error, stack) {
+      Log.error('PDF cleanup', '$error\n$stack');
     } finally {
       if (!completed && destination != null) {
         await destination.deleteIgnoreError(recursive: true);
