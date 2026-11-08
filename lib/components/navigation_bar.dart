@@ -177,9 +177,7 @@ class NaviPaneState extends State<NaviPane>
     onRebuild(context);
     // Aspect-scoped reads: the shell must not rebuild on every keyboard
     // inset frame (#107), so avoid a full MediaQuery.of subscription here.
-    final sideInsets =
-        (App.isMobile &&
-            MediaQuery.orientationOf(context) == Orientation.landscape)
+    final sideInsets = App.isMobile
         ? EdgeInsets.only(
             left: math.max(
               MediaQuery.viewPaddingOf(context).left,

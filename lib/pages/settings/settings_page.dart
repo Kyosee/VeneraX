@@ -131,7 +131,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   ColorScheme get colors => Theme.of(context).colorScheme;
 
-  bool get enableTwoViews => context.width > 720;
+  // The iPhone Duo inner display is about 626 logical points wide in
+  // portrait. Keep enough room for the 280-point category list and a usable
+  // detail pane so settings can stay side-by-side when the phone is open.
+  bool get enableTwoViews => context.width > 600;
 
   final _searchController = TextEditingController();
 
