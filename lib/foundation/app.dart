@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart'
     show kIsWeb, TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/download_network_guard.dart';
@@ -103,6 +104,17 @@ class _App {
   Future<void> init() async {
     cachePath = (await getApplicationCacheDirectory()).path;
     dataPath = (await getApplicationSupportDirectory()).path;
+    if (isOhos) {
+      final failures = await const MethodChannel(
+        'venera/method_channel',
+      ).invokeMethod<int>('restoreDirectories');
+      if ((failures ?? 0) > 0) {
+        Log.warning(
+          'IO',
+          '$failures saved directory permission(s) could not be restored.',
+        );
+      }
+    }
     if (isAndroid) {
       externalStoragePath = (await getExternalStorageDirectory())!.path;
     }

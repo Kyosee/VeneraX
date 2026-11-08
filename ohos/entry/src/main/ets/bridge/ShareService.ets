@@ -33,18 +33,21 @@ export function webUrl(value: Any): string | undefined {
   }
 }
 
-export async function validateSandboxFile(context: common.UIAbilityContext, path: string): Promise<void> {
+export async function validateSandboxFile(context: common.UIAbilityContext, path: string,
+  authorizedDirectories: string[] = []): Promise<void> {
   if (!path.startsWith('/') || path.includes('\\') || path.includes('\u0000') ||
     path.split('/').some((part: string) => part === '.' || part === '..')) {
-    throw new Error('Only an absolute app sandbox file path is supported.');
+    throw new Error('Only an absolute file path is supported.');
   }
-  const roots: string[] = [context.cacheDir, context.filesDir];
+  const roots: string[] = [context.cacheDir, context.filesDir, ...authorizedDirectories];
   let root = '';
   for (let index = 0; index < roots.length; index++) {
     if (path.startsWith(roots[index] + '/')) root = roots[index];
   }
-  if (root.length === 0) throw new Error('The source file must be inside the app files or cache directory.');
+  if (root.length === 0) throw new Error('The source file must be inside the app sandbox or an authorized directory.');
   try {
+    const rootStat = await fs.lstat(root);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('The source directory is not accessible.');
     const components = path.substring(root.length + 1).split('/');
     let current = root;
     for (let index = 0; index < components.length; index++) {
@@ -53,7 +56,7 @@ export async function validateSandboxFile(context: common.UIAbilityContext, path
       const entry = await fs.lstat(current);
       if (entry.isSymbolicLink() || (index < components.length - 1 && !entry.isDirectory()) ||
         (index === components.length - 1 && !entry.isFile())) {
-        throw new Error('Only regular app sandbox files without symbolic links are supported.');
+        throw new Error('Only regular files without symbolic links are supported.');
       }
     }
   } catch (error) {
@@ -64,14 +67,16 @@ export async function validateSandboxFile(context: common.UIAbilityContext, path
 export class ShareService implements MethodCallHandler {
   private channel: MethodChannel;
   private context: common.UIAbilityContext;
+  private authorizedDirectories: string[];
   private pending?: MethodResult;
   private controller?: systemShare.ShareController;
   private completion?: (operation: systemShare.ShareOperationResult) => void;
   private dismissal?: () => void;
   private disposed = false;
 
-  constructor(context: common.UIAbilityContext, engine: FlutterEngine) {
+  constructor(context: common.UIAbilityContext, engine: FlutterEngine, authorizedDirectories: string[] = []) {
     this.context = context;
+    this.authorizedDirectories = authorizedDirectories;
     this.channel = new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), 'dev.fluttercommunity.plus/share');
     this.channel.setMethodCallHandler(this);
   }
@@ -150,7 +155,7 @@ export class ShareService implements MethodCallHandler {
     const records: systemShare.SharedRecord[] = [];
     let estimatedBytes = (text.length + title.length) * 3;
     for (let index = 0; index < paths.length; index++) {
-      await validateSandboxFile(this.context, paths[index]);
+      await validateSandboxFile(this.context, paths[index], this.authorizedDirectories);
       const uri = fileUri.getUriFromPath(paths[index]);
       const record: systemShare.SharedRecord = {
         utd: this.fileType(paths[index], mimeTypes[index]), uri: uri, title: title || undefined, description: text || undefined

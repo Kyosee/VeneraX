@@ -7,6 +7,7 @@ import picker from '@ohos.file.picker';
 import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { Any, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, MethodResult } from '@ohos/flutter_ohos';
 import { sanitizeFileName, ShareService, validateSandboxFile, webUrl } from './ShareService';
+import { DirectoryAccess } from './DirectoryAccess';
 
 const COPY_BUFFER_SIZE = 256 * 1024;
 
@@ -46,12 +47,14 @@ export class FileServices implements MethodCallHandler {
   private context: common.UIAbilityContext;
   private channels: MethodChannel[] = [];
   private share: ShareService;
+  private directories: DirectoryAccess;
   private pending = new Set<FileReply>();
   private pickerActive = false;
   private disposed = false;
 
   constructor(context: common.UIAbilityContext, engine: FlutterEngine) {
     this.context = context;
+    this.directories = new DirectoryAccess(context);
     const messenger = engine.getDartExecutor().getBinaryMessenger();
     const names: string[] = ['plugins.flutter.io/file_selector', 'flutter_file_dialog', 'plugins.flutter.io/url_launcher'];
     for (let index = 0; index < names.length; index++) {
@@ -59,12 +62,12 @@ export class FileServices implements MethodCallHandler {
       channel.setMethodCallHandler(this);
       this.channels.push(channel);
     }
-    this.share = new ShareService(context, engine);
+    this.share = new ShareService(context, engine, this.directories.roots);
   }
 
   // Route only this shared-channel method here; keep the central channel owner.
   handleMethodCall(call: MethodCall, result: MethodResult): boolean {
-    if (call.method !== 'getDirectoryPath') return false;
+    if (call.method !== 'getDirectoryPath' && call.method !== 'restoreDirectories') return false;
     this.onMethodCall(call, result);
     return true;
   }
@@ -91,9 +94,15 @@ export class FileServices implements MethodCallHandler {
         break;
       case 'getDirectoryPath':
       case 'getDirectoryPaths':
+        this.selectDirectory(reply, call.method === 'getDirectoryPaths');
+        break;
+      case 'restoreDirectories':
+        this.directories.restore().then((failures: number) => reply.success(failures))
+          .catch((error: BusinessError) => this.fileFailure(reply, 'DIRECTORY_RESTORE_FAILED', error));
+        break;
       case 'pickDirectory':
       case 'saveFileToDirectory':
-        reply.error('DIRECTORY_ACCESS_UNSUPPORTED', 'Persistent directory access for Dart and FFI has not been verified on HarmonyOS.');
+        reply.error('DIRECTORY_ACCESS_UNSUPPORTED', 'Use the directory picker path API on HarmonyOS.');
         break;
       case 'getSavePath':
         reply.error('SAVE_PATH_UNSUPPORTED', 'Use the user-authorized saveFile operation to export a file on HarmonyOS.');
@@ -117,8 +126,43 @@ export class FileServices implements MethodCallHandler {
     this.disposed = true;
     for (let index = 0; index < this.channels.length; index++) this.channels[index].setMethodCallHandler(null);
     this.share.dispose();
+    this.directories.dispose();
     this.pending.forEach((reply: FileReply) => reply.error('FILE_SERVICES_CLOSED', 'File services have been disposed.'));
     this.pending.clear();
+  }
+
+  private async selectDirectory(reply: FileReply, returnList: boolean): Promise<void> {
+    if (this.pickerActive) {
+      reply.error('PICKER_IN_PROGRESS', 'A file picker operation is already active.');
+      return;
+    }
+    if (!this.directories.supported()) {
+      reply.error('DIRECTORY_ACCESS_UNSUPPORTED', 'This device does not support persistent directory selection.');
+      return;
+    }
+    this.pickerActive = true;
+    try {
+      const uris = await new picker.DocumentViewPicker(this.context).select({
+        selectMode: picker.DocumentSelectMode.FOLDER, maxSelectNumber: returnList ? 32 : 1
+      });
+      this.checkOpen();
+      if (!uris || uris.length === 0) {
+        reply.success(returnList ? [] : null);
+        return;
+      }
+      if (uris.length > (returnList ? 32 : 1)) throw new Error('The picker returned too many directories.');
+      const paths: string[] = [];
+      for (const uri of uris) {
+        this.checkOpen();
+        paths.push(await this.directories.authorize(uri));
+      }
+      this.checkOpen();
+      reply.success(returnList ? paths : paths[0]);
+    } catch (error) {
+      this.fileFailure(reply, 'DIRECTORY_PICK_FAILED', error as BusinessError);
+    } finally {
+      this.pickerActive = false;
+    }
   }
 
   private async selectFiles(call: MethodCall, reply: FileReply, returnList: boolean): Promise<void> {
@@ -189,7 +233,7 @@ export class FileServices implements MethodCallHandler {
         throw new Error('saveFile requires exactly one sourceFilePath or byte data with a fileName.');
       }
       const sourcePath = hasSource ? source as string : '';
-      if (hasSource) await validateSandboxFile(this.context, sourcePath);
+      if (hasSource) await validateSandboxFile(this.context, sourcePath, this.directories.roots);
       const name = sanitizeFileName(typeof suppliedName === 'string' && suppliedName.length > 0 ? suppliedName :
         sourcePath.substring(sourcePath.lastIndexOf('/') + 1));
       stage = await fs.mkdtemp(this.context.cacheDir + '/venera_save_XXXXXX');

@@ -38,6 +38,7 @@
       {"name" :  "ohos.permission.INTERNET"},
       {"name" :  "ohos.permission.GET_NETWORK_INFO"},
       {"name" :  "ohos.permission.ACCESS_BIOMETRIC"},
+      {"name" :  "ohos.permission.FILE_ACCESS_PERSIST"},
     ]
   }
 }

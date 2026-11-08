@@ -415,6 +415,7 @@ test('disposing while the source opens must not subsequently truncate the export
     },
     MethodChannel: class { setMethodCallHandler() {} },
     ShareService: class { dispose() {} },
+    DirectoryAccess: class { roots = []; dispose() {} },
     console,
   });
   const FileServices = loadEts('ohos/entry/src/main/ets/bridge/FileServices.ets', 'FileServices', context);
