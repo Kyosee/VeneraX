@@ -975,18 +975,11 @@ class ComicTile extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        comic.title.replaceAll('\n', ''),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    if (App.isMobile && enableContextMenu) _menuButton(context),
-                  ],
+                child: Text(
+                  comic.title.replaceAll('\n', ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
               ),
             ],

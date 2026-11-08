@@ -231,13 +231,32 @@ void main() {
       'mobile $mode card opens reading actions without selecting the card',
       (tester) async {
         appdata.settings['comicDisplayMode'] = mode;
-        await openPage(tester);
-        await tester.tap(
-          find.descendant(
-            of: tile('alpha'),
-            matching: find.byTooltip('Actions'),
-          ),
-        );
+        final originalScale = appdata.settings['comicTileScale'];
+        addTearDown(() => appdata.settings['comicTileScale'] = originalScale);
+        appdata.settings['comicTileScale'] = mode == 'brief'
+            ? 0.75
+            : originalScale;
+        await openPage(tester, width: mode == 'brief' ? 390 : 320);
+        if (mode == 'brief') {
+          final coverSize = tester.getSize(
+            find.descendant(of: tile('alpha'), matching: find.byType(Hero)),
+          );
+          final titleSize = tester.getSize(find.text('Volume Alpha'));
+          expect(titleSize.width, greaterThan(coverSize.width * 0.85));
+          expect(coverSize.height, greaterThan(coverSize.width * 1.3));
+          expect(
+            tester.getTopLeft(tile('gamma')).dy,
+            tester.getTopLeft(tile('alpha')).dy,
+          );
+          await tester.longPress(tile('alpha'));
+        } else {
+          await tester.tap(
+            find.descendant(
+              of: tile('alpha'),
+              matching: find.byTooltip('Actions'),
+            ),
+          );
+        }
         await tester.pumpAndSettle();
         expect(selectedIds(tester), isEmpty);
         expect(find.byType(BottomSheet), findsOneWidget);
@@ -253,7 +272,10 @@ void main() {
         expect(find.byType(ComicCollectionEditPage), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
-      variant: TargetPlatformVariant.only(TargetPlatform.android),
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
     );
   }
 
