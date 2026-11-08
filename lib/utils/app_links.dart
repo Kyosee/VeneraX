@@ -6,6 +6,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/utils/handle_notification_route.dart';
 
 typedef AppLinkCandidate = ({String sourceKey, LinkHandler? linkHandler});
 typedef AppLinkTarget = ({String sourceKey, String comicId});
@@ -75,12 +76,11 @@ Future<bool> handleAppLink(Uri uri) async {
   );
   if (target == null) return false;
 
-  if (App.mainNavigatorKey?.currentContext == null) {
-    await Future.delayed(const Duration(milliseconds: 200));
-  }
-  final context = App.mainNavigatorKey?.currentContext;
-  if (context == null) return false;
-  context.to(() => ComicPage(id: target.comicId, sourceKey: target.sourceKey));
+  final navigator = await waitForUnlockedMainNavigator();
+  if (navigator == null) return false;
+  navigator.context.to(
+    () => ComicPage(id: target.comicId, sourceKey: target.sourceKey),
+  );
   return true;
 }
 

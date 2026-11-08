@@ -896,7 +896,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                     ),
                   ),
                 ),
-                if (App.isAndroid || App.isIOS) ...[
+                if (App.isAndroid || App.isIOS || App.isOhos) ...[
                   const SizedBox(width: 12),
                   Expanded(
                     child: Button.outlined(

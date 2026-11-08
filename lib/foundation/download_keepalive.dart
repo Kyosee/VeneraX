@@ -19,8 +19,12 @@ String formatDownloadStatus({
 }
 
 /// 队列里首个真正在下载（既非暂停也非出错）的任务。
-DownloadTask? activeDownload(Iterable<DownloadTask> tasks) =>
-    tasks.where((t) => !t.isPaused && !t.isError).firstOrNull;
+DownloadTask? activeDownload(Iterable<DownloadTask> tasks) => tasks
+    .where(
+      (t) =>
+          !t.isPaused && !t.isError && (!App.isOhos || t.needsNetworkKeepAlive),
+    )
+    .firstOrNull;
 
 /// 下载保活：Android 上在有任务运行时拉起原生前台服务并定时刷新进度通知，
 /// 队列空闲时停掉。其它平台不做任何事。
@@ -28,17 +32,24 @@ DownloadTask? activeDownload(Iterable<DownloadTask> tasks) =>
 /// 下载本体仍在主 isolate 跑（见 [DownloadTask]），本类只负责「别让系统冻结
 /// 进程」这一件事，因此与下载逻辑解耦、可独立演进。
 class DownloadKeepAlive {
-  DownloadKeepAlive._();
+  DownloadKeepAlive._() {
+    if (App.isOhos) {
+      _channel.setMethodCallHandler((call) async {
+        if (call.method == 'cancelled') LocalManager().pauseAll();
+      });
+    }
+  }
 
   static final DownloadKeepAlive instance = DownloadKeepAlive._();
 
   static const _channel = MethodChannel('venera/download_keepalive');
 
-  bool get _supported => App.isAndroid;
+  bool get _supported => App.isAndroid || App.isOhos;
 
   bool _serviceUp = false;
   bool _permissionAsked = false;
   String? _lastStatus;
+  int? _lastProgress;
   Timer? _ticker;
   bool _ticking = false;
 
@@ -68,7 +79,8 @@ class DownloadKeepAlive {
     _ticker?.cancel();
     _ticker = null;
     _lastStatus = null;
-    if (_serviceUp) {
+    _lastProgress = null;
+    if (_serviceUp || App.isOhos) {
       _serviceUp = false;
       _invoke('stop');
     }
@@ -99,11 +111,24 @@ class DownloadKeepAlive {
         speed: task.speed,
       );
       if (tasks.length > 1) {
-        status = '@a and @b more'.tlParams({'a': status, 'b': tasks.length - 1});
+        status = '@a and @b more'.tlParams({
+          'a': status,
+          'b': tasks.length - 1,
+        });
       }
       // 文案没变就不再打扰系统，省下重复的通道往返与通知刷新。
-      if (_serviceUp && status == _lastStatus) return;
-      final ok = await _invoke('start', {'status': status});
+      final progress = task.progress.isFinite
+          ? (task.progress.clamp(0.0, 1.0) * 100).floor()
+          : 0;
+      if (_serviceUp &&
+          status == _lastStatus &&
+          (!App.isOhos || progress == _lastProgress)) {
+        return;
+      }
+      final ok = await _invoke('start', {
+        'status': status,
+        if (App.isOhos) 'progress': progress,
+      });
       // start 是异步的，期间下载可能已结束并 teardown；此时撤销本次启动，
       // 避免留下一个没有对应下载的常驻通知。
       if (activeDownload(LocalManager().downloadingTasks) == null) {
@@ -114,6 +139,7 @@ class DownloadKeepAlive {
       }
       _serviceUp = ok == true;
       _lastStatus = _serviceUp ? status : null;
+      _lastProgress = _serviceUp ? progress : null;
       if (!_serviceUp) {
         _ticker?.cancel();
         _ticker = null;

@@ -16,7 +16,7 @@ int _latestTap = 0;
 ///
 /// A cold start delivers the tap before the main page is built (loading,
 /// disclaimer or lock screen still showing). Gives up after about a minute.
-Future<NavigatorState?> _waitForMainNavigator() async {
+Future<NavigatorState?> waitForUnlockedMainNavigator() async {
   for (var i = 0; i < 600; i++) {
     final navigator = App.mainNavigatorKey?.currentState;
     if (navigator != null && navigator.mounted && !AuthPage.isActive) {
@@ -47,7 +47,7 @@ Future<void> openNotificationRoute(String event) async {
   final page = _pageFor(event);
   if (page == null) return;
   final tap = ++_latestTap;
-  final navigator = await _waitForMainNavigator();
+  final navigator = await waitForUnlockedMainNavigator();
   if (navigator == null || tap != _latestTap) return;
   _revealMainNavigator(navigator);
   navigator.context.to(() => page);

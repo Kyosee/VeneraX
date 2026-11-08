@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/log.dart';
 
 /// 拼装后台任务前台通知正文。纯函数，方便单测。
 /// 有 detail（如「3/10」「正在导出 xxx」）时附在标题后，让用户一眼看出后台确实在跑。
@@ -22,8 +23,7 @@ bool syncKeepAliveActive({
   required bool downloading,
   required bool syncingImages,
   required bool waiting,
-}) =>
-    uploading || downloading || syncingImages || waiting;
+}) => uploading || downloading || syncingImages || waiting;
 
 /// 通用后台任务保活：Android 上在追更检查/导入/导出等任务运行时，按类别（tag）拉起原生
 /// 前台服务并各自展示一条独立的进度通知；该类任务结束时移除其通知，最后一类移除后服务自停。
@@ -32,7 +32,19 @@ bool syncKeepAliveActive({
 /// 任务本体仍在主 isolate 跑，本类只负责「别让系统冻结进程」这一件事，因此与各任务逻辑
 /// 解耦、可独立演进。与下载专用的 DownloadKeepAlive 并行存在、互不影响。
 class BackgroundKeepAlive {
-  BackgroundKeepAlive._();
+  BackgroundKeepAlive._() {
+    if (App.isOhos) {
+      _channel.setMethodCallHandler((call) async {
+        if (call.method == 'cancelled') {
+          _transferBackgroundCancelled = true;
+          Log.warning(
+            'Background task',
+            'The system ended transfer background execution.',
+          );
+        }
+      });
+    }
+  }
 
   static final BackgroundKeepAlive instance = BackgroundKeepAlive._();
 
@@ -47,19 +59,52 @@ class BackgroundKeepAlive {
   static const tagPreTranslate = 'pre_translate';
   static const tagWebdavMigration = 'webdav_migration';
 
-  bool get _supported => App.isAndroid;
+  bool get _supported => App.isAndroid || App.isOhos;
 
   /// tag -> 最近一次上报给原生的文案。用于去重，避免重复的通道往返与通知刷新。
   final _statuses = <String, String>{};
+  final _progresses = <String, int>{};
+  int _nextTransfer = 0;
+  bool _transferBackgroundCancelled = false;
   bool _permissionAsked = false;
+
+  // Only an explicit new sync action may resume after system/user cancellation.
+  void allowTransferBackground() => _transferBackgroundCancelled = false;
 
   /// 上报某类任务的最新状态。文案没变则不打扰系统。被移除/未授权时静默降级，
   /// 任务本身不受影响，只是失去后台保活。
-  void update(String tag, String status) {
+  void update(String tag, String status, {int progress = 0}) {
     if (!_supported) return;
-    if (_statuses[tag] == status) return;
+    if (App.isOhos && !tag.startsWith('sync_')) return;
+    if (App.isOhos && _transferBackgroundCancelled) return;
+    if (_statuses[tag] == status && _progresses[tag] == progress) return;
     _statuses[tag] = status;
-    unawaited(_pushUpdate(tag, status));
+    _progresses[tag] = progress;
+    unawaited(_pushUpdate(tag, status, progress));
+  }
+
+  // Keep the OHOS data-transfer grant scoped to actual network IO.
+  Future<T> runTransfer<T>(
+    String status,
+    Future<T> Function(void Function(int, int) onProgress) transfer,
+  ) async {
+    if (!App.isOhos || _transferBackgroundCancelled) return transfer((_, _) {});
+    final tag = 'sync_${_nextTransfer++}';
+    var active = true;
+    _statuses[tag] = status;
+    _progresses[tag] = 0;
+    try {
+      await _pushUpdate(tag, status, 0);
+      return await transfer((count, total) {
+        if (!active || total <= 0 || count < 0) return;
+        update(tag, status, progress: (count * 100 ~/ total).clamp(0, 100));
+      });
+    } finally {
+      active = false;
+      _statuses.remove(tag);
+      _progresses.remove(tag);
+      await _invoke('remove', {'tag': tag});
+    }
   }
 
   /// 移除某类任务的保活通知。任务结束/取消/暂停时调用。
@@ -67,22 +112,36 @@ class BackgroundKeepAlive {
     if (!_supported) return;
     if (!_statuses.containsKey(tag)) return;
     _statuses.remove(tag);
+    _progresses.remove(tag);
     unawaited(_invoke('remove', {'tag': tag}));
   }
 
-  Future<void> _pushUpdate(String tag, String status) async {
+  Future<void> _pushUpdate(String tag, String status, int progress) async {
+    if (App.isOhos && _transferBackgroundCancelled) return;
     if (!await _ensurePermission()) {
       // 没有通知权限就别空转——前台服务必须有通知，拿不到权限直接放弃这次保活。
       _statuses.remove(tag);
+      _progresses.remove(tag);
       return;
     }
     // 异步等权限期间该 tag 可能已被 remove（任务在弹窗时结束）。复查后再决定是否上报，
     // 避免留下一个没有对应任务的常驻通知。
-    if (_statuses[tag] != status) return;
-    final ok = await _invoke('update', {'tag': tag, 'status': status});
-    if (ok != true) {
+    if (_statuses[tag] != status ||
+        _progresses[tag] != progress ||
+        (App.isOhos && _transferBackgroundCancelled)) {
+      return;
+    }
+    final ok = await _invoke('update', {
+      'tag': tag,
+      'status': status,
+      if (App.isOhos) 'progress': progress,
+    });
+    if (ok != true &&
+        _statuses[tag] == status &&
+        _progresses[tag] == progress) {
       // 系统拒绝（如后台启动限制），清掉缓存的文案以便下次重试。
       _statuses.remove(tag);
+      _progresses.remove(tag);
     }
   }
 

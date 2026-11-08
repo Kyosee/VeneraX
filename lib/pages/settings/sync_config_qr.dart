@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/foundation/app.dart' show App;
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/widget_utils.dart';
 import 'package:venera/utils/sync_config_transfer.dart';
@@ -176,10 +177,47 @@ class _SyncConfigQrDialogState extends State<_SyncConfigQrDialog> {
 /// failed (a precise message is shown to the user on failure). Mobile only —
 /// callers should hide the entry point on desktop.
 Future<SyncConfigPayload?> scanAndDecodeSyncConfig(BuildContext context) async {
-  final raw = await Navigator.of(context, rootNavigator: true).push<String>(
-    MaterialPageRoute(builder: (_) => const _SyncConfigScanPage()),
-  );
+  final String? raw;
+  if (App.isOhos) {
+    Object? scanned;
+    try {
+      scanned = await const MethodChannel(
+        'venera/scan',
+      ).invokeMethod<Object?>('scan');
+    } catch (error) {
+      if (context.mounted) {
+        context.showMessage(
+          message:
+              error is PlatformException && error.code == 'SCAN_INVALID_RESULT'
+              ? _errorMessage(SyncConfigTransferError.malformed)
+              : 'Camera unavailable'.tl,
+        );
+      }
+      return null;
+    }
+    if (scanned == null || !context.mounted) return null;
+    if (scanned is! String ||
+        scanned.trim().isEmpty ||
+        scanned.length > 16 * 1024) {
+      context.showMessage(
+        message: _errorMessage(SyncConfigTransferError.malformed),
+      );
+      return null;
+    }
+    raw = scanned;
+  } else {
+    raw = await Navigator.of(context, rootNavigator: true).push<String>(
+      MaterialPageRoute(builder: (_) => const _SyncConfigScanPage()),
+    );
+  }
   if (raw == null || !context.mounted) return null;
+  final String scannedUri = raw;
+  if (!isSyncConfigUri(scannedUri)) {
+    context.showMessage(
+      message: _errorMessage(SyncConfigTransferError.notSyncConfig),
+    );
+    return null;
+  }
 
   final pin = await _promptPin(context);
   if (pin == null || pin.isEmpty || !context.mounted) return null;
@@ -190,7 +228,7 @@ Future<SyncConfigPayload?> scanAndDecodeSyncConfig(BuildContext context) async {
   try {
     // Defer one microtask so the loading spinner paints before the
     // (CPU-bound) PBKDF2 key derivation runs on this isolate.
-    payload = await Future(() => decodeSyncConfigFromUri(raw, pin));
+    payload = await Future(() => decodeSyncConfigFromUri(scannedUri, pin));
   } on SyncConfigTransferException catch (e) {
     errorKind = e.kind;
   } catch (_) {

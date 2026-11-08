@@ -1,16 +1,41 @@
-import { bundleManager } from '@kit.AbilityKit';
+import { AbilityConstant, bundleManager, Want } from '@kit.AbilityKit';
 import { FlutterAbility, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, MethodResult } from '@ohos/flutter_ohos';
 import { GeneratedPluginRegistrant } from '../plugins/GeneratedPluginRegistrant';
 import { DeviceServices } from '../bridge/DeviceServices';
 import { PdfService } from '../bridge/PdfService';
 import { FileServices } from '../bridge/FileServices';
 import { AuthService } from '../bridge/AuthService';
+import { ScanService } from '../bridge/ScanService';
+import { IncomingService } from '../bridge/IncomingService';
+import { BackgroundService } from '../bridge/BackgroundService';
 
 export default class EntryAbility extends FlutterAbility {
   private channels: MethodChannel[] = [];
   private deviceServices?: DeviceServices;
   private fileServices?: FileServices;
   private authServices?: AuthService;
+  private scanner?: ScanService;
+  private incoming?: IncomingService;
+  private background?: BackgroundService;
+  private pendingWant?: Want;
+
+  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    this.pendingWant = want;
+    super.onCreate(want, launchParam);
+    this.deliverInitialWant();
+  }
+
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    super.onNewWant(want, launchParam);
+    this.incoming?.handleWant(want);
+  }
+
+  private deliverInitialWant(): void {
+    if (this.incoming === undefined || this.pendingWant === undefined) return;
+    const want = this.pendingWant;
+    this.pendingWant = undefined;
+    this.incoming.handleWant(want, true);
+  }
   private pdf?: PdfService;
 
   configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -24,6 +49,10 @@ export default class EntryAbility extends FlutterAbility {
     this.deviceServices = new DeviceServices(flutterEngine, this.context);
     this.fileServices = new FileServices(this.context, flutterEngine);
     this.authServices = new AuthService(flutterEngine);
+    this.scanner = new ScanService(this.context, flutterEngine);
+    this.incoming = new IncomingService(flutterEngine);
+    this.background = new BackgroundService(this.context, flutterEngine);
+    this.deliverInitialWant();
     const system = new MethodChannel(messenger, 'venera/method_channel');
     system.setMethodCallHandler({
       onMethodCall: (call: MethodCall, result: MethodResult): void => {
@@ -39,6 +68,13 @@ export default class EntryAbility extends FlutterAbility {
   }
 
   cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+    this.background?.dispose();
+    this.background = undefined;
+    this.incoming?.dispose();
+    this.incoming = undefined;
+    this.pendingWant = undefined;
+    this.scanner?.dispose();
+    this.scanner = undefined;
     this.authServices?.dispose();
     this.authServices = undefined;
     this.deviceServices?.dispose();

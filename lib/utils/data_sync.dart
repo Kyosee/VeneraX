@@ -627,6 +627,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     bool force = false,
     bool allowCatchUpDownload = true,
   }) async {
+    if (force) BackgroundKeepAlive.instance.allowTransferBackground();
     // No usable WebDAV config → nothing to sync. saveData() funnels every
     // settings/search-history change through here (plus comic-source saves,
     // imports, ...), so without bailing out up front an empty or malformed
@@ -830,12 +831,17 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         _setPendingPublish(filename, fileSize);
         try {
           final remotePath = serverAbsoluteWebdavPath(filename);
-          final usedBufferedFallback = await uploadWithWebdav404Fallback(
-            streamUpload: () => writeFileStreamed(client, data!, remotePath),
-            // Some WebDAV providers return 404 for streamed PUTs while the
-            // same authenticated root accepts the former byte upload (#214).
-            bufferedUpload: () async =>
-                client.write(remotePath, await data!.readAsBytes()),
+          final usedBufferedFallback = await BackgroundKeepAlive.instance.runTransfer(
+            formatTaskStatus(title: 'Uploading data'.tl, detail: filename),
+            (progress) => uploadWithWebdav404Fallback(
+              streamUpload: () => writeFileStreamed(
+                client, data!, remotePath, onProgress: progress,
+              ),
+              // Some providers only accept the former buffered PUT (#214).
+              bufferedUpload: () async => client.write(
+                remotePath, await data!.readAsBytes(), onProgress: progress,
+              ),
+            ),
           );
           if (usedBufferedFallback) {
             Log.warning(
@@ -1071,7 +1077,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         Log.info("Data Sync", "Downloading data from WebDAV server");
         var localFile = File(FilePath.join(App.cachePath, file.name!));
         try {
-          await client.read2File(file.name!, localFile.path);
+          await BackgroundKeepAlive.instance.runTransfer(
+            formatTaskStatus(title: 'Downloading data'.tl, detail: file.name),
+            (progress) => client.read2File(
+              file.name!, localFile.path, onProgress: progress,
+            ),
+          );
 
           taskManager.updateTask(task.id, currentPhase: 'Applying', progress: 0.6);
 
@@ -1143,6 +1154,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<Res<bool>> syncData() async {
+    BackgroundKeepAlive.instance.allowTransferBackground();
     var config = _validateConfig();
     if (config == null || config.isEmpty) {
       return uploadData();
@@ -1229,6 +1241,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<Res<bool>> downloadSpecificBackup(String fileName) async {
+    BackgroundKeepAlive.instance.allowTransferBackground();
     if (_haveWaitingTask) return const Res(true);
     // Waits for image sync too — the apply below swaps the very SQLite files
     // image sync reads/writes.
@@ -1257,7 +1270,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       try {
         var localFile = File(FilePath.join(App.cachePath, fileName));
         try {
-          await client.read2File(fileName, localFile.path);
+          await BackgroundKeepAlive.instance.runTransfer(
+            formatTaskStatus(title: 'Downloading data'.tl, detail: fileName),
+            (progress) => client.read2File(
+              fileName, localFile.path, onProgress: progress,
+            ),
+          );
           // Suppress the echo upload the manager re-inits would fire.
           await applyBackup(
             () => importAppData(
@@ -1442,7 +1460,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         file = await exportVeneraComics([comic], includeImages: true);
         // Streamed: image packs are whole comic archives (often hundreds of
         // MB) — buffering one in RAM via readAsBytes was an OOM in waiting.
-        await writeFileStreamed(client, file, '/venera-comics/$fileName');
+        await BackgroundKeepAlive.instance.runTransfer(
+          formatTaskStatus(title: 'Syncing images'.tl, detail: comic.title),
+          (progress) => writeFileStreamed(
+            client, file!, '/venera-comics/$fileName', onProgress: progress,
+          ),
+        );
         Log.info("Image Sync", "Uploaded: ${comic.title}");
       } catch (e, s) {
         failures++;
@@ -1491,8 +1514,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
       var localFile = File(FilePath.join(App.cachePath, fileName));
       try {
-        await client.read2File(
-          '/venera-comics/$fileName', localFile.path);
+        await BackgroundKeepAlive.instance.runTransfer(
+          formatTaskStatus(title: 'Syncing images'.tl, detail: comic.title),
+          (progress) => client.read2File(
+            '/venera-comics/$fileName', localFile.path, onProgress: progress,
+          ),
+        );
         await importVeneraComics(localFile);
         Log.info("Image Sync", "Downloaded: ${comic.title}");
       } catch (e, s) {

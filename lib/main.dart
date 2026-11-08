@@ -103,6 +103,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // below, which skips everything when app-lock is off.
     if (state != AppLifecycleState.resumed) {
       Log.flush();
+      if (App.isOhos && App.local.isInitialized) {
+        unawaited(App.local.saveCurrentDownloadingTasks());
+      }
     }
     if (!App.isMobile || !appdata.settings['authorizationRequired']) {
       return;

@@ -10,6 +10,7 @@ import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/download_keepalive.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
@@ -29,6 +30,8 @@ abstract class DownloadTask with ChangeNotifier {
   bool get isError;
 
   bool get isPaused;
+
+  bool get needsNetworkKeepAlive => !isPaused && !isError;
 
   /// bytes per second
   int get speed;
@@ -1095,6 +1098,10 @@ class ArchiveDownloadTask extends DownloadTask {
       _expectedBytes == 0 ? 0 : _currentBytes / _expectedBytes;
 
   @override
+  bool get needsNetworkKeepAlive =>
+      super.needsNetworkKeepAlive && _downloader != null;
+
+  @override
   Duration? get eta {
     if (isPaused || isError || _speed <= 0 || _expectedBytes <= 0) return null;
     final remaining = _expectedBytes - _currentBytes;
@@ -1134,12 +1141,14 @@ class ArchiveDownloadTask extends DownloadTask {
 
     Log.info("Download", "Downloading $archiveUrl");
 
-    _downloader = FileDownloader(archiveUrl, archiveFile.path);
+    final downloader = FileDownloader(archiveUrl, archiveFile.path);
+    _downloader = downloader;
+    if (App.isOhos) DownloadKeepAlive.instance.refresh();
 
     bool isDownloaded = false;
 
     try {
-      await for (var status in _downloader!.start()) {
+      await for (var status in downloader.start()) {
         _currentBytes = status.downloadedBytes;
         _expectedBytes = status.totalBytes;
         _message =
@@ -1151,6 +1160,11 @@ class ArchiveDownloadTask extends DownloadTask {
     } catch (e) {
       _setError("Error: $e");
       return;
+    } finally {
+      if (_downloader == downloader) {
+        _downloader = null;
+        if (App.isOhos) DownloadKeepAlive.instance.refresh();
+      }
     }
 
     if (!_isRunning) {

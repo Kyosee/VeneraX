@@ -22,6 +22,8 @@
         "startWindowIcon": "$media:icon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        "launchType": "singleton",
+        "backgroundModes": ["dataTransfer"],
         "skills": [
           {
             "entities": [
@@ -29,6 +31,18 @@
             ],
             "actions": [
               "action.system.home"
+            ]
+          },
+          {
+            "actions": ["ohos.want.action.viewData"],
+            "entities": ["entity.system.browsable"],
+            "uris": [{"scheme": "http"}, {"scheme": "https"}]
+          },
+          {
+            "actions": ["ohos.want.action.sendData"],
+            "uris": [
+              {"scheme": "file", "utd": "general.plain-text", "maxFileSupported": 8},
+              {"scheme": "file", "utd": "general.hyperlink", "maxFileSupported": 8}
             ]
           }
         ]
@@ -39,6 +53,7 @@
       {"name" :  "ohos.permission.GET_NETWORK_INFO"},
       {"name" :  "ohos.permission.ACCESS_BIOMETRIC"},
       {"name" :  "ohos.permission.FILE_ACCESS_PERSIST"},
+      {"name" :  "ohos.permission.KEEP_BACKGROUND_RUNNING"},
     ]
   }
 }

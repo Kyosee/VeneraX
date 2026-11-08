@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/pages/aggregated_search_page.dart';
 import 'package:venera/utils/app_links.dart';
+import 'package:venera/utils/handle_notification_route.dart';
 
 bool _isHandling = false;
 
@@ -75,12 +76,13 @@ void handleTextShare() async {
 
   var channel = EventChannel('venera/text_share');
   await for (var event in channel.receiveBroadcastStream()) {
-    if (App.mainNavigatorKey == null) {
-      await Future.delayed(const Duration(milliseconds: 200));
-    }
     if (event is String) {
+      final navigator = await waitForUnlockedMainNavigator();
+      if (navigator == null) continue;
       if (await tryHandleSharedTextLinks(event, handleAppLink)) continue;
-      App.rootContext.to(() => AggregatedSearchPage(keyword: event));
+      final current = await waitForUnlockedMainNavigator();
+      if (current == null) continue;
+      current.context.to(() => AggregatedSearchPage(keyword: event));
     }
   }
 }
