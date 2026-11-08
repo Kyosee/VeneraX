@@ -1,8 +1,8 @@
 # HarmonyOS development
 
-Experimental platform bootstrap. The native probe runs on a HarmonyOS x64
-emulator; the complete reader is not ready. Files, WebView,
-biometric authentication and PDF/native asset support still need adaptation.
+Experimental platform bootstrap. Native and reader pipeline probes run on a
+HarmonyOS x64 emulator; the complete mobile application is not ready. WebView,
+directory access, biometric authentication and PDF still need device validation.
 Do not distribute this debug HAP as a working Venera release.
 
 ## Isolated workspace
@@ -53,6 +53,15 @@ application's FFI binding. It covers a worker isolate, a Unicode model filename,
 output shapes, repeated runs/sessions, invalid inputs and greedy decoding.
 This verifies the runtime; OCR models and the complete translation workflow
 still need separate application-level validation.
+
+Use `-Target tool/ohos_reader_smoke.dart` for the real source and download
+pipeline, using a self-contained loopback comic source and generated images.
+It verifies source import/reload, QuickJS network search/details/chapters,
+image headers and decoded pixels, background history writes, a queued chapter
+download, and offline reads after closing the server. Force-stop and start
+the app a second time to verify source, progress and downloads persist across
+processes. All probe data stays in a separate `ohos_reader_probe` directory.
+This does not verify reader gestures, background recovery or synchronization.
 
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
