@@ -207,9 +207,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget buildSearchField() => Padding(
     padding: EdgeInsets.fromLTRB(
       enableTwoViews ? 32 : 20,
-      12,
+      enableTwoViews ? 12 : 4,
       enableTwoViews ? 32 : 20,
-      12,
+      enableTwoViews ? 12 : 0,
     ),
     child: TextField(
       controller: _searchController,
@@ -220,7 +220,9 @@ class _SettingsPageState extends State<SettingsPage> {
         hintText: 'Search settings'.tl,
         prefixIcon: const Icon(Icons.search, size: 20),
         filled: true,
-        fillColor: colors.surfaceContainerLow,
+        fillColor: enableTwoViews
+            ? colors.surfaceContainerLow
+            : colors.surfaceContainerHighest,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
@@ -252,7 +254,12 @@ class _SettingsPageState extends State<SettingsPage> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+            padding: EdgeInsets.fromLTRB(
+              8,
+              enableTwoViews ? 8 : 0,
+              16,
+              enableTwoViews ? 8 : 0,
+            ),
             child: Row(
               children: [
                 IconButton(
@@ -265,7 +272,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Text(
                     'Settings'.tl,
                     style: TextStyle(
-                      fontSize: enableTwoViews ? 22 : 27,
+                      fontSize: enableTwoViews ? 22 : 24,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -300,7 +307,12 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         for (final (title, ids) in _settingsClusters) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 20, 8, 9),
+            padding: EdgeInsets.fromLTRB(
+              8,
+              !enableTwoViews && title == _settingsClusters.first.$1 ? 8 : 20,
+              8,
+              9,
+            ),
             child: Text(
               title.tl,
               style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),

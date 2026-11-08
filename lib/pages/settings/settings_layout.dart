@@ -137,15 +137,12 @@ class _SettingsPageView extends StatelessWidget {
         color: wide ? colors.surface : colors.surfaceContainerLow,
         child: Column(
           children: [
-            if (showHeader)
+            if (showHeader && Navigator.of(context).canPop())
               Appbar(
                 title: Text(
                   (detail == null ? 'Settings' : title).tl,
                   style: const TextStyle(fontSize: 14),
                 ),
-                leading: Navigator.of(context).canPop()
-                    ? null
-                    : const SizedBox(width: 8),
                 backgroundColor: wide
                     ? colors.surface
                     : colors.surfaceContainerLow,
