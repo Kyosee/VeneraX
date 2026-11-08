@@ -270,82 +270,184 @@ class ComicTile extends StatelessWidget {
 
   void showMenu(Offset location, BuildContext context) {
     if (!enableContextMenu) return;
-    showMenuX(App.rootContext, location, [
-      MenuEntry(
-        icon: Icons.chrome_reader_mode_outlined,
-        text: 'Details'.tl,
-        onClick: () {
-          App.mainNavigatorKey?.currentContext?.to(
-            () => ComicPage(
-              id: comic.id,
-              sourceKey: comic.sourceKey,
-              cover: comic.cover,
-              title: comic.title,
+    final type = ComicType.fromKey(comic.sourceKey);
+    final source = ComicSource.find(comic.sourceKey);
+    final history = HistoryManager().find(comic.id, type);
+    final isFavorite = LocalFavoritesManager().isExist(comic.id, type);
+    final isReadLater = ReadLaterManager().isExist(comic.id, type);
+    final progress = history == null
+        ? null
+        : 'Chapter @chapter · Page @page'.tlParams({
+            'chapter': math.max(1, history.ep),
+            'page': math.max(1, history.page),
+          });
+    final navigatorContext = App.mainNavigatorKey?.currentContext ?? context;
+    final local = const ComicStateRepository()
+        .load(comic.sourceKey, comic.id)
+        .localComic;
+    final downloaded = local != null;
+    showMenuX(
+      context,
+      location,
+      [
+        if (source?.loadComicInfo != null || local != null || _isCollection)
+          MenuEntry(
+            action: MenuAction.read,
+            role: MenuEntryRole.primary,
+            icon: Icons.menu_book_outlined,
+            text: history == null ? 'Read'.tl : 'Continue reading'.tl,
+            subtitle: progress,
+            onClick: () {
+              if (local != null) {
+                local.read();
+              } else {
+                navigatorContext.to(
+                  () => ReaderWithLoading(
+                    id: comic.id,
+                    sourceKey: comic.sourceKey,
+                  ),
+                );
+              }
+            },
+          ),
+        MenuEntry(
+          action: MenuAction.details,
+          icon: Icons.chrome_reader_mode_outlined,
+          text: 'Details'.tl,
+          onClick: () {
+            navigatorContext.to(
+              () => ComicPage(
+                id: comic.id,
+                sourceKey: comic.sourceKey,
+                cover: comic.cover,
+                title: comic.title,
+              ),
+            );
+          },
+        ),
+        MenuEntry(
+          group: MenuGroup.more,
+          icon: Icons.copy,
+          text: 'Copy Title'.tl,
+          onClick: () {
+            Clipboard.setData(ClipboardData(text: comic.title));
+            App.rootContext.showMessage(message: 'Title copied'.tl);
+          },
+        ),
+        MenuEntry(
+          action: MenuAction.favorite,
+          group: MenuGroup.organize,
+          role: MenuEntryRole.quick,
+          isSelected: isFavorite,
+          icon: isFavorite ? Icons.favorite : Icons.favorite_border,
+          text: isFavorite ? 'Add to another folder'.tl : 'Add to favorites'.tl,
+          compactText: isFavorite ? 'Favorited'.tl : 'Add to favorites'.tl,
+          onClick: () {
+            addFavorite([comic]);
+          },
+        ),
+        // A collection cannot hold another collection, so the entry is hidden
+        // rather than shown and refused.
+        if (!ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+          MenuEntry(
+            action: MenuAction.collection,
+            group: MenuGroup.organize,
+            icon: Icons.library_books_outlined,
+            text: 'Add to collection'.tl,
+            onClick: () => showAddToCollectionDialog(context, [comic]),
+          ),
+        MenuEntry(
+          action: MenuAction.readLater,
+          group: MenuGroup.organize,
+          role: MenuEntryRole.quick,
+          isSelected: isReadLater,
+          icon: isReadLater
+              ? Icons.bookmark_remove_outlined
+              : Icons.watch_later_outlined,
+          text: isReadLater ? 'Remove from read later'.tl : 'Read later'.tl,
+          compactText: isReadLater ? 'In read later'.tl : 'Read later'.tl,
+          onClick: () async {
+            final added = await ReadLaterManager().toggle(comic);
+            App.rootContext.showMessage(
+              message: added
+                  ? 'Added to read later'.tl
+                  : 'Removed from read later'.tl,
+            );
+          },
+        ),
+        if (source != null && source.loadComicInfo != null)
+          MenuEntry(
+            action: MenuAction.download,
+            role: MenuEntryRole.quick,
+            icon: downloaded ? Icons.download_done : Icons.download_outlined,
+            text: downloaded ? 'Downloaded'.tl : 'Download'.tl,
+            isSelected: downloaded,
+            onClick: () async {
+              if (LocalManager().isDownloading(comic.id, type)) {
+                App.rootContext.showMessage(
+                  message: 'The comic is downloading'.tl,
+                );
+                return;
+              }
+              if (LocalManager().isDownloaded(comic.id, type)) {
+                App.rootContext.showMessage(
+                  message: 'The comic is downloaded'.tl,
+                );
+                return;
+              }
+              if (!await ensureDownloadStorageWritable()) return;
+              LocalManager().addTask(
+                ImagesDownloadTask(
+                  source: source,
+                  comicId: comic.id,
+                  comicTitle: comic.title,
+                  comicCover: comic.cover,
+                ),
+              );
+              App.rootContext.showMessage(message: 'Download started'.tl);
+            },
+          ),
+        // Cross-source linking and migration are meaningless for a collection: it
+        // has no upstream source, and "migrating" it would search other sources
+        // for its name and rebind it, silently discarding the grouping. Members
+        // are still individually migratable from their own tiles.
+        if (!_isCollection)
+          MenuEntry(
+            group: MenuGroup.source,
+            icon: Icons.hub_outlined,
+            text: 'Linked entries'.tl,
+            onClick: () => showRelatedSourcesDialog(context, comic),
+          ),
+        if (!_isCollection)
+          MenuEntry(
+            action: MenuAction.migrate,
+            group: MenuGroup.source,
+            icon: Icons.move_up_outlined,
+            text: 'Migrate Source'.tl,
+            onClick: () => showSourceMigrationDialog(
+              context,
+              favoriteItemFromComic(comic),
             ),
-          );
-        },
-      ),
-      MenuEntry(
-        icon: Icons.copy,
-        text: 'Copy Title'.tl,
-        onClick: () {
-          Clipboard.setData(ClipboardData(text: comic.title));
-          App.rootContext.showMessage(message: 'Title copied'.tl);
-        },
-      ),
-      MenuEntry(
-        icon: Icons.stars_outlined,
-        text: 'Add to favorites'.tl,
-        onClick: () {
-          addFavorite([comic]);
-        },
-      ),
-      // A collection cannot hold another collection, so the entry is hidden
-      // rather than shown and refused.
-      if (!ComicCollectionStore.isCollectionSourceKey(comic.sourceKey))
+          ),
         MenuEntry(
-          icon: Icons.library_books_outlined,
-          text: 'Add to collection'.tl,
-          onClick: () => showAddToCollectionDialog(context, [comic]),
+          group: MenuGroup.more,
+          icon: Icons.block,
+          text: 'Block'.tl,
+          onClick: () => block(context),
         ),
-      MenuEntry(
-        icon: ReadLaterManager().isExist(comic.id, ComicType.fromKey(comic.sourceKey))
-            ? Icons.bookmark_remove_outlined
-            : Icons.watch_later_outlined,
-        text: ReadLaterManager().isExist(comic.id, ComicType.fromKey(comic.sourceKey))
-            ? 'Remove from read later'.tl
-            : 'Read later'.tl,
-        onClick: () async {
-          final added = await ReadLaterManager().toggle(comic);
-          App.rootContext.showMessage(
-            message: added ? 'Added to read later'.tl : 'Removed from read later'.tl,
-          );
-        },
+        ...?menuOptions,
+      ],
+      title: comic.title,
+      subtitle:
+          source?.name ?? (comic.sourceKey == 'local' ? 'Local'.tl : null),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: ColoredBox(
+          color: context.colorScheme.surfaceContainerHigh,
+          child: buildImage(context),
+        ),
       ),
-      // Cross-source linking and migration are meaningless for a collection: it
-      // has no upstream source, and "migrating" it would search other sources
-      // for its name and rebind it, silently discarding the grouping. Members
-      // are still individually migratable from their own tiles.
-      if (!_isCollection)
-        MenuEntry(
-          icon: Icons.hub_outlined,
-          text: 'Linked entries'.tl,
-          onClick: () => showRelatedSourcesDialog(context, comic),
-        ),
-      if (!_isCollection)
-        MenuEntry(
-          icon: Icons.move_up_outlined,
-          text: 'Migrate Source'.tl,
-          onClick: () =>
-              showSourceMigrationDialog(context, favoriteItemFromComic(comic)),
-        ),
-      MenuEntry(
-        icon: Icons.block,
-        text: 'Block'.tl,
-        onClick: () => block(context),
-      ),
-      ...?menuOptions,
-    ]);
+    );
   }
 
   @override
@@ -432,6 +534,16 @@ class ComicTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _menuButton(BuildContext context) {
+    return IconButton(
+      tooltip: 'Actions'.tl,
+      icon: const Icon(Icons.more_horiz),
+      iconSize: 20,
+      onPressed: () => onLongPress(context),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     );
   }
 
@@ -679,6 +791,9 @@ class ComicTile extends StatelessWidget {
                     Expanded(
                       child: ComicDescription(
                         title: displayInfo.title.replaceAll("\n", ""),
+                        titleTrailing: App.isMobile && enableContextMenu
+                            ? _menuButton(context)
+                            : null,
                         subtitle: displayInfo.author ?? '',
                         description: displayInfo.description ?? '',
                         badge: displayInfo.sourceName ?? comic.language,
@@ -860,11 +975,18 @@ class ComicTile extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-                child: Text(
-                  comic.title.replaceAll('\n', ''),
-                  maxLines: 1,
-                  overflow: TextOverflow.clip,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        comic.title.replaceAll('\n', ''),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    if (App.isMobile && enableContextMenu) _menuButton(context),
+                  ],
                 ),
               ),
             ],

@@ -272,6 +272,7 @@ class _ReadLaterPageState extends State<ReadLaterPage>
               SliverGridComics(
                 comics: filteredComics,
                 selections: selectedItems,
+                enableContextMenu: !multiSelectMode,
                 onLongPressed: null,
                 swipeActionBuilder: multiSelectMode
                     ? null
@@ -302,16 +303,13 @@ class _ReadLaterPageState extends State<ReadLaterPage>
                 menuBuilder: (c) {
                   return [
                     MenuEntry(
-                      icon: Icons.favorite_border,
-                      text: 'Add to favorites'.tl,
-                      onClick: () {
-                        addFavorite([c as ReadLaterItem]);
-                      },
-                    ),
-                    MenuEntry(
-                      icon: Icons.delete_outline,
-                      text: 'Remove'.tl,
-                      color: context.colorScheme.error,
+                      action: MenuAction.readLater,
+                      group: MenuGroup.organize,
+                      role: MenuEntryRole.quick,
+                      isSelected: true,
+                      icon: Icons.bookmark_remove_outlined,
+                      text: 'Remove from read later'.tl,
+                      compactText: 'In read later'.tl,
                       onClick: () {
                         _removeSingle(c as ReadLaterItem);
                       },

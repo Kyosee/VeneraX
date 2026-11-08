@@ -13,7 +13,9 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/pages/comic_collections_page.dart';
+import 'package:venera/pages/comic_collection_edit_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/read_later_page.dart';
 import 'package:venera/utils/translations.dart';
 
 void main() {
@@ -224,6 +226,37 @@ void main() {
     expect(find.text('Open collections'), findsOneWidget);
   });
 
+  for (final mode in ['detailed', 'brief']) {
+    testWidgets(
+      'mobile $mode card opens reading actions without selecting the card',
+      (tester) async {
+        appdata.settings['comicDisplayMode'] = mode;
+        await openPage(tester);
+        await tester.tap(
+          find.descendant(
+            of: tile('alpha'),
+            matching: find.byTooltip('Actions'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(selectedIds(tester), isEmpty);
+        expect(find.byType(BottomSheet), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Read'), findsOneWidget);
+        expect(find.byType(SubmenuButton), findsNothing);
+        expect(find.text('Add to favorites'), findsOneWidget);
+        expect(find.text('Migrate Source'), findsNothing);
+        expect(find.text('Linked entries'), findsNothing);
+        await tester.ensureVisible(find.text('Edit'));
+        await tester.tap(find.text('Edit'));
+        await tester.pumpAndSettle();
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.byType(ComicCollectionEditPage), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+  }
+
   testWidgets('batch favorites and read later apply to selected collections', (
     tester,
   ) async {
@@ -250,6 +283,37 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 4));
   });
+
+  testWidgets(
+    'read later menu removes once even when its item changes',
+    (tester) async {
+      final comic = asComic(ComicCollectionStore.find('alpha')!);
+      final type = ComicType.fromKey(comic.sourceKey);
+      await ReadLaterManager().addComics([comic]);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: App.rootNavigatorKey,
+          home: const ReadLaterPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add to favorites'), findsOneWidget);
+      expect(find.text('In read later'), findsOneWidget);
+      ReadLaterManager().remove(comic.id, type);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('In read later'));
+      await tester.pumpAndSettle();
+      expect(ReadLaterManager().isExist(comic.id, type), isFalse);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   testWidgets('wide toolbar selects, inverts and cancels without navigation', (
     tester,

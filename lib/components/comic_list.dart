@@ -226,6 +226,7 @@ class ComicListState extends State<ComicList> {
   List<MenuEntry> _menuBuilderWithSelect(Comic c) {
     return [
       MenuEntry(
+        action: MenuAction.select,
         icon: Icons.checklist,
         text: "Multi-Select".tl,
         onClick: () => _enterSelect(c),
@@ -310,6 +311,7 @@ class ComicListState extends State<ComicList> {
   Widget _buildGrid(List<Comic> comics, {void Function()? onLastItemBuild}) {
     return SliverGridComics(
       comics: comics,
+      enableContextMenu: !_selecting,
       onLastItemBuild: onLastItemBuild,
       menuBuilder: _selecting
           ? null

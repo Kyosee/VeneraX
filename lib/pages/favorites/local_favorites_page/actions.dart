@@ -25,27 +25,6 @@ mixin _LocalFavoritesActions on SelectionMixin<_LocalFavoritesPage, Comic> {
 
   void updateComics();
 
-  Future<bool> downloadComic(FavoriteItem c) async {
-    var source = c.type.comicSource;
-    if (source != null) {
-      bool isDownloaded = LocalManager().isDownloaded(c.id, (c).type);
-      if (isDownloaded) {
-        return false;
-      }
-      if (!await ensureDownloadStorageWritable()) return false;
-      LocalManager().addTask(
-        ImagesDownloadTask(
-          source: source,
-          comicId: c.id,
-          comicTitle: c.title,
-          comicCover: c.cover,
-        ),
-      );
-      return true;
-    }
-    return false;
-  }
-
   void downloadSelected() async {
     if (!await ensureDownloadStorageWritable()) return;
     // Build the tasks first, then enqueue them in one batch so the queue is

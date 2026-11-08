@@ -16,6 +16,7 @@ class ComicDescription extends StatelessWidget {
     this.progressText,
     this.pagesText,
     this.showTitle = true,
+    this.titleTrailing,
     this.showDescription = true,
     this.onTapAuthor,
     this.onTapTag,
@@ -35,6 +36,7 @@ class ComicDescription extends StatelessWidget {
   final String? progressText;
   final String? pagesText;
   final bool showTitle;
+  final Widget? titleTrailing;
 
   /// Off on the detail page, which renders the full description on its own.
   final bool showDescription;
@@ -137,6 +139,13 @@ class ComicDescription extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final titleText = Text(
+          title.trim(),
+          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          maxLines: rows.isEmpty ? maxLines : 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+        );
         final visibleRows = _visibleRowCount(
           constraints.maxHeight,
           rating != null,
@@ -144,20 +153,19 @@ class ComicDescription extends StatelessWidget {
           extraRows: languageItems.isEmpty ? 0 : 1,
         );
         return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             if (showTitle) ...[
-              Text(
-                title.trim(),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
+              if (titleTrailing == null)
+                titleText
+              else
+                Row(
+                  children: [
+                    Expanded(child: titleText),
+                    titleTrailing!,
+                  ],
                 ),
-                maxLines: rows.isEmpty ? maxLines : 1,
-                overflow: TextOverflow.ellipsis,
-                softWrap: true,
-              ),
               const SizedBox(height: 4),
             ],
             if (rating != null) ...[
@@ -192,7 +200,9 @@ class ComicDescription extends StatelessWidget {
     if (maxHeight.isInfinite) {
       return totalRows;
     }
-    final reservedHeight = (showTitle ? 24 : 0) + (hasRating ? 20 : 0);
+    final reservedHeight =
+        (showTitle ? (titleTrailing == null ? 24 : 52) : 0) +
+        (hasRating ? 20 : 0);
     final count = ((maxHeight - reservedHeight) / 21).floor();
     return math.max(1, math.min(5 + extraRows, count));
   }

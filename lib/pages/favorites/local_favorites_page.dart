@@ -966,6 +966,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
           SliverGridComics(
             comics: currentComics,
             selections: selectedItems,
+            enableContextMenu: !multiSelectMode,
             swipeActionBuilder: multiSelectMode
                 ? null
                 : (c) => (
@@ -988,8 +989,10 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
               return [
                 if (!isAggregated)
                   MenuEntry(
+                    action: MenuAction.remove,
+                    destructive: true,
                     icon: Icons.delete,
-                    text: "Delete".tl,
+                    text: "Remove from this folder".tl,
                     onClick: () {
                       LocalFavoritesManager().deleteComicWithId(
                         widget.folder,
@@ -999,8 +1002,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                     },
                   ),
                 MenuEntry(
+                  action: MenuAction.select,
                   icon: Icons.check,
-                  text: "Select".tl,
+                  text: "Multi-Select".tl,
                   onClick: () {
                     setState(() {
                       if (!multiSelectMode) {
@@ -1019,6 +1023,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                   },
                 ),
                 MenuEntry(
+                  group: MenuGroup.organize,
                   icon: Icons.drive_file_move,
                   text: "Move to folder".tl,
                   onClick: () {
@@ -1029,6 +1034,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                   },
                 ),
                 MenuEntry(
+                  group: MenuGroup.organize,
                   icon: Icons.copy,
                   text: "Copy to folder".tl,
                   onClick: () {
@@ -1038,35 +1044,6 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
                     favoriteOption('add');
                   },
                 ),
-                MenuEntry(
-                  icon: Icons.download,
-                  text: "Download".tl,
-                  onClick: () async {
-                    if (await downloadComic(c as FavoriteItem)) {
-                      App.rootContext.showMessage(
-                        message: "Download started".tl,
-                      );
-                    }
-                  },
-                ),
-                MenuEntry(
-                  icon: Icons.move_up_outlined,
-                  text: "Migrate Source".tl,
-                  onClick: () {
-                    showSourceMigrationDialog(context, c as FavoriteItem);
-                  },
-                ),
-                if (appdata.settings["onClickFavorite"] == "viewDetail")
-                  MenuEntry(
-                    icon: Icons.menu_book_outlined,
-                    text: "Read".tl,
-                    onClick: () {
-                      App.mainNavigatorKey?.currentContext?.to(
-                        () =>
-                            ReaderWithLoading(id: c.id, sourceKey: c.sourceKey),
-                      );
-                    },
-                  ),
               ];
             },
             onTapWithIndex: (c, heroID, index) {

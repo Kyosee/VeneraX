@@ -153,6 +153,8 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
       menuBuilder: (comic) {
         return [
           MenuEntry(
+            action: MenuAction.remove,
+            destructive: true,
             icon: Icons.delete_outline,
             text: "Remove".tl,
             onClick: () async {
@@ -563,6 +565,8 @@ class _FavoriteFolder extends StatelessWidget {
       menuBuilder: (comic) {
         return [
           MenuEntry(
+            action: MenuAction.remove,
+            destructive: true,
             icon: Icons.delete_outline,
             text: "Remove".tl,
             onClick: () async {

@@ -458,16 +458,20 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage>
                   return [
                     if (!multiSelectMode)
                       MenuEntry(
+                        action: MenuAction.select,
                         icon: Icons.checklist,
                         text: 'Multi-Select'.tl,
                         onClick: () => _enterSelectMode(comic),
                       ),
                     MenuEntry(
+                      group: MenuGroup.organize,
                       icon: Icons.edit,
                       text: 'Edit'.tl,
                       onClick: () => _edit(collection),
                     ),
                     MenuEntry(
+                      action: MenuAction.remove,
+                      destructive: true,
                       icon: Icons.delete_outline,
                       text: 'Delete'.tl,
                       color: context.colorScheme.error,
@@ -475,6 +479,7 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage>
                     ),
                     if (sourceIndex > 0)
                       MenuEntry(
+                        group: MenuGroup.organize,
                         icon: Icons.arrow_upward,
                         text: 'Move up'.tl,
                         onClick: () {
@@ -488,6 +493,7 @@ class _ComicCollectionsPageState extends State<ComicCollectionsPage>
                     if (sourceIndex >= 0 &&
                         sourceIndex < collections.length - 1)
                       MenuEntry(
+                        group: MenuGroup.organize,
                         icon: Icons.arrow_downward,
                         text: 'Move down'.tl,
                         onClick: () {
