@@ -1,9 +1,21 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/open.dart' as sqlite_library;
+
+bool _sqliteConfigured = false;
+
+void _configureSqliteLibrary() {
+  if (_sqliteConfigured) return;
+  if (Platform.operatingSystem == 'ohos') {
+    sqlite_library.open.overrideForAll(() => DynamicLibrary.open('libsqlite3.so'));
+  }
+  _sqliteConfigured = true;
+}
 
 /// Opens a connection with the standard pragmas for shared store files.
 ///
@@ -13,6 +25,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// before swapping files, and background-isolate work goes through
 /// [DatabaseGateway.isolateOp]. Kept public for tests.
 Database openSqliteDatabase(String path) {
+  _configureSqliteLibrary();
   final db = sqlite3.open(path);
   try {
     db.execute('PRAGMA foreign_keys = ON;');
@@ -34,8 +47,10 @@ Database openSqliteDatabase(String path) {
 /// restore window. [mode] defaults to read/write; pass [OpenMode.readOnly] to
 /// probe a source file without modifying it (e.g. merging another device's
 /// store).
-Database openRawDatabase(String path, {OpenMode mode = OpenMode.readWrite}) =>
-    sqlite3.open(path, mode: mode);
+Database openRawDatabase(String path, {OpenMode mode = OpenMode.readWrite}) {
+  _configureSqliteLibrary();
+  return sqlite3.open(path, mode: mode);
+}
 
 /// Single owner of database access ordering — and of connection lifetime —
 /// for this process.
@@ -166,7 +181,7 @@ void restoreDatabaseFiles(Map<String, String> swaps) {
   // fail loudly here rather than corrupting the native side.
   DatabaseGateway.instance.assertNoLiveHandles(swaps.keys);
   for (final sourcePath in swaps.values) {
-    final db = sqlite3.open(sourcePath, mode: OpenMode.readOnly);
+    final db = openRawDatabase(sourcePath, mode: OpenMode.readOnly);
     try {
       db.select('PRAGMA schema_version;');
     } finally {

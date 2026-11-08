@@ -1,0 +1,48 @@
+param(
+    [Parameter(Mandatory = $true)][string]$FlutterSdk,
+    [Parameter(Mandatory = $true)][string]$DevEcoStudio,
+    [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform = 'ohos-x64',
+    [string]$Target = 'tool/ohos_smoke.dart'
+)
+
+$ErrorActionPreference = 'Stop'
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$flutter = Join-Path $FlutterSdk 'bin/flutter.bat'
+$environmentNames = @(
+    'OS', 'DEVECO_SDK_HOME', 'JAVA_HOME', 'NODE_HOME', 'Path',
+    'FLUTTER_NATIVE_ASSETS', 'FLUTTER_DART_DATA_ASSETS'
+)
+$previousEnvironment = @{}
+foreach ($name in $environmentNames) {
+    $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+
+Push-Location $projectRoot
+try {
+    $env:OS = 'Windows_NT'
+    $env:DEVECO_SDK_HOME = Join-Path $DevEcoStudio 'sdk'
+    $env:JAVA_HOME = Join-Path $DevEcoStudio 'jbr'
+    $env:NODE_HOME = Join-Path $DevEcoStudio 'tools/node'
+    $env:Path = @(
+        (Join-Path $FlutterSdk 'bin'), $env:NODE_HOME,
+        (Join-Path $DevEcoStudio 'tools/ohpm/bin'),
+        (Join-Path $DevEcoStudio 'tools/hvigor/bin'), $env:Path
+    ) -join [IO.Path]::PathSeparator
+    # OHOS native code is built by CMake. Upstream Dart hooks target Linux.
+    $env:FLUTTER_NATIVE_ASSETS = 'false'
+    $env:FLUTTER_DART_DATA_ASSETS = 'true'
+
+    & $flutter pub get --enforce-lockfile
+    if ($LASTEXITCODE -ne 0) { throw 'Flutter dependency resolution failed.' }
+    & $flutter build hap --debug --target-platform $TargetPlatform --no-codesign --no-pub -t $Target
+    if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP build failed.' }
+} finally {
+    foreach ($name in $environmentNames) {
+        if ($null -eq $previousEnvironment[$name]) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], 'Process')
+        }
+    }
+    Pop-Location
+}
