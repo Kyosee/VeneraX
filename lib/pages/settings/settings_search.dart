@@ -11,9 +11,7 @@ part of 'settings_page.dart';
 /// Titles reuse the exact English source strings the pages pass to `.tl`, so a
 /// single entry localizes automatically in every locale. `category` indexes
 /// into [_settingsCategories] / [_settingsCategoryIcons]; tapping a result opens
-/// that category page (rendering the real tiles inline isn't viable — they are
-/// nested in expansion tiles, gated by platform/state conditions, and coupled to
-/// each page's own `setState`).
+/// the category and section containing the real control.
 class _SettingsSearchEntry {
   const _SettingsSearchEntry(
     this.title,
@@ -68,20 +66,38 @@ class _SettingsSearchEntry {
     'Refresh every N pages' ||
     'Refresh duration (ms)' => 'Full refresh on page turn',
     'Ripple speed' => 'Ripple page turn',
+    'Unlock method' => 'Authorization Required',
     _ => null,
   };
 
   String? get section {
     if (category == 0) {
-      if (title == 'Language' || title == 'Authorization Required') {
-        return 'User';
-      }
-      if (title == 'Minimize to tray' || title == 'Keyboard shortcuts') {
-        return 'Window';
-      }
-      return 'Appearance';
+      return switch (title) {
+        'Theme Mode' || 'Theme Color' || 'Language' => 'Appearance',
+        _ => 'Layout and navigation',
+      };
     }
     if (category == 1) {
+      if (const [
+        'The number of pic in screen for landscape (Only Gallery Mode)',
+        'The number of pic in screen for portrait (Only Gallery Mode)',
+        'Show single image on first page',
+        'Fill screen',
+        'Split wide pages',
+        'Center page after turning',
+        'Spacing between pages',
+      ].contains(title)) {
+        return 'Page layout';
+      }
+      if (const [
+        'Auto page turning mode',
+        'Auto page turning interval',
+        'Auto scroll speed',
+        'Mouse scroll speed',
+        'Number of images preloaded',
+      ].contains(title)) {
+        return 'Auto turning & preload';
+      }
       if (const [
         'Page turn mode',
         'Double tap to zoom',
@@ -140,15 +156,128 @@ class _SettingsSearchEntry {
       ].contains(title)) {
         return 'E-ink screen';
       }
+      return 'Reading mode';
+    }
+    if (category == 2) {
+      return switch (title) {
+        'Show local favorites before network favorites' ||
+        'Add new favorite to' ||
+        'Move favorite after reading' => 'Sorting and placement',
+        'Delete all unavailable local favorite items' => 'Library maintenance',
+        _ => 'Favorite actions',
+      };
+    }
+    if (category == 3) {
+      return switch (title) {
+        'Data Sync' ||
+        'Sync Mode' ||
+        'Backups to keep per platform' => 'WebDAV Sync',
+        'Sync Local Comics' ||
+        'Skip Sync Items' ||
+        'Use Proxy for Sync' => 'Sync preferences',
+        'Auto clean reading history' ||
+        'Export App Data' ||
+        'Export Translation Results' ||
+        'Import App Data' => 'Import, export & history',
+        _ => 'Data management',
+      };
+    }
+    if (category == 4) {
+      return switch (title) {
+        'Comic Source' || 'Source Libraries' => 'Comic sources',
+        'Show favorite status on comic tile' ||
+        'Show history on comic tile' ||
+        'Show read later status on comic tile' ||
+        'Show collection status on comic tile' ||
+        'Show page count on comic tile' => 'Card details',
+        'Default Search Target' ||
+        'Auto Language Filters' ||
+        'Search Sources' => 'Search preferences',
+        'Explore Pages' ||
+        'Category Pages' ||
+        'Network Favorite Pages' ||
+        'Initial Page' => 'Browsing pages',
+        'Keyword blocking' ||
+        'Tag blocking' ||
+        'Comment keyword blocking' => 'Content filters',
+        _ => 'Browsing',
+      };
+    }
+    if (category == 5) return 'Connection';
+    if (category == 6) return 'Diagnostics';
+    if (category == 7) {
+      return switch (title) {
+        'Check for updates' ||
+        'Check for updates on startup' => 'Version and updates',
+        'Debug' => 'Diagnostics',
+        _ => 'Help',
+      };
+    }
+    if (category == 8) {
+      return switch (title) {
+        'LLM providers' ||
+        'Custom translation script' ||
+        'Test translation' => 'Translation services',
+        'Custom languages' ||
+        'Translation models' ||
+        'Translation prompt' => 'Models & languages',
+        'Text removal' ||
+        'Pages per pre-translation request' ||
+        'OCR parallelism (0 = auto)' ||
+        'Image download concurrency' ||
+        'Translation request concurrency' => 'Advanced translation settings',
+        'How AI translation works' ||
+        'Clear translation results' => 'Help & cleanup',
+        _ => 'Translation preferences',
+      };
+    }
+    if (category == 9) {
+      return switch (title) {
+        'Download Threads' ||
+        'Parallel Downloads' ||
+        'Download on WiFi Only' => 'Downloads',
+        'Storage Path for local comics' ||
+        'Set New Storage Path' ||
+        'Comic cache directory' => 'Storage locations',
+        _ => 'Cache',
+      };
+    }
+    if (category == 10) {
+      return switch (title) {
+        'Authorization Required' || 'Unlock method' => 'App lock',
+        _ => 'Device behavior',
+      };
     }
     return null;
   }
 
-  String get path => [
-    _settingsCategories[category].tl,
-    if (section != null) section!.tl,
-    if (targetTitle != title) targetTitle.tl,
-  ].join(' / ');
+  String get path {
+    final group = section;
+    const commonGroups = {
+      'Appearance',
+      'Reading mode',
+      'Favorite actions',
+      'WebDAV Sync',
+      'Data management',
+      'Browsing',
+      'Comic sources',
+      'Connection',
+      'Version and updates',
+      'Help',
+      'Translation preferences',
+      'Translation services',
+      'Models & languages',
+      'Downloads',
+      'Cache',
+      'App lock',
+      'Device behavior',
+    };
+    return [
+      _settingsCategories[category == 6 ? 7 : category].tl,
+      if (group != null && !commonGroups.contains(group)) group.tl,
+      if (targetTitle != title) targetTitle.tl,
+    ].join(' / ');
+  }
 }
 
 /// The full index. Built once; `visible` guards are evaluated lazily at match
@@ -165,6 +294,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Show history on comic tile", 4),
   _SettingsSearchEntry("Show read later status on comic tile", 4),
   _SettingsSearchEntry("Show collection status on comic tile", 4),
+  _SettingsSearchEntry("Show page count on comic tile", 4),
   _SettingsSearchEntry("Reverse default chapter order", 4),
   _SettingsSearchEntry("Keyword blocking", 4, keywords: ["block", "filter"]),
   _SettingsSearchEntry("Tag blocking", 4, keywords: ["block", "filter", "tag"]),
@@ -173,6 +303,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Auto Language Filters", 4, keywords: ["language"]),
   _SettingsSearchEntry("Initial Page", 4),
   _SettingsSearchEntry("Display mode of comic list", 4),
+  _SettingsSearchEntry("Comic Source", 4, keywords: ["source", "extension"]),
+  _SettingsSearchEntry(
+    "Source Libraries",
+    4,
+    keywords: ["source", "repository"],
+  ),
 
   // --- 1: Reading settings ---
   _SettingsSearchEntry(
@@ -324,6 +460,16 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     8,
     keywords: ['API', 'speed'],
   ),
+  _SettingsSearchEntry(
+    'How AI translation works',
+    8,
+    keywords: ['help', 'guide'],
+  ),
+  _SettingsSearchEntry(
+    'Clear translation results',
+    8,
+    keywords: ['cache', 'cleanup'],
+  ),
 
   // --- 0: App / Appearance ---
   _SettingsSearchEntry("Theme Mode", 0, keywords: ["dark", "light"]),
@@ -351,21 +497,56 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Quick Favorite", 2),
   _SettingsSearchEntry("Delete all unavailable local favorite items", 2),
   _SettingsSearchEntry("Click favorite", 2),
+  _SettingsSearchEntry(
+    "Follow Updates Settings",
+    2,
+    keywords: ["follow", "update"],
+  ),
 
-  // --- 3: Data & Sync ---
-  _SettingsSearchEntry("Storage Path for local comics", 3, keywords: ["path"]),
-  _SettingsSearchEntry("Set New Storage Path", 3, keywords: ["path"]),
-  _SettingsSearchEntry("Cache Size", 3, keywords: ["cache"]),
-  _SettingsSearchEntry("Comic cache directory", 3, keywords: ["cache", "path"]),
-  _SettingsSearchEntry("Clear Cache", 3, keywords: ["cache"]),
-  _SettingsSearchEntry("Cache Limit", 3, keywords: ["cache"]),
+  // --- 9: Downloads & storage ---
+  _SettingsSearchEntry("Storage Path for local comics", 9, keywords: ["path"]),
+  _SettingsSearchEntry("Set New Storage Path", 9, keywords: ["path"]),
+  _SettingsSearchEntry("Cache Size", 9, keywords: ["cache"]),
+  _SettingsSearchEntry("Comic cache directory", 9, keywords: ["cache", "path"]),
+  _SettingsSearchEntry("Clear Cache", 9, keywords: ["cache"]),
+  _SettingsSearchEntry("Cache Limit", 9, keywords: ["cache"]),
+  _SettingsSearchEntry("Download Threads", 9, keywords: ["download"]),
+  _SettingsSearchEntry("Parallel Downloads", 9, keywords: ["download"]),
+  _SettingsSearchEntry(
+    "Download on WiFi Only",
+    9,
+    keywords: ["wifi", "wlan", "download", "data"],
+  ),
+
+  // --- 3: Sync & backup ---
   _SettingsSearchEntry("Auto clean reading history", 3),
   _SettingsSearchEntry("Export App Data", 3, keywords: ["backup", "export"]),
+  _SettingsSearchEntry(
+    "Export Translation Results",
+    3,
+    keywords: ["backup", "export"],
+  ),
   _SettingsSearchEntry("Import App Data", 3, keywords: ["restore", "import"]),
   _SettingsSearchEntry(
     "Data Sync",
     3,
     keywords: ["webdav", "backup", "sync", "cloud"],
+  ),
+  _SettingsSearchEntry("Sync Mode", 3, keywords: ["webdav", "sync"]),
+  _SettingsSearchEntry(
+    "Backups to keep per platform",
+    3,
+    keywords: ["webdav", "backup", "retention"],
+  ),
+  _SettingsSearchEntry(
+    "Sync Local Comics",
+    3,
+    keywords: ["webdav", "sync", "library"],
+  ),
+  _SettingsSearchEntry(
+    "Use Proxy for Sync",
+    3,
+    keywords: ["webdav", "sync", "proxy"],
   ),
   _SettingsSearchEntry(
     "Skip Sync Items",
@@ -379,37 +560,44 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ["webdav", "library", "comic", "remote", "nas", "cloud"],
   ),
 
-  // --- 0: App ---
+  // --- 0: Appearance & layout ---
   _SettingsSearchEntry("Language", 0, keywords: ["locale", "language"]),
+
+  // --- 10: Privacy & device ---
   _SettingsSearchEntry(
     "Authorization Required",
-    0,
+    10,
     keywords: ["password", "lock", "biometric", "fingerprint", "privacy"],
     visible: () => !App.isLinux,
   ),
   _SettingsSearchEntry(
+    "Unlock method",
+    10,
+    keywords: ["password", "lock", "biometric", "pin"],
+    visible: () => !App.isLinux,
+  ),
+  _SettingsSearchEntry(
     "Minimize to tray",
-    0,
+    10,
     keywords: ["tray", "window"],
     visible: () => App.isWindows,
   ),
   _SettingsSearchEntry(
     "Keyboard shortcuts",
-    0,
+    10,
     keywords: ["hotkey", "shortcut", "keyboard", "Fullscreen"],
     visible: () => App.isDesktop,
+  ),
+  _SettingsSearchEntry(
+    "Ignore Battery Optimization",
+    10,
+    keywords: ["battery", "background"],
+    visible: () => App.isAndroid,
   ),
 
   // --- 5: Network ---
   _SettingsSearchEntry("Proxy", 5, keywords: ["vpn", "socks", "http"]),
   _SettingsSearchEntry("DNS Overrides", 5, keywords: ["dns", "hosts", "sni"]),
-  _SettingsSearchEntry("Download Threads", 5, keywords: ["download"]),
-  _SettingsSearchEntry("Parallel Downloads", 5, keywords: ["download"]),
-  _SettingsSearchEntry(
-    "Download on WiFi Only",
-    5,
-    keywords: ["wifi", "wlan", "download", "data"],
-  ),
 
   // --- 7: About ---
   _SettingsSearchEntry("Check for updates", 7, keywords: ["update", "version"]),

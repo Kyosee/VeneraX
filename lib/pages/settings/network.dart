@@ -1,52 +1,45 @@
 part of 'settings_page.dart';
 
 class NetworkSettings extends StatefulWidget {
-  const NetworkSettings({super.key});
+  const NetworkSettings({this.section, super.key});
+
+  final String? section;
 
   @override
   State<NetworkSettings> createState() => _NetworkSettingsState();
 }
 
 class _NetworkSettingsState extends State<NetworkSettings> {
+  Future<void> _openSection(String section) async {
+    await context.to(() => NetworkSettings(section: section));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
-      scrollbarTopPadding: context.padding.top + 56,
-      slivers: [
-        SliverAppbar(title: Text("Network".tl)),
-        _PopupWindowSetting(
-          title: "Proxy".tl,
-          builder: () => const _ProxySettingView(),
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "DNS Overrides".tl,
-          builder: () => const _DNSOverrides(),
-        ).toSliver(),
-        _SliderSetting(
-          title: "Download Threads".tl,
-          description:
-              'Images downloaded at once within each comic. Reduce this if the source limits requests.'
-                  .tl,
-          settingsIndex: 'downloadThreads',
-          interval: 1,
-          min: 1,
-          max: 16,
-        ).toSliver(),
-        _SliderSetting(
-          title: "Parallel Downloads".tl,
-          description:
-              'Comics downloaded at the same time. Combined with Download Threads, this controls the total number of image requests.'
-                  .tl,
-          settingsIndex: 'maxParallelDownloads',
-          interval: 1,
-          min: 1,
-          max: 3,
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Download on WiFi Only".tl,
-          settingKey: 'downloadWifiOnly',
-          onChanged: () => DownloadNetworkGuard.instance.onSettingChanged(),
-        ).toSliver(),
+    return _SettingsPageView(
+      title: 'Network connection',
+      description: 'Proxy and DNS overrides',
+      section:
+          widget.section ??
+          _settingsSectionForTitle(5, _SettingsJumpScope.targetOf(context)),
+      onOpenSection: _openSection,
+      sections: [
+        _SettingsSection(
+          title: 'Connection',
+          common: true,
+          icon: Icons.public,
+          children: [
+            _PopupWindowSetting(
+              title: "Proxy".tl,
+              builder: () => const _ProxySettingView(),
+            ),
+            _PopupWindowSetting(
+              title: "DNS Overrides".tl,
+              builder: () => const _DNSOverrides(),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -143,18 +136,9 @@ class _ProxySettingViewState extends State<_ProxySettingView> {
           },
           child: Column(
             children: [
-              RadioListTile<String>(
-                title: Text("Direct".tl),
-                value: 'direct',
-              ),
-              RadioListTile<String>(
-                title: Text("System".tl),
-                value: 'system',
-              ),
-              RadioListTile(
-                title: Text("Manual".tl),
-                value: 'manual',
-              ),
+              RadioListTile<String>(title: Text("Direct".tl), value: 'direct'),
+              RadioListTile<String>(title: Text("System".tl), value: 'system'),
+              RadioListTile(title: Text("Manual".tl), value: 'manual'),
               if (type == 'manual') buildManualProxy(),
             ],
           ),
@@ -267,7 +251,7 @@ class __DNSOverridesState extends State<_DNSOverrides> {
       if (entry.key is String && entry.value is String) {
         overrides.add((
           TextEditingController(text: entry.key),
-          TextEditingController(text: entry.value)
+          TextEditingController(text: entry.value),
         ));
       }
     }
@@ -312,8 +296,10 @@ class __DNSOverridesState extends State<_DNSOverrides> {
             TextButton.icon(
               onPressed: () {
                 setState(() {
-                  overrides
-                      .add((TextEditingController(), TextEditingController()));
+                  overrides.add((
+                    TextEditingController(),
+                    TextEditingController(),
+                  ));
                 });
               },
               icon: const Icon(Icons.add),
@@ -333,15 +319,9 @@ class __DNSOverridesState extends State<_DNSOverrides> {
       margin: EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: context.colorScheme.outlineVariant,
-          ),
-          left: BorderSide(
-            color: context.colorScheme.outlineVariant,
-          ),
-          right: BorderSide(
-            color: context.colorScheme.outlineVariant,
-          ),
+          bottom: BorderSide(color: context.colorScheme.outlineVariant),
+          left: BorderSide(color: context.colorScheme.outlineVariant),
+          right: BorderSide(color: context.colorScheme.outlineVariant),
         ),
       ),
       child: Row(
@@ -355,10 +335,7 @@ class __DNSOverridesState extends State<_DNSOverrides> {
               controller: entry.$1,
             ).paddingHorizontal(8),
           ),
-          Container(
-            width: 1,
-            color: context.colorScheme.outlineVariant,
-          ),
+          Container(width: 1, color: context.colorScheme.outlineVariant),
           Expanded(
             child: TextField(
               decoration: InputDecoration(
@@ -368,10 +345,7 @@ class __DNSOverridesState extends State<_DNSOverrides> {
               controller: entry.$2,
             ).paddingHorizontal(8),
           ),
-          Container(
-            width: 1,
-            color: context.colorScheme.outlineVariant,
-          ),
+          Container(width: 1, color: context.colorScheme.outlineVariant),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {

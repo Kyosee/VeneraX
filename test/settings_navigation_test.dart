@@ -1,17 +1,40 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/cache_manager.dart';
+import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/translations.dart';
 
 void main() {
-  setUpAll(AppTranslation.init);
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory temporary;
+  setUpAll(() async {
+    temporary = Directory.systemTemp.createTempSync('settings-navigation-');
+    App.dataPath = temporary.path;
+    App.cachePath = '${temporary.path}/cache';
+    LocalManager().path = '${temporary.path}/comics';
+    await AppTranslation.init();
+    await CacheManager().ready;
+  });
+  tearDownAll(() async {
+    await appdata.saveData(false);
+    DatabaseGateway.instance.closeManaged('${App.dataPath}/cache.db');
+    CacheManager.instance = null;
+    await temporary.delete(recursive: true);
+  });
   setUp(() {
     appdata.settings['language'] = 'en-US';
     appdata.settings['deviceSpecificSettings'] = <String, dynamic>{};
     appdata.settings['comicSpecificSettings'] = <String, dynamic>{};
     appdata.settings['readerNightMode'] = false;
     appdata.settings['readerNightModeFollowSystem'] = false;
+    appdata.settings['readerMode'] = 'galleryLeftToRight';
+    appdata.settings['autoPageTurningMode'] = 'page';
   });
 
   Future<void> open(WidgetTester tester, double width) async {
@@ -22,6 +45,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openSection(WidgetTester tester, String title) async {
+    final link = find.text(title.tl);
+    await tester.ensureVisible(link);
+    await tester.pumpAndSettle();
+    await tester.tap(link);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> search(WidgetTester tester, String title) async {
     await tester.enterText(find.byType(TextField).first, title.tl);
     await tester.pumpAndSettle();
@@ -29,20 +60,104 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('wide settings starts populated and switches categories', (
+  testWidgets(
+    'wide settings starts populated and switches categories',
+    (tester) async {
+      await open(tester, 1100);
+      expect(find.text('Page animation'), findsOneWidget);
+      expect(find.text('Theme Mode'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('settings-category-5')));
+      await tester.pumpAndSettle();
+      expect(find.text('Proxy'), findsOneWidget);
+      expect(find.text('Download Threads'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('settings-category-9')));
+      await tester.pumpAndSettle();
+      expect(find.text('Download Threads'), findsOneWidget);
+      expect(find.text('Theme Mode'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'desktop child pages stay beside the category sidebar',
+    (tester) async {
+      await open(tester, 1100);
+      await openSection(tester, 'Page layout');
+      expect(
+        tester.widget<ReaderSettings>(find.byType(ReaderSettings)).section,
+        'Page layout',
+      );
+      expect(
+        find.byKey(const ValueKey('settings-category-1')).hitTestable(),
+        findsOneWidget,
+      );
+      final root = tester.state<NavigatorState>(find.byType(Navigator).first);
+      final detail = tester.state<NavigatorState>(find.byType(Navigator).last);
+      expect(root.canPop(), isFalse);
+      expect(detail.canPop(), isTrue);
+      await tester.tap(find.byTooltip('Back').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Page animation'), findsOneWidget);
+      expect(detail.canPop(), isFalse);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  for (final width in [320.0, 390.0]) {
+    testWidgets('mobile child pages return to their category at $width', (
+      tester,
+    ) async {
+      await open(tester, width);
+      await tester.tap(find.byKey(const ValueKey('settings-category-1')));
+      await tester.pumpAndSettle();
+      await openSection(tester, 'Display settings');
+      expect(find.text('Show Chapter Comments'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Page animation'), findsOneWidget);
+      expect(find.text('Show Chapter Comments'), findsNothing);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('settings-category-1')), findsOneWidget);
+      expect(find.byType(ReaderSettings), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('short mobile choices open a bottom sheet at 320 pixels', (
     tester,
   ) async {
-    await open(tester, 1100);
-    expect(find.text('Theme Mode'), findsOneWidget);
-    await tester.ensureVisible(find.text('Network'));
-    await tester.tap(find.text('Network'));
+    appdata.settings['readerMode'] = 'continuousTopToBottom';
+    await open(tester, 320);
+    await tester.tap(find.byKey(const ValueKey('settings-category-1')));
     await tester.pumpAndSettle();
-    expect(find.text('Download Threads'), findsOneWidget);
-    expect(find.text('Theme Mode'), findsNothing);
+    await openSection(tester, 'Auto turning & preload');
+    final mode = find.widgetWithText(ListTile, 'Auto page turning mode');
+    await tester.ensureVisible(mode);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(mode));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(PopupMenuItem<String>), findsNothing);
+    final sheet = tester.getRect(find.byType(BottomSheet));
+    expect(sheet.left, greaterThanOrEqualTo(0));
+    expect(sheet.right, lessThanOrEqualTo(320));
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Scroll'));
+      await appdata.saveData(false);
+    });
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(appdata.settings['autoPageTurningMode'], 'scroll');
+    expect(find.text('Auto scroll speed'), findsOneWidget);
+    expect(find.text('Auto page turning interval'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-    'search expands a collapsed group and can change target in the same category',
+    'search reveals a control and can change target in the same category',
     (tester) async {
       await open(tester, 1100);
       await search(tester, 'Language');
@@ -61,6 +176,20 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets('search highlights the control instead of its matching heading', (
+    tester,
+  ) async {
+    await open(tester, 1100);
+    await search(tester, 'Reading mode');
+    final row = find.widgetWithText(ListTile, 'Reading mode');
+    final highlight = find.byKey(const ValueKey('settings-search-highlight'));
+    expect(row.hitTestable(), findsOneWidget);
+    expect(highlight, findsOneWidget);
+    expect(tester.getRect(highlight).overlaps(tester.getRect(row)), isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'unavailable settings explain the prerequisite without enabling it',
@@ -93,11 +222,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('AI Translation'),
-      500,
-      scrollable: find.byType(Scrollable).first,
-    );
+    await tester.ensureVisible(find.text('AI Translation'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('AI Translation'));
     await tester.pumpAndSettle();
     final page = tester

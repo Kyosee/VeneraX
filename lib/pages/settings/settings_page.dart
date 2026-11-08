@@ -37,6 +37,8 @@ import 'package:venera/foundation/shortcuts.dart';
 import 'package:venera/foundation/tray.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/app_lock_setup.dart';
+import 'package:venera/pages/comic_source_page.dart';
+import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/guide_page.dart';
 import 'package:venera/pages/settings/image_enhance_preview.dart';
@@ -72,53 +74,57 @@ part 'debug.dart';
 part 'settings_search.dart';
 part 'settings_scope.dart';
 part 'settings_focus.dart';
+part 'settings_layout.dart';
 
-/// Settings category display names, indexed by page id. Top-level so the
-/// settings search index ([_settingsSearchIndex]) can map a result back to its
-/// category page. Keep in sync with [_settingsCategoryIcons] and the page
-/// switch in [_SettingsPageState._buildSettingsContent].
+// Keep the original numeric destinations for existing callers and search.
 const _settingsCategories = <String>[
-  "App",
-  "Reading settings",
-  "Local Favorites",
-  "Data & Sync",
-  "Explore",
-  "Network",
-  "Debug",
-  "About",
-  "AI Translation",
+  'Appearance & layout',
+  'Reading settings',
+  'Library & favorites',
+  'Sync & backup',
+  'Browsing & filters',
+  'Network',
+  'Debug',
+  'About & help',
+  'AI Translation',
+  'Downloads & storage',
+  'Privacy & device',
 ];
-
 const _settingsCategoryIcons = <IconData>[
-  Icons.apps,
-  Icons.book,
-  Icons.collections_bookmark_rounded,
-  Icons.cloud_sync_outlined,
-  Icons.explore,
+  Icons.palette_outlined,
+  Icons.menu_book_outlined,
+  Icons.favorite_border,
+  Icons.cloud_outlined,
+  Icons.explore_outlined,
   Icons.public,
-  Icons.bug_report,
-  Icons.info,
+  Icons.bug_report_outlined,
+  Icons.info_outline,
   Icons.translate,
+  Icons.download_outlined,
+  Icons.shield_outlined,
 ];
-
-const _settingsOrder = [0, 1, 8, 2, 3, 4, 5, 6, 7];
 const _settingsDescriptions = [
-  'Appearance, language, privacy and window behavior',
+  'Theme, language and home layout',
   'Page layout, gestures and reading display',
   'Favorite folders and collection behavior',
-  'Storage, cache, backups and WebDAV',
+  'WebDAV, automatic backups and data transfer',
   'Comic lists, sources and content filters',
-  'Proxy, DNS and download connections',
+  'Proxy and DNS connections',
   'Logs and troubleshooting tools',
   'Version, updates and help',
   'Translation services, languages, models and performance',
+  'Downloads, folders and cache',
+  'App lock, background behavior and shortcuts',
+];
+const _settingsClusters = <(String, List<int>)>[
+  ('Reading experience', [0, 1, 8]),
+  ('Content & data', [2, 4, 9, 3]),
+  ('More', [5, 10, 7]),
 ];
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({this.initialPage = -1, super.key});
-
   final int initialPage;
-
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -128,150 +134,253 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _focusTitle;
   String? _focusFallback;
   int _destinationVersion = 0;
-
-  ColorScheme get colors => Theme.of(context).colorScheme;
-
-  bool get enableTwoViews => context.width > 720;
-
   final _searchController = TextEditingController();
-
-  String _searchQuery = "";
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  final _searchFocus = FocusNode();
+  String _searchQuery = '';
+  bool get enableTwoViews => context.width > 720;
+  ColorScheme get colors => context.colorScheme;
 
   @override
   void initState() {
+    super.initState();
     currentPage =
         widget.initialPage >= 0 &&
             widget.initialPage < _settingsCategories.length
         ? widget.initialPage
         : -1;
-    super.initState();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (enableTwoViews && currentPage == -1) currentPage = 0;
+    if (enableTwoViews && currentPage == -1) currentPage = 1;
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Material(child: buildBody());
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
   }
 
-  Widget buildBody() {
-    if (enableTwoViews) {
-      return Row(
-        children: [
-          SizedBox(width: 280, height: double.infinity, child: buildLeft()),
-          Container(
-            height: double.infinity,
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: context.colorScheme.outlineVariant,
-                  width: 0.6,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, animation) {
-                return LayoutBuilder(
-                  builder: (context, constrains) {
-                    return AnimatedBuilder(
-                      animation: animation,
-                      builder: (context, _) {
-                        var width = constrains.maxWidth;
-                        var value = animation.isForwardOrCompleted
-                            ? 1 - animation.value
-                            : 1;
-                        var left = width * value;
-                        return Stack(
-                          children: [
-                            Positioned(
-                              top: 0,
-                              bottom: 0,
-                              left: left,
-                              width: width,
-                              child: child,
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-              child: buildRight(),
-            ),
-          ),
-        ],
-      );
-    } else {
-      return buildLeft();
-    }
-  }
-
-  Widget buildLeft() {
-    return Material(
-      child: Column(
-        children: [
-          SizedBox(height: MediaQuery.of(context).padding.top),
-          SizedBox(
-            height: 56,
-            child: Row(
+  @override
+  Widget build(BuildContext context) => CallbackShortcuts(
+    bindings: {
+      const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+          _searchFocus.requestFocus,
+      const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+          _searchFocus.requestFocus,
+    },
+    child: Material(
+      color: colors.surface,
+      child: enableTwoViews
+          ? Row(
               children: [
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: "Back".tl,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: context.pop,
+                SizedBox(width: 232, child: buildLeft()),
+                VerticalDivider(
+                  width: 1,
+                  thickness: 0.7,
+                  color: colors.outlineVariant,
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      SafeArea(bottom: false, child: buildSearchField()),
+                      Expanded(
+                        child: _searchQuery.trim().isEmpty
+                            ? buildRight()
+                            : _buildSettingsSearchResults(
+                                context,
+                                _searchQuery,
+                                _openSettingsResult,
+                              ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 24),
-                Text("Settings".tl, style: ts.s20),
+              ],
+            )
+          : buildLeft(),
+    ),
+  );
+
+  Widget buildSearchField() => Padding(
+    padding: EdgeInsets.fromLTRB(
+      enableTwoViews ? 32 : 20,
+      12,
+      enableTwoViews ? 32 : 20,
+      12,
+    ),
+    child: TextField(
+      controller: _searchController,
+      focusNode: _searchFocus,
+      style: const TextStyle(fontSize: 14),
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search settings'.tl,
+        prefixIcon: const Icon(Icons.search, size: 20),
+        filled: true,
+        fillColor: colors.surfaceContainerLow,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        suffixIcon: _searchQuery.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear'.tl,
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+              ),
+      ),
+      onChanged: (value) => setState(() => _searchQuery = value),
+    ),
+  );
+
+  Widget buildLeft() => Material(
+    color: colors.surfaceContainerLow,
+    child: SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back'.tl,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: context.pop,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Settings'.tl,
+                    style: TextStyle(
+                      fontSize: enableTwoViews ? 22 : 27,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 4),
-          buildSearchField(),
+          if (!enableTwoViews) buildSearchField(),
           Expanded(
-            child: _searchQuery.trim().isEmpty
-                ? buildCategories()
-                : _buildSettingsSearchResults(
+            child: !enableTwoViews && _searchQuery.trim().isNotEmpty
+                ? _buildSettingsSearchResults(
                     context,
                     _searchQuery,
                     _openSettingsResult,
-                  ),
+                  )
+                : buildCategories(),
           ),
         ],
+      ),
+    ),
+  );
+
+  Widget buildCategories() => SingleChildScrollView(
+    padding: EdgeInsets.fromLTRB(
+      enableTwoViews ? 12 : 20,
+      0,
+      enableTwoViews ? 12 : 20,
+      24,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (title, ids) in _settingsClusters) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 20, 8, 9),
+            child: Text(
+              title.tl,
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+          ),
+          Material(
+            color: enableTwoViews ? Colors.transparent : colors.surface,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < ids.length; i++) ...[
+                  if (!enableTwoViews && i > 0)
+                    Divider(
+                      height: 1,
+                      thickness: 0.6,
+                      indent: 48,
+                      color: colors.outlineVariant,
+                    ),
+                  _categoryTile(ids[i]),
+                ],
+              ],
+            ),
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 28, 8, 8),
+          child: Text(
+            'Venera ${App.version}',
+            style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _categoryTile(int id) {
+    final selected =
+        enableTwoViews && id == (currentPage == 6 ? 7 : currentPage);
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: enableTwoViews ? 2 : 0),
+      child: ListTile(
+        key: ValueKey('settings-category-$id'),
+        dense: enableTwoViews,
+        minTileHeight: enableTwoViews ? 44 : 68,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        selected: selected,
+        selectedTileColor: colors.primaryContainer.withValues(alpha: 0.45),
+        leading: Icon(_settingsCategoryIcons[id], size: 21),
+        minLeadingWidth: 21,
+        horizontalTitleGap: 11,
+        title: Text(
+          _settingsCategories[id].tl,
+          style: const TextStyle(fontSize: 14),
+        ),
+        subtitle: enableTwoViews
+            ? null
+            : Text(
+                _settingsDescriptions[id].tl,
+                style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+              ),
+        trailing: enableTwoViews
+            ? null
+            : const Icon(Icons.chevron_right, size: 18),
+        onTap: () => _openSettingsCategory(id),
       ),
     );
   }
 
-  Widget buildSearchField() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: AppSearchField(
-        controller: _searchController,
-        hintText: "Search settings".tl,
-        onChanged: (v) => setState(() => _searchQuery = v),
-      ),
-    );
+  void _clearSearch() {
+    _searchController.clear();
+    _searchFocus.unfocus();
+    _searchQuery = '';
   }
 
   void _openSettingsCategory(int id) {
     if (enableTwoViews) {
       setState(() {
+        _clearSearch();
         currentPage = id;
         _focusTitle = null;
         _focusFallback = null;
@@ -285,12 +394,14 @@ class _SettingsPageState extends State<SettingsPage> {
   void _openSettingsResult(_SettingsSearchEntry entry) {
     if (enableTwoViews) {
       setState(() {
+        _clearSearch();
         currentPage = entry.category;
         _focusTitle = entry.targetTitle;
         _focusFallback = entry.fallbackTitle;
         _destinationVersion++;
       });
     } else {
+      _searchFocus.unfocus();
       context.to(
         () => _SettingsDetailPage(
           pageIndex: entry.category,
@@ -301,90 +412,18 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Widget buildCategories() {
-    Widget buildItem(String name, int id) {
-      final bool selected = id == currentPage;
-
-      Widget content = AnimatedContainer(
-        key: ValueKey(id),
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        constraints: const BoxConstraints(minHeight: 68),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? colors.primaryContainer.toOpacity(0.36) : null,
-          border: Border(
-            left: BorderSide(
-              color: selected ? colors.primary : Colors.transparent,
-              width: 2,
-            ),
+  Widget buildRight() => Navigator(
+    key: ValueKey('$currentPage:$_destinationVersion'),
+    onGenerateRoute: (settings) => PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          _SettingsDetailPage(
+            pageIndex: currentPage,
+            focusTitle: _focusTitle,
+            fallbackTitle: _focusFallback,
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(_settingsCategoryIcons[id]),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: ts.s16),
-                  const SizedBox(height: 3),
-                  Text(
-                    _settingsDescriptions[id].tl,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: ts.s12.withColor(colors.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-            if (selected) const Icon(Icons.arrow_right),
-          ],
-        ),
-      );
-
-      return Padding(
-        padding: enableTwoViews
-            ? const EdgeInsets.fromLTRB(8, 0, 8, 0)
-            : EdgeInsets.zero,
-        child: InkWell(
-          onTap: () => _openSettingsCategory(id),
-          child: content,
-        ).paddingVertical(4),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: _settingsOrder.length,
-      itemBuilder: (context, index) => buildItem(
-        _settingsCategories[_settingsOrder[index]].tl,
-        _settingsOrder[index],
-      ),
-    );
-  }
-
-  Widget buildRight() {
-    if (currentPage == -1) {
-      return const SizedBox();
-    }
-    return Navigator(
-      key: ValueKey('$currentPage:$_destinationVersion'),
-      onGenerateRoute: (settings) {
-        return PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) {
-            return _SettingsDetailPage(
-              pageIndex: currentPage,
-              focusTitle: _focusTitle,
-              fallbackTitle: _focusFallback,
-            );
-          },
-          transitionDuration: Duration.zero,
-        );
-      },
-    );
-  }
+      transitionDuration: Duration.zero,
+    ),
+  );
 }
 
 class _SettingsDetailPage extends StatelessWidget {
@@ -423,6 +462,8 @@ class _SettingsDetailPage extends StatelessWidget {
       6 => const DebugPage(),
       7 => const AboutSettings(),
       8 => const ReaderSettings(translationOnly: true),
+      9 => const DataSyncSettings(storageOnly: true),
+      10 => const AppSettings(deviceOnly: true),
       _ => throw UnimplementedError(),
     };
   }

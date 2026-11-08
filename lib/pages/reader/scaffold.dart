@@ -1163,72 +1163,76 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
   void openSetting() {
     _openSideBar(
-      ReaderSettings(
-        showSearch: true,
-        comicId: context.reader.cid,
-        comicSource: context.reader.type.sourceKey,
-        currentPageImage: _snapshotCurrentPageImage,
-        onChanged: (key) {
-          final scopeChanged = key == 'enabled';
-          if (key == "readerMode" || scopeChanged) {
-            context.reader.mode = ReaderMode.fromKey(
-              appdata.settings.getReaderSetting(
-                context.reader.cid,
-                context.reader.type.sourceKey,
-                'readerMode',
-              ),
-            );
-          }
-          if (key == "enableTurnPageByVolumeKey" || scopeChanged) {
-            if (appdata.settings.getReaderSetting(
-              context.reader.cid,
-              context.reader.type.sourceKey,
-              'enableTurnPageByVolumeKey',
-            )) {
-              context.reader.handleVolumeEvent();
-            } else {
-              context.reader.stopVolumeEvent();
-            }
-          }
-          if (key == "quickCollectImage" || scopeChanged) {
-            addDragListener();
-          }
-          if (key == "readerKeepScreenOn" || scopeChanged) {
-            context.reader._syncScreenOn();
-          }
-          if (key == "showSystemStatusBar" || scopeChanged) {
-            final showSystemStatusBar =
+      ReaderSettingsPanel(
+        child: ReaderSettings(
+          showSearch: true,
+          comicId: context.reader.cid,
+          comicSource: context.reader.type.sourceKey,
+          currentPageImage: _snapshotCurrentPageImage,
+          onChanged: (key) {
+            final scopeChanged = key == 'enabled';
+            if (key == "readerMode" || scopeChanged) {
+              context.reader.mode = ReaderMode.fromKey(
                 appdata.settings.getReaderSetting(
                   context.reader.cid,
                   context.reader.type.sourceKey,
-                  'showSystemStatusBar',
-                ) ==
-                true;
-            applyReaderSystemUiMode(showSystemStatusBar);
-          }
-          if (key == "showChapterComments" ||
-              key == "showChapterCommentsAtEnd" || scopeChanged) {
-            update();
-          }
-          // Changing this comic's language pair or text-removal mode addresses a
-          // different translation cache generation, but the image providers are
-          // keyed on the page identity alone — without dropping them the reader
-          // would keep showing the render made with the previous settings.
-          if (key == "imageTranslationSource" ||
-              key == "imageTranslationTarget" ||
-              key == "imageTranslationInpaintMode" ||
-              key == "enableImageTranslation" || scopeChanged) {
-            PaintingBinding.instance.imageCache.clear();
-            PaintingBinding.instance.imageCache.clearLiveImages();
-          }
-          if (key == "autoPageTurningInterval" ||
-              key == "autoPageTurningMode" ||
-              key == "readerMode" ||
-              scopeChanged) {
-            context.reader._syncAutoTurn(restartCountdown: true);
-          }
-          context.reader.update();
-        },
+                  'readerMode',
+                ),
+              );
+            }
+            if (key == "enableTurnPageByVolumeKey" || scopeChanged) {
+              if (appdata.settings.getReaderSetting(
+                context.reader.cid,
+                context.reader.type.sourceKey,
+                'enableTurnPageByVolumeKey',
+              )) {
+                context.reader.handleVolumeEvent();
+              } else {
+                context.reader.stopVolumeEvent();
+              }
+            }
+            if (key == "quickCollectImage" || scopeChanged) {
+              addDragListener();
+            }
+            if (key == "readerKeepScreenOn" || scopeChanged) {
+              context.reader._syncScreenOn();
+            }
+            if (key == "showSystemStatusBar" || scopeChanged) {
+              final showSystemStatusBar =
+                  appdata.settings.getReaderSetting(
+                    context.reader.cid,
+                    context.reader.type.sourceKey,
+                    'showSystemStatusBar',
+                  ) ==
+                  true;
+              applyReaderSystemUiMode(showSystemStatusBar);
+            }
+            if (key == "showChapterComments" ||
+                key == "showChapterCommentsAtEnd" ||
+                scopeChanged) {
+              update();
+            }
+            // Changing this comic's language pair or text-removal mode addresses a
+            // different translation cache generation, but the image providers are
+            // keyed on the page identity alone — without dropping them the reader
+            // would keep showing the render made with the previous settings.
+            if (key == "imageTranslationSource" ||
+                key == "imageTranslationTarget" ||
+                key == "imageTranslationInpaintMode" ||
+                key == "enableImageTranslation" ||
+                scopeChanged) {
+              PaintingBinding.instance.imageCache.clear();
+              PaintingBinding.instance.imageCache.clearLiveImages();
+            }
+            if (key == "autoPageTurningInterval" ||
+                key == "autoPageTurningMode" ||
+                key == "readerMode" ||
+                scopeChanged) {
+              context.reader._syncAutoTurn(restartCountdown: true);
+            }
+            context.reader.update();
+          },
+        ),
       ),
       width: 400,
     );

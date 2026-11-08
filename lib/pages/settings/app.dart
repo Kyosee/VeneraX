@@ -1,7 +1,10 @@
 part of 'settings_page.dart';
 
 class AppSettings extends StatefulWidget {
-  const AppSettings({super.key});
+  const AppSettings({super.key, this.deviceOnly = false, this.section});
+
+  final bool deviceOnly;
+  final String? section;
 
   @override
   State<AppSettings> createState() => _AppSettingsState();
@@ -17,170 +20,293 @@ class _AppSettingsState extends State<AppSettings> {
     };
   }
 
+  Future<void> _openSection(String section) async {
+    await context.to(
+      () => AppSettings(deviceOnly: widget.deviceOnly, section: section),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _themeSample(bool dark) {
+    final ink = dark ? const Color(0xFFAAA5B7) : const Color(0xFFDAD6E4);
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: dark ? const Color(0xFF24232A) : Colors.white,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: ink.withValues(alpha: 0.5)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Container(width: 8, color: ink.withValues(alpha: 0.2)),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(height: 5, color: ink),
+                  const SizedBox(height: 6),
+                  Container(height: 9, color: ink.withValues(alpha: 0.3)),
+                  const SizedBox(height: 4),
+                  Container(height: 9, color: ink.withValues(alpha: 0.3)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeModes() {
+    final colors = context.colorScheme;
+    const modes = {'system': 'System', 'light': 'Light', 'dark': 'Dark'};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Theme Mode'.tl,
+          style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 9),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final mode in modes.entries) ...[
+                if (mode.key != modes.keys.first) const SizedBox(width: 10),
+                Expanded(
+                  child: Semantics(
+                    selected: appdata.settings['theme_mode'] == mode.key,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.all(10),
+                        foregroundColor: colors.onSurface,
+                        backgroundColor:
+                            appdata.settings['theme_mode'] == mode.key
+                            ? colors.primaryContainer.withValues(alpha: 0.4)
+                            : colors.surfaceContainerLow,
+                        side: BorderSide(
+                          color: appdata.settings['theme_mode'] == mode.key
+                              ? colors.primary
+                              : colors.outlineVariant,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        setState(
+                          () => appdata.settings['theme_mode'] = mode.key,
+                        );
+                        appdata.saveData();
+                        App.forceRebuild();
+                      },
+                      child: Column(
+                        children: [
+                          ExcludeSemantics(
+                            child: mode.key == 'system'
+                                ? Row(
+                                    children: [
+                                      Expanded(child: _themeSample(false)),
+                                      const SizedBox(width: 2),
+                                      Expanded(child: _themeSample(true)),
+                                    ],
+                                  )
+                                : _themeSample(mode.key == 'dark'),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            mode.value.tl,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
-      scrollbarTopPadding: context.padding.top + 56,
-      slivers: [
-        SliverAppbar(title: Text("App".tl)),
-        _SettingsExpansionTile(
-          expansionKey: const PageStorageKey('appAppearanceGroup'),
-          initiallyExpanded: true,
-          icon: Icons.color_lens,
-          title: "Appearance".tl,
-          children: [
-            SelectSetting(
-              title: "Theme Mode".tl,
-              settingKey: "theme_mode",
-              optionTranslation: {
-                "system": "System".tl,
-                "light": "Light".tl,
-                "dark": "Dark".tl,
-              },
-              onChanged: () async {
-                App.forceRebuild();
-              },
-            ),
-            SelectSetting(
-              title: "Theme Color".tl,
-              settingKey: "color",
-              optionTranslation: {
-                "system": "System".tl,
-                "red": "Red".tl,
-                "pink": "Pink".tl,
-                "purple": "Purple".tl,
-                "green": "Green".tl,
-                "orange": "Orange".tl,
-                "blue": "Blue".tl,
-              },
-              onChanged: () async {
-                await App.init();
-                App.forceRebuild();
-              },
-            ),
-            if (App.isAndroid)
-              _SwitchSetting(
-                title: "Predictive Back Animation".tl,
-                subtitle: "Page follows the back gesture as you drag".tl,
-                settingKey: "enablePredictiveBack",
-                onChanged: () {
-                  App.forceRebuild();
-                },
+    final section =
+        widget.section ??
+        _settingsSectionForTitle(
+          widget.deviceOnly ? 10 : 0,
+          _SettingsJumpScope.targetOf(context),
+        );
+    return _SettingsPageView(
+      title: widget.deviceOnly ? 'Privacy & device' : 'Appearance & layout',
+      description: widget.deviceOnly
+          ? 'App lock, background activity and device controls'
+          : 'Make the app look and feel right for you',
+      section: section,
+      onOpenSection: _openSection,
+      intro: !widget.deviceOnly && section != 'Layout and navigation'
+          ? _themeModes()
+          : null,
+      sections: widget.deviceOnly
+          ? _deviceSections()
+          : [
+              _SettingsSection(
+                title: 'Appearance',
+                common: true,
+                icon: Icons.color_lens,
+                children: [
+                  SelectSetting(
+                    title: "Theme Color".tl,
+                    settingKey: "color",
+                    optionTranslation: {
+                      "system": "System".tl,
+                      "red": "Red".tl,
+                      "pink": "Pink".tl,
+                      "purple": "Purple".tl,
+                      "green": "Green".tl,
+                      "orange": "Orange".tl,
+                      "blue": "Blue".tl,
+                    },
+                    onChanged: () async {
+                      await App.init();
+                      App.forceRebuild();
+                    },
+                  ),
+                  SelectSetting(
+                    title: "Language".tl,
+                    settingKey: "language",
+                    optionTranslation: const {
+                      "system": "System",
+                      "zh-CN": "简体中文",
+                      "zh-TW": "繁體中文",
+                      "en-US": "English",
+                    },
+                    onChanged: () {
+                      App.forceRebuild();
+                    },
+                  ),
+                ],
               ),
-            ListTile(
-              title: Text("Home Page Layout".tl),
-              subtitle: Text("Reorder or hide home sections".tl),
-              leading: const Icon(Icons.dashboard_customize_outlined),
-              trailing: const Icon(Icons.arrow_right),
-              onTap: () {
-                context.to(() => const HomeLayoutSettings());
-              },
-            ),
-            ListTile(
-              title: Text("Image Favorites Tabs".tl),
-              subtitle: Text(
-                "Reorder or hide the Tags / Authors / Comics tabs".tl,
+              _SettingsSection(
+                title: 'Layout and navigation',
+                subtitle:
+                    'Home sections, image tabs, app icon and page transitions',
+                icon: Icons.dashboard_customize_outlined,
+                children: [
+                  if (App.isAndroid)
+                    _SwitchSetting(
+                      title: "Predictive Back Animation".tl,
+                      subtitle: "Page follows the back gesture as you drag".tl,
+                      settingKey: "enablePredictiveBack",
+                      onChanged: () {
+                        App.forceRebuild();
+                      },
+                    ),
+                  ListTile(
+                    title: Text("Home Page Layout".tl),
+                    subtitle: Text("Reorder or hide home sections".tl),
+                    leading: const Icon(Icons.dashboard_customize_outlined),
+                    trailing: const Icon(Icons.arrow_right),
+                    onTap: () {
+                      context.to(() => const HomeLayoutSettings());
+                    },
+                  ),
+                  ListTile(
+                    title: Text("Image Favorites Tabs".tl),
+                    subtitle: Text(
+                      "Reorder or hide the Tags / Authors / Comics tabs".tl,
+                    ),
+                    leading: const Icon(Icons.tab_outlined),
+                    trailing: const Icon(Icons.arrow_right),
+                    onTap: () {
+                      context.to(() => const ImageFavoritesTabsSettings());
+                    },
+                  ),
+                  if (LauncherIconService.isSupported)
+                    ListTile(
+                      title: Text("App Icon".tl),
+                      subtitle: Text(
+                        LauncherIconService.isWindowIconOnly
+                            ? "Choose the window and taskbar icon".tl
+                            : "Choose the home screen icon".tl,
+                      ),
+                      leading: const Icon(Icons.apps_outlined),
+                      trailing: const Icon(Icons.arrow_right),
+                      onTap: () {
+                        context.to(() => const LauncherIconSettings());
+                      },
+                    ),
+                ],
               ),
-              leading: const Icon(Icons.tab_outlined),
-              trailing: const Icon(Icons.arrow_right),
-              onTap: () {
-                context.to(() => const ImageFavoritesTabsSettings());
-              },
-            ),
-            if (LauncherIconService.isSupported)
-              ListTile(
-                title: Text("App Icon".tl),
-                subtitle: Text(
-                  LauncherIconService.isWindowIconOnly
-                      ? "Choose the window and taskbar icon".tl
-                      : "Choose the home screen icon".tl,
-                ),
-                leading: const Icon(Icons.apps_outlined),
-                trailing: const Icon(Icons.arrow_right),
-                onTap: () {
-                  context.to(() => const LauncherIconSettings());
-                },
-              ),
-          ],
-        ).toSliver(),
-        if (App.isAndroid)
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('appBackgroundGroup'),
-            initiallyExpanded: true,
-            icon: Icons.battery_saver,
-            title: "Background".tl,
-            children: const [_BatteryOptimizationSetting()],
-          ).toSliver(),
-        _SettingsExpansionTile(
-          expansionKey: const PageStorageKey('appUserGroup'),
-          initiallyExpanded: true,
-          icon: Icons.person_outline,
-          title: "User".tl,
-          children: [
-            SelectSetting(
-              title: "Language".tl,
-              settingKey: "language",
-              optionTranslation: const {
-                "system": "System",
-                "zh-CN": "简体中文",
-                "zh-TW": "繁體中文",
-                "en-US": "English",
-              },
-              onChanged: () {
-                App.forceRebuild();
-              },
-            ),
-            if (!App.isLinux) ...[
-              _SwitchSetting(
-                title: "Authorization Required".tl,
-                settingKey: "authorizationRequired",
-                onChanged: () async {
-                  var enabled = appdata.settings['authorizationRequired'];
-                  if (enabled) {
-                    // Just switched on: pick an unlock method and record its
-                    // credential. Revert if the user backs out or setup fails.
-                    var ok = await showAppLockSetup(context);
-                    if (!ok) {
-                      setState(() {
-                        appdata.settings['authorizationRequired'] = false;
-                      });
-                      appdata.saveData();
-                      return;
-                    }
-                  }
-                  setState(() {});
-                },
-              ),
-              if (appdata.settings['authorizationRequired'] == true)
-                _CallbackSetting(
-                  title: "Unlock method".tl,
-                  subtitle: _appLockTypeName(AppLock.type),
-                  actionTitle: "Change".tl,
-                  callback: () async {
-                    var ok = await showAppLockSetup(context);
-                    if (ok) setState(() {});
-                  },
-                ),
             ],
+    );
+  }
+
+  List<_SettingsSection> _deviceSections() {
+    return [
+      if (!App.isLinux)
+        _SettingsSection(
+          title: 'App lock',
+          icon: Icons.lock_outline,
+          common: true,
+          children: [
+            _SwitchSetting(
+              title: "Authorization Required".tl,
+              settingKey: "authorizationRequired",
+              onChanged: () async {
+                var enabled = appdata.settings['authorizationRequired'];
+                if (enabled) {
+                  // Just switched on: pick an unlock method and record its
+                  // credential. Revert if the user backs out or setup fails.
+                  var ok = await showAppLockSetup(context);
+                  if (!ok) {
+                    setState(() {
+                      appdata.settings['authorizationRequired'] = false;
+                    });
+                    appdata.saveData();
+                    return;
+                  }
+                }
+                setState(() {});
+              },
+            ),
+            if (appdata.settings['authorizationRequired'] == true)
+              _CallbackSetting(
+                title: "Unlock method".tl,
+                subtitle: _appLockTypeName(AppLock.type),
+                actionTitle: "Change".tl,
+                callback: () async {
+                  var ok = await showAppLockSetup(context);
+                  if (ok) setState(() {});
+                },
+              ),
           ],
-        ).toSliver(),
-        if (App.isDesktop)
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('appWindowGroup'),
-            initiallyExpanded: true,
-            icon: Icons.web_asset,
-            title: "Window".tl,
-            children: [
-              if (App.isWindows)
-                _SwitchSetting(
-                  title: "Minimize to tray".tl,
-                  settingKey: "minimizeToTray",
-                  onChanged: () {
-                    TrayController.instance.setEnabled(
-                      appdata.settings["minimizeToTray"] == true,
-                    );
-                  },
-                ),
+        ),
+      if (App.isAndroid || App.isDesktop)
+        _SettingsSection(
+          title: 'Device behavior',
+          icon: Icons.devices_outlined,
+          common: true,
+          children: [
+            if (App.isAndroid) const _BatteryOptimizationSetting(),
+            if (App.isWindows)
+              _SwitchSetting(
+                title: "Minimize to tray".tl,
+                settingKey: "minimizeToTray",
+                onChanged: () {
+                  TrayController.instance.setEnabled(
+                    appdata.settings["minimizeToTray"] == true,
+                  );
+                },
+              ),
+            if (App.isDesktop)
               ListTile(
                 title: Text("Keyboard shortcuts".tl),
                 subtitle: Text(
@@ -192,10 +318,9 @@ class _AppSettingsState extends State<AppSettings> {
                   context.to(() => const KeyboardShortcutsSettings());
                 },
               ),
-            ],
-          ).toSliver(),
-      ],
-    );
+          ],
+        ),
+    ];
   }
 }
 
@@ -211,7 +336,8 @@ class _BatteryOptimizationSetting extends StatefulWidget {
 }
 
 class _BatteryOptimizationSettingState
-    extends State<_BatteryOptimizationSetting> with WidgetsBindingObserver {
+    extends State<_BatteryOptimizationSetting>
+    with WidgetsBindingObserver {
   bool? _ignoring;
 
   @override
@@ -247,8 +373,9 @@ class _BatteryOptimizationSettingState
     final subtitle = ignoring == null
         ? "Checking".tl
         : (ignoring
-            ? "Battery optimization disabled".tl
-            : "Battery optimization enabled, background tasks may be frozen".tl);
+              ? "Battery optimization disabled".tl
+              : "Battery optimization enabled, background tasks may be frozen"
+                    .tl);
     return ListTile(
       title: Text("Ignore Battery Optimization".tl),
       subtitle: Text(subtitle),
@@ -363,7 +490,7 @@ class _LogsPageState extends State<LogsPage> {
                       context.showMessage(
                         message: enable
                             ? "Recording every request. This uses more battery; turn it off when done."
-                                .tl
+                                  .tl
                             : "Only failed requests are recorded now.".tl,
                       );
                     },
@@ -557,8 +684,9 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     });
     if (result.error) {
       context.showMessage(
-        message: "Connection failed: @error"
-            .tlParams({"error": result.errorMessage ?? ""}),
+        message: "Connection failed: @error".tlParams({
+          "error": result.errorMessage ?? "",
+        }),
       );
     } else {
       context.showMessage(message: "Connection successful".tl);
@@ -634,8 +762,9 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     });
     if (syncResult.error) {
       context.showMessage(
-        message: "Saved, but sync failed: @error"
-            .tlParams({"error": syncResult.errorMessage ?? ""}),
+        message: "Saved, but sync failed: @error".tlParams({
+          "error": syncResult.errorMessage ?? "",
+        }),
       );
     } else {
       context.showMessage(message: "Saved".tl);
@@ -683,15 +812,14 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       context: context,
       builder: (ctx) => ContentDialog(
         title: "Confirm Download".tl,
-        content: Text(
-          "This will overwrite all local data. Continue?".tl,
-        ),
+        content: Text("This will overwrite all local data. Continue?".tl),
         actions: [
           Button.filled(
             onPressed: () async {
               Navigator.of(ctx).pop();
-              var result =
-                  await DataSync().downloadSpecificBackup(backup.fileName);
+              var result = await DataSync().downloadSpecificBackup(
+                backup.fileName,
+              );
               if (context.mounted) {
                 if (result.error) {
                   context.showMessage(message: result.errorMessage!);
@@ -816,9 +944,12 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: Text("${"Sync Local Comic Images".tl}（${"Experimental".tl}）"),
+              title: Text(
+                "${"Sync Local Comic Images".tl}（${"Experimental".tl}）",
+              ),
               subtitle: Text(
-                "开启后将通过WebDAV同步漫画图片文件。注意：这会导致同步数据量显著增大且同步速度变慢。关闭时仅同步漫画记录，图包需在各设备手动下载或导入。".tl,
+                "开启后将通过WebDAV同步漫画图片文件。注意：这会导致同步数据量显著增大且同步速度变慢。关闭时仅同步漫画记录，图包需在各设备手动下载或导入。"
+                    .tl,
                 style: const TextStyle(fontSize: 12),
               ),
               value: syncLocalComicImages,
@@ -829,7 +960,8 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                     builder: (ctx) => ContentDialog(
                       title: "Experimental Feature".tl,
                       content: Text(
-                        "This feature is experimental. Syncing comic images may consume significant network bandwidth and storage space on your WebDAV server. Please ensure you have sufficient quota and a stable connection.".tl,
+                        "This feature is experimental. Syncing comic images may consume significant network bandwidth and storage space on your WebDAV server. Please ensure you have sufficient quota and a stable connection."
+                            .tl,
                       ).paddingHorizontal(16).paddingVertical(8),
                       actions: [
                         Button.text(
@@ -914,7 +1046,10 @@ class _WebdavSettingState extends State<_WebdavSetting> {
 /// Moved out because on shorter screens the dialog's growing content pushed
 /// the Save button off-screen behind a scroll region (#114 follow-up).
 class _WebdavSyncOptions extends StatefulWidget {
-  const _WebdavSyncOptions();
+  const _WebdavSyncOptions({this.showCommon = true, this.showAdvanced = true});
+
+  final bool showCommon;
+  final bool showAdvanced;
 
   @override
   State<_WebdavSyncOptions> createState() => _WebdavSyncOptionsState();
@@ -981,18 +1116,18 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
   }
 
   String _syncModeLabel(WebdavSyncMode mode) => switch (mode) {
-        WebdavSyncMode.realtime => "Realtime".tl,
-        WebdavSyncMode.dataSaver => "Data Saver".tl,
-        WebdavSyncMode.manual => "Manual Only".tl,
-      };
+    WebdavSyncMode.realtime => "Realtime".tl,
+    WebdavSyncMode.dataSaver => "Data Saver".tl,
+    WebdavSyncMode.manual => "Manual Only".tl,
+  };
 
   String _syncModeDescription(WebdavSyncMode mode) => switch (mode) {
-        WebdavSyncMode.realtime => "Upload shortly after every change".tl,
-        WebdavSyncMode.dataSaver =>
-          "Batch changes; upload on app switch / resume, at most every 30 minutes"
-              .tl,
-        WebdavSyncMode.manual => "Upload only when triggered manually".tl,
-      };
+    WebdavSyncMode.realtime => "Upload shortly after every change".tl,
+    WebdavSyncMode.dataSaver =>
+      "Batch changes; upload on app switch / resume, at most every 30 minutes"
+          .tl,
+    WebdavSyncMode.manual => "Upload only when triggered manually".tl,
+  };
 
   void onSyncModeChanged(WebdavSyncMode mode) {
     setState(() {
@@ -1030,77 +1165,83 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ListTile(
-          title: Text("Sync Mode".tl),
-          subtitle: Text(
-            _syncModeDescription(syncMode),
-            style: const TextStyle(fontSize: 12),
+        if (widget.showCommon)
+          ListTile(
+            title: Text("Sync Mode".tl),
+            subtitle: Text(
+              _syncModeDescription(syncMode),
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: Select(
+              current: _syncModeLabel(syncMode),
+              values: WebdavSyncMode.values.map(_syncModeLabel).toList(),
+              minWidth: 84,
+              onTap: (index) => onSyncModeChanged(WebdavSyncMode.values[index]),
+            ),
           ),
-          trailing: Select(
-            current: _syncModeLabel(syncMode),
-            values: WebdavSyncMode.values.map(_syncModeLabel).toList(),
-            minWidth: 84,
-            onTap: (index) => onSyncModeChanged(WebdavSyncMode.values[index]),
-          ),
-        ),
-        ListTile(
-          title: Text("Backups to keep per platform".tl),
-          subtitle: Text(
-            "Older backups on the server are removed after each upload".tl,
-            style: const TextStyle(fontSize: 12),
-          ),
-          trailing: Select(
-            current: backupRetention.toString(),
-            values: [
-              // A synced value outside the offered list stays selectable
-              // instead of rendering an empty selector.
-              if (!_retentionChoices.contains(backupRetention))
-                backupRetention.toString(),
-              ..._retentionChoices.map((e) => e.toString()),
-            ],
-            minWidth: 64,
-            onTap: (index) {
-              var values = [
+        if (widget.showCommon)
+          ListTile(
+            title: Text("Backups to keep per platform".tl),
+            subtitle: Text(
+              "Older backups on the server are removed after each upload".tl,
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: Select(
+              current: backupRetention.toString(),
+              values: [
+                // A synced value outside the offered list stays selectable
+                // instead of rendering an empty selector.
                 if (!_retentionChoices.contains(backupRetention))
-                  backupRetention,
-                ..._retentionChoices,
-              ];
-              onBackupRetentionChanged(values[index]);
-            },
+                  backupRetention.toString(),
+                ..._retentionChoices.map((e) => e.toString()),
+              ],
+              minWidth: 64,
+              onTap: (index) {
+                var values = [
+                  if (!_retentionChoices.contains(backupRetention))
+                    backupRetention,
+                  ..._retentionChoices,
+                ];
+                onBackupRetentionChanged(values[index]);
+              },
+            ),
           ),
-        ),
-        ListTile(
-          title: Text("Sync Local Comics".tl),
-          subtitle: Text(
-            "Include this device's local comic library in sync. Turn off to read or download comics online instead of receiving the whole library from other devices."
-                .tl,
-            style: const TextStyle(fontSize: 12),
+        if (widget.showAdvanced)
+          ListTile(
+            title: Text("Sync Local Comics".tl),
+            subtitle: Text(
+              "Include this device's local comic library in sync. Turn off to read or download comics online instead of receiving the whole library from other devices."
+                  .tl,
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: Switch(
+              value: syncLocalComics,
+              onChanged: onSyncLocalComicsChanged,
+            ),
           ),
-          trailing: Switch(
-            value: syncLocalComics,
-            onChanged: onSyncLocalComicsChanged,
+        if (widget.showAdvanced)
+          ListTile(
+            title: Text("Skip Sync Items".tl),
+            subtitle: Text(
+              _skipSyncSummary(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.arrow_right),
+            onTap: () =>
+                showPopUpWidget(App.rootContext, const _SkipSyncPage()),
           ),
-        ),
-        ListTile(
-          title: Text("Skip Sync Items".tl),
-          subtitle: Text(
-            _skipSyncSummary(),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
+        if (widget.showAdvanced)
+          ListTile(
+            title: Text("Use Proxy for Sync".tl),
+            subtitle: Text(
+              "Route WebDAV sync through the app proxy. Turn off if an unstable proxy makes sync fail."
+                  .tl,
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: Switch(value: useProxy, onChanged: onUseProxyChanged),
           ),
-          trailing: const Icon(Icons.arrow_right),
-          onTap: () => showPopUpWidget(App.rootContext, const _SkipSyncPage()),
-        ),
-        ListTile(
-          title: Text("Use Proxy for Sync".tl),
-          subtitle: Text(
-            "Route WebDAV sync through the app proxy. Turn off if an unstable proxy makes sync fail."
-                .tl,
-            style: const TextStyle(fontSize: 12),
-          ),
-          trailing: Switch(value: useProxy, onChanged: onUseProxyChanged),
-        ),
       ],
     );
   }

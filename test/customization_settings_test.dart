@@ -163,7 +163,9 @@ void main() {
     );
     await pump(
       tester,
-      const Scaffold(body: DataSyncSettings()),
+      const Scaffold(
+        body: DataSyncSettings(storageOnly: true, section: 'Storage locations'),
+      ),
       const Size(680, 740),
     );
     await tester.ensureVisible(find.byType(ComicCacheDirectorySetting));

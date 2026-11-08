@@ -1,137 +1,206 @@
 part of 'settings_page.dart';
 
 class ExploreSettings extends StatefulWidget {
-  const ExploreSettings({super.key});
+  const ExploreSettings({super.key, this.section});
+
+  final String? section;
 
   @override
   State<ExploreSettings> createState() => _ExploreSettingsState();
 }
 
 class _ExploreSettingsState extends State<ExploreSettings> {
+  Future<void> _openSection(String section) async {
+    await context.to(() => ExploreSettings(section: section));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
-      scrollbarTopPadding: context.padding.top + 56,
-      slivers: [
-        SliverAppbar(title: Text("Explore".tl)),
-        SelectSetting(
-          title: "Display mode of comic tile".tl,
-          settingKey: "comicDisplayMode",
-          optionTranslation: {"detailed": "Detailed".tl, "brief": "Brief".tl},
-        ).toSliver(),
-        _SliderSetting(
-          title: "Size of comic tile".tl,
-          settingsIndex: "comicTileScale",
-          interval: 0.05,
-          min: 0.5,
-          max: 1.5,
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Explore Pages".tl,
-          builder: setExplorePagesWidget,
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Category Pages".tl,
-          builder: setCategoryPagesWidget,
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Network Favorite Pages".tl,
-          builder: setFavoritesPagesWidget,
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Search Sources".tl,
-          builder: setSearchSourcesWidget,
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show favorite status on comic tile".tl,
-          settingKey: "showFavoriteStatusOnTile",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show history on comic tile".tl,
-          settingKey: "showHistoryStatusOnTile",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show read later status on comic tile".tl,
-          settingKey: "showReadLaterStatusOnTile",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show collection status on comic tile".tl,
-          settingKey: "showCollectionStatusOnTile",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show page count on comic tile".tl,
-          settingKey: "showPageCountOnTile",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Reverse default chapter order".tl,
-          settingKey: "reverseChapterOrder",
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Keyword blocking".tl,
-          builder: () => _ManageBlockListView(
-            settingKey: "blockedWords",
-            title: "Keyword blocking".tl,
-            hint: "Hides comics whose title, subtitle or description contains a keyword.".tl,
-          ),
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Tag blocking".tl,
-          builder: () => _ManageBlockListView(
-            settingKey: "blockedTags",
-            title: "Tag blocking".tl,
-            hint: "Hides comics carrying a matching tag. A partial tag works, and tags are matched in the app's language.".tl,
-          ),
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "Comment keyword blocking".tl,
-          builder: () => _ManageBlockListView(
-            settingKey: "blockedCommentWords",
-            title: "Comment keyword blocking".tl,
-            hint: "Hides comments containing a keyword.".tl,
-          ),
-        ).toSliver(),
-        SelectSetting(
-          title: "Default Search Target".tl,
-          settingKey: "defaultSearchTarget",
-          optionTranslation: {
-            '_aggregated_': "Aggregated".tl,
-            ...(() {
-              var map = <String, String>{};
-              for (var c in ComicSource.all()) {
-                map[c.key] = c.name;
-              }
-              return map;
-            }()),
-          },
-        ).toSliver(),
-        SelectSetting(
-          title: "Auto Language Filters".tl,
-          settingKey: "autoAddLanguageFilter",
-          optionTranslation: {
-            'none': "None".tl,
-            'chinese': "Chinese",
-            'english': "English",
-            'japanese': "Japanese",
-          },
-        ).toSliver(),
-        SelectSetting(
-          title: "Initial Page".tl,
-          settingKey: "initialPage",
-          optionTranslation: {
-            '0': "Home Page".tl,
-            '1': "Favorites Page".tl,
-            '2': "Explore Page".tl,
-            '3': "Categories Page".tl,
-          },
-        ).toSliver(),
-        SelectSetting(
-          title: "Display mode of comic list".tl,
-          settingKey: "comicListDisplayMode",
-          optionTranslation: {
-            "paging": "Paging".tl,
-            "Continuous": "Continuous".tl,
-          },
-        ).toSliver(),
+    return _SettingsPageView(
+      title: 'Browsing & filters',
+      description: 'Adjust comic cards and choose the content you see',
+      section:
+          widget.section ??
+          _settingsSectionForTitle(4, _SettingsJumpScope.targetOf(context)),
+      onOpenSection: _openSection,
+      sections: [
+        _SettingsSection(
+          title: 'Browsing',
+          common: true,
+          children: [
+            SelectSetting(
+              title: "Display mode of comic tile".tl,
+              settingKey: "comicDisplayMode",
+              optionTranslation: {
+                "detailed": "Detailed".tl,
+                "brief": "Brief".tl,
+              },
+            ),
+            _SliderSetting(
+              title: "Size of comic tile".tl,
+              settingsIndex: "comicTileScale",
+              interval: 0.05,
+              min: 0.5,
+              max: 1.5,
+            ),
+            SelectSetting(
+              title: "Display mode of comic list".tl,
+              settingKey: "comicListDisplayMode",
+              optionTranslation: {
+                "paging": "Paging".tl,
+                "Continuous": "Continuous".tl,
+              },
+            ),
+            _SwitchSetting(
+              title: "Reverse default chapter order".tl,
+              settingKey: "reverseChapterOrder",
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Comic sources',
+          common: true,
+          children: [
+            _SettingsLink(
+              title: 'Comic Source',
+              icon: Icons.extension_outlined,
+              onTap: () => context.to(() => const ComicSourcePage()),
+            ),
+            _SettingsLink(
+              title: 'Source Libraries',
+              icon: Icons.library_books_outlined,
+              onTap: () => context.to(() => const SourceLibrariesPage()),
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Card details',
+          subtitle: 'Favorites, reading history, collections and page counts',
+          icon: Icons.style_outlined,
+          children: [
+            _SwitchSetting(
+              title: "Show favorite status on comic tile".tl,
+              settingKey: "showFavoriteStatusOnTile",
+            ),
+            _SwitchSetting(
+              title: "Show history on comic tile".tl,
+              settingKey: "showHistoryStatusOnTile",
+            ),
+            _SwitchSetting(
+              title: "Show read later status on comic tile".tl,
+              settingKey: "showReadLaterStatusOnTile",
+            ),
+            _SwitchSetting(
+              title: "Show collection status on comic tile".tl,
+              settingKey: "showCollectionStatusOnTile",
+            ),
+            _SwitchSetting(
+              title: "Show page count on comic tile".tl,
+              settingKey: "showPageCountOnTile",
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Search preferences',
+          subtitle: 'Default search, language filters and comic sources',
+          icon: Icons.search,
+          children: [
+            SelectSetting(
+              title: "Default Search Target".tl,
+              settingKey: "defaultSearchTarget",
+              optionTranslation: {
+                '_aggregated_': "Aggregated".tl,
+                ...(() {
+                  var map = <String, String>{};
+                  for (var c in ComicSource.all()) {
+                    map[c.key] = c.name;
+                  }
+                  return map;
+                }()),
+              },
+            ),
+            SelectSetting(
+              title: "Auto Language Filters".tl,
+              settingKey: "autoAddLanguageFilter",
+              optionTranslation: {
+                'none': "None".tl,
+                'chinese': "Chinese",
+                'english': "English",
+                'japanese': "Japanese",
+              },
+            ),
+            _PopupWindowSetting(
+              title: "Search Sources".tl,
+              builder: setSearchSourcesWidget,
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Browsing pages',
+          subtitle:
+              'Explore, categories, network favorites and the initial page',
+          icon: Icons.auto_stories_outlined,
+          children: [
+            _PopupWindowSetting(
+              title: "Explore Pages".tl,
+              builder: setExplorePagesWidget,
+            ),
+            _PopupWindowSetting(
+              title: "Category Pages".tl,
+              builder: setCategoryPagesWidget,
+            ),
+            _PopupWindowSetting(
+              title: "Network Favorite Pages".tl,
+              builder: setFavoritesPagesWidget,
+            ),
+            SelectSetting(
+              title: "Initial Page".tl,
+              settingKey: "initialPage",
+              optionTranslation: {
+                '0': "Home Page".tl,
+                '1': "Favorites Page".tl,
+                '2': "Explore Page".tl,
+                '3': "Categories Page".tl,
+              },
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Content filters',
+          subtitle: 'Block comic keywords, tags and comment keywords',
+          icon: Icons.filter_alt_outlined,
+          children: [
+            _PopupWindowSetting(
+              title: "Keyword blocking".tl,
+              builder: () => _ManageBlockListView(
+                settingKey: "blockedWords",
+                title: "Keyword blocking".tl,
+                hint:
+                    "Hides comics whose title, subtitle or description contains a keyword."
+                        .tl,
+              ),
+            ),
+            _PopupWindowSetting(
+              title: "Tag blocking".tl,
+              builder: () => _ManageBlockListView(
+                settingKey: "blockedTags",
+                title: "Tag blocking".tl,
+                hint:
+                    "Hides comics carrying a matching tag. A partial tag works, and tags are matched in the app's language."
+                        .tl,
+              ),
+            ),
+            _PopupWindowSetting(
+              title: "Comment keyword blocking".tl,
+              builder: () => _ManageBlockListView(
+                settingKey: "blockedCommentWords",
+                title: "Comment keyword blocking".tl,
+                hint: "Hides comments containing a keyword.".tl,
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -316,4 +385,3 @@ Widget setSearchSourcesWidget() {
     pages: pages,
   );
 }
-

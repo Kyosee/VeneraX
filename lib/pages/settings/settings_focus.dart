@@ -40,11 +40,24 @@ class _SettingsDestinationState extends State<_SettingsDestination> {
 
   Element? _find(String title) {
     Element? found;
+    Element? heading;
+    final translated = title.tl;
     void visit(Element element) {
       if (found != null) return;
       final widget = element.widget;
-      if (widget is Text && widget.data == title.tl) {
-        found = element;
+      if (widget is Text && widget.data == translated) {
+        heading ??= element;
+        element.visitAncestorElements((ancestor) {
+          final widget = ancestor.widget;
+          if (widget is ListTile ||
+              widget is SwitchListTile ||
+              widget is _SettingsLink ||
+              widget is _SettingLabel) {
+            found = element;
+            return false;
+          }
+          return ancestor != _content.currentContext;
+        });
       } else {
         element.visitChildren(visit);
       }
@@ -52,7 +65,7 @@ class _SettingsDestinationState extends State<_SettingsDestination> {
 
     final root = _content.currentContext;
     if (root is Element) root.visitChildren(visit);
-    return found;
+    return found ?? heading;
   }
 
   ScrollPosition? _scrollPosition() {
@@ -133,10 +146,13 @@ class _SettingsDestinationState extends State<_SettingsDestination> {
     if (!mounted || !target.mounted) return;
     BuildContext row = target;
     target.visitAncestorElements((element) {
-      if (element.widget is ListTile || element.widget is SwitchListTile) {
+      if (element.widget is ListTile ||
+          element.widget is SwitchListTile ||
+          element.widget is _SettingsLink) {
         row = element;
         return false;
       }
+      if (element.widget is _SettingLabel) row = element;
       return element != _content.currentContext;
     });
     final box = row.findRenderObject();

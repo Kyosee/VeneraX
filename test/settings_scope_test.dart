@@ -92,16 +92,10 @@ void main() {
       appdata.settings.setEnabledDeviceSpecificSettings(true);
       appdata.settings.setDeviceReaderSetting('readerMode', mode);
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: ReaderSettings())),
+        const MaterialApp(
+          home: Scaffold(body: ReaderSettings(section: 'Display settings')),
+        ),
       );
-      await tester.pumpAndSettle();
-      final display = find.text('Display settings');
-      await tester.scrollUntilVisible(
-        display,
-        400,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(display);
       await tester.pumpAndSettle();
       expect(find.text('Show Chapter Comments'), findsOneWidget);
       expect(
@@ -118,7 +112,9 @@ void main() {
     testWidgets('wide page split option is worded for $mode', (tester) async {
       appdata.settings['readerMode'] = mode;
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: ReaderSettings())),
+        const MaterialApp(
+          home: Scaffold(body: ReaderSettings(section: 'Page layout')),
+        ),
       );
       await tester.pumpAndSettle();
       final rows = tester.widgetList<SelectSetting>(
@@ -206,13 +202,84 @@ void main() {
     expect(settings.getReaderSetting('other', 'source', 'autoScrollSpeed'), 8);
   });
 
+  for (final comic in [false, true]) {
+    testWidgets(
+      'restoring the ${comic ? 'comic' : 'device'} reading mode calls back and resets gallery layout',
+      (tester) async {
+        final settings = appdata.settings;
+        settings.setEnabledDeviceSpecificSettings(true);
+        if (comic) {
+          settings.setDeviceReaderSetting(
+            'readerMode',
+            'continuousTopToBottom',
+          );
+          settings.setEnabledComicSpecificSettings('comic', 'source', true);
+        }
+        void write(String key, Object value) {
+          if (comic) {
+            settings.setReaderSetting('comic', 'source', key, value);
+          } else {
+            settings.setDeviceReaderSetting(key, value);
+          }
+        }
+
+        dynamic read(String key) => comic
+            ? settings.getReaderSetting('comic', 'source', key)
+            : settings.getDeviceReaderSetting(key);
+        write('readerMode', 'galleryLeftToRight');
+        write('readerScreenPicNumberForLandscape', 3);
+        write('readerScreenPicNumberForPortrait', 2);
+        final changed = <String>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ReaderSettings(
+                comicId: comic ? 'comic' : null,
+                comicSource: comic ? 'source' : null,
+                onChanged: changed.add,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final reset = find.byTooltip('Use inherited value');
+        expect(reset, findsOneWidget);
+        await tester.ensureVisible(reset);
+        await tester.pumpAndSettle();
+        await tester.runAsync(() async {
+          await tester.tap(reset);
+          await appdata.saveData(false);
+        });
+        await tester.pumpAndSettle();
+        expect(read('readerMode'), 'continuousTopToBottom');
+        expect(read('readerScreenPicNumberForLandscape'), 1);
+        expect(read('readerScreenPicNumberForPortrait'), 1);
+        expect(changed, [
+          'readerScreenPicNumberForLandscape',
+          'readerScreenPicNumberForPortrait',
+          'readerMode',
+        ]);
+        expect(
+          comic
+              ? settings.hasComicReaderSetting('comic', 'source', 'readerMode')
+              : settings.hasDeviceReaderSetting('readerMode'),
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets('scroll mode swaps the turning interval for a scroll speed', (
     tester,
   ) async {
     addTearDown(() => appdata.settings['autoPageTurningMode'] = 'page');
     appdata.settings['autoPageTurningMode'] = 'scroll';
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: ReaderSettings())),
+      const MaterialApp(
+        home: Scaffold(body: ReaderSettings(section: 'Auto turning & preload')),
+      ),
     );
     await tester.pumpAndSettle();
     final scrollable = find.byType(Scrollable).first;
@@ -231,7 +298,9 @@ void main() {
     appdata.settings['readerMode'] = 'galleryLeftToRight';
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: ReaderSettings())),
+      const MaterialApp(
+        home: Scaffold(body: ReaderSettings(section: 'Auto turning & preload')),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(

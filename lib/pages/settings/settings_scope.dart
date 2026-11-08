@@ -30,10 +30,7 @@ class _SettingLabel extends StatelessWidget {
     final fromDevice =
         (comicScope || useDeviceSettings) &&
         keys.any(settings.hasDeviceReaderSetting);
-    final showSource =
-        comicScope ||
-        useDeviceSettings ||
-        context.findAncestorWidgetOfExactType<ReaderSettings>() != null;
+    final showSource = comicScope || useDeviceSettings;
     final source = ownValue
         ? (comicScope ? 'Current comic' : 'This device')
         : fromDevice

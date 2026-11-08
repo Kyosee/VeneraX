@@ -1,5 +1,30 @@
 part of 'settings_page.dart';
 
+/// Keeps settings routes inside the reader's sidebar.
+class ReaderSettingsPanel extends StatefulWidget {
+  const ReaderSettingsPanel({required this.child, super.key});
+  final ReaderSettings child;
+
+  @override
+  State<ReaderSettingsPanel> createState() => _ReaderSettingsPanelState();
+}
+
+class _ReaderSettingsPanelState extends State<ReaderSettingsPanel> {
+  final _navigator = GlobalKey<NavigatorState>();
+
+  void close() => Navigator.of(context).maybePop();
+
+  @override
+  Widget build(BuildContext context) => NavigatorPopHandler(
+    onPopWithResult: (_) => _navigator.currentState!.pop(),
+    child: Navigator(
+      key: _navigator,
+      onGenerateRoute: (_) =>
+          MaterialPageRoute<void>(builder: (_) => widget.child),
+    ),
+  );
+}
+
 class ReaderSettings extends StatefulWidget {
   const ReaderSettings({
     super.key,
@@ -9,6 +34,7 @@ class ReaderSettings extends StatefulWidget {
     this.translationOnly = false,
     this.showSearch = false,
     this.currentPageImage,
+    this.section,
   });
 
   final void Function(String key)? onChanged;
@@ -16,6 +42,7 @@ class ReaderSettings extends StatefulWidget {
   final String? comicSource;
   final bool translationOnly;
   final bool showSearch;
+  final String? section;
 
   /// Caller-owned copy of the page open in the reader, for the image
   /// enhancement preview. Null outside the reader.
@@ -26,7 +53,6 @@ class ReaderSettings extends StatefulWidget {
 }
 
 class _ReaderSettingsState extends State<ReaderSettings> {
-  late bool _translationAdvanced;
   final _searchController = TextEditingController();
   String _searchQuery = '';
   _SettingsSearchEntry? _searchTarget;
@@ -40,9 +66,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   @override
   void initState() {
     super.initState();
-    _translationAdvanced =
-        TranslationPerformanceConfig.current ==
-        TranslationPerformancePreset.custom;
     // The startup probe normally finished long ago; if not, show the ripple
     // rows as soon as it does.
     if (!EinkPanel.rippleProbed) {
@@ -53,10 +76,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   void _setTranslationPreset(String value) {
     var preset = TranslationPerformanceConfig.fromSetting(value);
     TranslationPerformanceConfig.apply(preset);
-    setState(
-      () =>
-          _translationAdvanced = preset == TranslationPerformancePreset.custom,
-    );
+    setState(() {});
   }
 
   void _markTranslationCustom(String key) {
@@ -81,21 +101,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     final mode = _effectiveSetting('readerMode');
     return _effectiveSetting('showChapterComments') == true &&
         (mode == 'galleryLeftToRight' || mode == 'galleryRightToLeft');
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final target = _SettingsJumpScope.targetOf(context);
-    if (const [
-      'Text removal',
-      'Pages per pre-translation request',
-      'OCR parallelism (0 = auto)',
-      'Image download concurrency',
-      'Translation request concurrency',
-    ].contains(target)) {
-      _translationAdvanced = true;
-    }
   }
 
   void refreshSettings() {
@@ -304,9 +309,19 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   Widget build(BuildContext context) {
     if (!widget.showSearch) return _buildSettings(context);
     final target = _searchTarget;
+    final panel = context.findAncestorStateOfType<_ReaderSettingsPanelState>();
     return Column(
       children: [
-        Appbar(title: Text('Reading settings'.tl)),
+        Appbar(
+          title: Text('Reading settings'.tl),
+          leading: panel != null
+              ? IconButton(
+                  tooltip: 'Back'.tl,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: panel.close,
+                )
+              : null,
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: AppSearchField(
@@ -367,151 +382,147 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     final comicId = widget.comicId;
     final sourceKey = widget.comicSource;
     final key = "$comicId@$sourceKey";
-
-    bool isEnabledSpecificSettings =
+    final isEnabledSpecificSettings =
         comicId != null &&
         appdata.settings.isComicSpecificSettingsEnabled(comicId, sourceKey);
-    bool useDeviceSpecificSettings =
+    final useDeviceSpecificSettings =
         !isEnabledSpecificSettings &&
         appdata.settings.isDeviceSpecificSettingsEnabled();
-
-    return SmoothCustomScrollView(
-      scrollbarTopPadding: widget.showSearch ? 0 : context.padding.top + 56,
-      slivers: [
-        if (!widget.showSearch)
-          SliverAppbar(
-            title: Text(
-              (widget.translationOnly ? 'AI Translation' : 'Reading settings')
-                  .tl,
-            ),
-          ),
-        ListTile(
-          leading: const Icon(Icons.tune),
-          title: Text(
-            (isEnabledSpecificSettings
-                    ? 'Editing settings for this comic'
-                    : useDeviceSpecificSettings
-                    ? 'Editing settings for this device'
-                    : 'Editing global settings')
-                .tl,
-          ),
-          subtitle: Text('Restore a setting to inherit its value.'.tl),
-        ).toSliver(),
-        if (comicId != null && sourceKey != null)
-          SliverMainAxisGroup(
-            slivers: [
-              SwitchListTile(
-                title: Text("Enable comic specific settings".tl),
-                value: isEnabledSpecificSettings,
-                onChanged: (b) {
-                  setState(() {
+    final selectedSection =
+        widget.section ??
+        _settingsSectionForTitle(
+          widget.translationOnly ? 8 : 1,
+          _SettingsJumpScope.targetOf(context),
+        );
+    final readingMode = SelectSetting(
+      title: "Reading mode".tl,
+      settingKey: "readerMode",
+      optionTranslation: {
+        "galleryLeftToRight": "Gallery (Left to Right)".tl,
+        "galleryRightToLeft": "Gallery (Right to Left)".tl,
+        "galleryTopToBottom": "Gallery (Top to Bottom)".tl,
+        "continuousLeftToRight": "Continuous (Left to Right)".tl,
+        "continuousRightToLeft": "Continuous (Right to Left)".tl,
+        "continuousTopToBottom": "Continuous (Top to Bottom)".tl,
+      },
+      onChanged: () {
+        setState(() {});
+        var readerMode = _effectiveSetting('readerMode');
+        if (readerMode?.toLowerCase().startsWith('continuous') ?? false) {
+          _writeEffectiveSetting('readerScreenPicNumberForLandscape', 1);
+          widget.onChanged?.call('readerScreenPicNumberForLandscape');
+          _writeEffectiveSetting('readerScreenPicNumberForPortrait', 1);
+          widget.onChanged?.call('readerScreenPicNumberForPortrait');
+        }
+        widget.onChanged?.call("readerMode");
+      },
+      comicId: isEnabledSpecificSettings ? widget.comicId : null,
+      comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
+      useDeviceSettings: useDeviceSpecificSettings,
+    );
+    return _SettingsPageView(
+      title: widget.translationOnly ? 'AI Translation' : 'Reading settings',
+      description: widget.translationOnly
+          ? 'Translation services, languages, models and performance'
+          : 'Page layout, gestures and reading display',
+      section: selectedSection,
+      showHeader: !widget.showSearch,
+      intro: Material(
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+        child: Column(
+          children: [
+            SwitchListTile(
+              dense: true,
+              title: Text(
+                (comicId != null
+                        ? 'Enable comic specific settings'
+                        : 'Enable device specific settings')
+                    .tl,
+                style: const TextStyle(fontSize: 13),
+              ),
+              subtitle: Text(
+                (isEnabledSpecificSettings
+                        ? 'Editing settings for this comic'
+                        : useDeviceSpecificSettings
+                        ? 'Editing settings for this device'
+                        : 'Editing global settings')
+                    .tl,
+                style: const TextStyle(fontSize: 12),
+              ),
+              value: comicId != null
+                  ? isEnabledSpecificSettings
+                  : useDeviceSpecificSettings,
+              onChanged: (enabled) {
+                setState(() {
+                  if (comicId != null && sourceKey != null) {
                     appdata.settings.setEnabledComicSpecificSettings(
                       comicId,
                       sourceKey,
-                      b,
+                      enabled,
                     );
-                  });
-                  appdata.saveData();
-                  widget.onChanged?.call('enabled');
-                },
-              ).toSliver(),
-              if (isEnabledSpecificSettings)
-                Center(
-                  child: TextButton(
-                    onPressed: () {
-                      setState(() {
-                        appdata.settings.resetComicReaderSettings(key);
-                      });
-                      appdata.saveData();
-                      widget.onChanged?.call('enabled');
-                    },
-                    child: Text(
-                      "Clear specific reader settings for this comic".tl,
-                    ),
-                  ),
-                ).toSliver(),
-              Divider().toSliver(),
-            ],
-          ),
-        if (comicId == null)
-          SliverMainAxisGroup(
-            slivers: [
-              SwitchListTile(
-                title: Text("Enable device specific settings".tl),
-                value: useDeviceSpecificSettings,
-                onChanged: (b) {
+                  } else {
+                    appdata.settings.setEnabledDeviceSpecificSettings(enabled);
+                  }
+                });
+                appdata.saveData();
+                widget.onChanged?.call('enabled');
+              },
+            ),
+            if (isEnabledSpecificSettings ||
+                (comicId == null && useDeviceSpecificSettings))
+              TextButton.icon(
+                icon: const Icon(Icons.restart_alt, size: 16),
+                label: Text(
+                  (isEnabledSpecificSettings
+                          ? 'Clear specific reader settings for this comic'
+                          : 'Clear specific reader settings for this device')
+                      .tl,
+                ),
+                onPressed: () {
                   setState(() {
-                    appdata.settings.setEnabledDeviceSpecificSettings(b);
+                    if (isEnabledSpecificSettings) {
+                      appdata.settings.resetComicReaderSettings(key);
+                    } else {
+                      appdata.settings.resetDeviceReaderSettings();
+                    }
                   });
                   appdata.saveData();
                   widget.onChanged?.call('enabled');
                 },
-              ).toSliver(),
-              if (useDeviceSpecificSettings)
-                Center(
-                  child: TextButton(
-                    onPressed: () {
-                      setState(() {
-                        appdata.settings.resetDeviceReaderSettings();
-                      });
-                      appdata.saveData();
-                      widget.onChanged?.call('enabled');
-                    },
-                    child: Text(
-                      "Clear specific reader settings for this device".tl,
-                    ),
-                  ),
-                ).toSliver(),
-              Divider().toSliver(),
-            ],
+              ),
+          ],
+        ),
+      ),
+      onOpenSection: (section) async {
+        await context.to(
+          () => ReaderSettings(
+            section: section,
+            translationOnly: widget.translationOnly,
+            comicId: widget.comicId,
+            comicSource: widget.comicSource,
+            onChanged: widget.onChanged,
+            currentPageImage: widget.currentPageImage,
           ),
+        );
+        refreshSettings();
+      },
+      sections: [
         if (!widget.translationOnly) ...[
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerReadingGroup'),
-            initiallyExpanded: true,
-            icon: Icons.menu_book,
-            title: "Reading settings".tl,
+          _SettingsSection(
+            title: 'Reading mode',
+            icon: Icons.menu_book_outlined,
+            common: true,
             children: [
+              if (selectedSection == null)
+                _buildReadingModes(readingMode)
+              else
+                readingMode,
               _SwitchSetting(
                 title: "Page animation".tl,
                 settingKey: "enablePageAnimation",
                 onChanged: () {
                   widget.onChanged?.call("enablePageAnimation");
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
-              SelectSetting(
-                title: "Reading mode".tl,
-                settingKey: "readerMode",
-                optionTranslation: {
-                  "galleryLeftToRight": "Gallery (Left to Right)".tl,
-                  "galleryRightToLeft": "Gallery (Right to Left)".tl,
-                  "galleryTopToBottom": "Gallery (Top to Bottom)".tl,
-                  "continuousLeftToRight": "Continuous (Left to Right)".tl,
-                  "continuousRightToLeft": "Continuous (Right to Left)".tl,
-                  "continuousTopToBottom": "Continuous (Top to Bottom)".tl,
-                },
-                onChanged: () {
-                  setState(() {});
-                  var readerMode = _effectiveSetting('readerMode');
-                  if (readerMode?.toLowerCase().startsWith('continuous') ??
-                      false) {
-                    _writeEffectiveSetting(
-                      'readerScreenPicNumberForLandscape',
-                      1,
-                    );
-                    widget.onChanged?.call('readerScreenPicNumberForLandscape');
-                    _writeEffectiveSetting(
-                      'readerScreenPicNumberForPortrait',
-                      1,
-                    );
-                    widget.onChanged?.call('readerScreenPicNumberForPortrait');
-                  }
-                  widget.onChanged?.call("readerMode");
                 },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
                 comicSource: isEnabledSpecificSettings
@@ -532,6 +543,30 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
+              if (App.isDesktop)
+                _SwitchSetting(
+                  title: 'Enter fullscreen when reading starts'.tl,
+                  settingKey: 'autoFullscreenOnRead',
+                  onChanged: () {
+                    widget.onChanged?.call('autoFullscreenOnRead');
+                  },
+                ),
+              _SwitchSetting(
+                title: 'Remove from read later when reading starts'.tl,
+                settingKey: 'autoRemoveFromReadLater',
+                onChanged: () {
+                  widget.onChanged?.call('autoRemoveFromReadLater');
+                },
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Page layout',
+            icon: Icons.auto_stories_outlined,
+            subtitle:
+                '${readingMode.optionTranslation[_effectiveSetting('readerMode')]} · ${'Page arrangement, spacing and wide pages'.tl}',
+            children: [
+              readingMode,
               if ((_effectiveSetting('readerMode') as String?)?.startsWith(
                     'gallery',
                   ) ??
@@ -641,6 +676,72 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
+              if ((_effectiveSetting('readerMode') as String?) ==
+                  'continuousTopToBottom')
+                _SwitchSetting(
+                  title: "Center page after turning".tl,
+                  subtitle:
+                      "Center a short page vertically instead of pinning it to the top"
+                          .tl,
+                  settingKey: "readerCenterPageOnTurn",
+                  onChanged: () {
+                    widget.onChanged?.call("readerCenterPageOnTurn");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+              if ((_effectiveSetting('readerMode') as String?) ==
+                  'continuousTopToBottom')
+                SelectSetting(
+                  title: "Split wide pages".tl,
+                  settingKey: "splitWidePages",
+                  optionTranslation: {
+                    "off": "Off".tl,
+                    "rightFirst": "Right half on top".tl,
+                    "leftFirst": "Left half on top".tl,
+                  },
+                  help:
+                      "Cuts a landscape page, usually two pages scanned as one, down the middle and stacks the halves so each fills the screen width. For comics read right to left, choose \"Right half on top\"."
+                          .tl,
+                  onChanged: () {
+                    widget.onChanged?.call("splitWidePages");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+              if ((_effectiveSetting('readerMode') as String?)?.startsWith(
+                    'continuous',
+                  ) ??
+                  false)
+                _SliderSetting(
+                  title: "Spacing between pages".tl,
+                  settingsIndex: "readerPageSpacing",
+                  interval: 2,
+                  min: 0,
+                  max: 50,
+                  onChanged: () {
+                    widget.onChanged?.call("readerPageSpacing");
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Auto turning & preload',
+            icon: Icons.timer_outlined,
+            subtitle: 'Automatic page turning, scrolling and image preloading',
+            children: [
+              readingMode,
               if ((_effectiveSetting('readerMode') as String?)?.startsWith(
                     'continuous',
                   ) ??
@@ -718,79 +819,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
-              if ((_effectiveSetting('readerMode') as String?) ==
-                  'continuousTopToBottom')
-                _SwitchSetting(
-                  title: "Center page after turning".tl,
-                  subtitle:
-                      "Center a short page vertically instead of pinning it to the top"
-                          .tl,
-                  settingKey: "readerCenterPageOnTurn",
-                  onChanged: () {
-                    widget.onChanged?.call("readerCenterPageOnTurn");
-                  },
-                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource: isEnabledSpecificSettings
-                      ? widget.comicSource
-                      : null,
-                  useDeviceSettings: useDeviceSpecificSettings,
-                ),
-              if ((_effectiveSetting('readerMode') as String?) ==
-                  'continuousTopToBottom')
-                SelectSetting(
-                  title: "Split wide pages".tl,
-                  settingKey: "splitWidePages",
-                  optionTranslation: {
-                    "off": "Off".tl,
-                    "rightFirst": "Right half on top".tl,
-                    "leftFirst": "Left half on top".tl,
-                  },
-                  help:
-                      "Cuts a landscape page, usually two pages scanned as one, down the middle and stacks the halves so each fills the screen width. For comics read right to left, choose \"Right half on top\"."
-                          .tl,
-                  onChanged: () {
-                    widget.onChanged?.call("splitWidePages");
-                  },
-                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource: isEnabledSpecificSettings
-                      ? widget.comicSource
-                      : null,
-                  useDeviceSettings: useDeviceSpecificSettings,
-                ),
-              if ((_effectiveSetting('readerMode') as String?)?.startsWith(
-                    'continuous',
-                  ) ??
-                  false)
-                _SliderSetting(
-                  title: "Spacing between pages".tl,
-                  settingsIndex: "readerPageSpacing",
-                  interval: 2,
-                  min: 0,
-                  max: 50,
-                  onChanged: () {
-                    widget.onChanged?.call("readerPageSpacing");
-                  },
-                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource: isEnabledSpecificSettings
-                      ? widget.comicSource
-                      : null,
-                  useDeviceSettings: useDeviceSpecificSettings,
-                ),
-              if (App.isDesktop)
-                _SwitchSetting(
-                  title: 'Enter fullscreen when reading starts'.tl,
-                  settingKey: 'autoFullscreenOnRead',
-                  onChanged: () {
-                    widget.onChanged?.call('autoFullscreenOnRead');
-                  },
-                ),
-              _SwitchSetting(
-                title: 'Remove from read later when reading starts'.tl,
-                settingKey: 'autoRemoveFromReadLater',
-                onChanged: () {
-                  widget.onChanged?.call('autoRemoveFromReadLater');
-                },
-              ),
               _SliderSetting(
                 title: "Number of images preloaded".tl,
                 settingsIndex: "preloadImageCount",
@@ -804,14 +832,23 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
             ],
-          ).toSliver(),
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerGestureGroup'),
-            icon: Icons.touch_app,
-            title: "Gesture settings".tl,
+          ),
+          _SettingsSection(
+            title: 'Gesture settings',
+            icon: Icons.touch_app_outlined,
+            subtitle:
+                (_effectiveSetting('enableTapToTurnPages') != true
+                        ? 'Off'
+                        : _effectiveSetting('reverseTapToTurnPages') == true
+                        ? 'Reverse tap to turn Pages'
+                        : 'Tap to turn Pages')
+                    .tl,
             children: [
               _PageTurnModeSetting(
-                onChanged: widget.onChanged,
+                onChanged: (key) {
+                  refreshSettings();
+                  widget.onChanged?.call(key);
+                },
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
                 comicSource: isEnabledSpecificSettings
                     ? widget.comicSource
@@ -913,151 +950,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   ),
                 ),
             ],
-          ).toSliver(),
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerFavoritesGroup'),
-            icon: Icons.favorite_border,
-            title: "Favorites settings".tl,
-            children: [
-              _SwitchSetting(
-                title: "Also collect chapter cover when collecting image".tl,
-                settingKey: "autoFavoriteCover",
-                onChanged: () {
-                  widget.onChanged?.call("autoFavoriteCover");
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
-              SelectSetting(
-                title: "Quick collect image".tl,
-                settingKey: "quickCollectImage",
-                optionTranslation: {
-                  "No": "Not enable".tl,
-                  "DoubleTap": "Double Tap".tl,
-                  "Swipe": "Swipe".tl,
-                },
-                onChanged: () {
-                  widget.onChanged?.call("quickCollectImage");
-                },
-                help:
-                    "On the image browsing page, you can quickly collect images by sliding horizontally or vertically according to your reading mode"
-                        .tl,
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
-            ],
-          ).toSliver(),
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerImageProcessingGroup'),
-            icon: Icons.auto_fix_high,
-            title: "Image processing / enhancement".tl,
-            children: [
-              _SwitchSetting(
-                title: 'Limit image width'.tl,
-                subtitle: 'When using Continuous(Top to Bottom) mode'.tl,
-                settingKey: 'limitImageWidth',
-                onChanged: () {
-                  setState(() {});
-                  widget.onChanged?.call('limitImageWidth');
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
-              if (_effectiveSetting('limitImageWidth') == true)
-                _SliderSetting(
-                  title: "Image width (% of screen height)".tl,
-                  settingsIndex: 'imageWidthPercent',
-                  interval: 5,
-                  min: 40,
-                  max: 150,
-                  onChanged: () {
-                    widget.onChanged?.call('imageWidthPercent');
-                  },
-                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource: isEnabledSpecificSettings
-                      ? widget.comicSource
-                      : null,
-                  useDeviceSettings: useDeviceSpecificSettings,
-                ),
-              _CallbackSetting(
-                title: "Custom Image Processing".tl,
-                callback: () => context.to(() => _CustomImageProcessing()),
-                actionTitle: "Edit".tl,
-              ),
-              _SwitchSetting(
-                title: "Image enhancement".tl,
-                subtitle:
-                    "Sharpen blurry images at render time without extra loading or battery cost"
-                        .tl,
-                settingKey: "enableReaderImageEnhance",
-                onChanged: () {
-                  setState(() {});
-                  widget.onChanged?.call("enableReaderImageEnhance");
-                },
-              ),
-              if (appdata.settings['enableReaderImageEnhance'] == true) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: ImageEnhancePreview(
-                    pageImage: widget.currentPageImage,
-                  ),
-                ),
-                _SliderSetting(
-                  title: "Sharpen strength".tl,
-                  settingsIndex: "readerImageEnhanceStrength",
-                  interval: 0.1,
-                  min: 0.0,
-                  max: ImageEnhanceShader.maxStrength,
-                  onChanged: () {
-                    widget.onChanged?.call("readerImageEnhanceStrength");
-                  },
-                ),
-                _SliderSetting(
-                  title: "Clarity".tl,
-                  settingsIndex: "readerImageEnhanceClarity",
-                  interval: 0.1,
-                  min: 0.0,
-                  max: 1.0,
-                  onChanged: () {
-                    widget.onChanged?.call("readerImageEnhanceClarity");
-                  },
-                ),
-                _SliderSetting(
-                  title: "Contrast".tl,
-                  settingsIndex: "readerImageEnhanceContrast",
-                  interval: 0.1,
-                  min: 0.0,
-                  max: 1.0,
-                  onChanged: () {
-                    widget.onChanged?.call("readerImageEnhanceContrast");
-                  },
-                ),
-                _SliderSetting(
-                  title: "Color vibrance".tl,
-                  settingsIndex: "readerImageEnhanceVibrance",
-                  interval: 0.1,
-                  min: 0.0,
-                  max: 1.0,
-                  onChanged: () {
-                    widget.onChanged?.call("readerImageEnhanceVibrance");
-                  },
-                ),
-              ],
-            ],
-          ).toSliver(),
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerDisplayGroup'),
-            icon: Icons.tv,
-            title: "Display settings".tl,
+          ),
+          _SettingsSection(
+            title: 'Display settings',
+            icon: Icons.contrast,
+            subtitle:
+                '${'Night mode'.tl}: ${(appdata.settings['readerNightMode'] == true ? 'On' : 'Off').tl}',
             children: [
               SelectSetting(
                 title: "Reading background color".tl,
@@ -1221,13 +1119,151 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
             ],
-          ).toSliver(),
-          // Device-local panel tuning (see _disableSync), so these rows edit
-          // the global value even when opened for a comic.
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerEinkGroup'),
+          ),
+          _SettingsSection(
+            title: 'Image processing / enhancement',
+            icon: Icons.auto_fix_high,
+            subtitle: 'Image size, clarity and custom processing',
+            children: [
+              _SwitchSetting(
+                title: 'Limit image width'.tl,
+                subtitle: 'When using Continuous(Top to Bottom) mode'.tl,
+                settingKey: 'limitImageWidth',
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call('limitImageWidth');
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              if (_effectiveSetting('limitImageWidth') == true)
+                _SliderSetting(
+                  title: "Image width (% of screen height)".tl,
+                  settingsIndex: 'imageWidthPercent',
+                  interval: 5,
+                  min: 40,
+                  max: 150,
+                  onChanged: () {
+                    widget.onChanged?.call('imageWidthPercent');
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
+              _CallbackSetting(
+                title: "Custom Image Processing".tl,
+                callback: () => context.to(() => _CustomImageProcessing()),
+                actionTitle: "Edit".tl,
+              ),
+              _SwitchSetting(
+                title: "Image enhancement".tl,
+                subtitle:
+                    "Sharpen blurry images at render time without extra loading or battery cost"
+                        .tl,
+                settingKey: "enableReaderImageEnhance",
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call("enableReaderImageEnhance");
+                },
+              ),
+              if (appdata.settings['enableReaderImageEnhance'] == true) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: ImageEnhancePreview(
+                    pageImage: widget.currentPageImage,
+                  ),
+                ),
+                _SliderSetting(
+                  title: "Sharpen strength".tl,
+                  settingsIndex: "readerImageEnhanceStrength",
+                  interval: 0.1,
+                  min: 0.0,
+                  max: ImageEnhanceShader.maxStrength,
+                  onChanged: () {
+                    widget.onChanged?.call("readerImageEnhanceStrength");
+                  },
+                ),
+                _SliderSetting(
+                  title: "Clarity".tl,
+                  settingsIndex: "readerImageEnhanceClarity",
+                  interval: 0.1,
+                  min: 0.0,
+                  max: 1.0,
+                  onChanged: () {
+                    widget.onChanged?.call("readerImageEnhanceClarity");
+                  },
+                ),
+                _SliderSetting(
+                  title: "Contrast".tl,
+                  settingsIndex: "readerImageEnhanceContrast",
+                  interval: 0.1,
+                  min: 0.0,
+                  max: 1.0,
+                  onChanged: () {
+                    widget.onChanged?.call("readerImageEnhanceContrast");
+                  },
+                ),
+                _SliderSetting(
+                  title: "Color vibrance".tl,
+                  settingsIndex: "readerImageEnhanceVibrance",
+                  interval: 0.1,
+                  min: 0.0,
+                  max: 1.0,
+                  onChanged: () {
+                    widget.onChanged?.call("readerImageEnhanceVibrance");
+                  },
+                ),
+              ],
+            ],
+          ),
+          _SettingsSection(
+            title: 'Favorites settings',
+            icon: Icons.favorite_border,
+            subtitle: 'Quick image collection and chapter covers',
+            children: [
+              _SwitchSetting(
+                title: "Also collect chapter cover when collecting image".tl,
+                settingKey: "autoFavoriteCover",
+                onChanged: () {
+                  widget.onChanged?.call("autoFavoriteCover");
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              SelectSetting(
+                title: "Quick collect image".tl,
+                settingKey: "quickCollectImage",
+                optionTranslation: {
+                  "No": "Not enable".tl,
+                  "DoubleTap": "Double Tap".tl,
+                  "Swipe": "Swipe".tl,
+                },
+                onChanged: () {
+                  widget.onChanged?.call("quickCollectImage");
+                },
+                help:
+                    "On the image browsing page, you can quickly collect images by sliding horizontally or vertically according to your reading mode"
+                        .tl,
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'E-ink screen',
             icon: Icons.chrome_reader_mode_outlined,
-            title: "E-ink screen".tl,
+            subtitle: 'Refresh and page-turn effects for e-ink displays',
             children: [
               _SwitchSetting(
                 title: "Full refresh on page turn".tl,
@@ -1283,37 +1319,35 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   ),
               ],
             ],
-          ).toSliver(),
-        ],
-        if (!widget.translationOnly)
-          _CallbackSetting(
-            title: 'AI Translation'.tl,
-            subtitle: _activeProviderSubtitle(),
-            actionTitle: 'Manage'.tl,
-            callback: () => context.to(
-              () => Material(
-                child: ReaderSettings(
-                  translationOnly: true,
-                  comicId: widget.comicId,
-                  comicSource: widget.comicSource,
-                  onChanged: widget.onChanged,
-                ),
-              ),
-            ),
-          ).toSliver(),
-        if (widget.translationOnly)
-          _SettingsExpansionTile(
-            expansionKey: const PageStorageKey('readerTranslationGroup'),
-            initiallyExpanded: true,
+          ),
+          _SettingsSection(
+            title: 'Related settings',
             icon: Icons.translate,
-            title: "AI Translation (experimental)".tl,
+            common: true,
             children: [
               _CallbackSetting(
-                title: "How AI translation works".tl,
-                subtitle: "Setup and usage in plain language".tl,
-                actionTitle: "Help".tl,
-                callback: _showTranslationHelp,
+                title: 'AI Translation'.tl,
+                subtitle: _activeProviderSubtitle(),
+                actionTitle: 'Manage'.tl,
+                callback: () => context.to(
+                  () => Material(
+                    child: ReaderSettings(
+                      translationOnly: true,
+                      comicId: widget.comicId,
+                      comicSource: widget.comicSource,
+                      onChanged: widget.onChanged,
+                    ),
+                  ),
+                ),
               ),
+            ],
+          ),
+        ] else ...[
+          _SettingsSection(
+            title: 'Translation preferences',
+            icon: Icons.translate,
+            common: true,
+            children: [
               // Translation is per-comic on purpose (it spends tokens): the
               // switch only appears when a specific comic is in context (opened
               // from the reader / detail page), and toggles that comic alone.
@@ -1350,30 +1384,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   ),
                   enabled: false,
                 ),
-              _CallbackSetting(
-                title: "LLM providers".tl,
-                subtitle: _activeProviderSubtitle(),
-                actionTitle: "Manage".tl,
-                callback: () async {
-                  await context.to(() => const LlmProvidersPage());
-                  if (mounted) setState(() {});
-                },
-              ),
-              _CallbackSetting(
-                title: "Translation prompt".tl,
-                subtitle: LlmPromptStore.isCustom ? "Custom".tl : "Built-in".tl,
-                actionTitle: "Edit".tl,
-                callback: () async {
-                  await context.to(() => const TranslationPromptPage());
-                  if (mounted) setState(() {});
-                },
-              ),
-              _CallbackSetting(
-                title: "Test translation".tl,
-                subtitle: "Check the endpoint with a sample line".tl,
-                actionTitle: "Test".tl,
-                callback: _testTranslation,
-              ),
               SelectSetting(
                 title: "Source language".tl,
                 settingKey: "imageTranslationSource",
@@ -1402,20 +1412,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : null,
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
-              _CallbackSetting(
-                title: "Custom languages".tl,
-                subtitle: _customLanguageCount() == 0
-                    ? "Add source or target languages that are not in the list"
-                          .tl
-                    : "@count added".tlParams({
-                        'count': _customLanguageCount(),
-                      }),
-                actionTitle: "Manage".tl,
-                callback: () async {
-                  await context.to(() => const TranslationLanguagesPage());
-                  if (mounted) setState(() {});
-                },
-              ),
               SelectSetting(
                 title: "Performance mode".tl,
                 settingKey: TranslationPerformanceConfig.settingKey,
@@ -1431,78 +1427,49 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   );
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: Text("Advanced settings".tl),
-                trailing: Icon(
-                  _translationAdvanced ? Icons.expand_less : Icons.expand_more,
-                ),
-                onTap: () => setState(
-                  () => _translationAdvanced = !_translationAdvanced,
-                ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Translation services',
+            icon: Icons.cloud_outlined,
+            common: true,
+            children: [
+              _CallbackSetting(
+                title: "LLM providers".tl,
+                subtitle: _activeProviderSubtitle(),
+                actionTitle: "Manage".tl,
+                callback: () async {
+                  await context.to(() => const LlmProvidersPage());
+                  if (mounted) setState(() {});
+                },
               ),
-              if (_translationAdvanced) ...[
-                SelectSetting(
-                  title: "Text removal".tl,
-                  settingKey: "imageTranslationInpaintMode",
-                  help:
-                      "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
-                          .tl,
-                  optionTranslation: {
-                    "smart": "Smart erase".tl,
-                    "patch": "Color patch".tl,
-                  },
-                  onChanged: () {
-                    setState(() {});
-                    widget.onChanged?.call("imageTranslationInpaintMode");
-                  },
-                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                  comicSource: isEnabledSpecificSettings
-                      ? widget.comicSource
-                      : null,
-                  useDeviceSettings: useDeviceSpecificSettings,
-                ),
-                _SliderSetting(
-                  title: "Pages per pre-translation request".tl,
-                  settingsIndex: "imageTranslationPreBatchPages",
-                  interval: 1,
-                  min: 1,
-                  max: App.isDesktop ? 20 : 8,
-                  onChanged: () {
-                    _markTranslationCustom("imageTranslationPreBatchPages");
-                  },
-                ),
-                _SliderSetting(
-                  title: "OCR parallelism (0 = auto)".tl,
-                  settingsIndex: "imageTranslationOcrWorkers",
-                  interval: 1,
-                  min: 0,
-                  max: App.isDesktop ? 6 : 2,
-                  onChanged: () {
-                    _markTranslationCustom("imageTranslationOcrWorkers");
-                  },
-                ),
-                _SliderSetting(
-                  title: "Image download concurrency".tl,
-                  settingsIndex: "imageTranslationImageConcurrency",
-                  interval: 1,
-                  min: 1,
-                  max: App.isDesktop ? 6 : 3,
-                  onChanged: () {
-                    _markTranslationCustom("imageTranslationImageConcurrency");
-                  },
-                ),
-                _SliderSetting(
-                  title: "Translation request concurrency".tl,
-                  settingsIndex: "imageTranslationLlmConcurrency",
-                  interval: 1,
-                  min: 1,
-                  max: App.isDesktop ? 4 : 3,
-                  onChanged: () {
-                    _markTranslationCustom("imageTranslationLlmConcurrency");
-                  },
-                ),
-              ],
+              _CallbackSetting(
+                title: "Test translation".tl,
+                subtitle: "Check the endpoint with a sample line".tl,
+                actionTitle: "Test".tl,
+                callback: _testTranslation,
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Models & languages',
+            icon: Icons.language,
+            common: true,
+            children: [
+              _CallbackSetting(
+                title: "Custom languages".tl,
+                subtitle: _customLanguageCount() == 0
+                    ? "Add source or target languages that are not in the list"
+                          .tl
+                    : "@count added".tlParams({
+                        'count': _customLanguageCount(),
+                      }),
+                actionTitle: "Manage".tl,
+                callback: () async {
+                  await context.to(() => const TranslationLanguagesPage());
+                  if (mounted) setState(() {});
+                },
+              ),
               _CallbackSetting(
                 title: "Translation models".tl,
                 subtitle: TranslationModels.isReadyFor(_effectiveSourceLang())
@@ -1513,6 +1480,95 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   () =>
                       TranslationModelsPage(sourceLang: _effectiveSourceLang()),
                 ),
+              ),
+              _CallbackSetting(
+                title: "Translation prompt".tl,
+                subtitle: LlmPromptStore.isCustom ? "Custom".tl : "Built-in".tl,
+                actionTitle: "Edit".tl,
+                callback: () async {
+                  await context.to(() => const TranslationPromptPage());
+                  if (mounted) setState(() {});
+                },
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Advanced translation settings',
+            icon: Icons.tune,
+            subtitle: 'Text removal and translation concurrency',
+            children: [
+              SelectSetting(
+                title: "Text removal".tl,
+                settingKey: "imageTranslationInpaintMode",
+                help:
+                    "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
+                        .tl,
+                optionTranslation: {
+                  "smart": "Smart erase".tl,
+                  "patch": "Color patch".tl,
+                },
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call("imageTranslationInpaintMode");
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              _SliderSetting(
+                title: "Pages per pre-translation request".tl,
+                settingsIndex: "imageTranslationPreBatchPages",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 20 : 8,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationPreBatchPages");
+                },
+              ),
+              _SliderSetting(
+                title: "OCR parallelism (0 = auto)".tl,
+                settingsIndex: "imageTranslationOcrWorkers",
+                interval: 1,
+                min: 0,
+                max: App.isDesktop ? 6 : 2,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationOcrWorkers");
+                },
+              ),
+              _SliderSetting(
+                title: "Image download concurrency".tl,
+                settingsIndex: "imageTranslationImageConcurrency",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 6 : 3,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationImageConcurrency");
+                },
+              ),
+              _SliderSetting(
+                title: "Translation request concurrency".tl,
+                settingsIndex: "imageTranslationLlmConcurrency",
+                interval: 1,
+                min: 1,
+                max: App.isDesktop ? 4 : 3,
+                onChanged: () {
+                  _markTranslationCustom("imageTranslationLlmConcurrency");
+                },
+              ),
+            ],
+          ),
+          _SettingsSection(
+            title: 'Help & cleanup',
+            icon: Icons.help_outline,
+            subtitle: 'Translation help and stored results',
+            children: [
+              _CallbackSetting(
+                title: "How AI translation works".tl,
+                subtitle: "Setup and usage in plain language".tl,
+                actionTitle: "Help".tl,
+                callback: _showTranslationHelp,
               ),
               _CallbackSetting(
                 title: "Clear translation results".tl,
@@ -1548,8 +1604,169 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 ),
               ),
             ],
-          ).toSliver(),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildReadingModes(SelectSetting setting) => Padding(
+    padding: const EdgeInsets.all(14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SettingLabel(
+          title: 'Reading mode'.tl,
+          keys: const ['readerMode'],
+          comicId: setting.comicId,
+          sourceKey: setting.comicSource,
+          useDeviceSettings: setting.useDeviceSettings,
+          onReset: () {
+            refreshSettings();
+            setting.onChanged?.call();
+          },
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) => Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in setting.optionTranslation.entries)
+                SizedBox(
+                  width: (constraints.maxWidth - 16) / 3,
+                  child: _ReadingModeTile(
+                    mode: entry.key,
+                    label: entry.value,
+                    selected: _effectiveSetting('readerMode') == entry.key,
+                    onTap: () {
+                      _writeEffectiveSetting('readerMode', entry.key);
+                      setting.onChanged?.call();
+                      appdata.saveData();
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReadingModeTile extends StatelessWidget {
+  const _ReadingModeTile({
+    required this.mode,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String mode;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final continuous = mode.startsWith('continuous');
+    final vertical = mode.endsWith('TopToBottom');
+    final direction = vertical
+        ? Icons.arrow_downward
+        : mode.endsWith('RightToLeft')
+        ? Icons.arrow_back
+        : Icons.arrow_forward;
+    final ink = selected ? colors.primary : colors.onSurfaceVariant;
+    Widget sheet() => Container(
+      width: vertical ? 32 : 18,
+      height: vertical ? 23 : 38,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        border: Border.all(color: ink.withValues(alpha: 0.65)),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: ColoredBox(
+              color: ink.withValues(alpha: 0.14),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Expanded(
+            flex: 2,
+            child: ColoredBox(
+              color: ink.withValues(alpha: 0.22),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ],
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: selected
+            ? colors.primaryContainer.withValues(alpha: 0.45)
+            : colors.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: selected ? colors.primary : colors.outlineVariant,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: ExcludeSemantics(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 48,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        maxHeight: vertical ? 55 : 48,
+                        child: Flex(
+                          direction: vertical ? Axis.vertical : Axis.horizontal,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            sheet(),
+                            SizedBox(
+                              width: continuous ? 2 : 4,
+                              height: continuous ? 2 : 4,
+                            ),
+                            sheet(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          (continuous ? 'Continuous' : 'Gallery').tl,
+                          style: TextStyle(fontSize: 12, color: ink),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(direction, size: 12, color: ink),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

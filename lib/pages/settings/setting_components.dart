@@ -242,7 +242,7 @@ class SelectSetting extends StatelessWidget {
       width: double.infinity,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth < 450) {
+          if (App.isMobile || constraints.maxWidth < 450) {
             return _DoubleLineSelectSettings(
               title: title,
               settingKey: settingKey,
@@ -360,34 +360,77 @@ class _DoubleLineSelectSettingsState extends State<_DoubleLineSelectSettings> {
             ),
         ],
       ),
-      subtitle: Text(widget.optionTranslation[value] ?? "None"),
+      subtitle: Text(widget.optionTranslation[value] ?? "None".tl),
       trailing: const Icon(Icons.arrow_drop_down),
       onTap: () {
         var renderBox = context.findRenderObject() as RenderBox;
         var offset = renderBox.localToGlobal(Offset.zero);
         var size = renderBox.size;
         var rect = offset & size;
-        showMenu(
-          elevation: 3,
-          color: context.brightness == Brightness.light
-              ? const Color(0xFFF6F6F6)
-              : const Color(0xFF1E1E1E),
-          context: context,
-          position: RelativeRect.fromRect(
-            rect,
-            Offset.zero & MediaQuery.of(context).size,
-          ),
-          items: widget.optionTranslation.keys
-              .map(
-                (key) => PopupMenuItem(
-                  value: key,
-                  height: App.isMobile ? 46 : 40,
-                  child: Text(widget.optionTranslation[key]!),
+        final selection = App.isMobile
+            ? showModalBottomSheet<String>(
+                context: context,
+                useSafeArea: true,
+                showDragHandle: true,
+                isScrollControlled: true,
+                builder: (sheetContext) => SafeArea(
+                  top: false,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                            child: Text(
+                              widget.title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          for (final entry in widget.optionTranslation.entries)
+                            ListTile(
+                              title: Text(entry.value),
+                              selected: entry.key == value,
+                              trailing: entry.key == value
+                                  ? const Icon(Icons.check)
+                                  : null,
+                              onTap: () =>
+                                  Navigator.pop(sheetContext, entry.key),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               )
-              .toList(),
-        ).then((value) {
-          if (value != null) {
+            : showMenu<String>(
+                elevation: 3,
+                color: context.brightness == Brightness.light
+                    ? const Color(0xFFF6F6F6)
+                    : const Color(0xFF1E1E1E),
+                context: context,
+                position: RelativeRect.fromRect(
+                  rect,
+                  Offset.zero & MediaQuery.of(context).size,
+                ),
+                items: widget.optionTranslation.keys
+                    .map(
+                      (key) => PopupMenuItem(
+                        value: key,
+                        height: App.isMobile ? 46 : 40,
+                        child: Text(widget.optionTranslation[key]!),
+                      ),
+                    )
+                    .toList(),
+              );
+        selection.then((value) {
+          if (value != null && mounted) {
             setState(() {
               if (widget.comicId != null) {
                 appdata.settings.setReaderSetting(
@@ -921,45 +964,6 @@ class _CallbackSetting extends StatelessWidget {
       subtitle: subtitle == null ? null : Text(subtitle!),
       trailing: TextButton(onPressed: callback, child: Text(actionTitle)),
       onTap: callback,
-    );
-  }
-}
-
-/// Collapsible settings group with a leading icon. Shared by every settings
-/// page so the header font ([ts.bold.s18]) and padding stay consistent.
-class _SettingsExpansionTile extends StatelessWidget {
-  const _SettingsExpansionTile({
-    this.expansionKey,
-    required this.title,
-    required this.icon,
-    required this.children,
-    this.initiallyExpanded = false,
-  });
-
-  final Key? expansionKey;
-
-  final String title;
-
-  final IconData icon;
-
-  final List<Widget> children;
-
-  final bool initiallyExpanded;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      key: expansionKey,
-      initiallyExpanded: initiallyExpanded,
-      maintainState: _SettingsJumpScope.targetOf(context) != null,
-      expansionAnimationStyle: _SettingsJumpScope.targetOf(context) != null
-          ? AnimationStyle.noAnimation
-          : null,
-      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-      childrenPadding: const EdgeInsets.only(bottom: 8),
-      leading: Icon(icon),
-      title: Text(title, style: ts.bold.s18),
-      children: children,
     );
   }
 }

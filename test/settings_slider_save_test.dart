@@ -3,7 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/app_slider_theme.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/cache_manager.dart';
+import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -38,7 +42,20 @@ void main() {
   final theme = defaultTheme.copyWith(
     sliderTheme: appSliderTheme(defaultTheme.colorScheme),
   );
-  setUpAll(AppTranslation.init);
+  late Directory temporary;
+  setUpAll(() async {
+    temporary = Directory.systemTemp.createTempSync('settings-slider-');
+    App.dataPath = temporary.path;
+    App.cachePath = '${temporary.path}/cache';
+    LocalManager().path = '${temporary.path}/comics';
+    await AppTranslation.init();
+    await CacheManager().ready;
+  });
+  tearDownAll(() async {
+    DatabaseGateway.instance.closeManaged('${App.dataPath}/cache.db');
+    CacheManager.instance = null;
+    await temporary.delete(recursive: true);
+  });
   setUp(() {
     appdata.settings['language'] = 'en-US';
     appdata.settings['downloadThreads'] = 5;
@@ -55,7 +72,7 @@ void main() {
           await tester.pumpWidget(
             MaterialApp(
               theme: theme,
-              home: const Scaffold(body: NetworkSettings()),
+              home: const Scaffold(body: DataSyncSettings(storageOnly: true)),
             ),
           );
           await tester.pumpAndSettle();
@@ -92,18 +109,14 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: theme,
-            home: const Scaffold(body: ReaderSettings(translationOnly: true)),
+            home: const Scaffold(
+              body: ReaderSettings(
+                translationOnly: true,
+                section: 'Advanced translation settings',
+              ),
+            ),
           ),
         );
-        await tester.pumpAndSettle();
-        final advanced = find.text('Advanced settings');
-        await tester.scrollUntilVisible(
-          advanced,
-          400,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(advanced);
         await tester.pumpAndSettle();
         final row = find.widgetWithText(ListTile, 'OCR parallelism (0 = auto)');
         final slider = find.descendant(of: row, matching: find.byType(Slider));

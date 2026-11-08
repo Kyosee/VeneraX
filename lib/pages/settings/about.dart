@@ -9,7 +9,9 @@ const kUpdateRepoOwner = 'Kyosee';
 const kUpdateRepoName = 'VeneraX';
 
 class AboutSettings extends StatefulWidget {
-  const AboutSettings({super.key});
+  const AboutSettings({super.key, this.section});
+
+  final String? section;
 
   @override
   State<AboutSettings> createState() => _AboutSettingsState();
@@ -18,75 +20,131 @@ class AboutSettings extends StatefulWidget {
 class _AboutSettingsState extends State<AboutSettings> {
   bool isCheckingUpdate = false;
 
+  Future<void> _openSection(String section) async {
+    await context.to(() => AboutSettings(section: section));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
-      scrollbarTopPadding: context.padding.top + 56,
-      slivers: [
-        SliverAppbar(title: Text("About".tl)),
-        SizedBox(
-          height: 112,
-          width: double.infinity,
-          child: Center(
-            child: Container(
-              width: 112,
-              height: 112,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(136)),
-              clipBehavior: Clip.antiAlias,
-              child: Image(
-                image: AssetImage(LauncherIconService.current.inAppLogoAsset),
-                filterQuality: FilterQuality.medium,
-              ),
+    final section =
+        widget.section ??
+        _settingsSectionForTitle(7, _SettingsJumpScope.targetOf(context));
+    return _SettingsPageView(
+      title: 'About & help',
+      description: 'Version information, help and troubleshooting',
+      section: section,
+      onOpenSection: _openSection,
+      intro: section == 'Diagnostics'
+          ? null
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Image(
+                    width: 64,
+                    height: 64,
+                    image: AssetImage(
+                      LauncherIconService.current.inAppLogoAsset,
+                    ),
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'VeneraX · ${App.version}',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original."
+                            .tl,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
-        ).paddingTop(16).toSliver(),
-        Column(
+      sections: [
+        _SettingsSection(
+          title: 'Version and updates',
+          common: true,
           children: [
-            const SizedBox(height: 8),
-            Text("V${App.version}", style: const TextStyle(fontSize: 16)),
-            Text(
-              "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original.".tl,
-              textAlign: TextAlign.center,
+            ListTile(
+              title: Text("Check for updates".tl),
+              trailing: Button.filled(
+                isLoading: isCheckingUpdate,
+                child: Text("Check".tl),
+                onPressed: () {
+                  setState(() => isCheckingUpdate = true);
+                  checkUpdateUi().then((_) {
+                    if (mounted) setState(() => isCheckingUpdate = false);
+                  });
+                },
+              ).fixHeight(32),
             ),
-            const SizedBox(height: 8),
+            _SwitchSetting(
+              title: "Check for updates on startup".tl,
+              settingKey: "checkUpdateOnStart",
+            ),
           ],
-        ).paddingHorizontal(16).toSliver(),
-        ListTile(
-          title: Text("Check for updates".tl),
-          trailing: Button.filled(
-            isLoading: isCheckingUpdate,
-            child: Text("Check".tl),
-            onPressed: () {
-              setState(() => isCheckingUpdate = true);
-              checkUpdateUi().then((_) {
-                setState(() => isCheckingUpdate = false);
-              });
-            },
-          ).fixHeight(32),
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Check for updates on startup".tl,
-          settingKey: "checkUpdateOnStart",
-        ).toSliver(),
-        ListTile(
-          title: Text("Guide".tl),
-          subtitle: Text("How to use the main features".tl),
-          trailing: const Icon(Icons.menu_book_outlined),
-          onTap: () => GuidePage.open(context),
-        ).toSliver(),
-        ListTile(
-          title: Text("Repository".tl),
-          subtitle: const Text("$kUpdateRepoOwner/$kUpdateRepoName"),
-          trailing: const Icon(Icons.open_in_new),
-          onTap: () {
-            launchUrlString("https://github.com/$kUpdateRepoOwner/$kUpdateRepoName");
-          },
-        ).toSliver(),
-        ListTile(
-          title: Text("User Agreement & Disclaimer".tl),
-          trailing: const Icon(Icons.info_outline),
-          onTap: () => showDisclaimerDialog(context),
-        ).toSliver(),
+        ),
+        _SettingsSection(
+          title: 'Help',
+          common: true,
+          children: [
+            ListTile(
+              title: Text("Guide".tl),
+              subtitle: Text("How to use the main features".tl),
+              trailing: const Icon(Icons.menu_book_outlined),
+              onTap: () => GuidePage.open(context),
+            ),
+            ListTile(
+              title: Text("Repository".tl),
+              subtitle: const Text("$kUpdateRepoOwner/$kUpdateRepoName"),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () {
+                launchUrlString(
+                  "https://github.com/$kUpdateRepoOwner/$kUpdateRepoName",
+                );
+              },
+            ),
+            ListTile(
+              title: Text("User Agreement & Disclaimer".tl),
+              trailing: const Icon(Icons.info_outline),
+              onTap: () => showDisclaimerDialog(context),
+            ),
+          ],
+        ),
+        _SettingsSection(
+          title: 'Diagnostics',
+          subtitle: 'Logs and advanced troubleshooting tools',
+          icon: Icons.bug_report_outlined,
+          children: [
+            _SettingsLink(
+              title: 'Open Log',
+              icon: Icons.receipt_long_outlined,
+              onTap: () => context.to(() => const LogsPage()),
+            ),
+            _SettingsLink(
+              title: 'Debug',
+              icon: Icons.code,
+              onTap: () => context.to(() => const DebugPage()),
+            ),
+          ],
+        ),
       ],
     );
   }

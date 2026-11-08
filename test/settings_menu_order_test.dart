@@ -20,15 +20,16 @@ void main() {
     await tester.pumpAndSettle();
 
     const labels = [
-      'App',
+      'Appearance & layout',
       'Reading settings',
       'AI Translation',
-      'Local Favorites',
-      'Data & Sync',
-      'Explore',
+      'Library & favorites',
+      'Browsing & filters',
+      'Downloads & storage',
+      'Sync & backup',
       'Network',
-      'Debug',
-      'About',
+      'Privacy & device',
+      'About & help',
     ];
     final positions = labels
         .map((label) => tester.getTopLeft(find.text(label)).dy)
@@ -36,9 +37,12 @@ void main() {
 
     expect(positions, orderedEquals([...positions]..sort()));
     expect(find.text('Appearance'), findsNothing);
+    expect(find.byKey(const ValueKey('settings-category-6')), findsNothing);
   });
 
-  testWidgets('app category contains appearance settings', (tester) async {
+  testWidgets('appearance category contains theme and language settings', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
