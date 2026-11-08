@@ -303,6 +303,15 @@ class _ReadLaterPageState extends State<ReadLaterPage>
                 menuBuilder: (c) {
                   return [
                     MenuEntry(
+                      action: MenuAction.select,
+                      icon: Icons.checklist,
+                      text: 'Multi-Select'.tl,
+                      onClick: () => setState(() {
+                        multiSelectMode = true;
+                        selectedItems[c as ReadLaterItem] = true;
+                      }),
+                    ),
+                    MenuEntry(
                       action: MenuAction.readLater,
                       group: MenuGroup.organize,
                       role: MenuEntryRole.quick,

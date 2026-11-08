@@ -16,6 +16,7 @@ void main() {
     Offset location = const Offset(160, 140),
     double textScale = 1,
     bool header = false,
+    String? title,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -36,7 +37,7 @@ void main() {
                 context,
                 location,
                 entries,
-                title: header ? 'A comic' : null,
+                title: title ?? (header ? 'A comic' : null),
                 subtitle: header ? 'Page 8' : null,
               ),
               child: const Text('Open'),
@@ -283,6 +284,60 @@ void main() {
       await tester.tap(find.text('Long quick action label 2'));
       await tester.pumpAndSettle();
       expect(selected, 2);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'long comic titles leave room for the reading actions and header details',
+    (tester) async {
+      var openedDetails = false;
+      const title =
+          'The Heroines of a Gal Game Who Avoided the End of Death '
+          'Read My Diary And Found Out My Secret';
+      await openMenu(
+        tester,
+        [
+          MenuEntry(
+            text: 'Continue reading',
+            subtitle: 'Chapter 1 · Page 3',
+            role: MenuEntryRole.primary,
+            onClick: () {},
+          ),
+          for (final label in ['Favorited', 'In read later', 'Download'])
+            MenuEntry(
+              text: label,
+              icon: Icons.bookmark_outline,
+              role: MenuEntryRole.quick,
+              onClick: () {},
+            ),
+          MenuEntry(
+            action: MenuAction.details,
+            text: 'Details',
+            onClick: () => openedDetails = true,
+          ),
+          ...groupedEntries(() {}).skip(2),
+        ],
+        size: const Size(360, 640),
+        header: true,
+        title: title,
+      );
+      final titleBounds = tester.getRect(find.text(title));
+      expect(titleBounds.height, lessThan(60));
+      expect(
+        tester.getRect(find.text('Details')).bottom,
+        lessThan(tester.getRect(find.text('Continue reading')).top),
+      );
+      final heights = [
+        for (final label in ['Favorited', 'In read later', 'Download'])
+          tester.getSize(find.widgetWithText(TextButton, label)).height,
+      ];
+      expect(heights.toSet(), hasLength(1));
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+      expect(openedDetails, isTrue);
       expect(find.byType(BottomSheet), findsNothing);
       expect(tester.takeException(), isNull);
     },
