@@ -3,7 +3,12 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show ExternalLibrary;
 import 'package:rhttp/rhttp.dart' as rhttp;
+// rhttp has no public loader override for platforms built from source.
+// ignore: implementation_imports
+import 'package:rhttp/src/rust/frb_generated.dart' show RustLib;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/network/proxy.dart';
@@ -18,7 +23,11 @@ Future<void> nativeInitRhttp() {
 
 Future<void> _initRhttp() async {
   try {
-    await rhttp.Rhttp.init();
+    if (App.isOhos) {
+      await RustLib.init(externalLibrary: ExternalLibrary.open('librhttp.so'));
+    } else {
+      await rhttp.Rhttp.init();
+    }
     _rhttpInitialized = true;
   } catch (e, s) {
     Error.throwWithStackTrace(RhttpInitializationException(e), s);

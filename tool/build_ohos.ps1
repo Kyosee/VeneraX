@@ -36,6 +36,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Flutter dependency resolution failed.' }
     & (Join-Path $FlutterSdk 'bin/dart.bat') tool/prepare_ohos.dart
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS dependency preparation failed.' }
+    & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
     & $flutter build hap --debug --target-platform $TargetPlatform --no-codesign --no-pub -t $Target
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP build failed.' }
 } finally {

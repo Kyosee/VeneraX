@@ -1,7 +1,7 @@
 # HarmonyOS development
 
 Experimental platform bootstrap. The native probe runs on a HarmonyOS x64
-emulator; the complete reader is not ready. HTTP, files, WebView,
+emulator; the complete reader is not ready. Files, WebView,
 biometric authentication and PDF/native asset support still need adaptation.
 Do not distribute this debug HAP as a working Venera release.
 
@@ -22,6 +22,13 @@ The current version is a development candidate, not a stable release commitment.
 Install DevEco Studio from Huawei. Tested with DevEco 26.0.0.865, API 26 SDK,
 and a HarmonyOS 7 x86_64 phone emulator. Run in the isolated checkout:
 
+Install Rust 1.85.1 and its OHOS targets through official rustup first:
+
+```powershell
+rustup toolchain install 1.85.1
+rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.85.1
+```
+
 ```powershell
 ./tool/build_ohos.ps1 -FlutterSdk D:/dev/tools/flutter_ohos `
   -DevEcoStudio 'D:/Program Files/Huawei/DevEco Studio'
@@ -34,6 +41,12 @@ package information, file read/write, SQLite WAL, QuickJS values/Promises on
 separate isolates, Unicode ZIP entries, 7z extraction and PNG pixel round trips.
 Restart it: the launch counter must increase. Persistent probe data uses only
 a dedicated `ohos_smoke.db` inside the app sandbox.
+
+Use `-Target tool/ohos_network_smoke.dart` for the HTTP probe. It runs local
+servers on the device and verifies DNS, redirects, cookies, streams, a worker
+isolate, the app's Dio adapter, cancellation, timeout and an HTTP proxy. Its
+test-only certificate verifies rejection by default, explicit local trust and
+hostname rejection without changing any system or application trust settings.
 
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
@@ -53,6 +66,12 @@ QuickJS, ZIP, 7z and PNG use the source already included in the locked packages.
 and adds only the OHOS dynamic-library loader branch. It updates the isolated
 checkout's generated package config; it does not modify the shared Pub cache.
 CMake compiles the original locked C/C++ sources for both ARM64 and x86_64.
+
+`build_ohos_rhttp.ps1` builds the locked rhttp package's Rust source for both
+OHOS targets using Cargo's `--locked` flag and the official SDK's Clang.
+HTTP/3 remains enabled. Generated libraries are copied only into `ohos/entry/libs`;
+the shared Pub cache and Cargo.lock are not changed. The OHOS loader explicitly
+opens this library, while other platforms retain their existing initialization.
 
 The script enforces `pubspec.lock`, uses only process environment variables and
 restores them afterwards. Always run preparation after `pub get`; the build script
