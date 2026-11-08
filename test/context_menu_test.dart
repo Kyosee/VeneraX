@@ -214,6 +214,82 @@ void main() {
   );
 
   testWidgets(
+    'desktop supports keyboard navigation immediately after opening',
+    (tester) async {
+      var selected = 0;
+      await openMenu(tester, [
+        MenuEntry(text: 'First action', onClick: () => selected++),
+        MenuEntry(text: 'Second action', onClick: () => selected += 10),
+      ]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(selected, 1);
+      expect(find.text('First action'), findsNothing);
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(selected, 11);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'outside click dismisses desktop submenus without reopening the menu',
+    (tester) async {
+      var invoked = 0;
+      await openMenu(tester, groupedEntries(() => invoked++));
+      await tester.tap(find.text('Organize'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Read now'), findsNothing);
+      expect(find.text('Move to folder'), findsNothing);
+      expect(invoked, 0);
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      expect(find.text('Read now'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'three mobile quick actions remain usable with large text',
+    (tester) async {
+      var selected = -1;
+      await openMenu(
+        tester,
+        [
+          for (var index = 0; index < 3; index++)
+            MenuEntry(
+              text: 'Long quick action label $index',
+              icon: Icons.bookmark_outline,
+              role: MenuEntryRole.quick,
+              onClick: () => selected = index,
+            ),
+        ],
+        size: const Size(320, 568),
+        textScale: 2,
+        header: true,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Long quick action label 2'));
+      await tester.tap(find.text('Long quick action label 2'));
+      await tester.pumpAndSettle();
+      expect(selected, 2);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
     'empty menus leave the current route usable',
     (tester) async {
       await openMenu(tester, []);

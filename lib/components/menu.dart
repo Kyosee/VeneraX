@@ -88,8 +88,17 @@ class _DesktopMenu extends StatefulWidget {
 }
 
 class _DesktopMenuState extends State<_DesktopMenu> {
+  static const _buttonStyle = ButtonStyle(
+    minimumSize: WidgetStatePropertyAll(Size(0, 44)),
+    padding: WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    ),
+    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 15)),
+  );
+
   final _controller = MenuController();
   final _focusNode = FocusNode();
+  final _itemFocusNodes = <FocusNode>[];
   bool _closing = false;
 
   @override
@@ -103,6 +112,9 @@ class _DesktopMenuState extends State<_DesktopMenu> {
   @override
   void dispose() {
     _focusNode.dispose();
+    for (final node in _itemFocusNodes) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -113,18 +125,15 @@ class _DesktopMenuState extends State<_DesktopMenu> {
     Navigator.of(context).pop(entry);
   }
 
-  Widget _item(MenuEntry entry) {
+  Widget _item(MenuEntry entry, {FocusNode? focusNode}) {
     final color = entry.destructive ? context.colorScheme.error : entry.color;
     return MenuItemButton(
+      focusNode: focusNode,
       closeOnActivate: false,
       onPressed: () => _close(entry),
-      leadingIcon: entry.icon == null ? null : Icon(entry.icon, size: 18),
-      style: ButtonStyle(
+      leadingIcon: entry.icon == null ? null : Icon(entry.icon, size: 20),
+      style: _buttonStyle.copyWith(
         foregroundColor: color == null ? null : WidgetStatePropertyAll(color),
-        minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        ),
       ),
       child: Text(entry.text, softWrap: true),
     );
@@ -132,9 +141,18 @@ class _DesktopMenuState extends State<_DesktopMenu> {
 
   List<Widget> _items() {
     final entries = widget.entries;
+    var focusIndex = 0;
+    FocusNode nextFocusNode() {
+      if (focusIndex == _itemFocusNodes.length) {
+        _itemFocusNodes.add(FocusNode());
+      }
+      return _itemFocusNodes[focusIndex++];
+    }
+
     final result = <Widget>[
       for (final entry in entries)
-        if (entry.group == null && !entry.destructive) _item(entry),
+        if (entry.group == null && !entry.destructive)
+          _item(entry, focusNode: nextFocusNode()),
     ];
     final grouped = <Widget>[];
     for (final group in MenuGroup.values) {
@@ -144,9 +162,11 @@ class _DesktopMenuState extends State<_DesktopMenu> {
       if (items.isEmpty) continue;
       grouped.add(
         items.length == 1
-            ? _item(items.single)
+            ? _item(items.single, focusNode: nextFocusNode())
             : SubmenuButton(
-                leadingIcon: Icon(group.icon, size: 18),
+                focusNode: nextFocusNode(),
+                style: _buttonStyle,
+                leadingIcon: Icon(group.icon, size: 20),
                 menuChildren: items.map(_item).toList(),
                 child: Text(group.label),
               ),
@@ -160,18 +180,20 @@ class _DesktopMenuState extends State<_DesktopMenu> {
     if (result.isNotEmpty && destructive.isNotEmpty) {
       result.add(const Divider(height: 12));
     }
-    result.addAll(destructive.map(_item));
+    for (final entry in destructive) {
+      result.add(_item(entry, focusNode: nextFocusNode()));
+    }
     return result;
   }
 
   @override
   Widget build(BuildContext context) {
-    final width = math.min(320.0, MediaQuery.sizeOf(context).width - 24);
+    final width = math.min(360.0, MediaQuery.sizeOf(context).width - 24);
     final style = MenuStyle(
       backgroundColor: WidgetStatePropertyAll(
         context.colorScheme.surfaceContainer,
       ),
-      minimumSize: WidgetStatePropertyAll(Size(math.min(232, width), 0)),
+      minimumSize: WidgetStatePropertyAll(Size(math.min(272, width), 0)),
       maximumSize: WidgetStatePropertyAll(Size(width, double.infinity)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -185,7 +207,23 @@ class _DesktopMenuState extends State<_DesktopMenu> {
         consumeOutsideTap: true,
         onClose: _close,
         menuChildren: _items(),
-        child: Focus(focusNode: _focusNode, child: const SizedBox.expand()),
+        child: Focus(
+          focusNode: _focusNode,
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                _itemFocusNodes.first.requestFocus();
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                _itemFocusNodes.last.requestFocus();
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
+          },
+          child: const SizedBox.expand(),
+        ),
       ),
     );
   }
