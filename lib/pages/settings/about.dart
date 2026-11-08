@@ -647,6 +647,7 @@ Future<bool> _runWindowsUpdaterExecutable({
         "--package-file", zipPath,
         "--app-exe", exePath,
         "--pid", pid.toString(),
+        "--theme-colors", _windowsUpdaterThemeColors(),
         "--restart",
       ],
       mode: ProcessStartMode.detached,
@@ -660,6 +661,30 @@ Future<bool> _runWindowsUpdaterExecutable({
     App.rootContext.showMessage(message: "Failed to start updater, falling back to update script".tl);
     return false;
   }
+}
+
+String _windowsUpdaterThemeColors() {
+  final colors = App.rootContext.colorScheme;
+  final palette = {
+    'primary': colors.primary,
+    'onPrimary': colors.onPrimary,
+    'primaryContainer': colors.primaryContainer,
+    'onPrimaryContainer': colors.onPrimaryContainer,
+    'surface': colors.surface,
+    'surfaceContainerLow': colors.surfaceContainerLow,
+    'onSurface': colors.onSurface,
+    'onSurfaceVariant': colors.onSurfaceVariant,
+    'outlineVariant': colors.outlineVariant,
+    'error': colors.error,
+  };
+  return base64Url.encode(
+    utf8.encode(
+      jsonEncode(palette.map((key, color) => MapEntry(
+        key,
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}',
+      ))),
+    ),
+  );
 }
 
 Future<void> _runWindowsUpdaterScript({
