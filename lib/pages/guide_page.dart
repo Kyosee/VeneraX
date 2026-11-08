@@ -57,6 +57,9 @@ class _GuidePageState extends State<GuidePage> {
   /// Keys of every heading by its text, so a contents entry can scroll to it.
   final _headingKeys = <String, GlobalKey>{};
 
+  /// Keep separate keys when headings share the same text.
+  final _headingBlockKeys = <GuideBlock, GlobalKey>{};
+
   /// One recognizer per contents entry, kept for the page's lifetime: a
   /// recognizer built inline would leak on every rebuild.
   final _linkRecognizers = <String, TapGestureRecognizer>{};
@@ -100,8 +103,9 @@ class _GuidePageState extends State<GuidePage> {
           if (_isHeading(block)) {
             // Shared with the anchor key when a heading has both, so one
             // element never carries two GlobalKeys.
-            _headingKeys[_localize(block.text)] =
-                id == null ? GlobalKey() : _anchorKeys[id]!;
+            var key = id == null ? GlobalKey() : _anchorKeys[id]!;
+            _headingBlockKeys[block] = key;
+            _headingKeys[_localize(block.text)] = key;
           }
         }
       });
@@ -175,7 +179,7 @@ class _GuidePageState extends State<GuidePage> {
   }
 
   Widget _buildBlock(GuideBlock block) {
-    var key = block.anchor == null ? null : _anchorKeys[block.anchor];
+    var key = _headingBlockKeys[block];
     return switch (block.type) {
       GuideBlockType.heading1 => _buildHeading(block, key, ts.bold.s24, 20, 8),
       GuideBlockType.heading2 => _buildSectionHeading(block, key),
