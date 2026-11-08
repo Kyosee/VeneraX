@@ -15,8 +15,9 @@ you can restore the local database by scanning the current local path.
 - It does not copy files or add favorites.
 - Duplicates (same title or directory) are skipped.
 
-Make sure the local storage path in Settings points to the folder that contains
-the downloaded comics before running this.
+Before running this, check Settings → Downloads & storage → Storage locations →
+"Storage Path for local comics". It must point to the folder containing the
+downloaded comics. Use "Set New Storage Path" on the same page to change it.
 
 ## Comic Directory
 
