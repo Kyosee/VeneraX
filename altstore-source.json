@@ -15,6 +15,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "2.3.12",
+          "buildVersion": "257",
+          "date": "2026-11-08",
+          "localizedDescription": "## What's Changed\n\n### Added\n- Added a Multi-Select button to the local favorites toolbar for organizing comics in bulk.\n- Added Read and Continue reading actions to comic menus so you can start reading or resume your last position directly.\n- Added an Actions button to detailed comic lists on mobile for opening a comic's menu with a tap.\n\n### Changed\n- Improved compatibility with iOS 27 and iPhone Duo, including full-screen layouts on the unfolded inner display.\n- Organized settings into 10 categories, with category navigation on the left on desktop and a category list on mobile.\n- Settings pages now show common options first, with further options such as page layout and gestures under More settings.\n- Improved settings layouts on large screens, made single options fill their row, and tightened mobile header spacing to reduce empty space and duplicate titles.\n- Settings now switch between one and two panes based on the available width, improving layouts on foldables, split-screen views and smaller desktop windows.\n- Enlarged desktop comic menu text and click targets, and grouped actions such as favorites and collections more clearly.\n- Mobile comic menus now open as bottom sheets that emphasize reading and show shortcuts and current states for favorites, read later and downloads.\n- Updated the English and Chinese guides with the new settings paths, search, reader sidebar and menu controls.\n\n### Fixed\n- Fixed overlapping and overflowing text in the reading settings sidebar on high-resolution windows.\n- Fixed secondary settings opening full screen from the reader sidebar; navigation and Back now stay inside the sidebar.\n- Fixed duplicate spacing along screen edges on some devices and cramped settings content in narrow windows.\n- Fixed keyboard navigation not becoming available immediately after opening a desktop menu.\n- Fixed some guide contents entries failing to jump to their sections.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.11...v2.3.12",
+          "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.12/VeneraX-ios-2.3.12%2B257.ipa",
+          "size": 39009856,
+          "minOSVersion": "15.1"
+        },
+        {
           "version": "2.3.11",
           "buildVersion": "254",
           "date": "2026-11-07",
@@ -375,11 +384,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2.3.11",
-      "versionDate": "2026-11-07",
-      "versionDescription": "## What's Changed\n\n### Added\n- The reading settings sidebar now has a search box at the top. Search in your display language or English, then select a result to jump to the setting, including options inside collapsed groups.\n- Long-press the night mode button to adjust its intensity in a compact popup. Changes appear immediately and are saved automatically.\n- Long-press the auto page turning button to choose between turning pages and scrolling. Scrolling is available in continuous reading modes; a short press still starts or stops automatic reading.\n- Linux users can now download AppImage packages for x86_64 and ARM64, alongside the existing installation packages.\n\n### Changed\n- Settings sliders and the reading progress bar now use rounded handles and gradient tracks that follow the app's theme color.\n\n### Fixed\n- Fixed the reading progress slider occasionally jumping to the page before the one selected.\n- Fixed chapter comments not appearing at the end of chapters in continuous reading modes when Show Chapter Comments is enabled.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.10...v2.3.11",
-      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.11/VeneraX-ios-2.3.11%2B254.ipa",
-      "size": 39064421
+      "version": "2.3.12",
+      "versionDate": "2026-11-08",
+      "versionDescription": "## What's Changed\n\n### Added\n- Added a Multi-Select button to the local favorites toolbar for organizing comics in bulk.\n- Added Read and Continue reading actions to comic menus so you can start reading or resume your last position directly.\n- Added an Actions button to detailed comic lists on mobile for opening a comic's menu with a tap.\n\n### Changed\n- Improved compatibility with iOS 27 and iPhone Duo, including full-screen layouts on the unfolded inner display.\n- Organized settings into 10 categories, with category navigation on the left on desktop and a category list on mobile.\n- Settings pages now show common options first, with further options such as page layout and gestures under More settings.\n- Improved settings layouts on large screens, made single options fill their row, and tightened mobile header spacing to reduce empty space and duplicate titles.\n- Settings now switch between one and two panes based on the available width, improving layouts on foldables, split-screen views and smaller desktop windows.\n- Enlarged desktop comic menu text and click targets, and grouped actions such as favorites and collections more clearly.\n- Mobile comic menus now open as bottom sheets that emphasize reading and show shortcuts and current states for favorites, read later and downloads.\n- Updated the English and Chinese guides with the new settings paths, search, reader sidebar and menu controls.\n\n### Fixed\n- Fixed overlapping and overflowing text in the reading settings sidebar on high-resolution windows.\n- Fixed secondary settings opening full screen from the reader sidebar; navigation and Back now stay inside the sidebar.\n- Fixed duplicate spacing along screen edges on some devices and cramped settings content in narrow windows.\n- Fixed keyboard navigation not becoming available immediately after opening a desktop menu.\n- Fixed some guide contents entries failing to jump to their sections.\n\n### Removed\n- No features were removed in this release.\n\n**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.11...v2.3.12",
+      "downloadURL": "https://github.com/Kyosee/VeneraX/releases/download/v2.3.12/VeneraX-ios-2.3.12%2B257.ipa",
+      "size": 39009856
     }
   ],
   "news": []
