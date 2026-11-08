@@ -21,11 +21,17 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
+  final _localAuth = LocalAuthentication();
+  bool _authenticating = false;
+  bool _authenticated = false;
+  String? _authError;
+
   @override
   void initState() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (SchedulerBinding.instance.lifecycleState !=
-          AppLifecycleState.paused) {
+      if (mounted &&
+          SchedulerBinding.instance.lifecycleState !=
+              AppLifecycleState.paused) {
         // Only biometric mode auto-prompts; code/pattern modes wait for input.
         if (AppLock.type == AppLockType.biometric) {
           _biometricAuth();
@@ -64,9 +70,13 @@ class _AuthPageState extends State<AuthPage> {
         const Icon(Icons.security, size: 36),
         const SizedBox(height: 16),
         Text("Authentication Required".tl),
+        if (_authError != null) ...[
+          const SizedBox(height: 8),
+          Text(_authError!, style: TextStyle(color: context.colorScheme.error)),
+        ],
         const SizedBox(height: 16),
         FilledButton(
-          onPressed: _biometricAuth,
+          onPressed: _authenticating || _authenticated ? null : _biometricAuth,
           child: Text("Continue".tl),
         ),
       ],
@@ -109,10 +119,7 @@ class _AuthPageState extends State<AuthPage> {
             ),
           ),
           const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _verifyCode,
-            child: Text("Unlock".tl),
-          ),
+          FilledButton(onPressed: _verifyCode, child: Text("Unlock".tl)),
         ],
       ),
     );
@@ -160,22 +167,37 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   void dispose() {
+    if (_authenticating) {
+      _localAuth.stopAuthentication().catchError((Object _) => false);
+    }
     _codeController.dispose();
     super.dispose();
   }
 
-  void _biometricAuth() async {
-    var localAuth = LocalAuthentication();
-    var canCheckBiometrics = await localAuth.canCheckBiometrics;
-    if (!canCheckBiometrics && !await localAuth.isDeviceSupported()) {
-      widget.onSuccessfulAuth?.call();
-      return;
-    }
-    var isAuthorized = await localAuth.authenticate(
-      localizedReason: "Please authenticate to continue".tl,
-    );
-    if (isAuthorized) {
-      widget.onSuccessfulAuth?.call();
+  Future<void> _biometricAuth() async {
+    if (!mounted || _authenticating || _authenticated) return;
+    setState(() {
+      _authenticating = true;
+      _authError = null;
+    });
+    try {
+      final supported = await _localAuth.isDeviceSupported();
+      if (!mounted) return;
+      if (!supported) {
+        _authError = "Biometrics not supported".tl;
+        return;
+      }
+      final authorized = await _localAuth.authenticate(
+        localizedReason: "Please authenticate to continue".tl,
+      );
+      if (mounted && authorized) {
+        _authenticated = true;
+        widget.onSuccessfulAuth?.call();
+      }
+    } catch (_) {
+      _authError = "Authentication failed".tl;
+    } finally {
+      if (mounted) setState(() => _authenticating = false);
     }
   }
 }
