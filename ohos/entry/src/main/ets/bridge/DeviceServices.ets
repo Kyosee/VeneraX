@@ -4,6 +4,10 @@ import commonEventManager from '@ohos.commonEventManager';
 import connection from '@ohos.net.connection';
 import power from '@ohos.power';
 import window from '@ohos.window';
+import hidebug from '@ohos.hidebug';
+import inputConsumer from '@ohos.multimodalInput.inputConsumer';
+import { KeyEvent } from '@ohos.multimodalInput.keyEvent';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { BusinessError } from '@ohos.base';
 import {
   Any, EventChannel, EventSink, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, MethodResult, StreamHandler
@@ -16,6 +20,9 @@ export class DeviceServices {
   private batteryEvents: EventChannel;
   private connectivityMethods: MethodChannel;
   private connectivityEvents: EventChannel;
+  private memoryMethods: MethodChannel;
+  private volumeEvents: EventChannel;
+  private volume = new VolumeService();
   private context: common.UIAbilityContext;
   private screenWindow?: window.Window;
   private screenRequest = 0;
@@ -32,6 +39,10 @@ export class DeviceServices {
     this.connectivityMethods.setMethodCallHandler(this.connectivity);
     this.connectivityEvents = new EventChannel(messenger, 'dev.fluttercommunity.plus/connectivity_status');
     this.connectivityEvents.setStreamHandler(this.connectivity);
+    this.memoryMethods = new MethodChannel(messenger, 'flutter_memory_info');
+    this.memoryMethods.setMethodCallHandler(new MemoryService());
+    this.volumeEvents = new EventChannel(messenger, 'venera/volume');
+    this.volumeEvents.setStreamHandler(this.volume);
   }
 
   // Route the shared venera channel here without replacing its other handlers.
@@ -56,6 +67,9 @@ export class DeviceServices {
     this.batteryEvents.setStreamHandler(null);
     this.connectivityMethods.setMethodCallHandler(null);
     this.connectivityEvents.setStreamHandler(null);
+    this.memoryMethods.setMethodCallHandler(null);
+    this.volumeEvents.setStreamHandler(null);
+    this.volume.dispose();
     this.battery.dispose();
     this.connectivity.dispose();
     this.screenWindow?.setWindowKeepScreenOn(false).catch((error: BusinessError) => {
@@ -105,6 +119,68 @@ export class DeviceServices {
     } catch (error) {
       const failure = error as BusinessError;
       result.error('SCREEN_ON_FAILED', failure.message, failure.code);
+    }
+  }
+}
+
+class MemoryService implements MethodCallHandler {
+  onMethodCall(call: MethodCall, result: MethodResult): void {
+    if (call.method !== 'getFreePhysicalMemorySize') {
+      result.notImplemented();
+      return;
+    }
+    try {
+      const available = hidebug.getSystemMemInfo().availableMem;
+      const bytes = typeof available === 'bigint' ? Number(available) * 1024 : -1;
+      result.success(Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : null);
+    } catch (_) {
+      result.success(null);
+    }
+  }
+}
+
+class VolumeService implements StreamHandler {
+  private events?: EventSink;
+  private up?: (event: KeyEvent) => void;
+  private down?: (event: KeyEvent) => void;
+
+  onListen(_args: Any, events: EventSink): void {
+    this.dispose();
+    this.events = events;
+    const up = (_event: KeyEvent): void => {
+      if (this.up === up && this.events === events) events.success(1);
+    };
+    const down = (_event: KeyEvent): void => {
+      if (this.down === down && this.events === events) events.success(2);
+    };
+    try {
+      inputConsumer.on('keyPressed', { key: KeyCode.KEYCODE_VOLUME_UP, action: 1, isRepeat: false }, up);
+      this.up = up;
+      inputConsumer.on('keyPressed', { key: KeyCode.KEYCODE_VOLUME_DOWN, action: 1, isRepeat: false }, down);
+      this.down = down;
+    } catch (error) {
+      this.dispose();
+      const failure = error as BusinessError;
+      events.error('VOLUME_UNAVAILABLE', failure.message, failure.code);
+    }
+  }
+
+  onCancel(_args: Any): void {
+    this.dispose();
+  }
+
+  dispose(): void {
+    this.events = undefined;
+    const callbacks = [this.up, this.down];
+    this.up = undefined;
+    this.down = undefined;
+    for (const callback of callbacks) {
+      if (callback === undefined) continue;
+      try {
+        inputConsumer.off('keyPressed', callback);
+      } catch (_) {
+        console.warn('Venera: releasing a volume key listener failed.');
+      }
     }
   }
 }

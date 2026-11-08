@@ -895,7 +895,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       : null,
                   useDeviceSettings: useDeviceSpecificSettings,
                 ),
-              if (App.isAndroid)
+              if (App.isAndroid || App.isOhos)
                 _SwitchSetting(
                   title: 'Turn page by volume keys'.tl,
                   settingKey: 'enableTurnPageByVolumeKey',

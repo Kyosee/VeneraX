@@ -3,6 +3,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:flutter_memory_info/flutter_memory_info.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,10 +26,15 @@ Future<void> main() async {
     final supported = await auth.isDeviceSupported();
     final biometrics = await auth.getAvailableBiometrics();
     await auth.stopAuthentication();
+    final memory = await MemoryInfo.getFreePhysicalMemorySize();
+    if (memory == null || memory <= 0) {
+      throw StateError('No available system memory was returned.');
+    }
     result =
         'PASS: battery $level/$state, power saving $powerSaving; '
         'network $network/$networkEvent; screen wake; proxy $proxy; '
-        'authentication supported $supported, biometrics $biometrics.';
+        'authentication supported $supported, biometrics $biometrics; '
+        'available memory $memory bytes.';
   } catch (error, stack) {
     result = 'FAIL: $error\n$stack';
   }

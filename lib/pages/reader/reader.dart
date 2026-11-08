@@ -1084,8 +1084,7 @@ abstract mixin class _VolumeListener {
   }
 
   void handleVolumeEvent() {
-    if (!App.isAndroid) {
-      // Currently only support Android
+    if (!App.isAndroid && !App.isOhos) {
       return;
     }
     if (volumeListener != null) {
