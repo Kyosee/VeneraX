@@ -19,3 +19,5 @@
 **/libs/**/libflutter.so
 **/libs/**/libvmservice_snapshot.so
 **/libs/**/librhttp.so
+**/libs/**/libonnxruntime.so
+/entry/src/main/resources/rawfile/onnxruntime/

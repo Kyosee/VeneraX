@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)][string]$FlutterSdk,
     [Parameter(Mandatory = $true)][string]$DevEcoStudio,
     [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform = 'ohos-x64',
-    [string]$Target = 'tool/ohos_smoke.dart'
+    [string]$Target = 'tool/ohos_smoke.dart',
+    [string]$OnnxSource,
+    [string]$EigenSource
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +39,7 @@ try {
     & (Join-Path $FlutterSdk 'bin/dart.bat') tool/prepare_ohos.dart
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS dependency preparation failed.' }
     & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
+    & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
     & $flutter build hap --debug --target-platform $TargetPlatform --no-codesign --no-pub -t $Target
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP build failed.' }
 } finally {

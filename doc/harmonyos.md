@@ -48,6 +48,12 @@ isolate, the app's Dio adapter, cancellation, timeout and an HTTP proxy. Its
 test-only certificate verifies rejection by default, explicit local trust and
 hostname rejection without changing any system or application trust settings.
 
+Use `-Target tool/ohos_onnx_smoke.dart` for ONNX CPU inference through the
+application's FFI binding. It covers a worker isolate, a Unicode model filename,
+output shapes, repeated runs/sessions, invalid inputs and greedy decoding.
+This verifies the runtime; OCR models and the complete translation workflow
+still need separate application-level validation.
+
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
 
@@ -72,6 +78,17 @@ OHOS targets using Cargo's `--locked` flag and the official SDK's Clang.
 HTTP/3 remains enabled. Generated libraries are copied only into `ohos/entry/libs`;
 the shared Pub cache and Cargo.lock are not changed. The OHOS loader explicitly
 opens this library, while other platforms retain their existing initialization.
+
+`build_ohos_onnx.ps1` builds ONNX Runtime 1.22.0 from Microsoft's commit
+`f217402897f40ebba457e2421bc0a4702771968e`, with Eigen's pinned commit
+`1d8b82b0740839c0de7f1242a3585e3390ff5f33` from its official GitLab repository.
+The initial build fetches these Git sources into `.dart_tool/ohos/sources`.
+Existing checkouts can be supplied using `-OnnxSource` and `-EigenSource` on the
+main build script. Modified sources other than `tool/ohos/onnxruntime.patch` are
+rejected. The patch handles missing pthread affinity and compiler feature
+declarations; CPUINFO is disabled, and the complete CPU operator set is retained.
+Upstream dependency download checks and TLS verification remain enabled.
+Both libraries and their license notices are packaged only in the OHOS target.
 
 The script enforces `pubspec.lock`, uses only process environment variables and
 restores them afterwards. Always run preparation after `pub get`; the build script

@@ -57,7 +57,7 @@ class OrtRuntime {
     var candidates = <String Function()>[];
     if (Platform.isWindows) {
       candidates.add(() => 'onnxruntime.dll');
-    } else if (Platform.isAndroid) {
+    } else if (Platform.isAndroid || Platform.operatingSystem == 'ohos') {
       candidates.add(() => 'libonnxruntime.so');
     } else if (Platform.isLinux) {
       // The bundle ships only the soname; it matches the copy the plugin
