@@ -177,9 +177,11 @@ class NaviPaneState extends State<NaviPane>
     onRebuild(context);
     // Aspect-scoped reads: the shell must not rebuild on every keyboard
     // inset frame (#107), so avoid a full MediaQuery.of subscription here.
+    // Keep Android portrait content full width beside back-gesture regions.
     final sideInsets =
-        (App.isMobile &&
-            MediaQuery.orientationOf(context) == Orientation.landscape)
+        (App.isIOS ||
+            (App.isAndroid &&
+                MediaQuery.orientationOf(context) == Orientation.landscape))
         ? EdgeInsets.only(
             left: math.max(
               MediaQuery.viewPaddingOf(context).left,
@@ -222,7 +224,19 @@ class NaviPaneState extends State<NaviPane>
             ],
           );
           if (sideInsets != EdgeInsets.zero) {
-            content = Padding(padding: sideInsets, child: content);
+            final paneContent = content;
+            content = Padding(
+              padding: sideInsets,
+              // Keep keyboard-inset subscriptions outside the shell builder.
+              child: Builder(
+                builder: (context) => MediaQuery.removeViewPadding(
+                  context: context,
+                  removeLeft: true,
+                  removeRight: true,
+                  child: paneContent,
+                ),
+              ),
+            );
           }
           return content;
         },

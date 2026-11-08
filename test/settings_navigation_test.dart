@@ -105,7 +105,72 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
-  for (final width in [320.0, 390.0]) {
+  testWidgets(
+    'foldable settings keep categories beside child pages at 626 pixels',
+    (tester) async {
+      await open(tester, 626);
+      expect(find.text('Page animation'), findsOneWidget);
+      await openSection(tester, 'Page layout');
+      expect(
+        tester.widget<ReaderSettings>(find.byType(ReaderSettings)).section,
+        'Page layout',
+      );
+      expect(
+        find.byKey(const ValueKey('settings-category-1')).hitTestable(),
+        findsOneWidget,
+      );
+      final root = tester.state<NavigatorState>(find.byType(Navigator).first);
+      expect(root.canPop(), isFalse);
+      await tester.tap(find.byTooltip('Back').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Page animation'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('settings-category-5')));
+      await tester.pumpAndSettle();
+      expect(find.text('Proxy'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets('settings use the available pane width inside a wide window', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Align(child: SizedBox(width: 390, child: SettingsPage())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(ReaderSettings), findsNothing);
+    expect(find.byKey(const ValueKey('settings-category-1')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'settings retain the selected category when folding and unfolding',
+    (tester) async {
+      await open(tester, 626);
+      await tester.tap(find.byKey(const ValueKey('settings-category-5')));
+      await tester.pumpAndSettle();
+      expect(find.text('Proxy'), findsOneWidget);
+
+      tester.view.physicalSize = const Size(390, 900);
+      await tester.pumpAndSettle();
+      expect(find.byType(NetworkSettings), findsNothing);
+      expect(find.byKey(const ValueKey('settings-category-5')), findsOneWidget);
+
+      tester.view.physicalSize = const Size(626, 900);
+      await tester.pumpAndSettle();
+      expect(find.text('Proxy'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  for (final width in [320.0, 390.0, 600.0]) {
     testWidgets('mobile child pages return to their category at $width', (
       tester,
     ) async {

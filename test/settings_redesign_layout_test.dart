@@ -161,7 +161,7 @@ void main() {
     bool captureHome = false,
     bool sidebar = false,
   }) async {
-    final desktop = size.width > 720;
+    final twoViews = size.width > 600;
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -217,7 +217,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull, reason: 'Settings home at $size');
-    if (!desktop) {
+    if (!twoViews) {
       if (captureHome) {
         await capture(tester, 'android-home-${size.width.toInt()}');
       }
@@ -248,10 +248,15 @@ void main() {
 
   for (final size in [
     const Size(1100, 900),
+    const Size(626, 900),
     const Size(390, 844),
     const Size(320, 760),
   ]) {
-    final label = size.width > 720 ? 'windows' : 'android';
+    final label = size.width > 720
+        ? 'windows'
+        : size.width == 626
+        ? 'ios-foldable'
+        : 'android';
     final textScale = size.width == 320 ? 1.3 : 1.0;
     for (final category in _categories.entries) {
       testWidgets(
@@ -272,7 +277,11 @@ void main() {
           await tester.pumpWidget(const SizedBox());
         },
         variant: TargetPlatformVariant.only(
-          size.width > 720 ? TargetPlatform.windows : TargetPlatform.android,
+          size.width > 720
+              ? TargetPlatform.windows
+              : size.width == 626
+              ? TargetPlatform.iOS
+              : TargetPlatform.android,
         ),
       );
     }

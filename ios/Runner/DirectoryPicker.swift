@@ -5,7 +5,10 @@ class DirectoryPicker: NSObject, UIDocumentPickerDelegate {
     private var result: FlutterResult?
 
     // 初始化选择目录方法
-    func selectDirectory(result: @escaping FlutterResult) {
+    func selectDirectory(
+        result: @escaping FlutterResult,
+        presenter: UIViewController?
+    ) {
         self.result = result
 
         // 配置 UIDocumentPicker 为目录选择模式
@@ -13,9 +16,11 @@ class DirectoryPicker: NSObject, UIDocumentPickerDelegate {
         documentPicker.delegate = self
         documentPicker.allowsMultipleSelection = false
 
-        // 获取根视图控制器并显示选择器
-        if let rootViewController = UIApplication.shared.keyWindow?.rootViewController {
-            rootViewController.present(documentPicker, animated: true, completion: nil)
+        if let presenter {
+            presenter.present(documentPicker, animated: true, completion: nil)
+        } else {
+            result(nil)
+            self.result = nil
         }
     }
 

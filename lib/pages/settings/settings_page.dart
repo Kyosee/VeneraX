@@ -137,7 +137,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   String _searchQuery = '';
-  bool get enableTwoViews => context.width > 720;
+  bool enableTwoViews = false;
   ColorScheme get colors => context.colorScheme;
 
   @override
@@ -151,12 +151,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (enableTwoViews && currentPage == -1) currentPage = 1;
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
@@ -164,7 +158,16 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CallbackShortcuts(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      // Use the pane width for foldables and constrained windows.
+      enableTwoViews = constraints.maxWidth > 600;
+      if (enableTwoViews && currentPage == -1) currentPage = 1;
+      return buildSettings();
+    },
+  );
+
+  Widget buildSettings() => CallbackShortcuts(
     bindings: {
       const SingleActivator(LogicalKeyboardKey.keyK, control: true):
           _searchFocus.requestFocus,

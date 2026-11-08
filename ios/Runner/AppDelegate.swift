@@ -4,9 +4,14 @@ import UniformTypeIdentifiers
 import Foundation // 添加此行
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate {
+@objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate, FlutterImplicitEngineDelegate {
   var flutterResult: FlutterResult?
   var directoryPath: URL!
+  private var flutterRegistrar: FlutterPluginRegistrar?
+  private var flutterViewController: FlutterViewController? {
+    // The implicit engine attaches its controller after initialization.
+    flutterRegistrar?.viewController as? FlutterViewController
+  }
 
   // 定义插件通道名称
   private var directoryPicker: DirectoryPicker?
@@ -15,13 +20,18 @@ import Foundation // 添加此行
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
 
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-          fatalError("rootViewController is not of type FlutterViewController")
-    }
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    flutterRegistrar = engineBridge.pluginRegistry
+      .registrar(forPlugin: "VeneraAppDelegate")
 
-    let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
+    let methodChannel = FlutterMethodChannel(
+      name: "venera/method_channel",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
     methodChannel.setMethodCallHandler { (call, result) in
       if call.method == "getProxy" {
         if let proxySettings = CFNetworkCopySystemProxySettings()?.takeUnretainedValue() as NSDictionary?,
@@ -48,7 +58,10 @@ import Foundation // 添加此行
         result(nil)
       } else if call.method == "selectDirectory" {
         self.directoryPicker = DirectoryPicker()
-        self.directoryPicker?.selectDirectory(result: result)
+        self.directoryPicker?.selectDirectory(
+          result: result,
+          presenter: self.flutterViewController
+        )
       } else if call.method == "supportsAlternateIcons" {
         result(UIApplication.shared.supportsAlternateIcons)
       } else if call.method == "setLauncherIcon" {
@@ -63,7 +76,6 @@ import Foundation // 添加此行
       }
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   /// Swap the home-screen launcher icon to an alternate declared in
@@ -88,15 +100,19 @@ import Foundation // 添加此行
   }
 
   func getDirectoryPath() {
+    guard let presenter = flutterViewController else {
+      flutterResult?(nil)
+      flutterResult = nil
+      return
+    }
+
     let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.folder], asCopy: false)
     documentPicker.delegate = self
     documentPicker.allowsMultipleSelection = false
     documentPicker.directoryURL = nil
     documentPicker.modalPresentationStyle = .formSheet
 
-    if let rootViewController = window?.rootViewController {
-      rootViewController.present(documentPicker, animated: true, completion: nil)
-    }
+    presenter.present(documentPicker, animated: true, completion: nil)
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
