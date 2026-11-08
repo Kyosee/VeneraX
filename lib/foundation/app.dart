@@ -31,6 +31,9 @@ class _App {
 
   bool get isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  // Compare the name so the upstream Flutter SDK can compile this code too.
+  bool get isOhos => !kIsWeb && defaultTargetPlatform.name == 'ohos';
+
   bool get isWindows =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
@@ -40,7 +43,7 @@ class _App {
 
   bool get isDesktop => !kIsWeb && (isWindows || isLinux || isMacOS);
 
-  bool get isMobile => !kIsWeb && (isAndroid || isIOS);
+  bool get isMobile => !kIsWeb && (isAndroid || isIOS || isOhos);
 
   // Whether the app has been initialized.
   // If current Isolate is main Isolate, this value is always true.
