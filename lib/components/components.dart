@@ -49,6 +49,7 @@ part 'flyout.dart';
 part 'layout.dart';
 part 'loading.dart';
 part 'menu.dart';
+part 'mobile_menu.dart';
 part 'message.dart';
 part 'navigation_bar.dart';
 part 'pop_up_widget.dart';

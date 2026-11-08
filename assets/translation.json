@@ -1,5 +1,7 @@
 {
   "zh_CN": {
+    "Actions": "操作",
+    "Organize": "收藏与整理",
     "Current comic": "当前漫画",
     "This device": "本设备",
     "Inherited from this device": "继承本设备设置",
@@ -1575,6 +1577,8 @@
     "Undo page shift": "取消错开"
   },
   "zh_TW": {
+    "Actions": "操作",
+    "Organize": "收藏與整理",
     "Current comic": "目前漫畫",
     "This device": "本裝置",
     "Inherited from this device": "沿用本裝置設定",
