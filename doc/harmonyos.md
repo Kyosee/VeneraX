@@ -1,8 +1,8 @@
 # HarmonyOS development
 
 Experimental platform bootstrap. Native and reader pipeline probes run on a
-HarmonyOS x64 emulator; the complete mobile application is not ready. WebView,
-directory access, biometric authentication and PDF still need device validation.
+HarmonyOS x64 emulator; the complete mobile application is not ready. Directory
+access, biometric authentication and PDF still need device validation.
 Do not distribute this debug HAP as a working Venera release.
 
 ## Isolated workspace
@@ -63,10 +63,27 @@ the app a second time to verify source, progress and downloads persist across
 processes. All probe data stays in a separate `ohos_reader_probe` directory.
 This does not verify reader gestures, background recovery or synchronization.
 
+Use `-Target tool/ohos_webview_smoke.dart` for the WebView probe. It verifies
+initial custom headers and redirects, JavaScript results, native and HttpOnly
+cookies (including deletion), local/session storage, malicious storage keys,
+origin isolation, reloads, custom/direct/system proxy switching and rejection
+of an untrusted TLS certificate. It uses local servers and no user account.
+Passing it does not verify every source's login or anti-bot flow.
+
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
 
 ## Dependencies
+
+WebView uses the official CPF-Flutter/flutter_inappwebview OH adapter at commit
+`389cf40dbb647f1df7272de5ea6b3401efe27a75`. Supply an existing clean checkout with
+`-WebViewSource`, or let preparation fetch that commit from GitCode. Only tracked
+source is copied into `.dart_tool/ohos`; the public Flutter wrapper and interface
+keep their existing locked versions. Local patches cover interface compatibility,
+initial request ordering, HttpOnly deletion, storage isolation and key escaping,
+SSL error reporting, and preservation of browser TLS/origin/network boundaries.
+The SDK's plugin generator runs after preparation to register the native adapter.
+The source checkout and shared Pub cache are never patched.
 
 SQLite is built only by the OHOS CMake project, from the official 3.54.1
 amalgamation and [published SHA3-256 digest](https://www.sqlite.org/download.html).

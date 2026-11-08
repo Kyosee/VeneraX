@@ -1,0 +1,284 @@
+diff --git a/lib/src/in_app_webview/in_app_webview_controller.dart b/lib/src/in_app_webview/in_app_webview_controller.dart
+index dca1af17..7debc305 100644
+--- a/lib/src/in_app_webview/in_app_webview_controller.dart
++++ b/lib/src/in_app_webview/in_app_webview_controller.dart
+@@ -982,6 +982,15 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+           ServerTrustChallenge challenge =
+               ServerTrustChallenge.fromMap(arguments)!;
+ 
++          final rawSslError = arguments['protectionSpace']?['sslError'];
++          challenge.protectionSpace.sslError?.code = switch (rawSslError?['code']) {
++            4 => SslErrorType.DATE_INVALID,
++            2 => SslErrorType.IDMISMATCH,
++            5 => SslErrorType.INVALID,
++            3 => SslErrorType.UNTRUSTED,
++            _ => null,
++          };
++
+           if (webviewParams != null &&
+               webviewParams!.onReceivedServerTrustAuthRequest != null)
+             return (await webviewParams!.onReceivedServerTrustAuthRequest!(
+diff --git a/lib/src/web_storage/web_storage.dart b/lib/src/web_storage/web_storage.dart
+index b2e29214..5f569061 100644
+--- a/lib/src/web_storage/web_storage.dart
++++ b/lib/src/web_storage/web_storage.dart
+@@ -124,8 +124,6 @@ class OhosStorageCreationParams extends PlatformStorageCreationParams {
+ 
+ ///{@macro flutter_inappwebview_platform_interface.PlatformStorage}
+ abstract mixin class OhosStorage implements PlatformStorage {
+-  final Map<String, dynamic> _fallbackItems = <String, dynamic>{};
+-
+   @override
+   OhosInAppWebViewController? controller;
+ 
+@@ -146,40 +144,30 @@ abstract mixin class OhosStorage implements PlatformStorage {
+     var result = await controller?.evaluateJavascript(source: """
+     window.$webStorageType.length;
+     """);
+-    var jsLength = _parseEvaluateJavascriptInt(result);
+-    if (jsLength != null && jsLength > 0) {
+-      return jsLength;
+-    }
+-    return _fallbackItems.isEmpty ? jsLength : _fallbackItems.length;
++    return _parseEvaluateJavascriptInt(result);
+   }
+ 
+   @override
+   Future<void> setItem({required String key, required dynamic value}) async {
+-    _fallbackItems[key] = value;
+     var encodedValue = json.encode(value);
+     await controller?.evaluateJavascript(source: """
+-    window.$webStorageType.setItem("$key", ${value is String ? encodedValue : "JSON.stringify($encodedValue)"});
++    window.$webStorageType.setItem(${json.encode(key)}, ${value is String ? encodedValue : "JSON.stringify($encodedValue)"});
+     """);
+   }
+ 
+   @override
+   Future<dynamic> getItem({required String key}) async {
+     var itemValue = await controller?.evaluateJavascript(source: """
+-    window.$webStorageType.getItem("$key");
++    window.$webStorageType.getItem(${json.encode(key)});
+     """);
+ 
+-    var parsed = _parseStorageItemValue(itemValue);
+-    if (parsed != null) {
+-      return parsed;
+-    }
+-    return _fallbackItems[key];
++    return _parseStorageItemValue(itemValue);
+   }
+ 
+   @override
+   Future<void> removeItem({required String key}) async {
+-    _fallbackItems.remove(key);
+     await controller?.evaluateJavascript(source: """
+-    window.$webStorageType.removeItem("$key");
++    window.$webStorageType.removeItem(${json.encode(key)});
+     """);
+   }
+ 
+@@ -204,16 +192,11 @@ abstract mixin class OhosStorage implements PlatformStorage {
+ })();
+     """))?.cast<Map<dynamic, dynamic>>();
+ 
+-    if (items != null && items.isNotEmpty) {
++    if (items != null) {
+       for (var item in items) {
+         webStorageItems
+             .add(WebStorageItem(key: item["key"], value: item["value"]));
+       }
+-      return webStorageItems;
+-    }
+-
+-    for (final entry in _fallbackItems.entries) {
+-      webStorageItems.add(WebStorageItem(key: entry.key, value: entry.value));
+     }
+ 
+     return webStorageItems;
+@@ -221,7 +204,6 @@ abstract mixin class OhosStorage implements PlatformStorage {
+ 
+   @override
+   Future<void> clear() async {
+-    _fallbackItems.clear();
+     await controller?.evaluateJavascript(source: """
+     window.$webStorageType.clear();
+     """);
+@@ -233,18 +215,11 @@ abstract mixin class OhosStorage implements PlatformStorage {
+     window.$webStorageType.key($index);
+     """);
+     var jsKey = _parseEvaluateJavascriptString(result);
+-    if (jsKey != null && jsKey.isNotEmpty) {
+-      return jsKey;
+-    }
+-    if (index >= 0 && index < _fallbackItems.length) {
+-      return _fallbackItems.keys.elementAt(index);
+-    }
+     return jsKey ?? '';
+   }
+ 
+   @override
+   void dispose() {
+-    _fallbackItems.clear();
+     controller = null;
+   }
+ }
+diff --git a/ohos/src/main/ets/components/plugin/MyCookieManager.ets b/ohos/src/main/ets/components/plugin/MyCookieManager.ets
+--- a/ohos/src/main/ets/components/plugin/MyCookieManager.ets
++++ b/ohos/src/main/ets/components/plugin/MyCookieManager.ets
+@@ -223,7 +223,7 @@ export default class MyCookieManager extends ChannelDelegateImpl {
+       let cookieValue = name + "=; Path=" + path + "; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0";
+       if (MyCookieManager.hasCookieDomain(domain))
+         cookieValue += "; Domain=" + domain;
+-      web_webview.WebCookieManager.configCookieSync(url, cookieValue);
++      web_webview.WebCookieManager.configCookieSync(url, cookieValue, false, true);
+       web_webview.WebCookieManager.saveCookieAsync();
+       result.success(true)
+     } catch (error) {
+@@ -259,7 +259,7 @@ export default class MyCookieManager extends ChannelDelegateImpl {
+           if (MyCookieManager.hasCookieDomain(domain))
+             cookieValue += "; Domain=" + domain;
+           try {
+-            web_webview.WebCookieManager.configCookieSync(url, cookieValue)
++            web_webview.WebCookieManager.configCookieSync(url, cookieValue, false, true)
+           } catch (e) {
+             console.warn(LOG_TAG, 'deleteCookies: failed to delete a cookie')
+           }
+diff --git a/ohos/src/main/ets/components/plugin/types/URLProtectionSpace.ets b/ohos/src/main/ets/components/plugin/types/URLProtectionSpace.ets
+index 9dd42e5c..3038ff30 100644
+--- a/ohos/src/main/ets/components/plugin/types/URLProtectionSpace.ets
++++ b/ohos/src/main/ets/components/plugin/types/URLProtectionSpace.ets
+@@ -39,7 +39,7 @@ export default class URLProtectionSpace {
+     if (sslCertificate) {
+       this.sslCertificate = sslCertificate;
+     }
+-    if (sslError) {
++    if (sslError != null) {
+       this.sslError = sslError
+     }
+   }
+@@ -51,9 +51,7 @@ export default class URLProtectionSpace {
+     urlProtectionSpaceMap.set('realm', this.realm);
+     urlProtectionSpaceMap.set('port', this.port);
+     urlProtectionSpaceMap.set('sslCertificate',  await SslCertificateExt.toMap(this.sslCertificate));
+-    urlProtectionSpaceMap.set('sslCertificate', null);
+     urlProtectionSpaceMap.set('sslError', SslErrorExt.toMap(this.sslError));
+-    urlProtectionSpaceMap.set('sslError', null);
+     urlProtectionSpaceMap.set('authenticationMethod', null);
+     urlProtectionSpaceMap.set('distinguishedNames', null);
+     urlProtectionSpaceMap.set('receivesCredentialSecurely', null);
+@@ -145,4 +143,4 @@ export default class URLProtectionSpace {
+       ", sslError=" + this.sslError +
+       '}';
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets
+index 122295e9..3d4cdacc 100644
+--- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets
++++ b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets
+@@ -398,13 +398,6 @@ export default class InAppWebView implements InAppWebViewInterface {
+   async loadUrl(urlRequest: URLRequest) {
+     let url = urlRequest.getUrl();
+     let method = urlRequest.getMethod();
+-    if (url != null && url.length > 0 && method != "POST") {
+-      if (url.startsWith("resources/rawfile/")) {
+-        this.curUrl = $rawfile(url.replace("resources/rawfile/", ""));
+-      } else {
+-        this.curUrl = url;
+-      }
+-    }
+     await this.waitControllerAttached();
+     // Android loadUrl does not stopLoading before POST; stopping here can leave
+     // the WebView unable to apply a subsequent loadData (private-POST fallback).
+@@ -426,11 +419,6 @@ export default class InAppWebView implements InAppWebViewInterface {
+       this.inAppWebViewClient.handleChromeSafeBrowsingTestUrlIfNeeded(url)) {
+       return;
+     }
+-    if (this.isLoopbackHttpUrl(url) &&
+-      (method == null || method === 'GET' || method === 'HEAD')) {
+-      await this.loadLoopbackHttpUrl(urlRequest);
+-      return;
+-    }
+     let realUrl = url.startsWith("resources/rawfile/") ? $rawfile(url.replace("resources/rawfile/", "")) : url;
+     let headers = urlRequest.getHeaders();
+     this.curUrl = realUrl;
+@@ -828,7 +816,6 @@ export default class InAppWebView implements InAppWebViewInterface {
+           certType: useP12 ? http.CertType.P12 : http.CertType.PEM,
+           keyPassword: clientCertPaths.keyPassword ?? '',
+         },
+-        remoteValidation: 'skip' as http.RemoteValidation,
+       };
+       if (clientCertPaths.caPath != null) {
+         requestOptions.caPath = clientCertPaths.caPath;
+@@ -2874,11 +2861,6 @@ export default class InAppWebView implements InAppWebViewInterface {
+   ) {
+     await this.waitControllerAttached();
+     const buffer = InAppWebView.copyRequestBody(postData);
+-    // Private/loopback: ArkWeb postUrl hangs on the 2nd WebView after about:blank.
+-    if (this.shouldPostViaHttpFallback(url)) {
+-      await this.loadPrivateHttpUrl(url, 'POST', buffer, headers);
+-      return;
+-    }
+     this.curUrl = url;
+     try {
+       this.requireController().postUrl(url, buffer);
+@@ -3634,4 +3616,4 @@ export default class InAppWebView implements InAppWebViewInterface {
+   getView(): WrappedBuilder<[Params]> {
+     return new WrappedBuilder(buildOhosWebView)
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
+index 53b668f6..66bcbe6e 100644
+--- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
++++ b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
+@@ -461,22 +461,9 @@ export default class InAppWebViewClient {
+     return true;
+   }
+ 
+-  private shouldBypassLocalNetworkAccessChecks(url: string): boolean {
+-    if (!this.isRemoteHttpUrl(url)) {
+-      return false;
+-    }
+-    try {
+-      let host = new uri.URI(url).host?.toLowerCase();
+-      if (host == null || host.length === 0) {
+-        return false;
+-      }
+-      if (host === 'localhost' || host.endsWith('.local')) {
+-        return true;
+-      }
+-      return this.isPrivateIpv4Host(host);
+-    } catch (e) {
+-      return false;
+-    }
++  private shouldBypassLocalNetworkAccessChecks(_url: string): boolean {
++    // Preserve ArkWeb's origin, cookie and local-network permission boundaries.
++    return false;
+   }
+ 
+   private isPrivateIpv4Host(host: string): boolean {
+diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets
+index fbff3d7d..aa82d5c8 100644
+--- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets
++++ b/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets
+@@ -381,15 +381,9 @@ export struct OhosWebView {
+     .backgroundColor(this.transparentBackground ? Color.Transparent : Color.White)
+   }
+ 
+-  /**
+-   * OHOS uses a path-whitelist via setPathAllowingUniversalAccess rather than
+-   * Android's three independent WebSettings APIs (fileAccess,
+-   * allowFileAccessFromFileURLs, allowUniversalAccessFromFileURLs). Any of
+-   * those flags being true enables the whitelist — a pragmatic OHOS adaptation.
+-   */
++  // Ordinary file access must not authorize cross-origin file access.
+   private shouldAllowUniversalFileAccess(): boolean {
+     const settings = this.inAppWebView!.customSettings;
+-    return settings.fileAccess ||
+-      settings.allowFileAccessFromFileURLs ||
++    return settings.allowFileAccessFromFileURLs ||
+       settings.allowUniversalAccessFromFileURLs;
+   }

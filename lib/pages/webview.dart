@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:desktop_webview_window/desktop_webview_window.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -97,19 +98,26 @@ class _AppWebviewState extends State<AppWebview> {
 
   Future<bool> _createWebviewEnvironment() async {
     var proxy = appdata.settings['proxy'].toString();
-    if (proxy != "system" && proxy != "direct") {
+    final customProxy = proxy != "system" && proxy != "direct";
+    if (App.isOhos || customProxy) {
       var proxyAvailable = await WebViewFeature.isFeatureSupported(
         WebViewFeature.PROXY_OVERRIDE,
       );
       if (proxyAvailable) {
         ProxyController proxyController = ProxyController.instance();
         await proxyController.clearProxyOverride();
-        if (!proxy.contains("://")) {
-          proxy = "http://$proxy";
+        if (customProxy) {
+          if (!proxy.contains("://")) {
+            proxy = "http://$proxy";
+          }
+          await proxyController.setProxyOverride(
+            settings: ProxySettings(proxyRules: [ProxyRule(url: proxy)]),
+          );
+        } else if (proxy == "direct") {
+          await proxyController.setProxyOverride(
+            settings: ProxySettings(directs: ['*']),
+          );
         }
-        await proxyController.setProxyOverride(
-          settings: ProxySettings(proxyRules: [ProxyRule(url: proxy)]),
-        );
       }
     }
     if (!App.isWindows) {
@@ -191,7 +199,7 @@ class _AppWebviewState extends State<AppWebview> {
   Widget createWebviewWithEnvironment(WebViewEnvironment? e) {
     return InAppWebView(
       webViewEnvironment: e,
-      initialSettings: InAppWebViewSettings(isInspectable: true),
+      initialSettings: InAppWebViewSettings(isInspectable: kDebugMode),
       initialUrlRequest: URLRequest(
         url: WebUri(widget.initialUrl),
         headers: widget.initialHeaders,

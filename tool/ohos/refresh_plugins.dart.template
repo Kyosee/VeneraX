@@ -1,0 +1,17 @@
+import 'package:flutter_tools/src/cache.dart';
+import 'package:flutter_tools/src/base/template.dart';
+import 'package:flutter_tools/src/context_runner.dart';
+import 'package:flutter_tools/src/isolated/mustache_template.dart';
+import 'package:flutter_tools/src/project.dart';
+
+// Use the pinned SDK's generators after preparing build-local dependencies.
+// A --no-pub HAP build otherwise skips native plugin registration.
+Future<void> main(List<String> args) async {
+  Cache.flutterRoot = args.single;
+  await runInContext(() async {
+    await FlutterProject.current().ensureReadyForPlatformSpecificTooling(
+      releaseMode: false,
+      ohosPlatform: true,
+    );
+  }, overrides: {TemplateRenderer: () => const MustacheTemplateRenderer()});
+}

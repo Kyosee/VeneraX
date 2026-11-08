@@ -1,0 +1,270 @@
+diff --git a/test/venera_storage_security_test.dart b/test/venera_storage_security_test.dart
+new file mode 100644
+--- /dev/null
++++ b/test/venera_storage_security_test.dart
+@@ -0,0 +1,265 @@
++import 'dart:convert';
++
++import 'package:flutter/foundation.dart';
++import 'package:flutter/services.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
++
++import '../lib/src/in_app_webview/in_app_webview_controller.dart';
++
++enum _NativeResult { normal, noResult, failure }
++
++void main() {
++  TestWidgetsFlutterBinding.ensureInitialized();
++  const channel = MethodChannel(
++    'com.pichillilorenzo/flutter_inappwebview_storage-security',
++  );
++  final messenger =
++      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
++
++  group('server trust SSL errors', () {
++    TargetPlatform? previousTarget;
++    setUp(() {
++      previousTarget = debugDefaultTargetPlatformOverride;
++      debugDefaultTargetPlatformOverride = TargetPlatform.ohos;
++    });
++    tearDown(() {
++      debugDefaultTargetPlatformOverride = previousTarget;
++    });
++
++    const cases = <int?, String?>{
++      4: 'DATE_INVALID',
++      2: 'IDMISMATCH',
++      5: 'INVALID',
++      3: 'UNTRUSTED',
++      999: null,
++      null: null,
++    };
++    for (final entry in cases.entries) {
++      final nativeCode = entry.key;
++      final expectedCode = entry.value;
++      test('maps OH SSL code $nativeCode to $expectedCode', () async {
++        ServerTrustChallenge? received;
++        final controller = OhosInAppWebViewController(
++          PlatformInAppWebViewControllerCreationParams(
++            id: 'ssl-security-$nativeCode',
++            webviewParams: PlatformInAppWebViewWidgetCreationParams(
++              onReceivedServerTrustAuthRequest: (_, challenge) async {
++                received = challenge;
++                return ServerTrustAuthResponse(
++                  action: ServerTrustAuthResponseAction.CANCEL,
++                );
++              },
++            ),
++          ),
++        );
++        addTearDown(() => controller.dispose(isKeepAlive: true));
++
++        final result = await controller.handleMethod(MethodCall(
++          'onReceivedServerTrustAuthRequest',
++          {
++            'protectionSpace': {
++              'host': 'certificate.example',
++              'protocol': 'https',
++              'port': 443,
++              'sslError': {
++                if (nativeCode != null) 'code': nativeCode,
++                'message': 'Native certificate error',
++              },
++            },
++          },
++        ));
++
++        expect(received, isNotNull);
++        expect(received!.protectionSpace.host, 'certificate.example');
++        final error = received!.protectionSpace.sslError;
++        expect(error, isNotNull);
++        expect(error!.code?.name(), expectedCode);
++        expect(error.message, 'Native certificate error');
++        expect(result, {'action': 0});
++      });
++    }
++  });
++
++  for (final storageName in ['localStorage', 'sessionStorage']) {
++    group(storageName, () {
++      late OhosInAppWebViewController controller;
++      late PlatformStorage storage;
++      late Map<String, Map<String, String>> origins;
++      late String currentOrigin;
++      late _NativeResult nativeResult;
++      late List<String> scripts;
++
++      List<dynamic> arguments(String source, String method) {
++        final prefix = 'window.$storageName.$method(';
++        expect(source, startsWith(prefix));
++        expect(source, endsWith(');'));
++        final encoded = source.substring(prefix.length, source.length - 2);
++        return jsonDecode('[$encoded]') as List<dynamic>;
++      }
++
++      setUp(() {
++        origins = {};
++        currentOrigin = 'https://origin-a.example';
++        nativeResult = _NativeResult.normal;
++        scripts = [];
++        messenger.setMockMethodCallHandler(channel, (call) async {
++          final callArguments = call.arguments as Map;
++          if (call.method == 'loadUrl') {
++            final request = callArguments['urlRequest'] as Map;
++            currentOrigin = Uri.parse(request['url'] as String).origin;
++            return null;
++          }
++          expect(call.method, 'evaluateJavascript');
++          final source = (callArguments['source'] as String).trim();
++          scripts.add(source);
++          if (nativeResult == _NativeResult.failure) {
++            throw PlatformException(code: 'JS_EVALUATION_FAILED');
++          }
++          if (nativeResult == _NativeResult.noResult) {
++            return null;
++          }
++          final items = origins.putIfAbsent(currentOrigin, () => {});
++          if (source.contains('var webStorageItems =')) {
++            return jsonEncode([
++              for (final entry in items.entries)
++                {'key': entry.key, 'value': entry.value},
++            ]);
++          }
++          if (source == 'window.$storageName.length;') {
++            return jsonEncode(items.length);
++          }
++          if (source.startsWith('window.$storageName.key(')) {
++            final args = arguments(source, 'key');
++            expect(args, hasLength(1));
++            final index = args.single as int;
++            return jsonEncode(
++              index >= 0 && index < items.length
++                  ? items.keys.elementAt(index)
++                  : null,
++            );
++          }
++          if (source.startsWith('window.$storageName.setItem(')) {
++            final args = arguments(source, 'setItem');
++            expect(args, hasLength(2));
++            items[args[0] as String] = args[1] as String;
++            return null;
++          }
++          if (source.startsWith('window.$storageName.getItem(')) {
++            final args = arguments(source, 'getItem');
++            expect(args, hasLength(1));
++            return jsonEncode(items[args.single]);
++          }
++          if (source.startsWith('window.$storageName.removeItem(')) {
++            final args = arguments(source, 'removeItem');
++            expect(args, hasLength(1));
++            items.remove(args.single);
++            return null;
++          }
++          fail('Unexpected storage script: $source');
++        });
++        controller = OhosInAppWebViewController(
++          const PlatformInAppWebViewControllerCreationParams(
++            id: 'storage-security',
++          ),
++        );
++        storage = storageName == 'localStorage'
++            ? controller.webStorage.localStorage
++            : controller.webStorage.sessionStorage;
++      });
++
++      tearDown(() {
++        controller.dispose(isKeepAlive: true);
++        messenger.setMockMethodCallHandler(channel, null);
++      });
++
++      Future<void> seedAndNavigate() async {
++        await controller.loadUrl(
++          urlRequest:
++              URLRequest(url: WebUri('https://origin-a.example/account')),
++        );
++        await storage.setItem(key: 'token', value: 'secret-A');
++        expect(await storage.getItem(key: 'token'), 'secret-A');
++        final before = await storage.getItems();
++        expect(before, hasLength(1));
++        expect(before.single.key, 'token');
++        expect(before.single.value, 'secret-A');
++        expect(await storage.length(), 1);
++        expect(await storage.key(index: 0), 'token');
++        await controller.loadUrl(
++          urlRequest: URLRequest(url: WebUri('https://origin-b.example/login')),
++        );
++      }
++
++      Future<dynamic> read(String operation) => switch (operation) {
++            'getItem' => storage.getItem(key: 'token'),
++            'getItems' => storage.getItems(),
++            'length' => storage.length(),
++            'key' => storage.key(index: 0),
++            _ => throw ArgumentError.value(operation),
++          };
++
++      for (final mode in _NativeResult.values) {
++        for (final operation in ['getItem', 'getItems', 'length', 'key']) {
++          test('$operation cannot recover old-origin data with $mode',
++              () async {
++            await seedAndNavigate();
++            nativeResult = mode;
++            if (mode == _NativeResult.failure) {
++              await expectLater(
++                read(operation),
++                throwsA(isA<PlatformException>().having(
++                  (error) => error.code,
++                  'code',
++                  'JS_EVALUATION_FAILED',
++                )),
++              );
++              return;
++            }
++            final result = await read(operation);
++            switch (operation) {
++              case 'getItem':
++                expect(result, isNull);
++              case 'getItems':
++                expect(result, isEmpty);
++              case 'length':
++                expect(result, mode == _NativeResult.normal ? 0 : null);
++              case 'key':
++                expect(result, '');
++            }
++          });
++        }
++      }
++
++      test('a failed write cannot become a fallback read', () async {
++        nativeResult = _NativeResult.failure;
++        await expectLater(
++          storage.setItem(key: 'token', value: 'never-persisted'),
++          throwsA(isA<PlatformException>()),
++        );
++        nativeResult = _NativeResult.noResult;
++        expect(await storage.getItem(key: 'token'), isNull);
++        expect(await storage.getItems(), isEmpty);
++        expect(await storage.length(), isNull);
++        expect(await storage.key(index: 0), '');
++      });
++
++      test('set, get and remove preserve hostile keys as single literals',
++          () async {
++        const key = '");globalThis.injected=true;//\\\n中文\u2028\u2029';
++        const value = 'literal value "\\\n';
++        await storage.setItem(key: key, value: value);
++        expect(arguments(scripts.last, 'setItem'), [key, value]);
++        expect(origins[currentOrigin], {key: value});
++
++        expect(await storage.getItem(key: key), value);
++        expect(arguments(scripts.last, 'getItem'), [key]);
++
++        await storage.removeItem(key: key);
++        expect(arguments(scripts.last, 'removeItem'), [key]);
++        expect(origins[currentOrigin], isEmpty);
++        expect(await storage.getItem(key: key), isNull);
++      });
++    });
++  }
++}

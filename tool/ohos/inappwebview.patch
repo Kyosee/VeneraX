@@ -1,0 +1,287 @@
+diff --git a/lib/src/in_app_webview/in_app_webview_controller.dart b/lib/src/in_app_webview/in_app_webview_controller.dart
+index dca1af17..a5b04657 100644
+--- a/lib/src/in_app_webview/in_app_webview_controller.dart
++++ b/lib/src/in_app_webview/in_app_webview_controller.dart
+@@ -13,6 +13,8 @@
+ * limitations under the License.
+ */
+ 
++// Venera: adapt to platform interface 1.4.0-beta.3.
++
+ import 'dart:io';
+ import 'dart:collection';
+ import 'dart:convert';
+@@ -121,8 +123,7 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+   static final MethodChannel _staticChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
+ 
+   // List of properties to be saved and restored for keep alive feature
+-  Map<String, JavaScriptHandlerCallback> _javaScriptHandlersMap =
+-      HashMap<String, JavaScriptHandlerCallback>();
++  Map<String, Function> _javaScriptHandlersMap = HashMap<String, Function>();
+   Map<UserScriptInjectionTime, List<UserScript>> _userScripts = {
+     UserScriptInjectionTime.AT_DOCUMENT_START: <UserScript>[],
+     UserScriptInjectionTime.AT_DOCUMENT_END: <UserScript>[]
+@@ -1293,9 +1294,8 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+ 
+         if (contextMenu != null) {
+           int? androidId = call.arguments["androidId"];
+-          int? ohosId = call.arguments["ohosId"];
+           String? iosId = call.arguments["iosId"];
+-          dynamic id = call.arguments["id"];
++          dynamic id = call.arguments["id"] ?? call.arguments["ohosId"];
+           String title = call.arguments["title"];
+ 
+           ContextMenuItem menuItemClicked = ContextMenuItem(
+@@ -1303,8 +1303,6 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+               // ignore: deprecated_member_use_from_same_package
+               androidId: androidId,
+               // ignore: deprecated_member_use_from_same_package
+-              ohosId: ohosId,
+-              // ignore: deprecated_member_use_from_same_package
+               iosId: iosId,
+               title: title,
+               action: null);
+@@ -1466,8 +1464,13 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+         break;
+       case "onCallJsHandler":
+         String handlerName = call.arguments["handlerName"];
++        final handlerDataMap =
++            (call.arguments["data"] as Map?)?.cast<String, dynamic>();
+         // decode args to json
+-        List<dynamic> args = jsonDecode(call.arguments["args"]);
++        final rawArgs = handlerDataMap?["args"] ?? call.arguments["args"];
++        List<dynamic> args = rawArgs is String
++            ? jsonDecode(rawArgs)
++            : List<dynamic>.from(rawArgs as List);
+ 
+         _debugLog(handlerName, args);
+ 
+@@ -1597,7 +1600,29 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+         if (_javaScriptHandlersMap.containsKey(handlerName)) {
+           // convert result to json
+           try {
+-            return jsonEncode(await _javaScriptHandlersMap[handlerName]!(args));
++            final callback = _javaScriptHandlersMap[handlerName]!;
++            dynamic result;
++            if (callback is JavaScriptHandlerCallback) {
++              result = await callback(args);
++            } else if (callback is JavaScriptHandlerFunction) {
++              // Never infer a caller's origin or frame from the top-level URL.
++              if (handlerDataMap == null ||
++                  handlerDataMap["origin"] is! String ||
++                  handlerDataMap["requestUrl"] is! String ||
++                  handlerDataMap["isMainFrame"] is! bool) {
++                throw UnsupportedError(
++                    'OHOS JavaScript handlers require native origin and frame metadata');
++              }
++              result = await callback(JavaScriptHandlerFunctionData(
++                args: args,
++                origin: WebUri(handlerDataMap["origin"]),
++                requestUrl: WebUri(handlerDataMap["requestUrl"]),
++                isMainFrame: handlerDataMap["isMainFrame"],
++              ));
++            } else {
++              result = await callback();
++            }
++            return jsonEncode(result);
+           } catch (error, stacktrace) {
+             developer.log(error.toString() + '\n' + stacktrace.toString(),
+                 name: 'JavaScript Handler "$handlerName"');
+@@ -2125,14 +2150,14 @@ class OhosInAppWebViewController extends PlatformInAppWebViewController
+   @override
+   void addJavaScriptHandler(
+       {required String handlerName,
+-      required JavaScriptHandlerCallback callback}) {
++      required Function callback}) {
+     assert(!_JAVASCRIPT_HANDLER_FORBIDDEN_NAMES.contains(handlerName),
+         '"$handlerName" is a forbidden name!');
+     this._javaScriptHandlersMap[handlerName] = (callback);
+   }
+ 
+   @override
+-  JavaScriptHandlerCallback? removeJavaScriptHandler(
++  Function? removeJavaScriptHandler(
+       {required String handlerName}) {
+     return this._javaScriptHandlersMap.remove(handlerName);
+   }
+diff --git a/lib/src/print_job/print_job_controller.dart b/lib/src/print_job/print_job_controller.dart
+index 4b0541fb..f33426c8 100644
+--- a/lib/src/print_job/print_job_controller.dart
++++ b/lib/src/print_job/print_job_controller.dart
+@@ -13,6 +13,8 @@
+ * limitations under the License.
+ */
+ 
++// Venera: adapt to platform interface 1.4.0-beta.3.
++
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
+@@ -27,7 +29,7 @@ class OhosPrintJobControllerCreationParams
+     extends PlatformPrintJobControllerCreationParams {
+   /// Creates a new [OhosPrintJobControllerCreationParams] instance.
+   const OhosPrintJobControllerCreationParams(
+-      {required super.id, super.onComplete});
++      {required super.id});
+ 
+   /// Creates a [OhosPrintJobControllerCreationParams] instance based on [PlatformPrintJobControllerCreationParams].
+   factory OhosPrintJobControllerCreationParams.fromPlatformPrintJobControllerCreationParams(
+@@ -35,7 +37,7 @@ class OhosPrintJobControllerCreationParams
+       // ignore: avoid_unused_constructor_parameters
+       PlatformPrintJobControllerCreationParams params) {
+     return OhosPrintJobControllerCreationParams(
+-        id: params.id, onComplete: params.onComplete);
++        id: params.id);
+   }
+ }
+ 
+diff --git a/lib/src/web_message/web_message_port.dart b/lib/src/web_message/web_message_port.dart
+index 43da964e..306e9183 100644
+--- a/lib/src/web_message/web_message_port.dart
++++ b/lib/src/web_message/web_message_port.dart
+@@ -13,6 +13,8 @@
+ * limitations under the License.
+ */
+ 
++// Venera: adapt to platform interface 1.4.0-beta.3.
++
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
+ 
+@@ -82,7 +84,7 @@ class OhosWebMessagePort extends PlatformWebMessagePort {
+   }
+ 
+   @override
+-  Map<String, dynamic> toMap() {
++  Map<String, dynamic> toMap({EnumMethod? enumMethod}) {
+     return {
+       "index": params.index,
+       "webMessageChannelId": this._webMessageChannel.params.id
+diff --git a/lib/src/webview_asset_loader.dart b/lib/src/webview_asset_loader.dart
+index 7774d586..80501cde 100644
+--- a/lib/src/webview_asset_loader.dart
++++ b/lib/src/webview_asset_loader.dart
+@@ -13,6 +13,8 @@
+ * limitations under the License.
+ */
+ 
++// Venera: adapt to platform interface 1.4.0-beta.3.
++
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
+@@ -69,7 +71,7 @@ abstract mixin class OhosPathHandler
+   }
+ 
+   @override
+-  Map<String, dynamic> toMap() {
++  Map<String, dynamic> toMap({EnumMethod? enumMethod}) {
+     return {"path": path, "type": type, "id": _id};
+   }
+ 
+@@ -209,10 +211,10 @@ class OhosInternalStoragePathHandler
+   String get directory => _internalParams.directory;
+ 
+   @override
+-  Map<String, dynamic> toMap() {
++  Map<String, dynamic> toMap({EnumMethod? enumMethod}) {
+     // Must call mixin/super toMap — `{...toMap()}` recurses and Stack Overflows
+     // (AssetsPathHandler + InternalStoragePathHandler integration test).
+-    return {...super.toMap(), 'directory': directory};
++    return {...super.toMap(enumMethod: enumMethod), 'directory': directory};
+   }
+ }
+ 
+diff --git a/test/venera_interface_compat_test.dart b/test/venera_interface_compat_test.dart
+new file mode 100644
+index 0000000..899590c
+--- /dev/null
++++ b/test/venera_interface_compat_test.dart
+@@ -0,0 +1,87 @@
++import 'dart:convert';
++
++import 'package:flutter/services.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
++
++import '../lib/src/in_app_webview/in_app_webview_controller.dart';
++
++void main() {
++  TestWidgetsFlutterBinding.ensureInitialized();
++
++  late OhosInAppWebViewController controller;
++  setUp(() {
++    controller = OhosInAppWebViewController(
++      const PlatformInAppWebViewControllerCreationParams(id: 'compat-test'),
++    );
++  });
++
++  test('legacy callbacks receive decoded arguments and return JSON', () async {
++    controller.addJavaScriptHandler(
++      handlerName: 'legacy',
++      callback: (List<dynamic> args) => {'result': args.single},
++    );
++    final result = await controller.handleMethod(const MethodCall(
++      'onCallJsHandler',
++      {'handlerName': 'legacy', 'args': '["value"]'},
++    ));
++    expect(jsonDecode(result), {'result': 'value'});
++  });
++
++  test('parameterless callbacks remain callable and removable', () async {
++    final callback = () => 7;
++    controller.addJavaScriptHandler(handlerName: 'plain', callback: callback);
++    final result = await controller.handleMethod(const MethodCall(
++      'onCallJsHandler',
++      {'handlerName': 'plain', 'args': '[]'},
++    ));
++    expect(jsonDecode(result), 7);
++    expect(controller.removeJavaScriptHandler(handlerName: 'plain'), callback);
++    expect(controller.hasJavaScriptHandler(handlerName: 'plain'), isFalse);
++  });
++
++  test('typed callbacks reject absent native caller metadata', () async {
++    var invoked = false;
++    controller.addJavaScriptHandler(
++      handlerName: 'typed',
++      callback: (JavaScriptHandlerFunctionData data) {
++        invoked = true;
++      },
++    );
++    await expectLater(
++      controller.handleMethod(const MethodCall(
++        'onCallJsHandler',
++        {'handlerName': 'typed', 'args': '[]'},
++      )),
++      throwsA(isA<Exception>()),
++    );
++    expect(invoked, isFalse);
++  });
++
++  test('typed callbacks preserve native origin, frame and request URL', () async {
++    JavaScriptHandlerFunctionData? received;
++    controller.addJavaScriptHandler(
++      handlerName: 'typed',
++      callback: (JavaScriptHandlerFunctionData data) {
++        received = data;
++        return data.args.single;
++      },
++    );
++    final result = await controller.handleMethod(const MethodCall(
++      'onCallJsHandler',
++      {
++        'handlerName': 'typed',
++        'data': {
++          'args': '[9]',
++          'origin': 'https://frame.example',
++          'requestUrl': 'https://frame.example/embedded',
++          'isMainFrame': false,
++        },
++      },
++    ));
++    expect(jsonDecode(result), 9);
++    expect(received!.origin.toString(), 'https://frame.example');
++    expect(received!.requestUrl.toString(), 'https://frame.example/embedded');
++    expect(received!.isMainFrame, isFalse);
++  });
++}
