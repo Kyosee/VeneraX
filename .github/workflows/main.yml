@@ -472,19 +472,20 @@ jobs:
               exit 1
             }
           }
-          require_asset 'release-assets/*.ipa'
-          require_asset 'release-assets/*.dmg'
-          require_asset 'release-assets/*.apk'
+          require_asset "release-assets/VeneraX-ios-${app_version}.ipa"
+          require_asset "release-assets/VeneraX-${app_version}.dmg"
           require_asset "release-assets/VeneraX-${version}.apk"
-          require_asset 'release-assets/*.deb'
-          require_asset 'release-assets/*.zst'
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            require_asset "release-assets/VeneraX-${version}-${abi}.apk"
+          done
+          for arch in amd64 arm64; do
+            require_asset "release-assets/VeneraX-${version}-${arch}.deb"
+          done
+          require_asset "release-assets/VeneraX-${version}-${app_version##*+}-x86_64.pkg.tar.zst"
           require_asset "release-assets/VeneraX-${version}-x86_64.AppImage"
           require_asset "release-assets/VeneraX-${version}-aarch64.AppImage"
-          if ! compgen -G 'release-assets/*.exe' > /dev/null &&
-             ! compgen -G 'release-assets/*.zip' > /dev/null; then
-            echo "Missing Windows installer/archive"
-            exit 1
-          fi
+          require_asset "release-assets/VeneraX-${version}-windows.zip"
+          require_asset "release-assets/VeneraX-${version}-windows-installer.exe"
           while IFS= read -r asset; do
             test -s "$asset" || { echo "Empty release asset: $asset"; exit 1; }
           done < <(find release-assets -maxdepth 1 -type f -print)
