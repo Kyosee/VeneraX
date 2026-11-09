@@ -243,9 +243,14 @@ export class BackgroundService {
       const published = this.published;
       if (published !== undefined && published.task === first && published.status === first.status &&
         published.progress === first.progress) return true;
+      const agent = await this.notificationAgent(first.tag === 'download');
+      if (this.running !== running) return false;
+      if (this.disposed || this.activeTasks()[0] !== first) return false;
       const snapshot: PublishedProgress = { task: first, status: first.status, progress: first.progress };
       await notificationManager.publish({
         id: running.notificationId,
+        wantAgent: agent,
+        tapDismissed: false,
         notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW,

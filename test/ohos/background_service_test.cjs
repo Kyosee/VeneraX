@@ -241,6 +241,83 @@ test('two transfers share one task, use the first real progress, and stop only a
   assert.deepEqual(h.channels.get(BACKGROUND).events, []);
 });
 
+for (const downloadFirst of [true, false]) {
+  test(`the live notification route follows ${downloadFirst ? 'download to sync' : 'sync to download'}`, async () => {
+    const h = harness();
+    if (downloadFirst) {
+      startDownload(h);
+      startSync(h);
+    } else {
+      startSync(h);
+      startDownload(h);
+    }
+    await flush();
+    const originalId = h.publishes[0].id;
+    const removed = downloadFirst
+      ? h.call(DOWNLOAD, 'stop')
+      : h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+    await flush();
+    const current = h.publishes.at(-1);
+    assert.deepEqual(removed, success(true));
+    assert.equal(current.content.systemLiveView.text, downloadFirst ? 'Sync' : 'Download');
+    assert.equal(current.wantAgent?.info.wants[0].parameters['venera.notification.route'],
+      downloadFirst ? 'tasks' : 'downloading');
+    assert.equal(current.tapDismissed, false);
+    assert.equal(current.id, originalId);
+    assert.equal(h.starts.length, 1);
+    assert.equal(h.state.stops, 0);
+  });
+}
+
+for (const action of ['stop', 'dispose', 'cancel']) {
+  test(`${action} during a pending notification route change cannot republish`, async () => {
+    const h = harness();
+    startDownload(h);
+    startSync(h);
+    await flush();
+    const before = h.publishes.length;
+    const wait = deferred();
+    h.config.intentWait = wait;
+    const switching = h.call(DOWNLOAD, 'stop');
+    await flush();
+    assert.equal(h.publishes.length, before);
+    const stopped = action === 'stop' ? h.call(BACKGROUND, 'remove', { tag: 'sync_1' }) : undefined;
+    if (action === 'dispose') h.service.dispose();
+    if (action === 'cancel') h.cancel(h.starts[0].task.continuousTaskId);
+    wait.resolve();
+    await flush();
+    assert.equal(h.publishes.length, before);
+    assert.equal(switching.length, 1);
+    if (action === 'dispose') assert.equal(switching[0].code, 'BACKGROUND_CLOSED');
+    else assert.deepEqual(switching, success(false));
+    if (stopped) assert.deepEqual(stopped, success(true));
+    assert.equal(h.active.size, 0);
+    assert.equal(h.starts.length, 1);
+  });
+}
+
+test('a replaced task cannot publish its stale route after the agent resolves', async () => {
+  const h = harness();
+  startDownload(h);
+  startSync(h);
+  await flush();
+  const before = h.publishes.length;
+  const wait = deferred();
+  h.config.intentWait = wait;
+  h.call(DOWNLOAD, 'stop');
+  await flush();
+  h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+  const fresh = startDownload(h, 30);
+  wait.resolve();
+  await flush();
+  assert.deepEqual(fresh, success(true));
+  const updates = h.publishes.slice(before);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].content.systemLiveView.text, 'Download');
+  assert.equal(updates[0].wantAgent?.info.wants[0].parameters['venera.notification.route'], 'downloading');
+  assert.equal(h.starts.length, 1);
+});
+
 test('progress changes publish even when the status text is unchanged', async () => {
   const h = harness();
   startDownload(h, 1.5);
