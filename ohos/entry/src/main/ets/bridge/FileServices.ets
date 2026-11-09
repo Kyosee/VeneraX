@@ -221,6 +221,8 @@ export class FileServices implements MethodCallHandler {
     }
     this.pickerActive = true;
     let stage = '';
+    let savedUri: string | null = null;
+    let failure: BusinessError | undefined;
     try {
       const source: Any = call.argument('sourceFilePath');
       const bytes: Any = call.argument('data');
@@ -247,22 +249,26 @@ export class FileServices implements MethodCallHandler {
       const options: picker.DocumentSaveOptions = { newFileNames: [name] };
       const uris = await new picker.DocumentViewPicker(this.context).save(options);
       this.checkOpen();
-      if (!uris || uris.length === 0) {
-        reply.success(null);
-        return;
+      if (uris && uris.length > 0) {
+        if (uris.length !== 1) throw new Error('The document picker returned an unexpected save target count.');
+        this.checkPickerUri(uris[0]);
+        if (hasSource && uris[0] === fileUri.getUriFromPath(sourcePath)) throw new Error('The save target cannot replace the source file.');
+        await this.copyFile(stagedSource, uris[0]);
+        this.checkOpen();
+        // This is a picker URI, not a Dart/FFI filesystem path.
+        savedUri = uris[0];
       }
-      if (uris.length !== 1) throw new Error('The document picker returned an unexpected save target count.');
-      this.checkPickerUri(uris[0]);
-      if (hasSource && uris[0] === fileUri.getUriFromPath(sourcePath)) throw new Error('The save target cannot replace the source file.');
-      await this.copyFile(stagedSource, uris[0]);
-      this.checkOpen();
-      // This is a picker URI, not a Dart/FFI filesystem path.
-      reply.success(uris[0]);
     } catch (error) {
-      this.fileFailure(reply, 'FILE_SAVE_FAILED', error as BusinessError);
+      failure = error as BusinessError;
     } finally {
       await this.removeStage(stage);
       this.pickerActive = false;
+    }
+    // A reply may immediately start another save; cleanup must finish first.
+    if (failure !== undefined) {
+      this.fileFailure(reply, 'FILE_SAVE_FAILED', failure);
+    } else {
+      reply.success(savedUri);
     }
   }
 
