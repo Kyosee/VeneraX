@@ -35,26 +35,30 @@ Future<String?> _getProxy() async {
   } else {
     res = "No Proxy";
   }
-  if (res == "No Proxy") return null;
+  return parseSystemProxy(res);
+}
 
-  if (res.contains(";")) {
-    var proxies = res.split(";");
-    for (String proxy in proxies) {
-      proxy = proxy.removeAllBlank;
-      if (proxy.startsWith('https=')) {
-        return proxy.substring(6);
-      }
-    }
+String? parseSystemProxy(String value) {
+  var authority = value.trim();
+  if (authority.contains('=')) {
+    final https = authority
+        .split(';')
+        .map((entry) => entry.trim())
+        .where((entry) => entry.startsWith('https='))
+        .firstOrNull;
+    if (https == null) return null;
+    authority = https.substring(6).trim();
   }
-
-  final RegExp regex = RegExp(
-    r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$',
-    caseSensitive: false,
-    multiLine: false,
-  );
-  if (!regex.hasMatch(res)) {
+  if (authority.isEmpty || RegExp(r'[\s/\\?#@;]').hasMatch(authority)) {
     return null;
   }
-
-  return res;
+  final uri = Uri.tryParse('//$authority');
+  if (uri == null ||
+      uri.host.isEmpty ||
+      !uri.hasPort ||
+      uri.port < 1 ||
+      uri.port > 65535) {
+    return null;
+  }
+  return uri.authority;
 }

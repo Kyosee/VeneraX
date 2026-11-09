@@ -365,7 +365,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     "Turn page by volume keys",
     1,
     keywords: ["volume", "gesture"],
-    visible: () => App.isAndroid,
+    visible: () => App.isAndroid || App.isOhos,
   ),
   _SettingsSearchEntry("Also collect chapter cover when collecting image", 1),
   _SettingsSearchEntry("Quick collect image", 1),

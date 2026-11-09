@@ -116,6 +116,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   }
 
   static String _platformTag() {
+    if (App.isOhos) return 'ohos';
     if (Platform.isIOS) return 'ios';
     if (Platform.isAndroid) return 'android';
     if (Platform.isWindows) return 'win';
