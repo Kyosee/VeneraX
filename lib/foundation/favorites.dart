@@ -682,7 +682,7 @@ class LocalFavoritesManager with ChangeNotifier {
         comic.name,
         comic.author,
         comic.type.value,
-        comic.tags.join(","),
+        jsonEncode(comic.tags),
         comic.coverPath,
         comic.time,
         translatedTags,
@@ -1069,14 +1069,27 @@ class LocalFavoritesManager with ChangeNotifier {
   }
 
   void addTagTo(String folder, String id, String tag) {
-    _db.execute(
-      """
-      update "$folder"
-      set tags = '$tag,' || tags
-      where id == ?
-    """,
-      [id],
-    );
+    _db.execute('BEGIN TRANSACTION');
+    try {
+      final rows = _db.select(
+        'select type, tags from "$folder" where id == ?;',
+        [id],
+      );
+      for (final row in rows) {
+        _db.execute(
+          'update "$folder" set tags = ? where id == ? and type == ?;',
+          [
+            jsonEncode([tag, ...FavoriteItem._parseTagsColumn(row['tags'])]),
+            id,
+            row['type'],
+          ],
+        );
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
     notifyListeners();
   }
 
@@ -1922,7 +1935,7 @@ class LocalFavoritesManager with ChangeNotifier {
         set tags = ?
         where id == ?;
       """,
-      [tags.join(","), id],
+      [jsonEncode(tags), id],
     );
     notifyListeners();
   }
@@ -1948,7 +1961,7 @@ class LocalFavoritesManager with ChangeNotifier {
         comic.name,
         comic.author,
         comic.coverPath,
-        comic.tags.join(","),
+        jsonEncode(comic.tags),
         comic.id,
         comic.type.value,
       ],
