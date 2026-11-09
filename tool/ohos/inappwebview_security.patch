@@ -166,13 +166,6 @@ index 9dd42e5c..3038ff30 100644
      urlProtectionSpaceMap.set('authenticationMethod', null);
      urlProtectionSpaceMap.set('distinguishedNames', null);
      urlProtectionSpaceMap.set('receivesCredentialSecurely', null);
-@@ -145,4 +143,4 @@ export default class URLProtectionSpace {
-       ", sslError=" + this.sslError +
-       '}';
-   }
--}
-\ No newline at end of file
-+}
 diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets
 index 122295e9..3d4cdacc 100644
 --- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebView.ets
@@ -223,13 +216,6 @@ index 122295e9..3d4cdacc 100644
      this.curUrl = url;
      try {
        this.requireController().postUrl(url, buffer);
-@@ -3634,4 +3616,4 @@ export default class InAppWebView implements InAppWebViewInterface {
-   getView(): WrappedBuilder<[Params]> {
-     return new WrappedBuilder(buildOhosWebView)
-   }
--}
-\ No newline at end of file
-+}
 diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
 index 53b668f6..66bcbe6e 100644
 --- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets

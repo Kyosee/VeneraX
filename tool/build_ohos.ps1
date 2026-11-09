@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)][string]$FlutterSdk,
     [Parameter(Mandatory = $true)][string]$DevEcoStudio,
     [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform = 'ohos-x64',
-    [string]$Target = 'tool/ohos_smoke.dart',
+    [string]$Target = 'lib/main.dart',
+    [ValidateSet('debug', 'profile', 'release')][string]$BuildMode = 'debug',
+    [switch]$CodeSign,
     [string]$OnnxSource,
     [string]$EigenSource,
     [string]$WebViewSource
@@ -46,7 +48,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS plugin registration failed.' }
     & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
     & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
-    & $flutter build hap --debug --target-platform $TargetPlatform --no-codesign --no-pub -t $Target
+    $buildArguments = @('build', 'hap', "--$BuildMode", '--target-platform', $TargetPlatform, '--no-pub', '-t', $Target)
+    if (-not $CodeSign) { $buildArguments += '--no-codesign' }
+    & $flutter @buildArguments
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP build failed.' }
 } finally {
     foreach ($name in $environmentNames) {
