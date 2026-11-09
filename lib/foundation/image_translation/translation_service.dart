@@ -649,6 +649,7 @@ class ImageTranslationService with ChangeNotifier {
     TranslationConfig config, {
     required TranslationChapterIdentity chapter,
     bool Function()? shouldCancel,
+    Future<void> Function()? waitUntilResumed,
     void Function(TranslationStage stage, double completedPages)? onStage,
   }) async {
     var success = List.filled(pages.length, false);
@@ -656,6 +657,11 @@ class ImageTranslationService with ChangeNotifier {
     TranslationStore().recordExistingChapter(chapter);
     var pipeline = _pipeline ??= PageTranslationPipeline();
     var sourceLang = _effectiveSourceFor(comicKey, config);
+
+    Future<void> waitForResume() async {
+      await waitUntilResumed?.call();
+      if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+    }
 
     // Final regions per page once known; null = a fresh-OCR page still awaiting
     // the LLM (composed in stage 2) or a page that failed and is skipped.
@@ -693,7 +699,7 @@ class ImageTranslationService with ChangeNotifier {
 
     // Stage 1 — resolve each page as far as possible without the LLM.
     for (var i = 0; i < pages.length; i++) {
-      if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+      await waitForResume();
       var p = pages[i];
       try {
         var renderKey = renderedKey(p.cacheKey, config.mode);
@@ -714,12 +720,15 @@ class ImageTranslationService with ChangeNotifier {
               : TranslationStage.loadingModel,
           completedPages(),
         );
+        await waitForResume();
         pendingOcr[i] = await pipeline.ocrPage(
           p.imageBytes,
           sourceLang: sourceLang,
           targetLang: config.targetLang,
         );
         freshOcr[i] = true;
+      } on PipelineCanceled {
+        rethrow;
       } catch (e, s) {
         Log.warning('Image Translation', 'Batch OCR failed: $e\n$s');
         settled[i] = true; // failed; success[i] stays false
@@ -747,8 +756,8 @@ class ImageTranslationService with ChangeNotifier {
     var batchOk = true;
     var translated = const <String>[];
     if (texts.isNotEmpty) {
-      if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
       onStage?.call(TranslationStage.translating, completedPages());
+      await waitForResume();
       try {
         var result = await LlmTranslator.translateBatch(
           texts,
@@ -788,7 +797,7 @@ class ImageTranslationService with ChangeNotifier {
       if (settled[i]) continue;
       var regions = regionsOf[i];
       if (regions == null) continue;
-      if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+      await waitForResume();
       var p = pages[i];
       onStage?.call(TranslationStage.rendering, completedPages());
       try {

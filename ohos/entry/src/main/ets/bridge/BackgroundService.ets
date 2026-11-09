@@ -5,6 +5,8 @@ import { Any, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, Metho
 
 const COMPLETION_NOTIFICATION_ID = 0x56454E41;
 const COMPLETION_NOTIFICATION_LABEL = 'venera.download.complete';
+const TRANSLATION_NOTIFICATION_ID = 0x56454E42;
+const TRANSLATION_NOTIFICATION_LABEL = 'venera.pre_translate';
 
 interface TransferTask {
   tag: string;
@@ -35,6 +37,11 @@ export class BackgroundService {
   private permissionAsked = false;
   private running?: backgroundTaskManager.ContinuousTaskNotification;
   private published?: PublishedProgress;
+  private translationPublished?: PublishedProgress;
+  private transientId?: number;
+  private transientGeneration = 0;
+  private transientExpired = false;
+  private foreground = true;
   private starting = false;
   private startCancellations: PendingCancellation[] = [];
   private stoppingId?: number;
@@ -92,6 +99,7 @@ export class BackgroundService {
         }
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
           if (!await this.reconcile()) return false;
+          if (tag === 'pre_translate') return this.translationPublished !== undefined;
           return this.running !== undefined && this.desired.has(tag) && !this.blocked.has(tag);
         }));
       } else if ((download && call.method === 'stop') || (!download && call.method === 'remove')) {
@@ -141,6 +149,7 @@ export class BackgroundService {
 
   private readTag(call: MethodCall): string {
     const tag: Any = call.argument('tag');
+    if (tag === 'pre_translate') return tag as string;
     if (typeof tag !== 'string' || tag.length > 21 || !/^sync_(0|[1-9][0-9]*)$/.test(tag) ||
       !Number.isSafeInteger(Number(tag.substring(5)))) throw new Error('Invalid tag');
     return tag;
@@ -187,7 +196,7 @@ export class BackgroundService {
   private activeTasks(): TransferTask[] {
     const tasks: TransferTask[] = [];
     this.desired.forEach((task: TransferTask, tag: string): void => {
-      if (!this.blocked.has(tag)) tasks.push(task);
+      if (tag !== 'pre_translate' && !this.blocked.has(tag)) tasks.push(task);
     });
     return tasks;
   }
@@ -206,6 +215,12 @@ export class BackgroundService {
   }
 
   private async reconcile(): Promise<boolean> {
+    const transfer = await this.reconcileTransfers();
+    const translation = await this.reconcileTranslation();
+    return transfer && translation;
+  }
+
+  private async reconcileTransfers(): Promise<boolean> {
     if (this.disposed || this.activeTasks().length === 0) return this.stopRunning();
     try {
       if (this.running === undefined) {
@@ -273,6 +288,94 @@ export class BackgroundService {
       await this.stopRunning();
       return false;
     }
+  }
+
+  setForeground(foreground: boolean): void {
+    if (this.disposed) return;
+    this.foreground = foreground;
+    if (foreground) {
+      this.cancelTranslationGrace();
+      this.transientExpired = false;
+      try {
+        this.background.invokeMethod('translationForeground', null);
+      } catch (_) {}
+    } else if (!this.desired.has('pre_translate')) {
+      // Dart may have no native task after notification permission was denied.
+      this.expireTranslationGrace();
+    } else {
+      this.requestTranslationGrace();
+    }
+  }
+
+  private requestTranslationGrace(): void {
+    if (this.disposed || this.foreground || this.transientExpired || this.transientId !== undefined ||
+      !this.desired.has('pre_translate')) return;
+    const generation = ++this.transientGeneration;
+    try {
+      const info = backgroundTaskManager.requestSuspendDelay('VeneraX', (): void => {
+        if (generation === this.transientGeneration) this.expireTranslationGrace();
+      });
+      if (generation === this.transientGeneration) this.transientId = info.requestId;
+      else backgroundTaskManager.cancelSuspendDelay(info.requestId);
+    } catch (_) {
+      this.expireTranslationGrace();
+    }
+  }
+
+  private cancelTranslationGrace(): void {
+    this.transientGeneration++;
+    const id = this.transientId;
+    this.transientId = undefined;
+    if (id === undefined) return;
+    try {
+      backgroundTaskManager.cancelSuspendDelay(id);
+    } catch (_) {}
+  }
+
+  private expireTranslationGrace(): void {
+    if (this.disposed || this.foreground || this.transientExpired) return;
+    this.transientExpired = true;
+    this.cancelTranslationGrace();
+    try {
+      this.background.invokeMethod('translationExpired', null);
+    } catch (_) {}
+  }
+
+  private async reconcileTranslation(): Promise<boolean> {
+    const task = this.desired.get('pre_translate');
+    if (this.disposed || task === undefined) {
+      this.cancelTranslationGrace();
+      if (this.translationPublished !== undefined) {
+        await notificationManager.cancel(TRANSLATION_NOTIFICATION_ID, TRANSLATION_NOTIFICATION_LABEL);
+        this.translationPublished = undefined;
+      }
+      return true;
+    }
+    if (!await notificationManager.isNotificationEnabled()) return false;
+    if (this.disposed || this.desired.get('pre_translate') !== task) return false;
+    const previous = this.translationPublished;
+    if (previous?.task === task && previous.status === task.status && previous.progress === task.progress) return true;
+    const agent = await this.notificationAgent(false);
+    if (this.disposed || this.desired.get('pre_translate') !== task) return false;
+    const snapshot: PublishedProgress = { task: task, status: task.status, progress: task.progress };
+    await notificationManager.publish({
+      id: TRANSLATION_NOTIFICATION_ID,
+      label: TRANSLATION_NOTIFICATION_LABEL,
+      wantAgent: agent,
+      notificationSlotType: notificationManager.SlotType.OTHER_TYPES,
+      content: {
+        notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
+        normal: { title: 'VeneraX', text: snapshot.status }
+      }
+    });
+    this.translationPublished = snapshot;
+    if (this.disposed || this.desired.get('pre_translate') !== task) {
+      await notificationManager.cancel(TRANSLATION_NOTIFICATION_ID, TRANSLATION_NOTIFICATION_LABEL);
+      this.translationPublished = undefined;
+      return false;
+    }
+    this.requestTranslationGrace();
+    return true;
   }
 
   private async stopRunning(): Promise<boolean> {
@@ -347,7 +450,8 @@ export class BackgroundService {
         backgroundTaskManager.off('continuousTaskCancel', this.cancellation);
       } catch (_) {}
     }
-    this.enqueue((): Promise<boolean> => this.stopRunning());
+    this.cancelTranslationGrace();
+    this.enqueue((): Promise<boolean> => this.reconcile());
   }
 }
 

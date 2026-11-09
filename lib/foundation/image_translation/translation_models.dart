@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/background_keepalive.dart';
+import 'package:venera/foundation/image_translation/model_file_download.dart';
 import 'package:venera/foundation/image_translation/translation_sources.dart';
 import 'package:venera/foundation/image_translation/translation_worker.dart';
 import 'package:venera/foundation/log.dart';
@@ -46,8 +48,7 @@ class ModelComponent {
 
   static const markerName = 'verified';
 
-  String get directory =>
-      FilePath.join(App.dataPath, 'translation_models', id);
+  String get directory => FilePath.join(App.dataPath, 'translation_models', id);
 
   bool get isInstalled {
     for (var file in files) {
@@ -251,8 +252,7 @@ abstract class TranslationModels {
     if (!activeDetector.isInstalled) return false;
     return switch (sourceLang) {
       'auto' =>
-        ocrJa.isInstalled ||
-            _builtInRec.values.any((e) => e.$1.isInstalled),
+        ocrJa.isInstalled || _builtInRec.values.any((e) => e.$1.isInstalled),
       'ja' => ocrJa.isInstalled,
       // v4 misreads Traditional text, so an explicit choice needs v5.
       'zh-TW' => ocrZhV5.isInstalled,
@@ -324,6 +324,8 @@ class TranslationModelStore with ChangeNotifier {
 
   final _states = <String, ModelDownloadState>{};
   final _cancelTokens = <String, CancelToken>{};
+  final _downloads = <String, Completer<void>>{};
+  final _deleting = <String>{};
 
   ModelDownloadState stateOf(ModelComponent component) {
     return _states.putIfAbsent(component.id, () => ModelDownloadState());
@@ -392,7 +394,9 @@ class TranslationModelStore with ChangeNotifier {
     Future<void> Function()? verify,
   }) async {
     var state = stateOf(component);
-    if (state.downloading || component.isInstalled) {
+    if (state.downloading ||
+        _deleting.contains(component.id) ||
+        component.isInstalled) {
       return;
     }
     state
@@ -404,6 +408,10 @@ class TranslationModelStore with ChangeNotifier {
     notifyListeners();
     var cancelToken = CancelToken();
     _cancelTokens[component.id] = cancelToken;
+    final completed = Completer<void>();
+    _downloads[component.id] = completed;
+    BackgroundKeepAlive.instance.allowTransferBackground();
+    _refreshKeepAlive();
     var dio = _createDio();
     try {
       Directory(component.directory).createSync(recursive: true);
@@ -413,40 +421,44 @@ class TranslationModelStore with ChangeNotifier {
       for (var file in component.files) {
         var target = File(component.filePath(file.name));
         if (target.existsSync() && target.lengthSync() > 0) {
+          finishedBytes += target.lengthSync();
           continue;
         }
-        var temp = File('${target.path}.part');
         Object? lastError;
         var ok = false;
         for (var url in file.urls) {
           url = url.replaceFirst('{hf}', hfEndpoint);
           try {
-            await dio.download(
-              url,
-              temp.path,
-              cancelToken: cancelToken,
-              onReceiveProgress: (count, total) {
-                state.receivedBytes = finishedBytes + count;
-                var estimated = component.approxSizeBytes;
-                if (estimated <= 0) estimated = finishedBytes + total;
-                state.progress = estimated <= 0
-                    ? 0
-                    : (state.receivedBytes / estimated).clamp(0.0, 1.0);
-                notifyListeners();
-              },
+            await BackgroundKeepAlive.instance.runTransfer(
+              '${"Translation model".tl}: ${component.id}',
+              (onProgress) => downloadModelFile(
+                dio: dio,
+                url: url,
+                target: target,
+                cancelToken: cancelToken,
+                onProgress: (count, total) {
+                  onProgress(count, total);
+                  state.receivedBytes = finishedBytes + count;
+                  var estimated = component.approxSizeBytes;
+                  if (estimated <= 0) estimated = finishedBytes + total;
+                  state.progress = estimated <= 0
+                      ? 0
+                      : (state.receivedBytes / estimated).clamp(0.0, 1.0);
+                  _refreshKeepAlive();
+                  notifyListeners();
+                },
+              ),
             );
-            temp.renameSync(target.path);
             ok = true;
             break;
           } catch (e) {
-            temp.deleteIgnoreError();
             if (cancelToken.isCancelled) {
               rethrow;
             }
             lastError = e;
             Log.warning(
               'Translation Models',
-              'Download failed from $url, trying next mirror: $e',
+              'Model file download failed; trying the next configured source.',
             );
           }
         }
@@ -461,12 +473,16 @@ class TranslationModelStore with ChangeNotifier {
         } catch (_) {
           // Gone so a retry downloads fresh files instead of re-checking bad
           // ones.
-          await Directory(component.directory).deleteIgnoreError(recursive: true);
+          await Directory(
+            component.directory,
+          ).deleteIgnoreError(recursive: true);
           rethrow;
         }
       }
       if (component.marker) {
-        File(component.filePath(ModelComponent.markerName)).writeAsStringSync('');
+        File(
+          component.filePath(ModelComponent.markerName),
+        ).writeAsStringSync('');
       }
       state.progress = 1;
     } catch (e) {
@@ -474,12 +490,19 @@ class TranslationModelStore with ChangeNotifier {
         state.error = e is ModelCheckException
             ? describeModelCheck(e)
             : e.toString();
-        Log.error('Translation Models', 'Failed to download ${component.id}', e);
+        Log.error(
+          'Translation Models',
+          'Failed to download ${component.id}',
+          e,
+        );
       }
     } finally {
       dio.close();
       _cancelTokens.remove(component.id);
       state.downloading = false;
+      _downloads.remove(component.id);
+      completed.complete();
+      _refreshKeepAlive();
       TranslationModels.invalidateReadyCache();
       notifyListeners();
     }
@@ -489,15 +512,38 @@ class TranslationModelStore with ChangeNotifier {
     _cancelTokens[component.id]?.cancel();
   }
 
-  Future<void> delete(ModelComponent component) async {
-    cancelDownload(component);
-    var dir = Directory(component.directory);
-    if (dir.existsSync()) {
-      await dir.deleteIgnoreError(recursive: true);
+  void _refreshKeepAlive() {
+    // OHOS transfer grants are acquired around each file's network operation.
+    if (!App.isAndroid) return;
+    final active = _states.values.where((state) => state.downloading).toList();
+    if (active.isEmpty) {
+      BackgroundKeepAlive.instance.remove(BackgroundKeepAlive.tagModelDownload);
+      return;
     }
-    _states.remove(component.id);
-    TranslationModels.invalidateReadyCache();
-    notifyListeners();
+    final progress =
+        active.fold<double>(0, (sum, state) => sum + state.progress) /
+        active.length;
+    BackgroundKeepAlive.instance.update(
+      BackgroundKeepAlive.tagModelDownload,
+      '${"Translation model".tl}: ${active.length} · ${(progress * 100).toInt()}%',
+    );
+  }
+
+  Future<void> delete(ModelComponent component) async {
+    if (!_deleting.add(component.id)) return;
+    try {
+      cancelDownload(component);
+      await _downloads[component.id]?.future;
+      var dir = Directory(component.directory);
+      if (dir.existsSync()) {
+        await dir.deleteIgnoreError(recursive: true);
+      }
+      _states.remove(component.id);
+      TranslationModels.invalidateReadyCache();
+      notifyListeners();
+    } finally {
+      _deleting.remove(component.id);
+    }
   }
 
   /// Total disk usage of installed model files.

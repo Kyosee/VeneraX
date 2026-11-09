@@ -28,6 +28,8 @@ function harness(options = {}) {
   const intents = [];
   const removedNotifications = [];
   const cancelledCallbacks = [];
+  const transientRequests = [];
+  const transientCancelled = [];
   const state = { stops: 0, permissionRequests: 0, reads: 0, off: 0 };
   const ability = { abilityInfo: { bundleName: 'com.github.venera.test' } };
   let cancellation;
@@ -42,6 +44,14 @@ function harness(options = {}) {
   }
 
   const native = {
+    requestSuspendDelay(reason, callback) {
+      assert.equal(reason, 'VeneraX');
+      if (config.transientError) throw new Error('No quota');
+      const requestId = 100 + transientRequests.length;
+      transientRequests.push({ requestId, callback });
+      return { requestId, actualDelayTime: 180000 };
+    },
+    cancelSuspendDelay(id) { transientCancelled.push(id); },
     on(type, callback) {
       assert.equal(type, 'continuousTaskCancel');
       if (config.subscribeError) throw new Error('Unavailable');
@@ -160,7 +170,7 @@ function harness(options = {}) {
   }
   return {
     active, call, cancel, cancelledCallbacks, channels, config, intents,
-    publishes, removedNotifications, service, starts, state,
+    publishes, removedNotifications, service, starts, state, transientRequests, transientCancelled,
   };
 }
 
@@ -617,4 +627,129 @@ test('a missing cancellation subscription refuses to start instead of ignoring u
   assert.equal(h.starts.length, 0);
   h.service.dispose();
   assert.equal(h.state.off, 0);
+});
+
+const startTranslation = (h, status = 'Translating: 1/10', progress = 10) =>
+  h.call(BACKGROUND, 'update', { tag: 'pre_translate', status, progress });
+
+test('translation has its own task notification without pretending to transfer data', async () => {
+  const h = harness();
+  const started = startTranslation(h);
+  await flush();
+  assert.deepEqual(started, success(true));
+  assert.equal(h.starts.length, 0);
+  assert.equal(h.transientRequests.length, 0);
+  assert.equal(h.publishes.length, 1);
+  const note = h.publishes[0];
+  assert.equal(note.content.notificationContentType, 0);
+  assert.equal(note.content.normal.text, 'Translating: 1/10');
+  assert.equal(note.wantAgent.info.wants[0].parameters['venera.notification.route'], 'tasks');
+  startTranslation(h);
+  await flush();
+  assert.equal(h.publishes.length, 1);
+  startTranslation(h, 'Translating: 2/10', 20);
+  await flush();
+  assert.equal(h.publishes.at(-1).id, note.id);
+  const removed = h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+  await flush();
+  assert.deepEqual(removed, success(true));
+  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
+});
+
+test('translation grace expires once and is not renewed by progress updates', async () => {
+  const h = harness();
+  startTranslation(h);
+  await flush();
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 1);
+  const grace = h.transientRequests[0];
+  grace.callback();
+  grace.callback();
+  assert.deepEqual(h.transientCancelled, [grace.requestId]);
+  assert.deepEqual(h.channels.get(BACKGROUND).events, [{ method: 'translationExpired', args: null }]);
+  startTranslation(h, 'Translating: 3/10', 30);
+  await flush();
+  assert.equal(h.transientRequests.length, 1);
+  h.service.setForeground(true);
+  assert.equal(h.channels.get(BACKGROUND).events.at(-1).method, 'translationForeground');
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 2);
+  grace.callback();
+  assert.equal(h.channels.get(BACKGROUND).events.length, 2);
+});
+
+test('a refused translation grace pauses work without retrying the grant', async () => {
+  const h = harness({ transientError: true });
+  startTranslation(h);
+  await flush();
+  h.service.setForeground(false);
+  startTranslation(h, 'Translating: 2/10', 20);
+  await flush();
+  assert.deepEqual(h.channels.get(BACKGROUND).events, [{ method: 'translationExpired', args: null }]);
+  assert.equal(h.starts.length, 0);
+});
+
+test('background without a registered notification pauses Dart translation safely', async () => {
+  const h = harness({ granted: false });
+  h.service.setForeground(false);
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 0);
+  assert.equal(h.publishes.length, 0);
+  assert.deepEqual(h.channels.get(BACKGROUND).events, [{ method: 'translationExpired', args: null }]);
+  h.service.setForeground(true);
+  assert.equal(h.channels.get(BACKGROUND).events.at(-1).method, 'translationForeground');
+  h.config.granted = true;
+  startTranslation(h);
+  await flush();
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 1);
+});
+
+test('translation cleanup preserves concurrent transfer notification and grant', async () => {
+  const h = harness();
+  startSync(h);
+  startTranslation(h);
+  await flush();
+  h.service.setForeground(false);
+  h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+  await flush();
+  assert.equal(h.active.size, 1);
+  assert.equal(h.state.stops, 0);
+  assert.equal(h.transientCancelled.length, 1);
+  h.transientRequests[0].callback();
+  assert.deepEqual(h.channels.get(BACKGROUND).events, []);
+  assert.equal(h.removedNotifications.length, 1);
+  h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+  await flush();
+  assert.equal(h.active.size, 0);
+});
+
+for (const action of ['remove', 'dispose']) {
+  test(`translation ${action} during publish removes the late notification`, async () => {
+    const wait = deferred();
+    const h = harness({ publishWait: wait });
+    const started = startTranslation(h);
+    await flush();
+    assert.equal(h.publishes.length, 1);
+    if (action === 'remove') h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+    else h.service.dispose();
+    wait.resolve();
+    await flush();
+    assert.equal(started.length, 1);
+    assert.equal(h.removedNotifications.length, 1);
+    assert.equal(h.transientRequests.length, 0);
+  });
+}
+
+test('translation disposal cancels its grace and ignores later expiry', async () => {
+  const h = harness();
+  startTranslation(h);
+  await flush();
+  h.service.setForeground(false);
+  h.service.dispose();
+  h.transientRequests[0].callback();
+  await flush();
+  assert.equal(h.transientCancelled.length, 1);
+  assert.equal(h.removedNotifications.length, 1);
+  assert.deepEqual(h.channels.get(BACKGROUND).events, []);
 });

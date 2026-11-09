@@ -1,7 +1,49 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'failed translation updates can still remove native task state',
+    () async {
+      const channel = MethodChannel('venera/background_keepalive');
+      final updated = Completer<void>();
+      final removed = Completer<void>();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'notificationGranted') return true;
+        if (call.method == 'update') {
+          updated.complete();
+          return false;
+        }
+        if (call.method == 'remove') {
+          expect(call.arguments, {'tag': BackgroundKeepAlive.tagPreTranslate});
+          removed.complete();
+          return true;
+        }
+        throw StateError('Unexpected method ${call.method}');
+      });
+      try {
+        final service = BackgroundKeepAlive.instance;
+        service.update(BackgroundKeepAlive.tagPreTranslate, 'Test');
+        await updated.future;
+        await Future<void>.delayed(Duration.zero);
+        service.remove(BackgroundKeepAlive.tagPreTranslate);
+        await removed.future.timeout(const Duration(seconds: 3));
+      } finally {
+        binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
+
   group('formatTaskStatus', () {
     test('appends detail after the title', () {
       expect(

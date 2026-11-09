@@ -20,6 +20,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/data_sync.dart';
+import 'package:venera/utils/translations.dart';
 
 enum PreTranslationTaskStatus { running, paused, completed, canceled, failed }
 
@@ -299,6 +300,9 @@ class PreTranslationActivity {
 class PreTranslationTaskManager with ChangeNotifier {
   PreTranslationTaskManager._() {
     _load();
+    BackgroundKeepAlive.instance.translationBackgroundAllowed.addListener(
+      _onBackgroundAllowanceChanged,
+    );
   }
 
   static final PreTranslationTaskManager instance =
@@ -308,6 +312,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   final historyTasks = <PreTranslationTask>[];
   final _canceledIds = <String>{};
   final _runningIds = <String>{};
+  final _backgroundPausedIds = <String>{};
   final _activities = <String, PreTranslationActivity>{};
 
   /// Live stage detail for a running job; null once it stops. Not persisted —
@@ -475,6 +480,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   }
 
   void cancel(String id) {
+    _backgroundPausedIds.remove(id);
     _canceledIds.add(id);
     var task = currentTasks.where((t) => t.id == id).firstOrNull;
     if (task == null) {
@@ -483,6 +489,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
     task.status = PreTranslationTaskStatus.canceled;
     _moveToHistory(task);
+    _refreshKeepAlive();
     if (!_runningIds.contains(id)) {
       _canceledIds.remove(id);
     }
@@ -518,10 +525,16 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// Pauses a running pre-translation job. The worker loop checks this state
   /// between pages and waits until [resume] is called or the job is canceled.
   void pause(String id) {
+    final wasBackgroundPaused = _backgroundPausedIds.remove(id);
     var task = currentTasks.where((t) => t.id == id).firstOrNull;
-    if (task == null || !task.isRunning) return;
+    if (task == null) return;
+    if (!task.isRunning) {
+      if (wasBackgroundPaused) _saveActive();
+      return;
+    }
     task.status = PreTranslationTaskStatus.paused;
     _saveActive();
+    _refreshKeepAlive();
     notifyListeners();
   }
 
@@ -530,7 +543,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     var task = currentTasks.where((t) => t.id == id).firstOrNull;
     if (task == null || task.status != PreTranslationTaskStatus.paused) return;
     task.status = PreTranslationTaskStatus.running;
+    _backgroundPausedIds.remove(id);
     _saveActive();
+    _refreshKeepAlive(task);
     notifyListeners();
     if (!_runningIds.contains(id)) {
       unawaited(_run(task));
@@ -561,7 +576,31 @@ class PreTranslationTaskManager with ChangeNotifier {
     unawaited(_run(task));
   }
 
-  void _refreshKeepAlive(PreTranslationTask task) {
+  void _onBackgroundAllowanceChanged() {
+    if (BackgroundKeepAlive.instance.translationBackgroundAllowed.value) {
+      for (final id in _backgroundPausedIds.toList()) {
+        resume(id);
+      }
+      _backgroundPausedIds.clear();
+    } else {
+      for (final task in currentTasks.where((task) => task.isRunning)) {
+        task.status = PreTranslationTaskStatus.paused;
+        _backgroundPausedIds.add(task.id);
+      }
+      _saveActive();
+      _refreshKeepAlive();
+      notifyListeners();
+    }
+  }
+
+  void _refreshKeepAlive([PreTranslationTask? task]) {
+    if (task == null || !task.isRunning || !currentTasks.contains(task)) {
+      task = currentTasks.where((task) => task.isRunning).firstOrNull;
+    }
+    if (task == null) {
+      BackgroundKeepAlive.instance.remove(BackgroundKeepAlive.tagPreTranslate);
+      return;
+    }
     var activity = _activities[task.id];
     // Processed, not succeeded: a chapter whose pages keep failing would
     // otherwise leave the notification frozen on the last successful page.
@@ -569,9 +608,12 @@ class PreTranslationTaskManager with ChangeNotifier {
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagPreTranslate,
       formatTaskStatus(
-        title: task.title,
+        title: '${"Pre-translation".tl}: ${task.title}',
         detail: task.total == 0 ? null : '$processed/${task.total}',
       ),
+      progress: ((activity?.liveProgress(task) ?? task.progress) * 100)
+          .toInt()
+          .clamp(0, 100),
     );
   }
 
@@ -596,6 +638,7 @@ class PreTranslationTaskManager with ChangeNotifier {
       // limit) on the first pass is common, and one automatic sweep clears most
       // of them without the user noticing. Only the pages that actually failed
       // are re-run; succeeded pages are untouched.
+      await _waitWhilePaused(task);
       if (!_canceledIds.contains(task.id) &&
           task.status == PreTranslationTaskStatus.running) {
         await _retryFailedPasses(task);
@@ -609,17 +652,14 @@ class PreTranslationTaskManager with ChangeNotifier {
       Log.error('Pre-translation', '$e', s);
       task.status = PreTranslationTaskStatus.failed;
     } finally {
+      _backgroundPausedIds.remove(task.id);
       _canceledIds.remove(task.id);
       _runningIds.remove(task.id);
       // The coalescing timer is shared by every running job, so it is not this
       // job's to cancel; the notifyListeners below already flushes this one.
       _activities.remove(task.id);
       _moveToHistory(task);
-      if (currentTasks.every((t) => !t.isRunning)) {
-        BackgroundKeepAlive.instance.remove(
-          BackgroundKeepAlive.tagPreTranslate,
-        );
-      }
+      _refreshKeepAlive();
       // Page writes don't schedule an upload. Publish once per job, not per
       // chapter: each upload carries the whole backup.
       if (TranslationStore().localRevision != revision) {
@@ -633,6 +673,10 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// Suspends the loop while [task] is paused, returning as soon as it resumes
   /// or gets canceled. This keeps the running isolate alive without doing work.
   Future<void> _waitWhilePaused(PreTranslationTask task) async {
+    if (task.isRunning &&
+        !BackgroundKeepAlive.instance.translationBackgroundAllowed.value) {
+      _onBackgroundAllowanceChanged();
+    }
     while (task.status == PreTranslationTaskStatus.paused) {
       if (_canceledIds.contains(task.id)) return;
       // Poll every second. Resume() flips the status and the next iteration
@@ -935,6 +979,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     for (var i in indices) {
+      await _waitWhilePaused(task);
       if (_canceledIds.contains(task.id)) return;
       var imageKey = pageKeys[i];
       var cacheKey = ImageTranslationService.cacheKeyFor(
@@ -956,6 +1001,8 @@ class PreTranslationTaskManager with ChangeNotifier {
           reportFetchPhase();
           continue;
         }
+        await _waitWhilePaused(task);
+        if (_canceledIds.contains(task.id)) return;
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((
           index: i,
@@ -996,6 +1043,7 @@ class PreTranslationTaskManager with ChangeNotifier {
           chapterTitle: chapter.title,
         ),
         shouldCancel: () => _canceledIds.contains(task.id),
+        waitUntilResumed: () => _waitWhilePaused(task),
         onStage: (stage, completed) {
           activity.stage = stage;
           // The service scores only the pages it was handed, on the same scale.
@@ -1073,6 +1121,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     for (var i = start; i < end; i++) {
+      await _waitWhilePaused(task);
       // Cancel before the group is counted: return null so the caller leaves
       // the chapter counters at the group's start boundary and a resume redoes
       // the whole group. Every page is idempotent (rendered ones skip via
@@ -1098,6 +1147,8 @@ class PreTranslationTaskManager with ChangeNotifier {
           reportFetchPhase();
           continue;
         }
+        await _waitWhilePaused(task);
+        if (_canceledIds.contains(task.id)) return null;
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((
           index: i,
@@ -1139,6 +1190,7 @@ class PreTranslationTaskManager with ChangeNotifier {
             chapterTitle: chapter.title,
           ),
           shouldCancel: () => _canceledIds.contains(task.id),
+          waitUntilResumed: () => _waitWhilePaused(task),
           onStage: (stage, completed) {
             activity.stage = stage;
             // The service scores only the pages it was handed, on the same
@@ -1300,7 +1352,7 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   void _saveActive() {
     appdata.implicitData[_activeKey] = currentTasks
-        .where((t) => t.isRunning)
+        .where((t) => t.isRunning || _backgroundPausedIds.contains(t.id))
         .map((t) => t.toJson())
         .toList();
     appdata.writeImplicitData();

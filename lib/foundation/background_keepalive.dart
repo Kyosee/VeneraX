@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/log.dart';
@@ -35,6 +36,14 @@ class BackgroundKeepAlive {
   BackgroundKeepAlive._() {
     if (App.isOhos) {
       _channel.setMethodCallHandler((call) async {
+        if (call.method == 'translationExpired') {
+          translationBackgroundAllowed.value = false;
+          return;
+        }
+        if (call.method == 'translationForeground') {
+          translationBackgroundAllowed.value = true;
+          return;
+        }
         if (call.method == 'cancelled') {
           _transferBackgroundCancelled = true;
           Log.warning(
@@ -57,6 +66,7 @@ class BackgroundKeepAlive {
   static const tagComicImport = 'comic_import';
   static const tagSync = 'sync';
   static const tagPreTranslate = 'pre_translate';
+  static const tagModelDownload = 'model_download';
   static const tagWebdavMigration = 'webdav_migration';
 
   bool get _supported => App.isAndroid || App.isOhos;
@@ -67,6 +77,7 @@ class BackgroundKeepAlive {
   int _nextTransfer = 0;
   bool _transferBackgroundCancelled = false;
   bool _permissionAsked = false;
+  final translationBackgroundAllowed = ValueNotifier<bool>(true);
 
   // Only an explicit new sync action may resume after system/user cancellation.
   void allowTransferBackground() => _transferBackgroundCancelled = false;
@@ -75,8 +86,12 @@ class BackgroundKeepAlive {
   /// 任务本身不受影响，只是失去后台保活。
   void update(String tag, String status, {int progress = 0}) {
     if (!_supported) return;
-    if (App.isOhos && !tag.startsWith('sync_')) return;
-    if (App.isOhos && _transferBackgroundCancelled) return;
+    if (App.isOhos && !tag.startsWith('sync_') && tag != tagPreTranslate) {
+      return;
+    }
+    if (App.isOhos && tag.startsWith('sync_') && _transferBackgroundCancelled) {
+      return;
+    }
     if (_statuses[tag] == status && _progresses[tag] == progress) return;
     _statuses[tag] = status;
     _progresses[tag] = progress;
@@ -110,14 +125,17 @@ class BackgroundKeepAlive {
   /// 移除某类任务的保活通知。任务结束/取消/暂停时调用。
   void remove(String tag) {
     if (!_supported) return;
-    if (!_statuses.containsKey(tag)) return;
+    // A failed translation update can still leave native task state.
+    if (!_statuses.containsKey(tag) && tag != tagPreTranslate) return;
     _statuses.remove(tag);
     _progresses.remove(tag);
     unawaited(_invoke('remove', {'tag': tag}));
   }
 
   Future<void> _pushUpdate(String tag, String status, int progress) async {
-    if (App.isOhos && _transferBackgroundCancelled) return;
+    if (App.isOhos && tag.startsWith('sync_') && _transferBackgroundCancelled) {
+      return;
+    }
     if (!await _ensurePermission()) {
       // 没有通知权限就别空转——前台服务必须有通知，拿不到权限直接放弃这次保活。
       _statuses.remove(tag);
@@ -128,7 +146,9 @@ class BackgroundKeepAlive {
     // 避免留下一个没有对应任务的常驻通知。
     if (_statuses[tag] != status ||
         _progresses[tag] != progress ||
-        (App.isOhos && _transferBackgroundCancelled)) {
+        (App.isOhos &&
+            tag.startsWith('sync_') &&
+            _transferBackgroundCancelled)) {
       return;
     }
     final ok = await _invoke('update', {

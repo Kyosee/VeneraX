@@ -96,7 +96,13 @@ export default class EntryAbility extends FlutterAbility {
 
   onBackground(): void {
     this.authServices?.cancel();
+    this.background?.setForeground(false);
     super.onBackground();
+  }
+
+  onForeground(): void {
+    super.onForeground();
+    this.background?.setForeground(true);
   }
 }
 
