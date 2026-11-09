@@ -1,6 +1,6 @@
 # VeneraX 鸿蒙开发预览版 / HarmonyOS developer preview
 
-应用版本保持 **2.3.12+257**。`harmonyos-2.3.12-test.1` 是独立测试发布标签，不替换其他平台的稳定版。**本次提供未签名开发预览；ARM64 真机签名安装尚未验收。**
+应用版本保持 **2.3.12+257**。`harmonyos-2.3.12-test.1` 是独立测试发布标签，不替换其他平台的稳定版。**本次为未签名开发预览版：x64 模拟器包已完成安装启动测试；ARM64 真机包需自行签名，安装及运行尚未验证。**
 
 ## 下载与安装
 
@@ -9,7 +9,7 @@
 | 文件 | 用途与验证状态 |
 |---|---|
 | `VeneraX-2.3.12+257-harmonyos-x64-emulator-test.1-unsigned.hap` | Windows 上的官方 x86_64 模拟器；已在 HarmonyOS 7 / API 26 模拟器安装并启动完整应用 |
-| `VeneraX-2.3.12+257-harmonyos-arm64-test.1-unsigned.hap` | ARM64 手机候选包；已编译，仍需自行签名，真机安装及运行尚未验证 |
+| `VeneraX-2.3.12+257-harmonyos-arm64-test.1-unsigned.hap` | ARM64 真机测试用；需自行签名，真机安装及运行尚未验证 |
 
 模拟器界面显示的手机型号不代表 CPU 架构。ARM64 包不能装到这里使用的 x86_64 模拟器；更换模拟器外观型号也不能解决架构不匹配。
 
@@ -50,14 +50,14 @@ hdc -t <设备地址> shell aa start -a EntryAbility -b com.github.kyosee.venera
 
 ## English
 
-The app version remains **2.3.12+257**. The separate `harmonyos-2.3.12-test.1` prerelease does not replace stable releases for other platforms. **This is an unsigned developer preview; signed ARM64 phone installation has not been verified.**
+The app version remains **2.3.12+257**. The separate `harmonyos-2.3.12-test.1` prerelease does not replace stable releases for other platforms. **This is an unsigned developer preview: x64 emulator installation and startup have been verified; the ARM64 phone package requires signing, and phone installation and execution remain unverified.**
 
 Both HAPs contain the complete app in release mode. Select the CPU architecture of the target device:
 
 | File | Purpose and validation |
 |---|---|
 | `VeneraX-2.3.12+257-harmonyos-x64-emulator-test.1-unsigned.hap` | Official x86_64 emulator on Windows; installation and full app startup verified on HarmonyOS 7 / API 26 |
-| `VeneraX-2.3.12+257-harmonyos-arm64-test.1-unsigned.hap` | ARM64 phone candidate; compiled, but requires signing and has not been installed or run on a phone |
+| `VeneraX-2.3.12+257-harmonyos-arm64-test.1-unsigned.hap` | For ARM64 phone testing; requires signing and has not been installed or run on a phone |
 
 The phone model shown by an emulator does not determine its CPU architecture. The ARM64 package cannot be installed on the x86_64 emulator used here, even if its appearance is changed to another phone model.
 
