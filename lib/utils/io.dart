@@ -19,9 +19,9 @@ class IO {
   ///
   /// Select file and other similar file operations will launch external programs,
   /// causing the app to lose focus. AppLifecycleState will be set to paused.
-  static bool get isSelectingFiles => _isSelectingFiles;
+  static bool get isSelectingFiles => _selectingFiles > 0;
 
-  static bool _isSelectingFiles = false;
+  static int _selectingFiles = 0;
 }
 
 class FilePath {
@@ -388,7 +388,7 @@ class DirectoryPicker {
   static const _methodChannel = MethodChannel("venera/method_channel");
 
   Future<Directory?> pickDirectory({bool directAccess = false}) async {
-    IO._isSelectingFiles = true;
+    IO._selectingFiles++;
     try {
       String? directory;
       if (App.isWindows || App.isLinux) {
@@ -416,7 +416,7 @@ class DirectoryPicker {
       return Directory(directory);
     } finally {
       Future.delayed(const Duration(milliseconds: 100), () {
-        IO._isSelectingFiles = false;
+        IO._selectingFiles--;
       });
     }
   }
@@ -492,7 +492,7 @@ class IOSDirectoryPicker {
 
   // 调用 iOS 目录选择方法
   static Future<String?> selectDirectory() async {
-    IO._isSelectingFiles = true;
+    IO._selectingFiles++;
     try {
       final String? path = await _channel.invokeMethod('selectDirectory');
       return path;
@@ -501,14 +501,14 @@ class IOSDirectoryPicker {
       return e.toString();
     } finally {
       Future.delayed(const Duration(milliseconds: 100), () {
-        IO._isSelectingFiles = false;
+        IO._selectingFiles--;
       });
     }
   }
 }
 
 Future<FileSelectResult?> selectFile({required List<String> ext}) async {
-  IO._isSelectingFiles = true;
+  IO._selectingFiles++;
   try {
     var extensions = App.isMacOS || App.isIOS ? null : ext;
     file_selector.XTypeGroup typeGroup = file_selector.XTypeGroup(
@@ -547,19 +547,19 @@ Future<FileSelectResult?> selectFile({required List<String> ext}) async {
     return file;
   } finally {
     Future.delayed(const Duration(milliseconds: 100), () {
-      IO._isSelectingFiles = false;
+      IO._selectingFiles--;
     });
   }
 }
 
 Future<String?> selectDirectory() async {
-  IO._isSelectingFiles = true;
+  IO._selectingFiles++;
   try {
     var path = await file_selector.getDirectoryPath();
     return path;
   } finally {
     Future.delayed(const Duration(milliseconds: 100), () {
-      IO._isSelectingFiles = false;
+      IO._selectingFiles--;
     });
   }
 }
@@ -569,7 +569,7 @@ Future<String?> selectDirectoryIOS() async {
   return IOSDirectoryPicker.selectDirectory();
 }
 
-Future<void> saveFile({
+Future<bool> saveFile({
   Uint8List? data,
   required String filename,
   File? file,
@@ -577,7 +577,7 @@ Future<void> saveFile({
   if (data == null && file == null) {
     throw Exception("data and file cannot be null at the same time");
   }
-  IO._isSelectingFiles = true;
+  IO._selectingFiles++;
   try {
     if (data != null) {
       var cache = FilePath.join(App.cachePath, filename);
@@ -588,8 +588,11 @@ Future<void> saveFile({
       file = File(cache);
     }
     if (App.isMobile) {
-      final params = SaveFileDialogParams(sourceFilePath: file!.path);
-      await FlutterFileDialog.saveFile(params: params);
+      final params = SaveFileDialogParams(
+        sourceFilePath: file!.path,
+        fileName: App.isOhos ? filename : null,
+      );
+      return await FlutterFileDialog.saveFile(params: params) != null;
     } else {
       final result = await file_selector.getSaveLocation(
         suggestedName: filename,
@@ -597,11 +600,13 @@ Future<void> saveFile({
       if (result != null) {
         var xFile = file_selector.XFile(file!.path);
         await xFile.saveTo(result.path);
+        return true;
       }
+      return false;
     }
   } finally {
     Future.delayed(const Duration(milliseconds: 100), () {
-      IO._isSelectingFiles = false;
+      IO._selectingFiles--;
     });
   }
 }

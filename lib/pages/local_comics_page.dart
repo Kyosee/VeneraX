@@ -584,6 +584,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       case ExportPhase.packaging:
         return "Packaging".tl;
       case ExportPhase.writing:
+        if (task.saveWithDialog) return "Save exported file".tl;
         var pct = task.writeProgress;
         if (pct != null) {
           return "Writing to folder @p%".tlParams({
@@ -648,13 +649,14 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       context.showMessage(message: "An export task is already running".tl);
       return;
     }
-    var folder = await _pickExportFolder();
+    var folder = App.isOhos ? '' : await _pickExportFolder();
     if (folder == null || !mounted) return;
     var task = manager.startExport(
       folderPath: folder,
       format: format,
       comics: comics,
       merged: merged,
+      saveWithDialog: App.isOhos,
     );
     if (task == null) return;
     var controller = showLoadingDialog(

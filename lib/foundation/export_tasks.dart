@@ -91,6 +91,7 @@ class ExportTask {
     required this.createdAt,
     Set<String>? doneKeys,
     this.merged = false,
+    this.saveWithDialog = false,
     this.failedCount = 0,
     this.status = ExportTaskStatus.running,
     this.currentTitle,
@@ -109,6 +110,9 @@ class ExportTask {
   /// When true (only for the venera_comics format), all comics are written to
   /// a single combined .venera_comics file instead of one file per comic.
   final bool merged;
+
+  /// Save each output through the system picker instead of a directory path.
+  final bool saveWithDialog;
 
   /// Keys ([ExportComicRef.key]) of comics already written (or skipped).
   final Set<String> doneKeys;
@@ -150,6 +154,7 @@ class ExportTask {
         'comics': comics.map((e) => e.toJson()).toList(),
         'doneKeys': doneKeys.toList(),
         'merged': merged,
+        'saveWithDialog': saveWithDialog,
         'failedCount': failedCount,
         // Persist active tasks as paused so they are not auto-run on restart.
         'status': isActive ? ExportTaskStatus.paused.name : status.name,
@@ -169,6 +174,7 @@ class ExportTask {
             .toList(),
         doneKeys: (json['doneKeys'] as List? ?? []).map((e) => '$e').toSet(),
         merged: json['merged'] ?? false,
+        saveWithDialog: json['saveWithDialog'] ?? false,
         failedCount: json['failedCount'] ?? 0,
         status: ExportTaskStatus.values.firstWhere(
           (e) => e.name == json['status'],
@@ -206,6 +212,7 @@ class ExportTaskManager with ChangeNotifier {
     required ExportFormat format,
     required List<LocalComic> comics,
     bool merged = false,
+    bool saveWithDialog = false,
   }) {
     if (currentTasks.any((t) => t.isActive)) {
       return null;
@@ -223,6 +230,7 @@ class ExportTaskManager with ChangeNotifier {
           .toList(),
       createdAt: DateTime.now(),
       merged: merged && format == ExportFormat.veneraComics,
+      saveWithDialog: saveWithDialog,
     );
     currentTasks.insert(0, task);
     _persist();
@@ -326,11 +334,7 @@ class ExportTaskManager with ChangeNotifier {
             break;
           }
           if (_pausedIds.contains(task.id)) {
-            task.status = ExportTaskStatus.paused;
-            task.currentTitle = null;
-            notifyListeners();
-            _persist();
-            return; // keep in currentTasks; resumable
+            return; // Publish paused only after this run finishes cleanup.
           }
           if (task.doneKeys.contains(ref.key)) {
             continue;
@@ -340,7 +344,7 @@ class ExportTaskManager with ChangeNotifier {
           final target = targetDir.joinFile(outName);
 
           // Resume: a comic already written to the folder is skipped.
-          if (await target.exists()) {
+          if (!task.saveWithDialog && await target.exists()) {
             task.doneKeys.add(ref.key);
             notifyListeners();
             _persist();
@@ -353,6 +357,12 @@ class ExportTaskManager with ChangeNotifier {
 
           final comic = LocalManager().find(ref.id, ref.comicType);
           if (comic == null) {
+            if (task.saveWithDialog) {
+              task.failedCount++;
+              task.error = 'Comic Not Found';
+              task.status = ExportTaskStatus.failed;
+              break;
+            }
             // The comic was deleted since the task was created; skip it.
             task.failedCount++;
             task.doneKeys.add(ref.key);
@@ -367,27 +377,46 @@ class ExportTaskManager with ChangeNotifier {
             task.writeProgress = null;
             notifyListeners();
             produced = await _buildToCache(comic, task.format, cacheDir.path);
+            if (task.saveWithDialog && _canceledIds.contains(task.id)) {
+              task.status = ExportTaskStatus.canceled;
+              await produced.deleteIgnoreError();
+              break;
+            }
+            if (task.saveWithDialog && _pausedIds.contains(task.id)) {
+              await produced.deleteIgnoreError();
+              return;
+            }
             // Stream the built file into the destination instead of loading it
             // whole into memory, so a large comic can't OOM the export (#93).
             // The destination write (SAF on Android) is the slow step, so show
             // real byte progress for it instead of a frozen bar (#92).
             task.phase = ExportPhase.writing;
-            task.writeProgress = 0;
+            task.writeProgress = task.saveWithDialog ? null : 0;
             notifyListeners();
-            await copyFileStreaming(
-              produced,
-              target,
-              onProgress: _writeProgress(task),
-            );
+            if (task.saveWithDialog) {
+              if (!await saveFile(filename: outName, file: produced)) {
+                task.status = ExportTaskStatus.canceled;
+                await produced.deleteIgnoreError();
+                break;
+              }
+            } else {
+              await copyFileStreaming(
+                produced,
+                target,
+                onProgress: _writeProgress(task),
+              );
+            }
             task.writeProgress = null;
-            produced.deleteIgnoreError();
+            await produced.deleteIgnoreError();
           } catch (e, s) {
             // A SAF write failure (some Android providers reject file creation
             // on shared trees like Download) can often be recovered by writing
             // to the same folder's real filesystem path with all-files access
             // (#130). Retry there once before giving up on this comic.
             var recovered = false;
-            if (produced != null && _looksLikeCreateFailure(e.toString())) {
+            if (!task.saveWithDialog &&
+                produced != null &&
+                _looksLikeCreateFailure(e.toString())) {
               try {
                 final dir = await resolveFallbackDir();
                 if (dir != null) {
@@ -397,7 +426,7 @@ class ExportTaskManager with ChangeNotifier {
                     onProgress: _writeProgress(task),
                   );
                   task.writeProgress = null;
-                  produced.deleteIgnoreError();
+                  await produced.deleteIgnoreError();
                   recovered = true;
                 }
               } catch (e2, s2) {
@@ -408,7 +437,12 @@ class ExportTaskManager with ChangeNotifier {
               Log.error('Export Comics', e.toString(), s);
               task.failedCount++;
               lastError = e.toString();
-              produced?.deleteIgnoreError();
+              await produced?.deleteIgnoreError();
+              if (task.saveWithDialog) {
+                task.status = ExportTaskStatus.failed;
+                task.error = lastError;
+                break;
+              }
             }
           }
           task.doneKeys.add(ref.key);
@@ -417,6 +451,10 @@ class ExportTaskManager with ChangeNotifier {
         }
       }
 
+      if (task.status == ExportTaskStatus.running &&
+          _pausedIds.contains(task.id)) {
+        return;
+      }
       if (task.status == ExportTaskStatus.running) {
         // Every comic failing (e.g. the destination folder rejects file
         // creation on some Android SAF providers) previously still finished as
@@ -445,7 +483,15 @@ class ExportTaskManager with ChangeNotifier {
           : e.toString();
       Log.error('Export Comics', e.toString(), s);
     } finally {
-      cacheDir.deleteIgnoreError(recursive: true);
+      await cacheDir.deleteIgnoreError(recursive: true);
+      if (task.status == ExportTaskStatus.running) {
+        if (_canceledIds.contains(task.id)) {
+          task.status = ExportTaskStatus.canceled;
+        } else if (_pausedIds.contains(task.id)) {
+          task.status = ExportTaskStatus.paused;
+          task.currentTitle = null;
+        }
+      }
       // Clear the transient write fraction regardless of outcome so a
       // finished/paused card never lingers on a stale writing percentage.
       task.writeProgress = null;
@@ -546,7 +592,7 @@ class ExportTaskManager with ChangeNotifier {
       return;
     }
     final target = targetDir.joinFile(_mergedFileName(task.createdAt));
-    if (await target.exists()) {
+    if (!task.saveWithDialog && await target.exists()) {
       task.doneKeys
         ..clear()
         ..addAll(allKeys);
@@ -558,6 +604,12 @@ class ExportTaskManager with ChangeNotifier {
     final comics = <LocalComic>[];
     for (final ref in task.comics) {
       final c = LocalManager().find(ref.id, ref.comicType);
+      if (c == null && task.saveWithDialog) {
+        task.failedCount++;
+        task.error = 'Comic Not Found';
+        task.status = ExportTaskStatus.failed;
+        return;
+      }
       if (c != null) comics.add(c);
     }
     if (comics.isEmpty) {
@@ -585,6 +637,32 @@ class ExportTaskManager with ChangeNotifier {
         _refreshKeepAlive(task);
       },
     );
+    if (task.saveWithDialog) {
+      try {
+        task.doneKeys.clear();
+        if (_canceledIds.contains(task.id)) {
+          task.status = ExportTaskStatus.canceled;
+          return;
+        }
+        if (_pausedIds.contains(task.id)) {
+          return;
+        }
+        task.phase = ExportPhase.writing;
+        task.writeProgress = null;
+        notifyListeners();
+        if (await saveFile(
+          filename: _mergedFileName(task.createdAt),
+          file: produced,
+        )) {
+          task.doneKeys.addAll(allKeys);
+        } else {
+          task.status = ExportTaskStatus.canceled;
+        }
+      } finally {
+        await produced.deleteIgnoreError();
+      }
+      return;
+    }
     // The merged archive can reach tens of gigabytes; stream it into the
     // destination chunk by chunk instead of reading it fully into memory,
     // which previously crashed with Out of Memory on large libraries (#93).
@@ -624,11 +702,11 @@ class ExportTaskManager with ChangeNotifier {
       );
     }
     task.writeProgress = null;
-    produced.deleteIgnoreError();
+    await produced.deleteIgnoreError();
     if (_canceledIds.contains(task.id)) {
       // Cancellation requested during the (uninterruptible) build: drop the
       // just-written bundle so a canceled export leaves nothing behind.
-      written.deleteIgnoreError();
+      await written.deleteIgnoreError();
       task.status = ExportTaskStatus.canceled;
       return;
     }

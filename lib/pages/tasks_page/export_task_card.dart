@@ -88,7 +88,9 @@ getTaskTitle('export', {}),
       ExportPhase.preparing => "Preparing".tl,
       ExportPhase.processing => task.currentTitle ?? "Exporting".tl,
       ExportPhase.packaging => "Packaging".tl,
-      ExportPhase.writing => task.writeProgress != null
+      ExportPhase.writing => task.saveWithDialog
+          ? "Save exported file".tl
+          : task.writeProgress != null
           ? "Writing to folder @p%".tlParams({
               'p': (task.writeProgress! * 100).clamp(0, 100).toStringAsFixed(0),
             })
@@ -118,7 +120,9 @@ getTaskTitle('export', {}),
         ),
         const SizedBox(height: 2),
         Text(
-          "Folder: @folder".tlParams({'folder': task.folderPath}),
+          task.saveWithDialog
+              ? "Choose where to save each exported file".tl
+              : "Folder: @folder".tlParams({'folder': task.folderPath}),
           style: ts.s14,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
