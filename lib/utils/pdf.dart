@@ -70,7 +70,11 @@ Future<void> _createPdfFromComic({
 }
 
 Future<Isolate> _runIsolate(
-    LocalComic comic, String savePath, SendPort sendPort) {
+  LocalComic comic,
+  String savePath,
+  SendPort sendPort,
+  SendPort exitPort,
+) {
   var localPath = LocalManager().path;
   return Isolate.spawn<SendPort>(
     (sendPort) => overrideIO(
@@ -79,64 +83,107 @@ Future<Isolate> _runIsolate(
           await SAFTaskWorker().init();
         }
         var receivePort = ReceivePort();
-        sendPort.send(receivePort.sendPort);
+        try {
+          sendPort.send(receivePort.sendPort);
 
-        Completer<Image>? completer;
+          Completer<Image>? completer;
 
-        Future<Image> decodeImage(Uint8List data) async {
-          if (completer != null) {
-            throw Exception('Another image is being decoded');
-          }
-          sendPort.send(data);
-          completer = Completer();
-          return completer!.future;
-        }
-
-        receivePort.listen((message) {
-          if (message is Image) {
-            if (completer == null) {
-              throw Exception('No image is being decoded');
+          Future<Image> decodeImage(Uint8List data) async {
+            if (completer != null) {
+              throw Exception('Another image is being decoded');
             }
-            completer!.complete(message);
-            completer = null;
+            completer = Completer();
+            sendPort.send(data);
+            return completer!.future;
           }
-        });
 
-        await _createPdfFromComic(
-          comic: comic,
-          savePath: savePath,
-          localPath: localPath,
-          decodeImage: decodeImage,
-        );
+          receivePort.listen((message) {
+            if (message is Image) {
+              if (completer == null) {
+                throw Exception('No image is being decoded');
+              }
+              completer!.complete(message);
+              completer = null;
+            } else if (message is List && message.length == 2) {
+              final stack = message[1].toString();
+              completer!.completeError(
+                RemoteError(message[0].toString(), stack),
+                StackTrace.fromString(stack),
+              );
+              completer = null;
+            }
+          });
 
-        sendPort.send(null);
+          await _createPdfFromComic(
+            comic: comic,
+            savePath: savePath,
+            localPath: localPath,
+            decodeImage: decodeImage,
+          );
+
+          sendPort.send(true);
+        } finally {
+          receivePort.close();
+        }
       },
     ),
     sendPort,
+    onError: sendPort,
+    onExit: exitPort,
+    errorsAreFatal: true,
   );
 }
 
 Future<File> createPdfFromComicIsolate(LocalComic comic, String savePath) async {
-  var receivePort = ReceivePort();
-  SendPort? sendPort;
-  Isolate? isolate;
-  var completer = Completer<void>();
-  receivePort.listen((message) {
-    if (message is SendPort) {
-      sendPort = message;
-    } else if (message is Uint8List) {
-      Image.decodeImage(message).then((image) {
-        sendPort!.send(image);
-      });
-    } else if (message == null) {
-      receivePort.close();
-      completer.complete();
-      isolate!.kill();
-    }
+  final receivePort = ReceivePort();
+  final exitPort = ReceivePort();
+  final exited = Completer<void>();
+  exitPort.listen((_) {
+    exited.complete();
+    receivePort.sendPort.send(null);
   });
-  isolate = await _runIsolate(comic, savePath, receivePort.sendPort);
-  await completer.future;
-  return File(savePath);
+  Isolate? isolate;
+  try {
+    isolate = await _runIsolate(
+      comic,
+      savePath,
+      receivePort.sendPort,
+      exitPort.sendPort,
+    );
+    SendPort? sendPort;
+    await for (final message in receivePort) {
+      if (message is SendPort) {
+        sendPort = message;
+      } else if (message is Uint8List) {
+        try {
+          final image = await Image.decodeImage(message);
+          sendPort!.send(image);
+        } catch (error, stack) {
+          // Let the worker close its output before reporting the decode error.
+          sendPort!.send([error.toString(), stack.toString()]);
+        }
+      } else if (message == true) {
+        return File(savePath);
+      } else if (message is List && message.length == 2) {
+        final stack = message[1]?.toString() ?? '';
+        Error.throwWithStackTrace(
+          RemoteError(message[0].toString(), stack),
+          StackTrace.fromString(stack),
+        );
+      } else if (message == null) {
+        throw StateError('PDF export isolate exited without a result');
+      }
+    }
+    throw StateError('PDF export channel closed without a result');
+  } finally {
+    receivePort.close();
+    if (isolate != null) {
+      isolate.kill(priority: Isolate.immediate);
+      // Wait for termination before callers remove or retry the output file.
+      await exited.future;
+    }
+    exitPort.close();
+  }
 }
 
 class PdfGenerator {
@@ -164,9 +211,17 @@ class PdfGenerator {
   });
 
   Future<void> generate() async {
-    var file = File(outputPath);
-    final output = file.openWrite();
+    final output = File(outputPath).openWrite();
+    // Opening/writing can fail before the final close is awaited.
+    output.done.ignore();
+    try {
+      await _writePdf(output);
+    } finally {
+      await output.close();
+    }
+  }
 
+  Future<void> _writePdf(IOSink output) async {
     int length = 0;
 
     void write(String str) {
@@ -317,8 +372,6 @@ class PdfGenerator {
     write('startxref\n');
     write('$xrefOffset\n');
     write('%%EOF\n');
-
-    await output.close();
   }
 
   int _codeUnitForDigit(int digit) =>
