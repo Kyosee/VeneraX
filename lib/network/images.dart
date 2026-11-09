@@ -16,6 +16,8 @@ import 'app_dio.dart';
 const _imageStreamIdleTimeout = Duration(seconds: 30);
 
 abstract class ImageDownloader {
+  static const thumbnailCacheDuration = Duration(days: 90);
+
   /// Disk cache key for a thumbnail/cover. Callers that may need to evict a
   /// corrupted entry must build the key through this, not by hand: a key that
   /// differs from the one used to write makes eviction a no-op, and bad bytes
@@ -62,7 +64,10 @@ abstract class ImageDownloader {
     }
 
     final cacheKey = thumbnailCacheKey(url, sourceKey, cid);
-    final cache = await CacheManager().findCache(cacheKey);
+    final cache = await CacheManager().findCache(
+      cacheKey,
+      thumbnailCacheDuration.inMilliseconds,
+    );
 
     if (cache != null) {
       var data = await cache.readAsBytes();
@@ -71,6 +76,7 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
+      return;
     }
 
     var configs = <String, dynamic>{};
@@ -144,7 +150,11 @@ abstract class ImageDownloader {
       (configs['onResponse'] as JSInvokable).free();
     }
 
-    await CacheManager().writeCache(cacheKey, buffer);
+    await CacheManager().writeCache(
+      cacheKey,
+      buffer,
+      thumbnailCacheDuration.inMilliseconds,
+    );
     yield ImageDownloadProgress(
       currentBytes: buffer.length,
       totalBytes: buffer.length,

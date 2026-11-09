@@ -235,7 +235,10 @@ class CacheManager {
   /// If cache is expired, it will be deleted and return null.
   /// If cache is not found, it will return null.
   /// If cache is found, it will return the file, and update the expires time.
-  Future<File?> findCache(String key) async {
+  Future<File?> findCache(
+    String key, [
+    int duration = 7 * 24 * 60 * 60 * 1000,
+  ]) async {
     var res = _db.select(
       '''
       SELECT * FROM cache
@@ -268,7 +271,7 @@ class CacheManager {
     }
     if (await file.exists()) {
       // update time
-      var expires = now + 7 * 24 * 60 * 60 * 1000;
+      var expires = now + duration;
       _db.execute(
         '''
         UPDATE cache
