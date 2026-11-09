@@ -452,7 +452,7 @@ class ExportTaskManager with ChangeNotifier {
       }
 
       if (task.status == ExportTaskStatus.running &&
-          _pausedIds.contains(task.id)) {
+          (_canceledIds.contains(task.id) || _pausedIds.contains(task.id))) {
         return;
       }
       if (task.status == ExportTaskStatus.running) {

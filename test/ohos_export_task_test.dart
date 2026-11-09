@@ -55,6 +55,12 @@ Future<Uint8List> _png(ui.Color color) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final ohos = TargetPlatform.values.where((value) => value.name == 'ohos');
+  // Use the same mobile save channel on the upstream SDK without an OHOS enum.
+  final dialogPlatform = ohos.firstOrNull ?? TargetPlatform.iOS;
+  final expectedNames = [
+    '同名漫画.epub',
+    ohos.isNotEmpty ? '同名漫画 (2).epub' : '同名漫画.epub',
+  ];
   const channel = MethodChannel('flutter_file_dialog');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -74,7 +80,7 @@ void main() {
   });
 
   group(
-    'HarmonyOS comic export with system save dialogs',
+    'comic export with system save dialogs',
     () {
       late Directory root;
       late ExportTaskManager manager;
@@ -92,7 +98,8 @@ void main() {
         previousCachePath = App.cachePath;
         previousTarget = debugDefaultTargetPlatformOverride;
         previousMuted = Log.isMuted;
-        debugDefaultTargetPlatformOverride = ohos.single;
+        debugDefaultTargetPlatformOverride =
+            ohos.firstOrNull ?? TargetPlatform.windows;
         Log.isMuted = true;
         if (Platform.isWindows) {
           open.overrideFor(
@@ -135,10 +142,11 @@ void main() {
           await LocalManager().add(comic);
           comics.add(comic);
         }
+        debugDefaultTargetPlatformOverride = dialogPlatform;
       });
 
       setUp(() {
-        expect(App.isOhos, isTrue);
+        expect(App.isMobile, isTrue);
         expect(manager.currentTasks, isEmpty);
         saved.clear();
         respond = null;
@@ -149,7 +157,9 @@ void main() {
           expect(file.existsSync(), isTrue);
           expect(file.path, startsWith(App.cachePath));
           saved.add((
-            name: args['fileName'] as String,
+            name: App.isOhos
+                ? args['fileName'] as String
+                : file.uri.pathSegments.last,
             path: file.path,
             bytes: await file.readAsBytes(),
           ));
@@ -259,7 +269,7 @@ void main() {
       }
 
       test(
-        'same-named comics save sequentially with distinct names and real EPUB contents',
+        'same-named comics save sequentially with expected names and real EPUB contents',
         () async {
           final firstSave = Completer<Object?>();
           respond = (index) async => index == 0
@@ -278,10 +288,7 @@ void main() {
           expect(task.status, ExportTaskStatus.completed);
           expect(task.done, 2);
           expect(task.failedCount, 0);
-          expect(saved.map((output) => output.name), [
-            '同名漫画.epub',
-            '同名漫画 (2).epub',
-          ]);
+          expect(saved.map((output) => output.name), expectedNames);
           expectEpub(saved[0], 0);
           expectEpub(saved[1], 1);
           expect(
@@ -313,10 +320,7 @@ void main() {
           }
           await settled(task);
           expect(task.status, ExportTaskStatus.completed);
-          expect(saved.map((output) => output.name), [
-            '同名漫画.epub',
-            '同名漫画 (2).epub',
-          ]);
+          expect(saved.map((output) => output.name), expectedNames);
           expectEpub(saved[0], 0);
           expectEpub(saved[1], 1);
         },
@@ -335,6 +339,42 @@ void main() {
           expectEpub(saved.single, 0);
         },
       );
+
+      for (final merged in [false, true]) {
+        test(
+          'canceling during the final save remains canceled (merged: $merged)',
+          () async {
+            final finalSave = Completer<Object?>();
+            final saveCount = merged ? 1 : comics.length;
+            respond = (index) async => index == saveCount - 1
+                ? await finalSave.future
+                : 'file:///documents/first.epub';
+            final task = manager.startExport(
+              folderPath: '',
+              format: merged ? ExportFormat.veneraComics : ExportFormat.epub,
+              comics: comics,
+              merged: merged,
+              saveWithDialog: true,
+            )!;
+            try {
+              await _until(() => saved.length == saveCount);
+              expect(task.status, ExportTaskStatus.running);
+              manager.cancel(task.id);
+            } finally {
+              finalSave.complete('file:///documents/saved');
+            }
+            await settled(task);
+            expect(task.status, ExportTaskStatus.canceled);
+            expect(task.failedCount, 0);
+            expect(task.done, comics.length);
+            expect(saved, hasLength(saveCount));
+            expect(
+              saved.every((output) => !File(output.path).existsSync()),
+              isTrue,
+            );
+          },
+        );
+      }
 
       test(
         'a failed first save stops the queue and does not count as exported',
@@ -425,10 +465,7 @@ void main() {
               manager.historyTasks.where((entry) => entry.id == task.id),
               hasLength(1),
             );
-            expect(saved.map((output) => output.name), [
-              '同名漫画.epub',
-              '同名漫画 (2).epub',
-            ]);
+            expect(saved.map((output) => output.name), expectedNames);
             expectEpub(saved[0], 0);
             expectEpub(saved[1], 1);
           } finally {
@@ -469,15 +506,11 @@ void main() {
           await settled(restored);
           expect(restored.status, ExportTaskStatus.completed);
           expect(restored.done, 2);
-          expect(saved.map((output) => output.name), [
-            '同名漫画.epub',
-            '同名漫画 (2).epub',
-          ]);
+          expect(saved.map((output) => output.name), expectedNames);
           expectEpub(saved[0], 0);
           expectEpub(saved[1], 1);
         },
       );
     },
-    skip: ohos.isEmpty ? 'Requires the HarmonyOS Flutter SDK.' : false,
   );
 }
