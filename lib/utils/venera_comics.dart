@@ -102,11 +102,12 @@ String _archivePath(String root, String relative) {
       portable.contains('\u0000')) {
     throw const FormatException('Invalid comic archive path');
   }
-  final target = p.normalize(p.join(root, portable));
-  if (!p.isWithin(p.normalize(root), target)) {
+  final normalized = p.posix.normalize(portable);
+  if (normalized == '.') {
     throw const FormatException('Invalid comic archive path');
   }
-  return target;
+  // SAF roots are opaque; normalizing them destroys the android:// prefix.
+  return FilePath.join(root, normalized);
 }
 
 /// Packs selected comics into a .venera_comics zip file.

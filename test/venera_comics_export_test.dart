@@ -7,6 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -14,6 +15,29 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/venera_comics.dart';
+
+final class _SafIO extends IOOverrides {
+  _SafIO(this.safRoot, this.storageRoot);
+
+  final String safRoot;
+  final String storageRoot;
+
+  String _resolve(String path) {
+    if (!path.startsWith('android:')) return path;
+    if (path == safRoot) return storageRoot;
+    if (!path.startsWith('$safRoot/') && !path.startsWith('$safRoot\\')) {
+      throw StateError('SAF root was changed: $path');
+    }
+    return p.join(storageRoot, path.substring(safRoot.length + 1));
+  }
+
+  @override
+  File createFile(String path) => super.createFile(_resolve(path));
+
+  @override
+  Directory createDirectory(String path) =>
+      super.createDirectory(_resolve(path));
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +97,10 @@ void main() {
     App.cachePath = cache.path;
   });
 
-  Future<LocalComic> fixture({bool chapters = false}) async {
+  Future<LocalComic> fixture({
+    bool chapters = false,
+    String? virtualDirectory,
+  }) async {
     final id = 'export_${fixtureNumber++}';
     final directory = await Directory('${root.path}/$id').create();
     final pageDirectory = chapters
@@ -92,7 +119,7 @@ void main() {
       title: '本地漫画 $id',
       subtitle: 'Fixture author',
       tags: const ['含,逗号', 'unicode-漫画'],
-      directory: directory.path,
+      directory: virtualDirectory ?? directory.path,
       chapters: chapters ? const ComicChapters({'chapter_1': '第一章'}) : null,
       cover: chapters ? 'chapter_1/1.png' : 'cover.png',
       comicType: ComicType.local,
@@ -219,6 +246,43 @@ void main() {
   });
 
   test(
+    'SAF source keeps its URI prefix while exporting a nested cover',
+    () async {
+      const safRoot = 'android://primary:Download/Comic';
+      final comic = await fixture(chapters: true, virtualDirectory: safRoot);
+      final file = await IOOverrides.runWithIOOverrides(
+        () => exportVeneraComics([comic]),
+        _SafIO(safRoot, '${root.path}/${comic.id}'),
+      );
+      final archive = await readArchive(file);
+      final prefix = 'comics/${comic.id}_0/chapter_1';
+      for (var index = 0; index < pages.length; index++) {
+        expect(archive.findFile('$prefix/${index + 1}.png')!.content, pages[index]);
+      }
+    },
+  );
+
+  test(
+    'SAF library keeps its URI prefix while importing covers and pages',
+    () async {
+      final comic = await fixture(chapters: true);
+      final file = await exportVeneraComics([comic]);
+      const safRoot = 'android://primary:Download/Library';
+      final library = await Directory('${root.path}/saf_library').create();
+      final previousPath = LocalManager().path;
+      LocalManager().path = safRoot;
+      try {
+        await IOOverrides.runWithIOOverrides(
+          () => expectRestoredPages(comic, file),
+          _SafIO(safRoot, library.path),
+        );
+      } finally {
+        LocalManager().path = previousPath;
+      }
+    },
+  );
+
+  test(
     'chapterless root pages survive without replacing generated metadata',
     () async {
       final comic = await fixture();
@@ -296,6 +360,35 @@ void main() {
       await expectRejectedWithoutChanges(file, id, sentinel);
     },
   );
+
+  final unsafeCovers = [
+    '',
+    '.',
+    '././',
+    '/escape.png',
+    r'C:\escape.png',
+    r'..\escape.png',
+    r'\\server\escape.png',
+    'cover:stream',
+    'cover\u0000.png',
+  ];
+  for (var index = 0; index < unsafeCovers.length; index++) {
+    test(
+      'rejects invalid cover path case $index without changing the library',
+      () async {
+        final id = 'invalid_cover_$index';
+        final sentinel = File('${root.path}/escape.png');
+        await sentinel.writeAsBytes(pages.first);
+        final file = await unsafeArchive(
+          id: id,
+          cover: unsafeCovers[index],
+          comicPath: 'comics/${id}_0',
+          imagePath: 'comics/${id}_0/cover.png',
+        );
+        await expectRejectedWithoutChanges(file, id, sentinel);
+      },
+    );
+  }
 
   test(
     'native ZIP read failure closes and removes the incomplete archive',
