@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
+import 'prepare_ohos_icons.dart';
+
 const _webviewCommit = '389cf40dbb647f1df7272de5ea6b3401efe27a75';
 
 String _git(Directory directory, List<String> arguments) {
@@ -161,6 +163,7 @@ void main(List<String> args) {
     throw ArgumentError('Expected an optional WebView source directory.');
   }
   final root = File.fromUri(Platform.script).parent.parent;
+  prepareOhosIcons(root);
   final configFile = File('${root.path}/.dart_tool/package_config.json');
   final config = jsonDecode(configFile.readAsStringSync()) as Map;
   final generated = Directory('${root.path}/.dart_tool/ohos')

@@ -8,6 +8,7 @@ import { AuthService } from '../bridge/AuthService';
 import { ScanService } from '../bridge/ScanService';
 import { IncomingService } from '../bridge/IncomingService';
 import { BackgroundService } from '../bridge/BackgroundService';
+import { LauncherIconService } from '../bridge/LauncherIconService';
 
 export default class EntryAbility extends FlutterAbility {
   private channels: MethodChannel[] = [];
@@ -17,6 +18,7 @@ export default class EntryAbility extends FlutterAbility {
   private scanner?: ScanService;
   private incoming?: IncomingService;
   private background?: BackgroundService;
+  private launcherIcons?: LauncherIconService;
   private pendingWant?: Want;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -52,12 +54,14 @@ export default class EntryAbility extends FlutterAbility {
     this.scanner = new ScanService(this.context, flutterEngine);
     this.incoming = new IncomingService(flutterEngine);
     this.background = new BackgroundService(this.context, flutterEngine);
+    this.launcherIcons = new LauncherIconService();
     this.deliverInitialWant();
     const system = new MethodChannel(messenger, 'venera/method_channel');
     system.setMethodCallHandler({
       onMethodCall: (call: MethodCall, result: MethodResult): void => {
         if (this.deviceServices?.handleMethodCall(call, result)) return;
         if (this.fileServices?.handleMethodCall(call, result)) return;
+        if (this.launcherIcons?.handleMethodCall(call, result)) return;
         result.notImplemented();
       }
     });
@@ -68,6 +72,8 @@ export default class EntryAbility extends FlutterAbility {
   }
 
   cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+    this.launcherIcons?.dispose();
+    this.launcherIcons = undefined;
     this.background?.dispose();
     this.background = undefined;
     this.incoming?.dispose();
@@ -128,7 +134,7 @@ class PackageInfo implements MethodCallHandler {
     try {
       const info = bundleManager.getBundleInfoForSelfSync(0);
       result.success(new Map<string, string>([
-        ['appName', 'Venera'],
+        ['appName', 'VeneraX'],
         ['packageName', info.name],
         ['version', info.versionName],
         ['buildNumber', info.versionCode.toString()]

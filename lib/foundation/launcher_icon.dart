@@ -101,7 +101,21 @@ abstract final class LauncherIconService {
   /// Whether this platform can switch app icons at runtime. Windows swaps only
   /// the live window/taskbar/tray icon (not the .exe's embedded icon); iOS and
   /// Android swap the real home-screen launcher icon.
-  static bool get isSupported => App.isAndroid || App.isIOS || App.isWindows;
+  static bool _ohosSupported = false;
+
+  static bool get isSupported =>
+      App.isAndroid || App.isIOS || App.isWindows ||
+      (App.isOhos && _ohosSupported);
+
+  static Future<void> initialize() async {
+    if (!App.isOhos) return;
+    try {
+      _ohosSupported =
+          await _channel.invokeMethod<bool>('supportsAlternateIcons') == true;
+    } catch (_) {
+      _ohosSupported = false;
+    }
+  }
 
   /// Whether this platform can only swap the *live* window icon, leaving the
   /// installed/pinned icon unchanged. Drives the extra caveat in the settings

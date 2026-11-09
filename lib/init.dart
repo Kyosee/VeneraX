@@ -12,6 +12,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_enhance_shader.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';
+import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/network/app_dio_io.dart';
@@ -45,6 +46,7 @@ extension _FutureInit<T> on Future<T> {
 /// Only includes what's needed for theme, locale, and basic app state.
 Future<void> init() async {
   await App.init().wait();
+  await LauncherIconService.initialize().wait();
   if (App.isAndroid || App.isOhos) {
     startAppLinkCapture();
   }

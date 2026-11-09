@@ -78,8 +78,37 @@ credential; real PIN/biometric success still needs a suitable device.
 
 Use `-Target tool/ohos_file_smoke.dart` for an interactive file export/import
 round trip and picker cancellation. The share check opens the system panel;
-cancel it without choosing a recipient. Persistent directories and incoming
-shares remain separate work.
+cancel it without choosing a recipient. Persistent directory authorization and
+incoming text/link shares are implemented separately; neither the file round trip
+nor mocked bridge tests prove that every device supports directory selection.
+
+The official API 26 phone emulator currently advertises folder selection but
+does not expose a completion action inside a directory. A standalone native
+UIAbility using the documented FILE/FOLDER options reproduces this behavior.
+Directory imports, custom storage paths and folder-based comic exports still
+need a working picker and an authorized-directory round trip on a suitable device.
+
+Scan Kit provides the system QR scanner; opening and cancelling its UI is verified.
+Cold and warm notification Wants route the complete app to downloading and tasks.
+The background bridge shares one official data-transfer task across active
+downloads and WebDAV requests, uses actual progress, and releases it when the
+last request ends. `tool/ohos_background_smoke.dart` verifies real concurrent HTTP
+transfers after backgrounding, truncation/recovery, and notification removal.
+Local compression and OCR never claim a network background task. Data Saver
+settles pending changes on resume and during active use; it does not promise
+unlimited background packaging or uploading.
+
+API 26 alternate launcher icons use the system bundle manager. Startup checks
+actual API availability and all configured presets before showing the setting.
+`prepare_ohos.dart` generates only OHOS icon resources from the existing project
+PNGs; after editing icon assets, `dart tool/prepare_ohos_icons.dart` refreshes them
+without re-preparing dependencies. Earlier systems keep their default icon.
+
+`tool/ohos_backup_smoke.dart` prepares an isolated dataset and exercises the real
+backup, HTTP WebDAV and restore paths. `tool/ohos_reader_ui_smoke.dart` opens the
+production Reader with generated local pages for gesture, volume, orientation
+and shader checks. A successful build or static analysis of these probes is not
+a device pass; record their actual results separately.
 
 `-Target tool/ohos_pdf_smoke.dart` exercises PDF conversion through the official
 PDF Kit. Huawei does not support this kit on the x86 emulator; an ARM emulator

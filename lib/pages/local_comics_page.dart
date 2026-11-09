@@ -805,6 +805,12 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
 /// Opens the folder containing the comic in the system file explorer
 Future<void> openComicFolder(LocalComic comic) async {
+  if (App.isOhos) {
+    App.rootContext.showMessage(
+      message: "Opening folders in the system file manager is unavailable on this device".tl,
+    );
+    return;
+  }
   try {
     final folderPath = comic.baseDir;
 

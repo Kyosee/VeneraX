@@ -134,6 +134,7 @@ function harness(options = {}) {
     ScanService: Service,
     IncomingService: Service,
     BackgroundService: Service,
+    LauncherIconService: Service,
     PdfService: Service,
     bundleManager: {},
     console: { warn(message) { warnings.push(message); } },

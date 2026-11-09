@@ -465,7 +465,7 @@ test('completion uses an independent fixed ordinary notification and preserves o
   const ordinary = h.publishes.filter((request) => request.content.notificationContentType === 0);
   assert.equal(ordinary.length, 1);
   assert.notEqual(ordinary[0].id, h.starts[0].task.notificationId);
-  assert.deepEqual(ordinary[0].content.normal, { title: 'Venera', text: 'Finished' });
+  assert.deepEqual(ordinary[0].content.normal, { title: 'VeneraX', text: 'Finished' });
   assert.equal(ordinary[0].wantAgent.info.wants[0].bundleName, 'com.github.venera.test');
   assert.equal(ordinary[0].wantAgent.info.wants[0].abilityName, 'EntryAbility');
   assert.equal(ordinary[0].wantAgent.info.wants[0].parameters['venera.notification.route'], 'downloading');

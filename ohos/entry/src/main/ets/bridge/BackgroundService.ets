@@ -116,7 +116,7 @@ export class BackgroundService {
             notificationSlotType: notificationManager.SlotType.OTHER_TYPES,
             content: {
               notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
-              normal: { title: 'Venera', text: status as string }
+              normal: { title: 'VeneraX', text: status as string }
             }
           });
           if (this.disposed) {
@@ -249,11 +249,11 @@ export class BackgroundService {
         notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW,
-          systemLiveView: { typeCode: 8, title: 'Venera', text: snapshot.status }
+          systemLiveView: { typeCode: 8, title: 'VeneraX', text: snapshot.status }
         },
         template: {
           name: 'downloadTemplate',
-          data: { title: 'Venera', fileName: snapshot.status, progressValue: snapshot.progress }
+          data: { title: 'VeneraX', fileName: snapshot.status, progressValue: snapshot.progress }
         }
       });
       if (this.running !== running) return false;

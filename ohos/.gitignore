@@ -21,3 +21,4 @@
 **/libs/**/librhttp.so
 **/libs/**/libonnxruntime.so
 /entry/src/main/resources/rawfile/onnxruntime/
+/AppScope/resources/base/media/icon_*.png

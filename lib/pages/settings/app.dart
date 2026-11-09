@@ -1124,8 +1124,9 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
   String _syncModeDescription(WebdavSyncMode mode) => switch (mode) {
     WebdavSyncMode.realtime => "Upload shortly after every change".tl,
     WebdavSyncMode.dataSaver =>
-      "Batch changes; upload on app switch / resume, at most every 30 minutes"
-          .tl,
+      App.isOhos
+          ? "Batch changes; upload on app resume or every 30 minutes while the app is active".tl
+          : "Batch changes; upload on app switch / resume, at most every 30 minutes".tl,
     WebdavSyncMode.manual => "Upload only when triggered manually".tl,
   };
 
@@ -1336,6 +1337,7 @@ class _RemoteBackupListDialog extends StatelessWidget {
       'win' => 'Windows',
       'ios' => 'iOS',
       'android' => 'Android',
+      'ohos' => 'HarmonyOS',
       'macos' => 'macOS',
       'linux' => 'Linux',
       'web' => 'Web',

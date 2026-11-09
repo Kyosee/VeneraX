@@ -4,7 +4,13 @@
     "vendor": "example",
     "versionCode": 1000000,
     "versionName": "1.0.0",
-    "icon": "$media:app_icon",
-    "label": "$string:app_name"
+    "icon": "$media:icon_default",
+    "label": "$string:app_name",
+    "alternateIcons": [
+      {"name": "IconOrig", "icon": "$media:icon_orig"},
+      {"name": "IconFlat", "icon": "$media:icon_flat"},
+      {"name": "IconMono", "icon": "$media:icon_mono"},
+      {"name": "IconIllust", "icon": "$media:icon_illust"}
+    ]
   }
 }
