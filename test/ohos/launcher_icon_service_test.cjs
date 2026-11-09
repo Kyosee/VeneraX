@@ -39,7 +39,10 @@ function harness(config = {}) {
   };
   if (config.missingQuery) delete sdk.getAlternateIcons;
   if (config.missingSet) delete sdk.setAlternateIcon;
-  const context = vm.createContext({ bundleManager: config.missingModule ? undefined : sdk });
+  const context = vm.createContext({
+    bundleManager: config.missingModule ? undefined : sdk,
+    $r: (name) => name,
+  });
   const filename = path.resolve(__dirname, '../../ohos/entry/src/main/ets/bridge/LauncherIconService.ets');
   const source = readFileSync(filename, 'utf8')
     .replace(/^import\s[\s\S]*?;\r?$/gm, '')
@@ -57,8 +60,54 @@ function harness(config = {}) {
     });
     return { handled, replies };
   }
-  return { call, config, service, state };
+  return { call, config, service, state, startupIcon: () => context.LauncherIconService.getStartupIcon() };
 }
+
+test('startup uses the actual enabled launcher icon without changing it', async () => {
+  for (const [alias, resource] of [
+    ['', 'icon_default'], ['IconOrig', 'icon_orig'], ['IconFlat', 'icon_flat'],
+    ['IconMono', 'icon_mono'], ['IconIllust', 'icon_illust'],
+  ]) {
+    const h = harness({ icons: declaredIcons(alias) });
+    assert.equal(await h.startupIcon(), 'app.media.' + resource);
+    assert.equal(h.state.queries, 1);
+    assert.deepEqual(h.state.changes, []);
+  }
+});
+
+test('startup uses the default on older systems without the alternate icon API', async () => {
+  const h = harness({ missingQuery: true });
+  assert.equal(await h.startupIcon(), 'app.media.icon_default');
+  assert.equal(h.state.queries, 0);
+});
+
+test('startup does not substitute the default after a query failure or unknown enabled icon', async () => {
+  for (const config of [
+    { queryThrow: true }, { queryReject: true }, { missingModule: true },
+    { icons: [{ iconName: 'Other', iconId: 100, enabled: true }] },
+  ]) {
+    const h = harness(config);
+    assert.equal(await h.startupIcon(), undefined);
+    assert.deepEqual(h.state.changes, []);
+  }
+});
+
+test('startup waits for the system result and queries afresh on the next launch', async () => {
+  const wait = deferred();
+  const h = harness({ queryWait: wait });
+  let result = 'pending';
+  const pending = h.startupIcon().then((icon) => { result = icon; });
+  await flush();
+  assert.equal(result, 'pending');
+  wait.resolve(declaredIcons('IconFlat'));
+  await pending;
+  assert.equal(result, 'app.media.icon_flat');
+  delete h.config.queryWait;
+  h.config.icons = declaredIcons('IconMono');
+  assert.equal(await h.startupIcon(), 'app.media.icon_mono');
+  assert.equal(h.state.queries, 2);
+  assert.deepEqual(h.state.changes, []);
+});
 
 test('shared channel leaves unknown methods to the other services', () => {
   const h = harness();

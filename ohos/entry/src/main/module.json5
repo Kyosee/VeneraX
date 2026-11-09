@@ -21,7 +21,7 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:icon_default",
         "label": "$string:EntryAbility_label",
-        "startWindowIcon": "$media:icon_default",
+        "startWindowIcon": "$media:startup_placeholder",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
         "launchType": "singleton",

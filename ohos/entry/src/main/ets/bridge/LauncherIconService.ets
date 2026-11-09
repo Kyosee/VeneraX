@@ -8,6 +8,27 @@ export class LauncherIconService {
   private changing = false;
   private disposed = false;
 
+  static async getStartupIcon(): Promise<Resource | undefined> {
+    try {
+      if (typeof bundleManager.getAlternateIcons !== 'function') {
+        return $r('app.media.icon_default');
+      }
+      const icons = await bundleManager.getAlternateIcons();
+      const current = icons.find((icon: bundleManager.AlternateIconInfo): boolean => icon.enabled);
+      if (current === undefined) return $r('app.media.icon_default');
+      switch (current.iconName) {
+        case 'IconOrig': return $r('app.media.icon_orig');
+        case 'IconFlat': return $r('app.media.icon_flat');
+        case 'IconMono': return $r('app.media.icon_mono');
+        case 'IconIllust': return $r('app.media.icon_illust');
+        default: return undefined;
+      }
+    } catch (_) {
+      // Keep a neutral background when the active icon cannot be determined.
+      return undefined;
+    }
+  }
+
   handleMethodCall(call: MethodCall, result: MethodResult): boolean {
     if (call.method !== 'supportsAlternateIcons' && call.method !== 'setLauncherIcon') return false;
     if (this.disposed) {
