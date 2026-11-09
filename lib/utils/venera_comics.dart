@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:isolate';
+import 'package:path/path.dart' as p;
 
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/archive.dart';
+import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
@@ -90,6 +92,23 @@ class VeneraComicEntry {
   };
 }
 
+String _archivePath(String root, String relative) {
+  final portable = relative.replaceAll('\\', '/');
+  if (portable.isEmpty ||
+      p.posix.isAbsolute(portable) ||
+      p.windows.isAbsolute(relative) ||
+      portable.split('/').contains('..') ||
+      portable.contains(':') ||
+      portable.contains('\u0000')) {
+    throw const FormatException('Invalid comic archive path');
+  }
+  final target = p.normalize(p.join(root, portable));
+  if (!p.isWithin(p.normalize(root), target)) {
+    throw const FormatException('Invalid comic archive path');
+  }
+  return target;
+}
+
 /// Packs selected comics into a .venera_comics zip file.
 /// Returns the created file in cache directory.
 Future<File> exportVeneraComics(
@@ -113,6 +132,8 @@ Future<File> exportVeneraComics(
     exportDir.deleteSync(recursive: true);
   }
   exportDir.createSync(recursive: true);
+  File? archiveFile;
+  var completed = false;
   try {
     // Build manifest
     final entries = <VeneraComicEntry>[];
@@ -145,9 +166,8 @@ Future<File> exportVeneraComics(
       final entry = entries[i];
       onPhase?.call(ExportPhase.processing, comic.title);
       final comicDir = Directory(
-        FilePath.join(
-          exportDir.path,
-          'comics',
+        _archivePath(
+          FilePath.join(exportDir.path, 'comics'),
           '${comic.id}_${comic.comicType.value}',
         ),
       );
@@ -173,9 +193,11 @@ Future<File> exportVeneraComics(
       // Copy cover. Use async copyMem (not copySync) so the per-image byte work
       // yields to the event loop instead of freezing the UI on a large export
       // (issue #54), and so it works for SAF-backed files.
-      final coverFile = comic.coverFile;
+      final coverFile = File(_archivePath(comic.baseDir, comic.cover));
       if (coverFile.existsSync()) {
-        await coverFile.copyMem(FilePath.join(comicDir.path, comic.cover));
+        final destination = File(_archivePath(comicDir.path, comic.cover));
+        await destination.parent.create(recursive: true);
+        await coverFile.copyMem(destination.path);
       }
 
       // Copy chapter images if needed
@@ -183,7 +205,13 @@ Future<File> exportVeneraComics(
         final baseDir = Directory(comic.baseDir);
         if (baseDir.existsSync()) {
           for (final entity in baseDir.listSync()) {
-            if (entity is Directory) {
+            if (entity is File &&
+                !comic.hasChapters &&
+                FileType.fromExtension(
+                  entity.extension.toLowerCase(),
+                ).mime.startsWith('image/')) {
+              await entity.copyMem(FilePath.join(comicDir.path, entity.name));
+            } else if (entity is Directory) {
               final chapterId = entity.name;
               final destChapter = Directory(
                 FilePath.join(comicDir.path, chapterId),
@@ -211,17 +239,23 @@ Future<File> exportVeneraComics(
     // the same output path and clobber each other.
     final time = DateTime.now().microsecondsSinceEpoch;
     final zipPath = FilePath.join(App.cachePath, '$time.venera_comics');
+    archiveFile = File(zipPath);
     final exportDirPath = exportDir.path;
     await Isolate.run(() {
       final zipFile = ZipFile.open(zipPath);
-      _addDirectoryToZip(zipFile, exportDirPath, exportDirPath);
-      zipFile.close();
+      try {
+        _addDirectoryToZip(zipFile, exportDirPath, exportDirPath);
+      } finally {
+        zipFile.close();
+      }
     });
 
-    return File(zipPath);
+    completed = true;
+    return archiveFile;
   } finally {
+    if (!completed) await archiveFile?.deleteIgnoreError();
     // Always clean the staging tree, even if building/zipping threw.
-    exportDir.deleteIgnoreError(recursive: true);
+    await exportDir.deleteIgnoreError(recursive: true);
   }
 }
 
@@ -321,7 +355,7 @@ Future<int> importVeneraComics(
       final entry = manifest.comics[i];
       final comicDirName = '${entry.id}_${entry.comicType}';
       final comicDir = Directory(
-        FilePath.join(importDirPath, 'comics', comicDirName),
+        _archivePath(FilePath.join(importDirPath, 'comics'), comicDirName),
       );
       if (!comicDir.existsSync()) continue;
 
@@ -330,6 +364,15 @@ Future<int> importVeneraComics(
 
       final meta =
           jsonDecode(metaFile.readAsStringSync()) as Map<String, dynamic>;
+      if (meta['id'] != entry.id || meta['comicType'] != entry.comicType) {
+        throw const FormatException('Comic archive metadata does not match');
+      }
+      final coverName = (meta['cover'] as String?) ?? 'cover.jpg';
+      final srcCover = File(_archivePath(comicDir.path, coverName));
+      final destDir = Directory(
+        _archivePath(LocalManager().path, comicDirName),
+      );
+      final coverDestination = File(_archivePath(destDir.path, coverName));
 
       final comic = LocalComic(
         id: meta['id'] as String,
@@ -338,7 +381,7 @@ Future<int> importVeneraComics(
         tags: List<String>.from(meta['tags'] ?? []),
         directory: comicDirName,
         chapters: ComicChapters.fromJsonOrNull(meta['chapters']),
-        cover: (meta['cover'] as String?) ?? 'cover.jpg',
+        cover: coverName,
         comicType: ComicType(meta['comicType'] as int),
         downloadedChapters: List<String>.from(meta['downloadedChapters'] ?? []),
         createdAt: DateTime.fromMillisecondsSinceEpoch(
@@ -349,24 +392,26 @@ Future<int> importVeneraComics(
       await LocalManager().add(comic);
 
       // Copy files to local comics directory
-      final destDir = Directory(
-        FilePath.join(LocalManager().path, comicDirName),
-      );
       if (!destDir.existsSync()) {
         destDir.createSync(recursive: true);
       }
 
       // Move cover file (falls back to copy across volumes)
-      final coverName = (meta['cover'] as String?) ?? 'cover.jpg';
-      final srcCover = File(FilePath.join(comicDir.path, coverName));
       if (srcCover.existsSync()) {
-        _moveOrCopyFile(srcCover, FilePath.join(destDir.path, coverName));
+        coverDestination.parent.createSync(recursive: true);
+        _moveOrCopyFile(srcCover, coverDestination.path);
       }
 
       // Move chapter directories if hasImages
       if (entry.hasImages) {
         for (final entity in comicDir.listSync()) {
-          if (entity is Directory) {
+          if (entity is File &&
+              !comic.hasChapters &&
+              FileType.fromExtension(
+                entity.extension.toLowerCase(),
+              ).mime.startsWith('image/')) {
+            _moveOrCopyFile(entity, FilePath.join(destDir.path, entity.name));
+          } else if (entity is Directory) {
             final dirName = entity.name;
             if (dirName == 'meta.json') continue;
             final destChapter = Directory(FilePath.join(destDir.path, dirName));
