@@ -234,6 +234,46 @@ diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWeb
 index 53b668f6..66bcbe6e 100644
 --- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
 +++ b/ohos/src/main/ets/components/plugin/webview/in_app_webview/InAppWebViewClient.ets
+@@ -94,39 +94,1 @@ export default class InAppWebViewClient {
+-function hasRefererHeader(headers: Map<string, string>): boolean {
+-  if (headers.has('Referer') && headers.get('Referer') !== '') {
+-    return true;
+-  }
+-  if (headers.has('referer') && headers.get('referer') !== '') {
+-    return true;
+-  }
+-  return false;
+-}
+-
+-function isHttpOrHttpsUrl(url: string): boolean {
+-  return url.startsWith('http://') || url.startsWith('https://');
+-}
+-
+-// OHOS: after shouldOverrideUrlLoading returns ALLOW, loadUrl(url, headers) re-loads the URL
+-// and may drop Referer. Android keeps the engine-computed Referer from request.getRequestHeaders().
+-// Here we supplement from controller.getUrl() (current page URL) when Referer is missing — sufficient
+-// for merchant-to-WeChat-pay flows; iframe navigation or post-redirect edge cases may differ slightly.
+-function ensureRefererHeader(inAppWebView: InAppWebView, headers: Map<string, string>): Map<string, string> {
+-  if (hasRefererHeader(headers)) {
+-    return headers;
+-  }
+-  const result = new Map<string, string>();
+-  headers.forEach((value: string, key: string) => {
+-    result.set(key, value);
+-  });
+-  try {
+-    const referer = inAppWebView.getController().getUrl();
+-    if (referer != null && referer !== '' && isHttpOrHttpsUrl(referer)) {
+-      result.set('Referer', referer);
+-      Log.d(TAG, 'shouldOverrideUrlLoading: supplemented Referer=' + referer);
+-    }
+-  } catch (e) {
+-    Log.e(TAG, 'shouldOverrideUrlLoading: failed to supplement Referer', e);
+-  }
+-  return result;
+-}
+-
+ interface OHOSMessageLevels {
 @@ -461,22 +461,9 @@ export default class InAppWebViewClient {
      return true;
    }
@@ -260,6 +300,17 @@ index 53b668f6..66bcbe6e 100644
    }
  
    private isPrivateIpv4Host(host: string): boolean {
+@@ -3275,8 +3236,8 @@ class InnerShouldOverrideUrlLoadingCallback extends ShouldOverrideUrlLoadingCallback {
+   allowShouldOverrideUrlLoading(inAppWebView: InAppWebView, url: string, headers: Map<string, string>,
+     isForMainFrame: boolean) {
+     if (isForMainFrame) {
+-      const loadHeaders = ensureRefererHeader(inAppWebView, headers);
+-      this.inAppWebView!.getController().loadUrl(url, this.inAppWebView!.toWebHeaders(loadHeaders));
++      // Keep ArkWeb's referrer policy, including deliberately absent headers.
++      this.inAppWebView!.getController().loadUrl(url, this.inAppWebView!.toWebHeaders(headers));
+     }
+   }
+ };
 diff --git a/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets b/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets
 index fbff3d7d..aa82d5c8 100644
 --- a/ohos/src/main/ets/components/plugin/webview/in_app_webview/OhosWebView.ets
