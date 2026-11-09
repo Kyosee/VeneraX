@@ -7,6 +7,10 @@ const COMPLETION_NOTIFICATION_ID = 0x56454E41;
 const COMPLETION_NOTIFICATION_LABEL = 'venera.download.complete';
 const TRANSLATION_NOTIFICATION_ID = 0x56454E42;
 const TRANSLATION_NOTIFICATION_LABEL = 'venera.pre_translate';
+const FOLLOW_NOTIFICATION_ID = 0x56454E43;
+const FOLLOW_NOTIFICATION_LABEL = 'venera.follow_update';
+const FOLLOW_COMPLETION_ID = 0x56454E44;
+const FOLLOW_COMPLETION_LABEL = 'venera.follow_update.complete';
 
 interface TransferTask {
   tag: string;
@@ -37,7 +41,7 @@ export class BackgroundService {
   private permissionAsked = false;
   private running?: backgroundTaskManager.ContinuousTaskNotification;
   private published?: PublishedProgress;
-  private translationPublished?: PublishedProgress;
+  private ordinaryPublished = new Map<string, PublishedProgress>();
   private transientId?: number;
   private transientGeneration = 0;
   private transientExpired = false;
@@ -98,8 +102,8 @@ export class BackgroundService {
           task.progress = progress;
         }
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
-          if (!await this.reconcile()) return false;
-          if (tag === 'pre_translate') return this.translationPublished !== undefined;
+          if (!await this.reconcile(tag)) return false;
+          if (tag === 'pre_translate' || tag === 'follow_update') return this.ordinaryPublished.has(tag);
           return this.running !== undefined && this.desired.has(tag) && !this.blocked.has(tag);
         }));
       } else if ((download && call.method === 'stop') || (!download && call.method === 'remove')) {
@@ -107,19 +111,22 @@ export class BackgroundService {
         this.desired.delete(tag);
         this.blocked.delete(tag);
         this.replyWhen(result, this.enqueue((): Promise<boolean> => this.reconcile()));
-      } else if (download && call.method === 'complete') {
+      } else if (call.method === 'complete' && (download || this.readTag(call) === 'follow_update')) {
         const status: Any = call.argument('status');
         if (!this.validText(status)) throw new Error('Invalid status');
-        this.desired.delete('download');
-        this.blocked.delete('download');
+        const tag = download ? 'download' : 'follow_update';
+        const id = download ? COMPLETION_NOTIFICATION_ID : FOLLOW_COMPLETION_ID;
+        const label = download ? COMPLETION_NOTIFICATION_LABEL : FOLLOW_COMPLETION_LABEL;
+        this.desired.delete(tag);
+        this.blocked.delete(tag);
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
           const reconciled = await this.reconcile();
           if (this.disposed || !await notificationManager.isNotificationEnabled()) return false;
-          const agent = await this.notificationAgent(true);
+          const agent = await this.notificationAgent(download, !download);
           if (this.disposed) return false;
           await notificationManager.publish({
-            id: COMPLETION_NOTIFICATION_ID,
-            label: COMPLETION_NOTIFICATION_LABEL,
+            id: id,
+            label: label,
             wantAgent: agent,
             notificationSlotType: notificationManager.SlotType.OTHER_TYPES,
             content: {
@@ -128,7 +135,7 @@ export class BackgroundService {
             }
           });
           if (this.disposed) {
-            await notificationManager.cancel(COMPLETION_NOTIFICATION_ID, COMPLETION_NOTIFICATION_LABEL);
+            await notificationManager.cancel(id, label);
             return false;
           }
           return reconciled;
@@ -149,7 +156,7 @@ export class BackgroundService {
 
   private readTag(call: MethodCall): string {
     const tag: Any = call.argument('tag');
-    if (tag === 'pre_translate') return tag as string;
+    if (tag === 'pre_translate' || tag === 'follow_update') return tag as string;
     if (typeof tag !== 'string' || tag.length > 21 || !/^sync_(0|[1-9][0-9]*)$/.test(tag) ||
       !Number.isSafeInteger(Number(tag.substring(5)))) throw new Error('Invalid tag');
     return tag;
@@ -181,7 +188,7 @@ export class BackgroundService {
     const work = this.enqueue(async (): Promise<boolean> => {
       if (this.disposed) return false;
       if (await notificationManager.isNotificationEnabled()) return !this.disposed;
-      if (this.disposed || this.permissionAsked) return false;
+      if (this.disposed || this.permissionAsked || !this.foreground) return false;
       this.permissionAsked = true;
       await notificationManager.requestEnableNotification(this.context);
       return !this.disposed && await notificationManager.isNotificationEnabled();
@@ -196,28 +203,38 @@ export class BackgroundService {
   private activeTasks(): TransferTask[] {
     const tasks: TransferTask[] = [];
     this.desired.forEach((task: TransferTask, tag: string): void => {
-      if (tag !== 'pre_translate' && !this.blocked.has(tag)) tasks.push(task);
+      if (tag !== 'pre_translate' && tag !== 'follow_update' && !this.blocked.has(tag)) tasks.push(task);
     });
     return tasks;
   }
 
-  private notificationAgent(download: boolean): Promise<WantAgent> {
+  private notificationAgent(download: boolean, followUpdates: boolean = false): Promise<WantAgent> {
     return wantAgent.getWantAgent({
       wants: [{
         bundleName: this.context.abilityInfo.bundleName,
         abilityName: 'EntryAbility',
-        parameters: { 'venera.notification.route': download ? 'downloading' : 'tasks' }
+        parameters: { 'venera.notification.route': followUpdates ? 'follow_updates' : (download ? 'downloading' : 'tasks') }
       }],
       actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: download ? 0 : 1,
+      requestCode: followUpdates ? 2 : (download ? 0 : 1),
       actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     });
   }
 
-  private async reconcile(): Promise<boolean> {
+  private async reconcile(tag?: string): Promise<boolean> {
     const transfer = await this.reconcileTransfers();
-    const translation = await this.reconcileTranslation();
-    return transfer && translation;
+    let translation = false;
+    let follow = false;
+    try {
+      translation = await this.reconcileOrdinary('pre_translate');
+    } catch (_) {}
+    try {
+      follow = await this.reconcileOrdinary('follow_update');
+    } catch (_) {}
+    if (tag === 'pre_translate') return translation;
+    if (tag === 'follow_update') return follow;
+    if (tag !== undefined) return transfer;
+    return transfer && translation && follow;
   }
 
   private async reconcileTransfers(): Promise<boolean> {
@@ -341,40 +358,44 @@ export class BackgroundService {
     } catch (_) {}
   }
 
-  private async reconcileTranslation(): Promise<boolean> {
-    const task = this.desired.get('pre_translate');
+  private async reconcileOrdinary(tag: string): Promise<boolean> {
+    const translation = tag === 'pre_translate';
+    const id = translation ? TRANSLATION_NOTIFICATION_ID : FOLLOW_NOTIFICATION_ID;
+    const label = translation ? TRANSLATION_NOTIFICATION_LABEL : FOLLOW_NOTIFICATION_LABEL;
+    const task = this.desired.get(tag);
     if (this.disposed || task === undefined) {
-      this.cancelTranslationGrace();
-      if (this.translationPublished !== undefined) {
-        await notificationManager.cancel(TRANSLATION_NOTIFICATION_ID, TRANSLATION_NOTIFICATION_LABEL);
-        this.translationPublished = undefined;
+      if (translation) this.cancelTranslationGrace();
+      if (this.ordinaryPublished.has(tag)) {
+        await notificationManager.cancel(id, label);
+        this.ordinaryPublished.delete(tag);
       }
       return true;
     }
     if (!await notificationManager.isNotificationEnabled()) return false;
-    if (this.disposed || this.desired.get('pre_translate') !== task) return false;
-    const previous = this.translationPublished;
+    if (this.disposed || this.desired.get(tag) !== task) return false;
+    const previous = this.ordinaryPublished.get(tag);
     if (previous?.task === task && previous.status === task.status && previous.progress === task.progress) return true;
-    const agent = await this.notificationAgent(false);
-    if (this.disposed || this.desired.get('pre_translate') !== task) return false;
+    const agent = await this.notificationAgent(false, !translation);
+    if (this.disposed || this.desired.get(tag) !== task) return false;
     const snapshot: PublishedProgress = { task: task, status: task.status, progress: task.progress };
     await notificationManager.publish({
-      id: TRANSLATION_NOTIFICATION_ID,
-      label: TRANSLATION_NOTIFICATION_LABEL,
+      id: id,
+      label: label,
       wantAgent: agent,
+      isAlertOnce: true,
       notificationSlotType: notificationManager.SlotType.OTHER_TYPES,
       content: {
         notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
         normal: { title: 'VeneraX', text: snapshot.status }
       }
     });
-    this.translationPublished = snapshot;
-    if (this.disposed || this.desired.get('pre_translate') !== task) {
-      await notificationManager.cancel(TRANSLATION_NOTIFICATION_ID, TRANSLATION_NOTIFICATION_LABEL);
-      this.translationPublished = undefined;
+    this.ordinaryPublished.set(tag, snapshot);
+    if (this.disposed || this.desired.get(tag) !== task) {
+      await notificationManager.cancel(id, label);
+      this.ordinaryPublished.delete(tag);
       return false;
     }
-    this.requestTranslationGrace();
+    if (translation) this.requestTranslationGrace();
     return true;
   }
 

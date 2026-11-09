@@ -86,7 +86,10 @@ class BackgroundKeepAlive {
   /// 任务本身不受影响，只是失去后台保活。
   void update(String tag, String status, {int progress = 0}) {
     if (!_supported) return;
-    if (App.isOhos && !tag.startsWith('sync_') && tag != tagPreTranslate) {
+    if (App.isOhos &&
+        !tag.startsWith('sync_') &&
+        tag != tagPreTranslate &&
+        tag != tagFollowUpdate) {
       return;
     }
     if (App.isOhos && tag.startsWith('sync_') && _transferBackgroundCancelled) {
@@ -125,11 +128,23 @@ class BackgroundKeepAlive {
   /// 移除某类任务的保活通知。任务结束/取消/暂停时调用。
   void remove(String tag) {
     if (!_supported) return;
-    // A failed translation update can still leave native task state.
-    if (!_statuses.containsKey(tag) && tag != tagPreTranslate) return;
+    // Failed ordinary notification updates can still leave native task state.
+    if (!_statuses.containsKey(tag) &&
+        tag != tagPreTranslate &&
+        !(App.isOhos && tag == tagFollowUpdate)) {
+      return;
+    }
     _statuses.remove(tag);
     _progresses.remove(tag);
     unawaited(_invoke('remove', {'tag': tag}));
+  }
+
+  // OHOS uses an ordinary notification, without a data-transfer grant.
+  Future<void> completeFollowUpdate(String status) async {
+    if (!App.isOhos) return;
+    _statuses.remove(tagFollowUpdate);
+    _progresses.remove(tagFollowUpdate);
+    await _invoke('complete', {'tag': tagFollowUpdate, 'status': status});
   }
 
   Future<void> _pushUpdate(String tag, String status, int progress) async {
@@ -169,6 +184,8 @@ class BackgroundKeepAlive {
   /// 与下载保活共用同一套原生通知权限实现（同一权限，互不冲突）。
   Future<bool> _ensurePermission() async {
     if (await _invoke('notificationGranted') == true) return true;
+    // Native OHOS deduplicates prompts and defers them while backgrounded.
+    if (App.isOhos) return await _invoke('requestNotification') == true;
     if (_permissionAsked) return false;
     _permissionAsked = true;
     return await _invoke('requestNotification') == true;

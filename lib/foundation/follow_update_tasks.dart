@@ -7,6 +7,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/utils/data_sync.dart';
+import 'package:venera/utils/translations.dart';
 
 enum FollowUpdateTaskStatus { running, completed, canceled, failed }
 
@@ -228,6 +229,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
     }
     _runningIds.add(task.id);
     try {
+      _refreshKeepAlive(task);
       await for (var progress in updateFolders(
         task.folders,
         ignoreCheckTime,
@@ -284,6 +286,16 @@ class FollowUpdateTaskManager with ChangeNotifier {
       _progressNotifyTimer?.cancel();
       _progressNotifyTimer = null;
       _finalize(task);
+      if (task.status == FollowUpdateTaskStatus.completed && task.updated > 0) {
+        unawaited(
+          BackgroundKeepAlive.instance.completeFollowUpdate(
+            formatTaskStatus(
+              title: 'Follow Updates'.tl,
+              detail: '@c updates'.tlParams({'c': task.updated.toString()}),
+            ),
+          ),
+        );
+      }
       onTaskFinished?.call(task);
       notifyListeners();
     }
@@ -363,7 +375,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
         : '${task.checked}/${task.total}';
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagFollowUpdate,
-      formatTaskStatus(title: task.folderLabel, detail: detail),
+      formatTaskStatus(title: 'Checking for updates...'.tl, detail: detail),
     );
   }
 

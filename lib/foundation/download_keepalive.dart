@@ -153,6 +153,8 @@ class DownloadKeepAlive {
   /// 下载本身不受影响，只是失去后台保活。
   Future<bool> _ensurePermission() async {
     if (await _invoke('notificationGranted') == true) return true;
+    // Native OHOS deduplicates prompts and defers them while backgrounded.
+    if (App.isOhos) return await _invoke('requestNotification') == true;
     if (_permissionAsked) return false;
     _permissionAsked = true;
     return await _invoke('requestNotification') == true;

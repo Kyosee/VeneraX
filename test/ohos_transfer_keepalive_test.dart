@@ -191,4 +191,100 @@ void main() {
     },
     skip: ohos == null,
   );
+
+  test(
+    'a deferred native permission request can be retried from the foreground',
+    () async {
+      var requests = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'notificationGranted') return false;
+            if (call.method == 'requestNotification') return ++requests > 1;
+            return true;
+          });
+      final service = BackgroundKeepAlive.instance;
+      service.update(
+        BackgroundKeepAlive.tagFollowUpdate,
+        'Checking: background',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(calls.where((call) => call.method == 'update'), isEmpty);
+      service.update(
+        BackgroundKeepAlive.tagFollowUpdate,
+        'Checking: foreground',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, 2);
+      expect(calls.where((call) => call.method == 'update').length, 1);
+      service.remove(BackgroundKeepAlive.tagFollowUpdate);
+      await Future<void>.delayed(Duration.zero);
+    },
+    skip: ohos == null,
+  );
+
+  test(
+    'follow updates reach OHOS and completion does not request permission',
+    () async {
+      final updated = Completer<void>();
+      observe = (call) {
+        if (call.method == 'update') updated.complete();
+      };
+      final service = BackgroundKeepAlive.instance;
+      service.update(BackgroundKeepAlive.tagFollowUpdate, 'Checking: 0/2');
+      await updated.future.timeout(const Duration(seconds: 3));
+      final update = calls.last;
+      expect(update.arguments, {
+        'tag': 'follow_update',
+        'status': 'Checking: 0/2',
+        'progress': 0,
+      });
+      calls.clear();
+      await service.completeFollowUpdate('Found 1 update');
+      expect(calls.map((call) => call.method), ['complete']);
+      expect(calls.single.arguments, {
+        'tag': 'follow_update',
+        'status': 'Found 1 update',
+      });
+    },
+    skip: ohos == null,
+  );
+
+  test(
+    'ending a follow check during permission lookup suppresses late progress',
+    () async {
+      final service = BackgroundKeepAlive.instance;
+      observe = (call) {
+        if (call.method == 'notificationGranted') {
+          service.remove(BackgroundKeepAlive.tagFollowUpdate);
+        }
+      };
+      service.update(BackgroundKeepAlive.tagFollowUpdate, 'Checking: 0/3');
+      await Future<void>.delayed(Duration.zero);
+      expect(calls.where((call) => call.method == 'update'), isEmpty);
+      expect(calls.where((call) => call.method == 'remove').length, 1);
+    },
+    skip: ohos == null,
+  );
+
+  test(
+    'denied follow checks still remove native state and can retry when allowed',
+    () async {
+      granted = false;
+      final service = BackgroundKeepAlive.instance;
+      service.update(BackgroundKeepAlive.tagFollowUpdate, 'Checking: 0/4');
+      await Future<void>.delayed(Duration.zero);
+      expect(calls.where((call) => call.method == 'update'), isEmpty);
+      service.remove(BackgroundKeepAlive.tagFollowUpdate);
+      await Future<void>.delayed(Duration.zero);
+      expect(calls.last.method, 'remove');
+      granted = true;
+      service.update(BackgroundKeepAlive.tagFollowUpdate, 'Checking: 0/4');
+      await Future<void>.delayed(Duration.zero);
+      expect(calls.where((call) => call.method == 'update').length, 1);
+      service.remove(BackgroundKeepAlive.tagFollowUpdate);
+      await Future<void>.delayed(Duration.zero);
+    },
+    skip: ohos == null,
+  );
 }

@@ -26,6 +26,7 @@ function harness(options = {}) {
   const starts = [];
   const publishes = [];
   const intents = [];
+  const cancelRequests = [];
   const removedNotifications = [];
   const cancelledCallbacks = [];
   const transientRequests = [];
@@ -118,6 +119,9 @@ function harness(options = {}) {
         config.publishFailures--;
         throw new Error('Publish unavailable');
       }
+      if (request.label === config.publishFailureLabel && config.publishFailureLabel !== undefined) {
+        throw new Error('Selected notification publish unavailable');
+      }
       if (request.content.notificationContentType === 5) {
         assert.ok([...active.values()].some((task) => task.notificationId === request.id));
         assert.equal(request.notificationSlotType, 4);
@@ -128,7 +132,13 @@ function harness(options = {}) {
         assert.ok(request.template.data.progressValue >= 0 && request.template.data.progressValue <= 100);
       }
     },
-    async cancel(id, label) { removedNotifications.push({ id, label }); },
+    async cancel(id, label) {
+      cancelRequests.push({ id, label });
+      if (label === config.cancelFailureLabel && config.cancelFailureLabel !== undefined) {
+        throw new Error('Selected notification cancellation unavailable');
+      }
+      removedNotifications.push({ id, label });
+    },
   };
   const context = vm.createContext({
     MethodChannel,
@@ -169,7 +179,7 @@ function harness(options = {}) {
     cancellation?.({ id, reason: 1 });
   }
   return {
-    active, call, cancel, cancelledCallbacks, channels, config, intents,
+    active, call, cancel, cancelRequests, cancelledCallbacks, channels, config, intents,
     publishes, removedNotifications, service, starts, state, transientRequests, transientCancelled,
   };
 }
@@ -753,3 +763,336 @@ test('translation disposal cancels its grace and ignores later expiry', async ()
   assert.equal(h.removedNotifications.length, 1);
   assert.deepEqual(h.channels.get(BACKGROUND).events, []);
 });
+
+const startFollowUpdate = (h, status = 'Checking updates: 0/10', progress = 0) =>
+  h.call(BACKGROUND, 'update', { tag: 'follow_update', status, progress });
+
+test('follow updates publish once per change with their own route and no background grant', async () => {
+  const h = harness();
+  const started = startFollowUpdate(h);
+  await flush();
+  assert.deepEqual(started, success(true));
+  assert.equal(h.publishes.length, 1);
+  const note = h.publishes[0];
+  assert.equal(note.notificationSlotType, 65535);
+  assert.equal(note.content.notificationContentType, 0);
+  assert.deepEqual(note.content.normal, { title: 'VeneraX', text: 'Checking updates: 0/10' });
+  assert.equal(note.isAlertOnce, true);
+  assert.deepEqual(note.wantAgent.info, {
+    wants: [{
+      bundleName: 'com.github.venera.test', abilityName: 'EntryAbility',
+      parameters: { 'venera.notification.route': 'follow_updates' },
+    }],
+    actionType: 1, requestCode: 2, actionFlags: [3],
+  });
+  const duplicate = startFollowUpdate(h);
+  await flush();
+  assert.deepEqual(duplicate, success(true));
+  assert.equal(h.publishes.length, 1);
+  const advanced = startFollowUpdate(h, 'Checking updates: 1/10', 10);
+  await flush();
+  assert.deepEqual(advanced, success(true));
+  assert.equal(h.publishes.length, 2);
+  assert.equal(h.publishes[1].id, note.id);
+  assert.equal(h.publishes[1].label, note.label);
+  assert.equal(h.publishes[1].content.normal.text, 'Checking updates: 1/10');
+  h.service.setForeground(false);
+  assert.equal(h.starts.length, 0);
+  assert.equal(h.transientRequests.length, 0);
+});
+
+test('follow-update cancellation leaves concurrent download and translation notifications running', async () => {
+  const h = harness();
+  const download = startDownload(h);
+  const translation = startTranslation(h);
+  const follow = startFollowUpdate(h);
+  await flush();
+  for (const reply of [download, translation, follow]) assert.deepEqual(reply, success(true));
+  assert.equal(h.publishes.length, 3);
+  assert.equal(new Set(h.publishes.map((note) => note.id)).size, 3);
+  assert.equal(new Set(h.publishes.map((note) => note.wantAgent.info.requestCode)).size, 3);
+  const followNote = h.publishes.find((note) =>
+    note.wantAgent.info.wants[0].parameters['venera.notification.route'] === 'follow_updates');
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 1);
+  const removed = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+  await flush();
+  assert.deepEqual(removed, success(true));
+  assert.deepEqual(h.removedNotifications, [{ id: followNote.id, label: followNote.label }]);
+  assert.equal(h.active.size, 1);
+  assert.equal(h.state.stops, 0);
+  assert.equal(h.transientCancelled.length, 0);
+  assert.equal(h.publishes.length, 3);
+  const translationProgress = startTranslation(h, 'Translating: 2/10', 20);
+  const downloadProgress = startDownload(h, 30);
+  await flush();
+  assert.deepEqual(translationProgress, success(true));
+  assert.deepEqual(downloadProgress, success(true));
+  assert.equal(h.starts.length, 1);
+  assert.equal(h.transientRequests.length, 1);
+});
+
+test('ending download and translation cannot remove an ongoing follow-update notification', async () => {
+  const h = harness();
+  startDownload(h);
+  startTranslation(h);
+  startFollowUpdate(h);
+  await flush();
+  const followNote = h.publishes.find((note) =>
+    note.wantAgent.info.wants[0].parameters['venera.notification.route'] === 'follow_updates');
+  h.service.setForeground(false);
+  h.call(DOWNLOAD, 'stop');
+  h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+  await flush();
+  assert.equal(h.active.size, 0);
+  assert.equal(h.state.stops, 1);
+  assert.equal(h.transientCancelled.length, 1);
+  assert.equal(h.removedNotifications.some((note) => note.id === followNote.id), false);
+  const continued = startFollowUpdate(h, 'Checking updates: 2/10', 20);
+  await flush();
+  assert.deepEqual(continued, success(true));
+  assert.equal(h.publishes.at(-1).id, followNote.id);
+  assert.equal(h.starts.length, 1);
+  assert.equal(h.transientRequests.length, 1);
+});
+
+test('follow-update completion replaces progress with a persistent independent result notification', async () => {
+  const h = harness();
+  startFollowUpdate(h);
+  await flush();
+  const progressNote = h.publishes[0];
+  h.service.setForeground(false);
+  const completed = h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' });
+  await flush();
+  assert.deepEqual(completed, success(true));
+  assert.equal(h.publishes.length, 2);
+  const resultNote = h.publishes[1];
+  assert.notEqual(resultNote.id, progressNote.id);
+  assert.notEqual(resultNote.label, progressNote.label);
+  assert.equal(resultNote.notificationSlotType, 65535);
+  assert.equal(resultNote.content.notificationContentType, 0);
+  assert.deepEqual(resultNote.content.normal, { title: 'VeneraX', text: 'Found 2 updates' });
+  assert.equal(resultNote.wantAgent.info.requestCode, 2);
+  assert.equal(resultNote.wantAgent.info.wants[0].parameters['venera.notification.route'], 'follow_updates');
+  assert.deepEqual(h.removedNotifications, [{ id: progressNote.id, label: progressNote.label }]);
+  h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+  await flush();
+  startFollowUpdate(h, 'Checking updates: 0/3');
+  await flush();
+  h.service.dispose();
+  await flush();
+  assert.equal(h.removedNotifications.some((note) => note.id === resultNote.id), false);
+  assert.equal(h.starts.length, 0);
+  assert.equal(h.transientRequests.length, 0);
+  assert.equal(h.state.permissionRequests, 0);
+});
+
+test('follow-update cancellation only removes progress and never publishes a result', async () => {
+  const h = harness();
+  startFollowUpdate(h);
+  await flush();
+  const note = h.publishes[0];
+  const removed = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+  const duplicate = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+  await flush();
+  assert.deepEqual(removed, success(true));
+  assert.deepEqual(duplicate, success(true));
+  assert.equal(h.publishes.length, 1);
+  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
+  assert.equal(h.starts.length, 0);
+});
+
+test('denied follow-update notifications neither publish nor prompt in the background', async () => {
+  const h = harness({ granted: false });
+  h.service.setForeground(false);
+  const permission = h.call(BACKGROUND, 'requestNotification');
+  const update = startFollowUpdate(h);
+  const complete = h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' });
+  await flush();
+  for (const reply of [permission, update, complete]) assert.deepEqual(reply, success(false));
+  assert.equal(h.state.permissionRequests, 0);
+  assert.equal(h.publishes.length, 0);
+  assert.equal(h.starts.length, 0);
+  assert.equal(h.transientRequests.length, 0);
+  h.service.setForeground(true);
+  const foregroundPermission = h.call(BACKGROUND, 'requestNotification');
+  await flush();
+  assert.deepEqual(foregroundPermission, success(false));
+  assert.equal(h.state.permissionRequests, 1);
+  h.config.granted = true;
+  startDownload(h);
+  await flush();
+  assert.equal(h.publishes.length, 1);
+  assert.equal(h.publishes[0].wantAgent.info.wants[0].parameters['venera.notification.route'], 'downloading');
+});
+
+for (const action of ['remove', 'dispose']) {
+  test(`follow-update ${action} during publish removes the late notification and replies once`, async () => {
+    const wait = deferred();
+    const h = harness({ publishWait: wait });
+    const started = startFollowUpdate(h);
+    await flush();
+    assert.equal(h.publishes.length, 1);
+    const note = h.publishes[0];
+    const removed = action === 'remove' ? h.call(BACKGROUND, 'remove', { tag: 'follow_update' }) : undefined;
+    if (action === 'dispose') h.service.dispose();
+    wait.resolve();
+    await flush();
+    if (action === 'remove') {
+      assert.deepEqual(started, success(false));
+      assert.deepEqual(removed, success(true));
+    } else {
+      assert.equal(started.length, 1);
+      assert.equal(started[0].code, 'BACKGROUND_CLOSED');
+    }
+    assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
+    assert.equal(h.publishes.length, 1);
+    assert.equal(h.starts.length, 0);
+    assert.equal(h.transientRequests.length, 0);
+  });
+}
+
+test('dispose during follow-update completion removes the late result notification', async () => {
+  const wait = deferred();
+  const h = harness({ publishWait: wait });
+  const completed = h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' });
+  await flush();
+  assert.equal(h.publishes.length, 1);
+  const note = h.publishes[0];
+  h.service.dispose();
+  wait.resolve();
+  await flush();
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].code, 'BACKGROUND_CLOSED');
+  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
+});
+
+test('invalid follow-update requests cannot publish, remove valid progress, or grant background execution', async () => {
+  const h = harness();
+  startFollowUpdate(h);
+  await flush();
+  const bad = [
+    ...['follow_updates', 'follow_update\n', 'follow_update_1', '', 42, null].flatMap((tag) => [
+      ['update', { tag, status: 'Task', progress: 0 }],
+      ['remove', { tag }],
+      ['complete', { tag, status: 'Finished' }],
+    ]),
+    ...['', ' \n ', 42, null, 'x'.repeat(2049)].flatMap((status) => [
+      ['update', { tag: 'follow_update', status, progress: 0 }],
+      ['complete', { tag: 'follow_update', status }],
+    ]),
+  ];
+  for (const [method, args] of bad) {
+    const replies = h.call(BACKGROUND, method, args);
+    assert.equal(replies.length, 1, method + ': ' + JSON.stringify(args));
+    assert.equal(replies[0].code, 'BACKGROUND_ARGUMENT', method + ': ' + JSON.stringify(args));
+  }
+  for (const tag of ['pre_translate', 'sync_1']) {
+    assert.deepEqual(h.call(BACKGROUND, 'complete', { tag, status: 'Finished' }), [{ kind: 'notImplemented' }]);
+  }
+  const stillActive = startFollowUpdate(h);
+  await flush();
+  assert.deepEqual(stillActive, success(true));
+  assert.equal(h.publishes.length, 1);
+  assert.equal(h.removedNotifications.length, 0);
+  assert.equal(h.starts.length, 0);
+});
+
+for (const failedTag of ['pre_translate', 'follow_update']) {
+  test(`${failedTag} publish failure leaves other tasks successful and completion notifications deliverable`, async () => {
+    const failedLabel = failedTag === 'pre_translate' ? 'venera.pre_translate' : 'venera.follow_update';
+    const h = harness({ publishFailureLabel: failedLabel });
+    const failed = failedTag === 'pre_translate' ? startTranslation(h) : startFollowUpdate(h);
+    await flush();
+    assert.deepEqual(failed, success(false));
+    assert.ok(h.publishes.some((note) => note.label === failedLabel));
+    const other = failedTag === 'pre_translate' ? startFollowUpdate(h) : startTranslation(h);
+    const download = startDownload(h);
+    await flush();
+    assert.deepEqual(other, success(true));
+    assert.deepEqual(download, success(true));
+    assert.equal(h.starts.length, 1);
+    assert.equal(h.active.size, 1);
+
+    const completionReplies = [h.call(DOWNLOAD, 'complete', { status: 'Download finished' })];
+    const expectedLabels = ['venera.download.complete'];
+    if (failedTag === 'pre_translate') {
+      completionReplies.push(h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' }));
+      expectedLabels.push('venera.follow_update.complete');
+    }
+    await flush();
+    for (const reply of completionReplies) {
+      assert.equal(reply.length, 1);
+      assert.equal(reply[0].kind, 'success');
+    }
+    for (const label of expectedLabels) {
+      const note = h.publishes.find((request) => request.label === label);
+      assert.ok(note, label);
+      assert.equal(note.content.notificationContentType, 0);
+    }
+    assert.equal(h.active.size, 0);
+  });
+}
+
+for (const action of ['remove', 'dispose']) {
+  test(`translation cancellation failure does not prevent follow-update ${action} cleanup`, async () => {
+    const h = harness();
+    startTranslation(h);
+    startFollowUpdate(h);
+    await flush();
+    const translationNote = h.publishes.find((note) => note.label === 'venera.pre_translate');
+    const followNote = h.publishes.find((note) => note.label === 'venera.follow_update');
+    h.config.cancelFailureLabel = translationNote.label;
+    if (action === 'remove') {
+      h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+      h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+    } else {
+      h.service.dispose();
+    }
+    await flush();
+    assert.ok(h.cancelRequests.some((note) => note.id === translationNote.id));
+    assert.deepEqual(h.removedNotifications, [{ id: followNote.id, label: followNote.label }]);
+    assert.equal(h.publishes.length, 2);
+    if (action === 'remove') {
+      h.config.cancelFailureLabel = undefined;
+      const retry = h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+      await flush();
+      assert.deepEqual(retry, success(true));
+      assert.deepEqual(h.removedNotifications.at(-1), { id: translationNote.id, label: translationNote.label });
+    } else {
+      assert.equal(h.state.off, 1);
+    }
+  });
+}
+
+for (const failedTag of ['pre_translate', 'follow_update']) {
+  test(`${failedTag} cancellation failure cannot block other completion notifications`, async () => {
+    const h = harness();
+    startTranslation(h);
+    startFollowUpdate(h);
+    startDownload(h);
+    await flush();
+    const failedLabel = failedTag === 'pre_translate' ? 'venera.pre_translate' : 'venera.follow_update';
+    h.config.cancelFailureLabel = failedLabel;
+    h.call(BACKGROUND, 'remove', { tag: failedTag });
+    await flush();
+    assert.ok(h.cancelRequests.some((note) => note.label === failedLabel));
+    const completionReplies = [h.call(DOWNLOAD, 'complete', { status: 'Download finished' })];
+    const expectedLabels = ['venera.download.complete'];
+    if (failedTag === 'pre_translate') {
+      completionReplies.push(h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' }));
+      expectedLabels.push('venera.follow_update.complete');
+    }
+    await flush();
+    for (const reply of completionReplies) {
+      assert.equal(reply.length, 1);
+      assert.equal(reply[0].kind, 'success');
+    }
+    for (const label of expectedLabels) {
+      const note = h.publishes.find((request) => request.label === label);
+      assert.ok(note, label);
+      assert.equal(note.content.notificationContentType, 0);
+    }
+    assert.equal(h.active.size, 0);
+  });
+}
