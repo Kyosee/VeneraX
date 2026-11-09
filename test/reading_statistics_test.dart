@@ -68,17 +68,92 @@ void main() {
       expect(summary.today, const Duration(seconds: 30));
     });
 
-    test('summary separates sources and limits recent comics to 30 days', () {
-      final now = DateTime(2026, 8, 17, 12);
-      record('same', now, const Duration(minutes: 2), type: ComicType(1));
-      record('same', now, const Duration(minutes: 3), type: ComicType(2));
-      record('old', DateTime(2026, 7, 1), const Duration(minutes: 5));
+    test(
+      'summary separates sources and uses the same seven days for comics',
+      () {
+        final now = DateTime(2026, 8, 17, 12);
+        record('same', now, const Duration(minutes: 2), type: ComicType(1));
+        record('same', now, const Duration(minutes: 3), type: ComicType(2));
+        record('old', DateTime(2026, 7, 1), const Duration(minutes: 5));
+        record(
+          'outside-week',
+          DateTime(2026, 8, 10),
+          const Duration(minutes: 4),
+        );
+        record('future', DateTime(2026, 8, 18), const Duration(minutes: 6));
 
-      final summary = store.readSummary(now: now);
+        final summary = store.readSummary(now: now);
 
-      expect(summary.today, const Duration(minutes: 5));
-      expect(summary.total, const Duration(minutes: 10));
-      expect(summary.recentComics, hasLength(2));
+        expect(summary.today, const Duration(minutes: 5));
+        expect(summary.total, const Duration(minutes: 20));
+        expect(summary.lastSevenDays, const Duration(minutes: 5));
+        expect(summary.periodTotal, const Duration(minutes: 5));
+        expect(summary.recentComics, hasLength(2));
+      },
+    );
+
+    test('historical month includes leap day and excludes adjacent months', () {
+      record('before', DateTime(2024, 1, 31, 23), const Duration(minutes: 7));
+      record('same', DateTime(2024, 2, 1), const Duration(minutes: 2));
+      record(
+        'same',
+        DateTime(2024, 2, 29, 23, 59, 30),
+        const Duration(minutes: 1),
+      );
+      record(
+        'same',
+        DateTime(2024, 2, 10),
+        const Duration(minutes: 3),
+        type: ComicType(2),
+      );
+      record('after', DateTime(2024, 3, 1), const Duration(minutes: 9));
+
+      final result = store.readSummary(
+        now: DateTime(2026, 11, 9),
+        month: DateTime(2024, 2, 20),
+      );
+      expect(result.daily, hasLength(29));
+      expect(result.daily.first.day, DateTime(2024, 2, 1));
+      expect(result.daily.last.day, DateTime(2024, 2, 29));
+      expect(result.daily[1].duration, Duration.zero);
+      expect(result.daily.last.duration, const Duration(seconds: 30));
+      expect(result.periodTotal, const Duration(minutes: 5, seconds: 30));
+      expect(result.recentComics, hasLength(2));
+      expect(
+        result.recentComics.fold(
+          Duration.zero,
+          (sum, row) => sum + row.duration,
+        ),
+        result.periodTotal,
+      );
+      expect(result.today, Duration.zero);
+      expect(result.lastSevenDays, Duration.zero);
+    });
+
+    test('historical December and empty month keep exact calendar bounds', () {
+      record(
+        'previous',
+        DateTime(2025, 12, 31, 23, 59),
+        const Duration(minutes: 2),
+      );
+      final december = store.readSummary(
+        now: DateTime(2026, 11, 9),
+        month: DateTime(2025, 12),
+      );
+      final january = store.readSummary(
+        now: DateTime(2026, 11, 9),
+        month: DateTime(2026, 1),
+      );
+      final empty = store.readSummary(
+        now: DateTime(2026, 11, 9),
+        month: DateTime(2026, 2),
+      );
+      expect(december.periodTotal, const Duration(minutes: 1));
+      expect(january.periodTotal, const Duration(minutes: 1));
+      expect(empty.daily, hasLength(28));
+      expect(empty.periodTotal, Duration.zero);
+      expect(empty.recentComics, isEmpty);
+      expect(empty.total, const Duration(minutes: 2));
     });
 
     test('clear removes statistics only', () {

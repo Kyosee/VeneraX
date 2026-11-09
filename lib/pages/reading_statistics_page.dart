@@ -13,6 +13,8 @@ import 'package:venera/utils/translations.dart';
 
 const _sortKey = 'reading_statistics_sort';
 
+enum _ReadingRange { recent, month }
+
 Comic _readingStatisticsComic(ComicReadingStatistics comic) => Comic(
   comic.title,
   comic.cover,
@@ -31,12 +33,16 @@ class ReadingStatisticsPage extends StatefulWidget {
     this.summary,
     this.onClear,
     this.onDelete,
+    this.now,
+    this.loadSummary,
   });
 
   /// Test seam for rendering the page without opening the history database.
   final ReadingStatisticsSummary? summary;
   final VoidCallback? onClear;
   final ValueChanged<ComicReadingStatistics>? onDelete;
+  final DateTime? now;
+  final ReadingStatisticsSummary Function(DateTime? month)? loadSummary;
 
   @override
   State<ReadingStatisticsPage> createState() => _ReadingStatisticsPageState();
@@ -44,9 +50,15 @@ class ReadingStatisticsPage extends StatefulWidget {
 
 class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   late ReadingStatisticsSortType sortType;
+  _ReadingRange _range = _ReadingRange.recent;
+  late DateTime _month;
+
+  DateTime get _now => widget.now ?? DateTime.now();
+  DateTime get _currentMonth => DateTime(_now.year, _now.month);
 
   @override
   void initState() {
+    _month = _currentMonth;
     final syncedValue = appdata.settings[_sortKey];
     final storedValue = syncedValue ?? appdata.implicitData[_sortKey];
     sortType = ReadingStatisticsSortType.fromString(storedValue?.toString());
@@ -59,13 +71,20 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final month = _range == _ReadingRange.month ? _month : null;
+    if (widget.loadSummary != null) {
+      return _buildPage(context, widget.loadSummary!(month));
+    }
     if (widget.summary != null) {
       return _buildPage(context, widget.summary!);
     }
     return ListenableBuilder(
       listenable: HistoryManager(),
       builder: (context, _) {
-        return _buildPage(context, HistoryManager().getReadingStatistics());
+        return _buildPage(
+          context,
+          HistoryManager().getReadingStatistics(now: _now, month: month),
+        );
       },
     );
   }
@@ -112,9 +131,33 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           else ...[
             SliverToBoxAdapter(
               child: _PageSection(
+                top: 16,
+                child: _ReadingRangeSelector(
+                  range: _range,
+                  month: _month,
+                  canGoForward: _month.isBefore(_currentMonth),
+                  onPickMonth: _pickMonth,
+                  onRangeChanged: (range) {
+                    setState(() => _range = range);
+                  },
+                  onMonthChanged: (delta) {
+                    final next = DateTime(_month.year, _month.month + delta);
+                    if (next.isAfter(_currentMonth) || next.year < 1) return;
+                    setState(() => _month = next);
+                  },
+                  periodTotal: data.periodTotal,
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: _PageSection(
                 top: 28,
                 child: _SectionTitle(
-                  title: 'Last 7 Days Trend'.tl,
+                  title:
+                      (_range == _ReadingRange.month
+                              ? 'Monthly Reading Trend'
+                              : 'Last 7 Days Trend')
+                          .tl,
                   icon: Icons.bar_chart,
                 ),
               ),
@@ -122,7 +165,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             SliverToBoxAdapter(
               child: _PageSection(
                 top: 12,
-                child: _ReadingTrend(daily: data.daily),
+                child: _ReadingTrend(daily: data.daily, today: _now),
               ),
             ),
             SliverToBoxAdapter(
@@ -130,7 +173,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 top: 28,
                 bottom: 4,
                 child: _SectionTitle(
-                  title: 'Comics Read in Last 30 Days'.tl,
+                  title: 'Comics Read in Selected Period'.tl,
                   icon: Icons.menu_book_outlined,
                 ),
               ),
@@ -140,7 +183,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 child: _PageSection(
                   top: 16,
                   child: Text(
-                    'No comics read in the last 30 days'.tl,
+                    'No comics read in the selected period'.tl,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: context.colorScheme.onSurfaceVariant,
                     ),
@@ -155,8 +198,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                     horizontal: 16,
                     child: _RecentComicTile(
                       comic: comics[index],
-                      onDelete:
-                          widget.onDelete ?? _removeReadingStatisticsForComic,
+                      onDelete: _removeReadingStatisticsForComic,
                     ),
                   );
                 },
@@ -170,6 +212,20 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickMonth() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _month.isAfter(_now) ? _now : _month,
+      firstDate: DateTime(1),
+      lastDate: _now,
+      currentDate: _now,
+      helpText: 'Choose a date in the month to view'.tl,
+    );
+    if (date != null && mounted) {
+      setState(() => _month = DateTime(date.year, date.month));
+    }
   }
 
   void _showSortDialog() {
@@ -250,7 +306,101 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   }
 
   void _removeReadingStatisticsForComic(ComicReadingStatistics comic) {
-    HistoryManager().removeReadingStatistics(comic.id, comic.type);
+    showConfirmDialog(
+      context: context,
+      title: 'Delete Reading Statistics'.tl,
+      content:
+          'Delete all reading statistics for this comic, including other dates?'
+              .tl,
+      confirmText: 'Delete',
+      btnColor: context.colorScheme.error,
+      onConfirm: () {
+        if (widget.onDelete != null) {
+          widget.onDelete!(comic);
+        } else {
+          HistoryManager().removeReadingStatistics(comic.id, comic.type);
+        }
+      },
+    );
+  }
+}
+
+class _ReadingRangeSelector extends StatelessWidget {
+  const _ReadingRangeSelector({
+    required this.range,
+    required this.month,
+    required this.canGoForward,
+    required this.onRangeChanged,
+    required this.onMonthChanged,
+    required this.onPickMonth,
+    required this.periodTotal,
+  });
+
+  final _ReadingRange range;
+  final DateTime month;
+  final bool canGoForward;
+  final ValueChanged<_ReadingRange> onRangeChanged;
+  final ValueChanged<int> onMonthChanged;
+  final VoidCallback onPickMonth;
+  final Duration periodTotal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SegmentedButton<_ReadingRange>(
+          segments: [
+            ButtonSegment(
+              value: _ReadingRange.recent,
+              label: Text('Last 7 Days'.tl),
+            ),
+            ButtonSegment(
+              value: _ReadingRange.month,
+              label: Text('By Month'.tl),
+            ),
+          ],
+          selected: {range},
+          onSelectionChanged: (value) => onRangeChanged(value.first),
+          showSelectedIcon: false,
+          expandedInsets: EdgeInsets.zero,
+        ),
+        if (range == _ReadingRange.month) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                key: const Key('reading-previous-month'),
+                tooltip: 'Previous Month'.tl,
+                onPressed: month.year == 1 && month.month == 1
+                    ? null
+                    : () => onMonthChanged(-1),
+                icon: const Icon(Icons.chevron_left),
+              ),
+              TextButton(
+                key: const Key('reading-pick-month'),
+                onPressed: onPickMonth,
+                child: Text(
+                  '${month.year}-${month.month.toString().padLeft(2, '0')}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                key: const Key('reading-next-month'),
+                tooltip: 'Next Month'.tl,
+                onPressed: canGoForward ? () => onMonthChanged(1) : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 4),
+        Text(
+          '${'Selected Period'.tl}: ${formatReadingDuration(periodTotal)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
   }
 }
 
@@ -422,9 +572,10 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _ReadingTrend extends StatelessWidget {
-  const _ReadingTrend({required this.daily});
+  const _ReadingTrend({required this.daily, required this.today});
 
   final List<DailyReadingDuration> daily;
+  final DateTime today;
 
   @override
   Widget build(BuildContext context) {
@@ -435,18 +586,29 @@ class _ReadingTrend extends StatelessWidget {
     return SizedBox(
       key: const Key('reading-statistics-trend'),
       height: 156,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < daily.length; index++)
-            Expanded(
-              child: _ReadingBar(
-                item: daily[index],
-                maxMilliseconds: maxMilliseconds,
-                isToday: index == daily.length - 1,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            key: ValueKey('reading-trend-${daily.length}'),
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: math.max(constraints.maxWidth, daily.length * 40.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = 0; index < daily.length; index++)
+                    Expanded(
+                      child: _ReadingBar(
+                        item: daily[index],
+                        maxMilliseconds: maxMilliseconds,
+                        isToday: DateUtils.isSameDay(daily[index].day, today),
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -469,10 +631,13 @@ class _ReadingBar extends StatelessWidget {
         ? 0.0
         : item.duration.inMilliseconds / maxMilliseconds;
     final label = '${item.day.month}/${item.day.day}';
+    final description =
+        '${item.day.year}/$label  ${formatReadingDuration(item.duration)}';
     return Tooltip(
-      message: '$label  ${formatReadingDuration(item.duration)}',
+      message: description,
+      triggerMode: TooltipTriggerMode.tap,
       child: Semantics(
-        label: '$label ${formatReadingDuration(item.duration)}',
+        label: description,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 3),
           child: Column(
@@ -534,6 +699,7 @@ class _RecentComicTile extends StatelessWidget {
       groupTag: 'reading-statistics',
       endPane: SwipePane(
         dismissOnFullSwipe: true,
+        keepItemOnFullSwipe: true,
         onFullSwipe: () => onDelete(comic),
         actions: [
           SwipeAction(
@@ -652,6 +818,7 @@ class _EmptyStatistics extends StatelessWidget {
 }
 
 String formatReadingDuration(Duration duration) {
+  if (duration == Duration.zero) return '@m min'.tlParams({'m': 0});
   if (duration < const Duration(minutes: 1)) {
     return 'Less than a minute'.tl;
   }

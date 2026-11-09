@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/reading_statistics.dart';
@@ -134,6 +135,7 @@ void main() {
   });
 
   test('formats minute and hour boundaries', () {
+    expect(formatReadingDuration(Duration.zero), '0 min');
     expect(
       formatReadingDuration(const Duration(seconds: 59)),
       'Less than a minute',
@@ -230,6 +232,8 @@ void main() {
 
     // Default sort is last read first, so 'b' must precede 'a' even though the
     // source list holds the opposite order.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
+    await tester.pumpAndSettle();
     final recent = tester
         .getTopLeft(find.byKey(const ValueKey('reading-comic-1-b')))
         .dy;
@@ -300,17 +304,103 @@ void main() {
     final tile = find.byKey(const ValueKey('reading-comic-1-delete-me'));
     await tester.ensureVisible(tile);
     await tester.pumpAndSettle();
-    await tester.drag(
-      tile,
-      const Offset(-120, 0),
-    );
+    await tester.drag(tile, const Offset(-120, 0));
     await tester.pumpAndSettle();
     expect(find.text('Delete'), findsOneWidget);
 
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
+    expect(deleted, isNull);
+    expect(
+      find.text(
+        'Delete all reading statistics for this comic, including other dates?',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byType(FilledButton));
+    await tester.pumpAndSettle();
     expect(deleted, same(target));
   });
+
+  testWidgets(
+    'month navigation queries old records and keeps empty months usable',
+    (tester) async {
+      useNarrowViewport(tester);
+      final db = sqlite3.openInMemory();
+      addTearDown(db.dispose);
+      final store = ReadingStatisticsStore(db)..ensureSchema();
+      void record(String id, DateTime day, int minutes) => store.recordDuration(
+        id: id,
+        type: ComicType(1),
+        title: id,
+        subtitle: '',
+        cover: '',
+        startedAt: day,
+        duration: Duration(minutes: minutes),
+      );
+      final now = DateTime(2026, 1, 15);
+      record('current', now, 5);
+      record('december', DateTime(2025, 12, 31), 2);
+      await tester.pumpWidget(
+        wrap(
+          ReadingStatisticsPage(
+            now: now,
+            loadSummary: (month) => store.readSummary(now: now, month: month),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Selected Period: 5 min'), findsOneWidget);
+      await tester.tap(find.text('By Month'));
+      await tester.pumpAndSettle();
+      expect(find.text('2026-01'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('reading-next-month')))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const Key('reading-previous-month')));
+      await tester.pumpAndSettle();
+      expect(find.text('2025-12'), findsOneWidget);
+      expect(find.text('Selected Period: 2 min'), findsOneWidget);
+      expect(find.byKey(const Key('reading-comic-1-december')), findsOneWidget);
+      expect(find.byKey(const Key('reading-comic-1-current')), findsNothing);
+      final lastBar = tester.widget<DecoratedBox>(
+        find.byKey(const Key('reading-bar-12/31')),
+      );
+      final context = tester.element(
+        find.byKey(const Key('reading-statistics-trend')),
+      );
+      expect(
+        (lastBar.decoration as BoxDecoration).color,
+        Theme.of(context).colorScheme.primary,
+      );
+      expect(find.byTooltip('2025/12/31  2 min'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('reading-previous-month')));
+      await tester.pumpAndSettle();
+      expect(find.text('2025-11'), findsOneWidget);
+      expect(find.text('Selected Period: 0 min'), findsOneWidget);
+      expect(
+        find.text('No comics read in the selected period'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('reading-next-month')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('reading-pick-month')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Last 7 Days').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reading-comic-1-current')), findsOneWidget);
+      expect(find.byKey(const Key('reading-comic-1-december')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('loads the sort preference from synced settings', (tester) async {
     final previous = appdata.settings['reading_statistics_sort'];
@@ -338,6 +428,8 @@ void main() {
     );
     await tester.pump();
 
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
+    await tester.pumpAndSettle();
     final alpha = tester
         .getTopLeft(find.byKey(const ValueKey('reading-comic-1-b')))
         .dy;
@@ -350,6 +442,44 @@ void main() {
       'name_asc',
     );
   });
+
+  testWidgets(
+    'cancelling a full swipe leaves the comic available for deletion',
+    (tester) async {
+      useNarrowViewport(tester);
+      var deleted = false;
+      await tester.pumpWidget(
+        wrap(
+          ReadingStatisticsPage(
+            summary: summary(),
+            onDelete: (_) => deleted = true,
+          ),
+        ),
+      );
+      final tile = find.byKey(const Key('reading-comic-1-comic-1'));
+      await tester.ensureVisible(tile);
+      await tester.pumpAndSettle();
+      await tester.drag(tile, const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.drag(tile, const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete Reading Statistics'), findsOneWidget);
+      expect(deleted, isFalse);
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+      expect(tile, findsOneWidget);
+      expect(tester.getSize(tile).height, greaterThan(0));
+      expect(tester.takeException(), isNull);
+      await tester.drag(tile, const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.drag(tile, const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(deleted, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   group('sortComicReadingStatistics', () {
     final longAgo = comic(
