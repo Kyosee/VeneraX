@@ -223,7 +223,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             : null,
       );
 
-  void setSyncMode(WebdavSyncMode mode) {
+  void setSyncMode(WebdavSyncMode mode, {bool settle = true}) {
     appdata.implicitData[_syncModeKey] = mode.name;
     // Keep the legacy boolean coherent: QR config payloads and downgraded
     // installs still read it.
@@ -235,7 +235,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
     // Entering an automatic tier with an open account settles it now — this
     // also covers dataSaver→realtime, where no timer would ever fire again.
-    settlePendingChanges();
+    if (settle) {
+      settlePendingChanges();
+    } else {
+      // Saving a connection starts one explicit initial sync instead.
+      _pendingAutoUpload?.cancel();
+      _pendingAutoUpload = null;
+    }
     notifyListeners();
   }
 

@@ -611,7 +611,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
 
   bool syncLocalComicImages = false;
 
-  bool isTesting = false;
+  bool isSaving = false;
 
   bool isTestingConnection = false;
 
@@ -714,61 +714,46 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     await _saveConfig();
   }
 
-  /// Persists the WebDAV config the form currently holds, then runs a
-  /// best-effort initial sync (unless the tier is manual). Pops the settings
-  /// page when done. Shared by the Save button and the QR-scan handler.
+  /// Persists the config, then starts one initial sync outside the form.
   Future<void> _saveConfig() async {
-    if (url.trim().isEmpty && user.trim().isEmpty && pass.trim().isEmpty) {
-      appdata.settings['webdav'] = [];
-      // Persist the tier the form holds (it may come from a QR scan that is
-      // only applied on Save). With no config the tier stays inert —
-      // everything gates on isConfigured — and activates once a config is
-      // added (#67 semantics).
-      DataSync().setSyncMode(syncMode);
-      appdata.saveData();
-      context.showMessage(message: "Saved".tl);
-      App.rootPop();
-      return;
-    }
-
-    final config = [url.trim(), user.trim(), pass];
+    if (isSaving) return;
+    setState(() => isSaving = true);
+    final previousConfig = appdata.settings['webdav'];
+    final previousDisabledFields = appdata.settings['disableSyncFields'];
+    final mode = syncMode;
+    final config = url.trim().isEmpty && user.trim().isEmpty && pass.trim().isEmpty
+        ? <String>[]
+        : [url.trim(), user.trim(), pass];
     appdata.settings['webdav'] = config;
     appdata.settings['disableSyncFields'] = disableSync;
-    DataSync().setSyncMode(syncMode);
-
-    // Persisting the configuration always succeeds at this point. The initial
-    // sync below is best-effort: its result is only surfaced as a hint and
-    // never rolls the config back.
-    appdata.saveData();
-
-    if (syncMode == WebdavSyncMode.manual) {
-      // No automatic uploads wanted; skip the immediate test sync too — the
-      // user triggers everything by hand.
-      context.showMessage(message: "Saved".tl);
-      App.rootPop();
+    try {
+      // The explicit sync below owns this save; no second debounced upload.
+      await appdata.saveData(false);
+    } catch (e, s) {
+      appdata.settings['webdav'] = previousConfig;
+      appdata.settings['disableSyncFields'] = previousDisabledFields;
+      Log.error('Save WebDAV config', e, s);
+      if (mounted) {
+        setState(() => isSaving = false);
+        context.showMessage(message: '${"Error".tl}: $e');
+      }
       return;
     }
-
-    setState(() {
-      isTesting = true;
-    });
-    // Use syncData() instead of uploadData() so a fresh install with no local
-    // data downloads the remote backup instead of being blocked by the
-    // empty-data upload guards.
-    var syncResult = await DataSync().syncData();
-    if (!mounted) return;
-    setState(() {
-      isTesting = false;
-    });
-    if (syncResult.error) {
-      context.showMessage(
-        message: "Saved, but sync failed: @error".tlParams({
-          "error": syncResult.errorMessage ?? "",
-        }),
+    final sync = DataSync();
+    sync.setSyncMode(mode, settle: false);
+    if (config.isNotEmpty && mode != WebdavSyncMode.manual) {
+      // Progress and failures remain available in the sync status/task UI.
+      unawaited(
+        sync.syncData().then<void>(
+          (_) {},
+          onError: (Object e, StackTrace s) {
+            Log.error('Data Sync', e, s);
+          },
+        ),
       );
-    } else {
-      context.showMessage(message: "Saved".tl);
     }
+    if (!mounted) return;
+    context.showMessage(message: "Saved".tl);
     App.rootPop();
   }
 
@@ -1029,7 +1014,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             const SizedBox(height: 16),
             Center(
               child: Button.filled(
-                isLoading: isTesting,
+                isLoading: isSaving,
                 onPressed: _saveConfig,
                 child: Text("Save".tl),
               ),
