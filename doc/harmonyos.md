@@ -1,9 +1,10 @@
-# HarmonyOS development
+# VeneraX HarmonyOS development
 
-Experimental platform bootstrap. Native and reader pipeline probes run on a
-HarmonyOS x64 emulator; the complete mobile application is not ready. Directory
-access, biometric authentication and PDF still need device validation.
-Do not distribute this debug HAP as a working Venera release.
+Experimental HarmonyOS port of VeneraX. The complete application builds for
+ARM64 and x64; runtime validation currently uses the official x64 phone emulator.
+Directory access, credential authentication, native PDF rendering and signed
+phone installation still need a suitable device. The unsigned debug HAP is for
+local emulator testing and is not a distributable VeneraX release.
 
 ## Isolated workspace
 
@@ -42,6 +43,10 @@ separate isolates, Unicode ZIP entries, 7z extraction and PNG pixel round trips.
 Restart it: the launch counter must increase. Persistent probe data uses only
 a dedicated `ohos_smoke.db` inside the app sandbox.
 
+For the complete application, add `-Target lib/main.dart`. Add
+`-TargetPlatform ohos-arm64` when building for an ARM device. A probe is a separate
+entrypoint: rebuild and reinstall the complete application after probe validation.
+
 Use `-Target tool/ohos_network_smoke.dart` for the HTTP probe. It runs local
 servers on the device and verifies DNS, redirects, cookies, streams, a worker
 isolate, the app's Dio adapter, cancellation, timeout and an HTTP proxy. Its
@@ -62,6 +67,17 @@ download, and offline reads after closing the server. Force-stop and start
 the app a second time to verify source, progress and downloads persist across
 processes. All probe data stays in a separate `ohos_reader_probe` directory.
 This does not verify reader gestures, background recovery or synchronization.
+
+Use `-Target tool/ohos_reader_ui_smoke.dart` for the production Reader with
+generated pages, six reading modes, volume navigation, saved progress and the
+image enhancement shader. It uses the reader probe's isolated data directory.
+Interactive results must be checked separately from compilation.
+
+Use `-Target tool/ohos_backup_smoke.dart` for a complete `.venera` backup
+round trip in a fresh temporary directory. It uploads and downloads through a
+local authenticated WebDAV server and the production RHttpAdapter, modifies
+the fixture, then restores scripts, settings, history, favorites and cookies.
+It never configures a remote sync account or restores into the normal app data.
 
 Use `-Target tool/ohos_webview_smoke.dart` for the WebView probe. It verifies
 initial custom headers and redirects, JavaScript results, native and HttpOnly
@@ -85,8 +101,11 @@ nor mocked bridge tests prove that every device supports directory selection.
 The official API 26 phone emulator currently advertises folder selection but
 does not expose a completion action inside a directory. A standalone native
 UIAbility using the documented FILE/FOLDER options reproduces this behavior.
-Directory imports, custom storage paths and folder-based comic exports still
-need a working picker and an authorized-directory round trip on a suitable device.
+Directory imports and custom storage paths still need a working picker and an
+authorized-directory round trip on a suitable device.
+HarmonyOS comic exports use the system save dialog for each generated CBZ, PDF,
+EPUB or `.venera_comics` file. Cancellation stops the task; an unsuccessful save
+does not count as a completed export. Merged comic archives use one save dialog.
 
 Scan Kit provides the system QR scanner; opening and cancelling its UI is verified.
 Cold and warm notification Wants route the complete app to downloading and tasks.
@@ -104,12 +123,6 @@ actual API availability and all configured presets before showing the setting.
 PNGs; after editing icon assets, `dart tool/prepare_ohos_icons.dart` refreshes them
 without re-preparing dependencies. Earlier systems keep their default icon.
 
-`tool/ohos_backup_smoke.dart` prepares an isolated dataset and exercises the real
-backup, HTTP WebDAV and restore paths. `tool/ohos_reader_ui_smoke.dart` opens the
-production Reader with generated local pages for gesture, volume, orientation
-and shader checks. A successful build or static analysis of these probes is not
-a device pass; record their actual results separately.
-
 `-Target tool/ohos_pdf_smoke.dart` exercises PDF conversion through the official
 PDF Kit. Huawei does not support this kit on the x86 emulator; an ARM emulator
 or real device is required for native rendering verification. Lifecycle checks
@@ -119,6 +132,29 @@ Those tests do not substitute for native PDF rendering.
 
 The unsigned package is for the local emulator. ARM64 compilation does not
 verify a real phone. Device signing and end-user sideloading remain unverified.
+
+## Validation coverage
+
+The following workflows have run on the API 26 x64 emulator. Generated fixtures
+are used by the checked-in probes; private acceptance data must stay outside the
+repository, build inputs, logs and screenshots. Never upload a user's backup to
+cloud devices or external analysis services.
+
+| Workflow | Observed result |
+|---|---|
+| Source and network | QuickJS import, search, details, chapters, image headers/pixels, TLS rejection, cookies, proxy, cancellation and restart persistence passed |
+| Reader | Six reading modes, gesture and volume navigation, double-tap zoom, portrait/landscape rotation and saved progress passed |
+| Downloads | Queued complete chapters, restart persistence, offline image decoding and background transfer/recovery passed |
+| Backup and WebDAV | Export/restore and authenticated loopback PUT/GET passed, including settings, source data, history, favorites and cookies |
+| Comic export | CBZ, PDF, EPUB and single/merged `.venera_comics` system saves passed; cancellation did not count as completion |
+| Images and OCR | Native PNG, image enhancement shader, real OCR models, local translation script and stored translated-image redraw passed |
+| System integration | File picker round trip/cancellation, share-panel cancellation, WebView storage, notification routes, volume and icon switching passed |
+
+Remaining device checks include directory authorization, enrolled PIN/biometric
+success, ARM PDF Kit import/rendering, real QR recognition, source-specific login
+and online translation services. Existing bridge/unit tests cover error handling
+but do not replace those device checks. Signing and public sideloading must be
+validated separately before publishing a test release.
 
 ## Dependencies
 

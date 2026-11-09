@@ -10,7 +10,6 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
-import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
@@ -27,6 +26,37 @@ const _chapter = 'chapter_1';
 const _title = '鸿蒙本地测试漫画';
 const _width = 32;
 const _height = 16;
+
+class _ProbeDeadline {
+  _ProbeDeadline(this.timeout);
+
+  final Duration timeout;
+  final Stopwatch _clock = Stopwatch()..start();
+  bool _expired = false;
+
+  Future<T> step<T>(
+    String name,
+    Future<T> Function() action, {
+    Duration? limit,
+  }) {
+    final remaining = timeout - _clock.elapsed;
+    if (_expired || remaining <= Duration.zero) {
+      _expired = true;
+      throw TimeoutException(
+        'Reader probe deadline reached before $name',
+        timeout,
+      );
+    }
+    final wait = limit != null && limit < remaining ? limit : remaining;
+    return action().timeout(
+      wait,
+      onTimeout: () {
+        _expired = true;
+        throw TimeoutException('Reader probe timed out during $name', wait);
+      },
+    );
+  }
+}
 
 int _pixel(int page, int index) =>
     0xff000000 | ((index * 2654435761 + page * 0x123456) & 0xffffff);
@@ -73,8 +103,15 @@ class OhosReaderProbe extends ComicSource {
 }
 ''';
 
-Future<void> _checkImage(List<int> bytes, int page) async {
-  final image = await pixels.Image.decodeImage(Uint8List.fromList(bytes));
+Future<void> _checkImage(
+  List<int> bytes,
+  int page,
+  _ProbeDeadline deadline,
+) async {
+  final image = await deadline.step(
+    'decode image $page',
+    () => pixels.Image.decodeImage(Uint8List.fromList(bytes)),
+  );
   check(
     image.width == _width && image.height == _height,
     'Image dimensions changed.',
@@ -100,23 +137,32 @@ void _checkHistory(History? history, String comicId) {
   check(setEquals(history.readEpisode, {'1'}), 'Read chapter marks changed.');
 }
 
-Future<void> _checkOffline(LocalManager local, String comicId) async {
+Future<void> _checkOffline(
+  LocalManager local,
+  String comicId,
+  _ProbeDeadline deadline,
+) async {
   final type = ComicType.fromKey(_sourceKey);
   check(local.isDownloaded(comicId, type, 1), 'Downloaded chapter missing.');
-  final pages = await local.getImages(comicId, type, _chapter);
+  final pages = await deadline.step(
+    'offline page list',
+    () => local.getImages(comicId, type, _chapter),
+  );
   check(pages.length == 2, 'Offline chapter has the wrong number of pages.');
   for (var page = 0; page < pages.length; page++) {
     check(pages[page].startsWith('file://'), 'Offline page is not local.');
-    await _checkImage(
-      await File.fromUri(Uri.parse(pages[page])).readAsBytes(),
-      page,
+    final bytes = await deadline.step(
+      'read offline image $page',
+      () => File.fromUri(Uri.parse(pages[page])).readAsBytes(),
     );
+    await _checkImage(bytes, page, deadline);
   }
 }
 
 Future<void> _waitForDownload(
   LocalManager local,
   ImagesDownloadTask task,
+  _ProbeDeadline deadline,
 ) async {
   final done = Completer<void>();
   void changed() {
@@ -134,10 +180,15 @@ Future<void> _waitForDownload(
   local.addListener(changed);
   task.addListener(changed);
   try {
-    local.addTask(task);
-    changed();
-    await done.future.timeout(const Duration(seconds: 30));
-    await local.saveCurrentDownloadingTasks();
+    await deadline.step('chapter download', () {
+      local.addTask(task);
+      changed();
+      return done.future;
+    }, limit: const Duration(seconds: 30));
+    await deadline.step(
+      'save download queue',
+      local.saveCurrentDownloadingTasks,
+    );
   } finally {
     local.removeListener(changed);
     task.removeListener(changed);
@@ -146,170 +197,221 @@ Future<void> _waitForDownload(
 }
 
 Future<String> runReaderProbe() async {
-  await App.init();
-  // All production managers below are redirected before their first open.
-  App.dataPath = '${App.dataPath}/ohos_reader_probe';
-  App.cachePath = '${App.cachePath}/ohos_reader_probe';
-  await Directory(App.dataPath).create(recursive: true);
-  await Directory(App.cachePath).create(recursive: true);
-  await appdata.init();
-  appdata.settings['proxy'] = 'direct';
-  await AppTranslation.init();
-  await nativeInitRhttp();
-  SingleInstanceCookieJar('${App.dataPath}/cookie.db');
-  await DomainDatabase().init(App.dataPath);
-  await JsEngine().init();
-  await ComicSourceManager().init();
-  await HistoryManager().init();
-  await LocalManager().init();
-  // A previous failed probe must not resume requests to its old loopback port.
-  if (LocalManager().downloadingTasks.isNotEmpty) {
-    LocalManager().pauseAll();
-    for (final task in LocalManager().downloadingTasks.toList()) {
-      LocalManager().removeTask(task);
-    }
-    await LocalManager().saveCurrentDownloadingTasks();
-  }
-  await CacheManager().ready;
-
-  final completedFile = File('${App.dataPath}/completed_runs');
-  final completed = await completedFile.exists()
-      ? int.parse(await completedFile.readAsString())
-      : 0;
-  if (completed > 0) {
-    check(
-      ComicSource.find(_sourceKey) != null,
-      'Source did not survive restart.',
-    );
-    _checkHistory(
-      HistoryManager().find('probe_$completed', ComicType.fromKey(_sourceKey)),
-      'probe_$completed',
-    );
-    await _checkOffline(LocalManager(), 'probe_$completed');
-  }
-
-  final comicId = 'probe_${completed + 1}';
-  final encoded = <Uint8List>[
-    for (var page = 0; page < 2; page++)
-      pixels.Image(
-        Uint32List.fromList(
-          List.generate(_width * _height, (index) => _pixel(page, index)),
-        ),
-        _width,
-        _height,
-      ).encodePng(),
-  ];
-  check(
-    encoded.every((bytes) => bytes.length >= 100),
-    'Fixture must pass the download pipeline tiny-response guard.',
-  );
-  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-  final base = 'http://127.0.0.1:${server.port}';
-  final requests = <String, int>{};
-  String? serverError;
-  server.listen((request) async {
-    try {
-      final path = request.uri.path;
-      requests[path] = (requests[path] ?? 0) + 1;
-      request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
-      Object? body;
-      switch (path) {
-        case '/source.js':
-          request.response.headers.contentType = ContentType(
-            'text',
-            'javascript',
-            charset: 'utf-8',
-          );
-          request.response.write(_script(base));
-        case '/search':
-          check(
-            request.uri.queryParameters['q'] == '鸿蒙',
-            'Search keyword was corrupted.',
-          );
-          check(
-            request.uri.queryParameters['page'] == '1',
-            'Search pagination changed.',
-          );
-          body = {
-            'comics': [
-              {
-                'id': comicId,
-                'title': _title,
-                'subtitle': '本地自制内容',
-                'cover': '$base/cover.png',
-              },
-            ],
-            'maxPage': 1,
-          };
-        case final value when value == '/comic/$comicId':
-          body = {
-            'title': _title,
-            'subtitle': '本地自制内容',
-            'cover': '$base/cover.png',
-            'description': 'Offline development fixture',
-            'tags': {
-              '类型': ['测试'],
-            },
-            'chapters': {_chapter: '第一章'},
-            'maxPage': 2,
-          };
-        case '/pages':
-          check(
-            request.uri.queryParameters['id'] == comicId &&
-                request.uri.queryParameters['ep'] == _chapter,
-            'Chapter identifiers changed.',
-          );
-          body = {
-            'images': ['$base/0.png', '$base/1.png'],
-          };
-        case '/cover.png':
-          request.response.headers.contentType = ContentType('image', 'png');
-          request.response.add(encoded[0]);
-        case '/0.png':
-        case '/1.png':
-          check(
-            request.headers.value('X-Venera-Probe') == '$comicId/$_chapter',
-            'Image loading configuration header missing.',
-          );
-          request.response.headers.contentType = ContentType('image', 'png');
-          request.response.add(encoded[path == '/0.png' ? 0 : 1]);
-        default:
-          throw StateError('Unexpected request: $path');
-      }
-      if (body != null) {
-        request.response.headers.contentType = ContentType.json;
-        request.response.write(jsonEncode(body));
-      }
-    } catch (error) {
-      serverError = error.toString();
-      request.response.statusCode = HttpStatus.internalServerError;
-    } finally {
-      await request.response.close();
-    }
-  });
-
+  final deadline = _ProbeDeadline(const Duration(seconds: 90));
+  HttpServer? activeServer;
+  var acceptingServer = true;
   try {
+    await deadline.step('application paths', App.init);
+    // All production managers below are redirected before their first open.
+    App.dataPath = '${App.dataPath}/ohos_reader_probe';
+    App.cachePath = '${App.cachePath}/ohos_reader_probe';
+    await deadline.step(
+      'data directory',
+      () => Directory(App.dataPath).create(recursive: true),
+    );
+    await deadline.step(
+      'cache directory',
+      () => Directory(App.cachePath).create(recursive: true),
+    );
+    await deadline.step('settings', appdata.init);
+    appdata.settings['proxy'] = 'direct';
+    await deadline.step('translations', AppTranslation.init);
+    await deadline.step('HTTP runtime', nativeInitRhttp);
+    SingleInstanceCookieJar('${App.dataPath}/cookie.db');
+    await deadline.step('domain database', () => App.domain.init(App.dataPath));
+    await deadline.step('JavaScript runtime', JsEngine().init);
+    await deadline.step('comic sources', ComicSourceManager().init);
+    await deadline.step('history database', HistoryManager().init);
+    await deadline.step('local library', LocalManager().init);
+    // A previous failed probe must not resume requests to its old loopback port.
+    if (LocalManager().downloadingTasks.isNotEmpty) {
+      LocalManager().pauseAll();
+      for (final task in LocalManager().downloadingTasks.toList()) {
+        LocalManager().removeTask(task);
+      }
+      await deadline.step(
+        'clear old queue',
+        LocalManager().saveCurrentDownloadingTasks,
+      );
+    }
+    await deadline.step('image cache', () => CacheManager().ready);
+
+    final completedFile = File('${App.dataPath}/completed_runs');
+    final completed =
+        await deadline.step('launch counter lookup', completedFile.exists)
+        ? int.parse(
+            await deadline.step(
+              'launch counter read',
+              completedFile.readAsString,
+            ),
+          )
+        : 0;
+    if (completed > 0) {
+      check(
+        ComicSource.find(_sourceKey) != null,
+        'Source did not survive restart.',
+      );
+      _checkHistory(
+        HistoryManager().find(
+          'probe_$completed',
+          ComicType.fromKey(_sourceKey),
+        ),
+        'probe_$completed',
+      );
+      await _checkOffline(LocalManager(), 'probe_$completed', deadline);
+    }
+
+    final comicId = 'probe_${completed + 1}';
+    final encoded = <Uint8List>[
+      for (var page = 0; page < 2; page++)
+        pixels.Image(
+          Uint32List.fromList(
+            List.generate(_width * _height, (index) => _pixel(page, index)),
+          ),
+          _width,
+          _height,
+        ).encodePng(),
+    ];
+    check(
+      encoded.every((bytes) => bytes.length >= 100),
+      'Fixture must pass the download pipeline tiny-response guard.',
+    );
+    final server = await deadline.step('bind fixture server', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      // A bind completing after timeout must not leave an unowned listener.
+      if (!acceptingServer) {
+        await server.close(force: true);
+        throw StateError('Reader probe already stopped');
+      }
+      activeServer = server;
+      return server;
+    });
+    final base = 'http://127.0.0.1:${server.port}';
+    final requests = <String, int>{};
+    String? serverError;
+    server.listen((request) async {
+      try {
+        final path = request.uri.path;
+        requests[path] = (requests[path] ?? 0) + 1;
+        request.response.headers.set(
+          HttpHeaders.cacheControlHeader,
+          'no-store',
+        );
+        Object? body;
+        switch (path) {
+          case '/source.js':
+            request.response.headers.contentType = ContentType(
+              'text',
+              'javascript',
+              charset: 'utf-8',
+            );
+            request.response.write(_script(base));
+          case '/search':
+            check(
+              request.uri.queryParameters['q'] == '鸿蒙',
+              'Search keyword was corrupted.',
+            );
+            check(
+              request.uri.queryParameters['page'] == '1',
+              'Search pagination changed.',
+            );
+            body = {
+              'comics': [
+                {
+                  'id': comicId,
+                  'title': _title,
+                  'subtitle': '本地自制内容',
+                  'cover': '$base/cover.png',
+                },
+              ],
+              'maxPage': 1,
+            };
+          case final value when value == '/comic/$comicId':
+            body = {
+              'title': _title,
+              'subtitle': '本地自制内容',
+              'cover': '$base/cover.png',
+              'description': 'Offline development fixture',
+              'tags': {
+                '类型': ['测试'],
+              },
+              'chapters': {_chapter: '第一章'},
+              'maxPage': 2,
+            };
+          case '/pages':
+            check(
+              request.uri.queryParameters['id'] == comicId &&
+                  request.uri.queryParameters['ep'] == _chapter,
+              'Chapter identifiers changed.',
+            );
+            body = {
+              'images': ['$base/0.png', '$base/1.png'],
+            };
+          case '/cover.png':
+            request.response.headers.contentType = ContentType('image', 'png');
+            request.response.add(encoded[0]);
+          case '/0.png':
+          case '/1.png':
+            check(
+              request.headers.value('X-Venera-Probe') == '$comicId/$_chapter',
+              'Image loading configuration header missing.',
+            );
+            request.response.headers.contentType = ContentType('image', 'png');
+            request.response.add(encoded[path == '/0.png' ? 0 : 1]);
+          default:
+            throw StateError('Unexpected request: $path');
+        }
+        if (body != null) {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode(body));
+        }
+      } catch (error) {
+        serverError = error.toString();
+        request.response.statusCode = HttpStatus.internalServerError;
+      } finally {
+        await request.response.close();
+      }
+    });
+
     final prior = ComicSource.find(_sourceKey);
     if (prior != null) {
       ComicSourceManager().remove(_sourceKey);
-      await File(prior.filePath).delete();
+      await deadline.step(
+        'replace old source',
+        () => File(prior.filePath).delete(),
+      );
     }
     final client = AppDio();
-    final response = await client.get<String>('$base/source.js');
-    client.close();
-    final imported = await ComicSourceParser().createAndParse(
-      response.data!,
-      'probe.js',
+    late final String script;
+    try {
+      final response = await deadline.step(
+        'download source',
+        () => client.get<String>('$base/source.js'),
+      );
+      script = response.data!;
+    } finally {
+      client.close(force: true);
+    }
+    final imported = await deadline.step(
+      'parse source',
+      () => ComicSourceParser().createAndParse(script, 'probe.js'),
     );
     check(ComicSourceManager().add(imported), 'Source registration failed.');
     check(
-      await File(imported.filePath).readAsString() == _script(base),
+      await deadline.step(
+            'verify source file',
+            () => File(imported.filePath).readAsString(),
+          ) ==
+          _script(base),
       'Source file changed.',
     );
-    await ComicSourceManager().reload();
+    await deadline.step('reload source', ComicSourceManager().reload);
     final source = ComicSource.find(_sourceKey);
     check(source != null, 'Imported source could not reload from disk.');
-    final search = await source!.searchPageData!.loadPage!('鸿蒙', 1, []);
+    final search = await deadline.step(
+      'search comics',
+      () => source!.searchPageData!.loadPage!('鸿蒙', 1, []),
+    );
     check(!search.error, 'Search failed: ${search.errorMessage}');
     check(
       search.data.single.id == comicId &&
@@ -317,26 +419,35 @@ Future<String> runReaderProbe() async {
           search.subData == 1,
       'Search response changed.',
     );
-    final details = await source.loadComicInfo!(comicId);
+    final details = await deadline.step(
+      'comic details',
+      () => source!.loadComicInfo!(comicId),
+    );
     check(!details.error, 'Details failed: ${details.errorMessage}');
     check(
       details.data.chapters!.allChapters[_chapter] == '第一章',
       'Chapter map changed.',
     );
-    final pages = await source.loadComicPages!(comicId, _chapter);
+    final pages = await deadline.step(
+      'chapter pages',
+      () => source!.loadComicPages!(comicId, _chapter),
+    );
     check(
       !pages.error && pages.data.length == 2,
       'Chapter page loading failed.',
     );
     // Read only page one here; the download must fetch page two itself.
-    final progress = await ImageDownloader.loadComicImage(
-      pages.data[0],
-      _sourceKey,
-      comicId,
-      _chapter,
-    ).last;
+    final progress = await deadline.step(
+      'reader image stream',
+      () => ImageDownloader.loadComicImage(
+        pages.data[0],
+        _sourceKey,
+        comicId,
+        _chapter,
+      ).last,
+    );
     check(progress.imageBytes != null, 'Reader image stream had no data.');
-    await _checkImage(progress.imageBytes!, 0);
+    await _checkImage(progress.imageBytes!, 0, deadline);
 
     final history = History.fromModel(
       model: details.data,
@@ -344,17 +455,20 @@ Future<String> runReaderProbe() async {
       page: 2,
       readChapters: {'1'},
     )..maxPage = 2;
-    await HistoryManager().addHistoryAsync(history);
+    await deadline.step(
+      'write history',
+      () => HistoryManager().addHistoryAsync(history),
+    );
     HistoryManager().close();
-    await HistoryManager().init();
+    await deadline.step('reopen history', HistoryManager().init);
     _checkHistory(HistoryManager().find(comicId, history.type), comicId);
 
     final task = ImagesDownloadTask(
-      source: source,
+      source: source!,
       comicId: comicId,
       chapters: [_chapter],
     );
-    await _waitForDownload(LocalManager(), task);
+    await _waitForDownload(LocalManager(), task, deadline);
     check(serverError == null, 'Fixture server failed: $serverError');
     for (final path in [
       '/source.js',
@@ -368,18 +482,29 @@ Future<String> runReaderProbe() async {
       check((requests[path] ?? 0) > 0, 'Real pipeline skipped $path.');
     }
     await server.close(force: true);
+    activeServer = null;
     LocalManager().close();
-    await LocalManager().init();
-    await _checkOffline(LocalManager(), comicId);
-    await completedFile.writeAsString('${completed + 1}', flush: true);
+    await deadline.step('reopen local library', LocalManager().init);
+    await _checkOffline(LocalManager(), comicId, deadline);
+    await deadline.step(
+      'write launch counter',
+      () => completedFile.writeAsString('${completed + 1}', flush: true),
+    );
     return 'PASS: reader source import/reload, QuickJS HTTP search/details/chapters, '
         'image headers/stream/pixels, background history write and database reopen, '
         'queued chapter download and offline reopen. Completed runs: ${completed + 1}; '
         'prior-launch persistence: ${completed > 0 ? "verified" : "restart to verify"}.';
   } finally {
-    await server.close(force: true);
-    LocalManager().pauseAll();
-    ImageDownloader.cancelAllLoadingImages();
+    acceptingServer = false;
+    try {
+      if (LocalManager().isInitialized) LocalManager().pauseAll();
+    } finally {
+      try {
+        ImageDownloader.cancelAllLoadingImages();
+      } finally {
+        await activeServer?.close(force: true);
+      }
+    }
     // Sources retain JS callbacks for the app lifetime, as in the main app.
   }
 }
@@ -388,7 +513,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   String result;
   try {
-    result = await runReaderProbe().timeout(const Duration(seconds: 90));
+    result = await runReaderProbe();
   } catch (error, stack) {
     result = 'FAIL: $error\n$stack';
   }
