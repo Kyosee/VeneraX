@@ -112,6 +112,8 @@ ComicMetaData? _tryComicInfoXml(Directory dir) {
     }
     final status = _xmlTag(xml, 'Status') ?? '';
     _addStatusTag(tags, status);
+    // ComicInfo has no structured chapter ranges; retain the matching sidecar.
+    final sidecar = _tryMetadataJson(dir);
     return ComicMetaData(
       title: title.isEmpty ? dir.name : title,
       author: _xmlTag(xml, 'Writer') ?? '',
@@ -119,6 +121,7 @@ ComicMetaData? _tryComicInfoXml(Directory dir) {
       description: _xmlTag(xml, 'Summary') ?? '',
       status: status,
       tags: tags,
+      chapters: sidecar?.title == title ? sidecar?.chapters : null,
     );
   } catch (_) {
     return null;

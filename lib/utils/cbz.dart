@@ -397,13 +397,13 @@ abstract class CBZ {
             comic.comicType,
             c,
           );
-          allImages.addAll(images);
           var chapter = ComicChapter(
             title: chapterName!,
-            start: chapters.length + 1,
-            end: chapters.length + images.length,
+            start: allImages.length + 1,
+            end: allImages.length + images.length,
           );
           chapters.add(chapter);
+          allImages.addAll(images);
         }
         int i = 1;
         for (var image in allImages) {

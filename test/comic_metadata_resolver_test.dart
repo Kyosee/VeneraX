@@ -71,6 +71,19 @@ void main() {
       expect(m.description, '');
     });
 
+    test('does not reuse chapter ranges from another comic sidecar', () {
+      File('${tmp.path}/ComicInfo.xml').writeAsStringSync(
+        '<ComicInfo><Series>Current comic</Series></ComicInfo>',
+      );
+      File('${tmp.path}/metadata.json').writeAsStringSync(
+        '{"title":"Old comic","chapters":'
+        '[{"title":"Old chapter","start":1,"end":3}]}',
+      );
+      final metadata = resolveMetadataOrNull(tmp)!;
+      expect(metadata.title, 'Current comic');
+      expect(metadata.chapters, isNull);
+    });
+
     test('status 0/unknown produces no tag', () {
       File('${tmp.path}/details.json').writeAsStringSync(
         '{"title":"T","status":"0","genre":[]}');
