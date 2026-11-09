@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
@@ -78,6 +79,123 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  testWidgets('tablet settings consume the top inset before nested log pages', (
+    tester,
+  ) async {
+    tester.view.padding = const FakeViewPadding(top: 48, bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(top: 48, bottom: 24);
+    await open(tester, 900);
+    final searchField = find.byType(TextField).first;
+    expect(tester.getTopLeft(searchField).dy, greaterThanOrEqualTo(48));
+    await tester.tap(find.byKey(const ValueKey('settings-category-7')));
+    await tester.pumpAndSettle();
+    await openSection(tester, 'Diagnostics');
+    await openSection(tester, 'Open Log');
+
+    final logs = find.byType(LogsPage);
+    final header = find.descendant(of: logs, matching: find.byType(Appbar));
+    expect(MediaQuery.paddingOf(tester.element(logs)).top, 0);
+    expect(MediaQuery.paddingOf(tester.element(logs)).bottom, 24);
+    expect(tester.getSize(header).height, 52);
+    expect(
+      tester.getTopLeft(header).dy,
+      tester.getBottomLeft(searchField).dy + 12,
+    );
+    final searchSurface = find
+        .ancestor(of: searchField, matching: find.byType(Material))
+        .first;
+    final scaffold = find.descendant(of: logs, matching: find.byType(Scaffold));
+    expect(
+      tester.widget<Material>(searchSurface).color,
+      tester.widget<Scaffold>(scaffold).backgroundColor ??
+          Theme.of(tester.element(scaffold)).scaffoldBackgroundColor,
+    );
+    final headerBackground = tester
+        .widgetList<Container>(
+          find.descendant(of: header, matching: find.byType(Container)),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .first;
+    expect(
+      headerBackground.color,
+      tester.widget<Material>(searchSurface).color,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nested model pages share the settings pane and header surface', (
+    tester,
+  ) async {
+    await open(tester, 900);
+    await tester.tap(find.byKey(const ValueKey('settings-category-8')));
+    await tester.pumpAndSettle();
+    await openSection(tester, 'Translation models');
+    final models = find.byType(TranslationModelsPage);
+    expect(models, findsOneWidget);
+    final searchSurface = find
+        .ancestor(
+          of: find.byType(TextField).first,
+          matching: find.byType(Material),
+        )
+        .first;
+    final header = find.descendant(
+      of: models,
+      matching: find.byType(SliverAppbar),
+    );
+    final headerSurface = find.descendant(
+      of: header,
+      matching: find.byType(Material),
+    );
+    expect(
+      tester.widget<Material>(headerSurface.first).color,
+      tester.widget<Material>(searchSurface).color,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final width in [800.0, 950.0, 1100.0]) {
+    for (final brightness in Brightness.values) {
+      testWidgets(
+        'settings search matches the detail surface at $width $brightness',
+        (tester) async {
+          if (width == 950) {
+            tester.view.padding = const FakeViewPadding(left: 24, right: 24);
+            tester.view.viewPadding = const FakeViewPadding(
+              left: 24,
+              right: 24,
+            );
+          }
+          await open(tester, width);
+          final theme = ThemeData(brightness: brightness);
+          await tester.pumpWidget(
+            MaterialApp(theme: theme, home: const SettingsPage()),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('settings-category-4')));
+          await tester.pumpAndSettle();
+          final searchField = find.byType(TextField).first;
+          final searchSurface = find
+              .ancestor(of: searchField, matching: find.byType(Material))
+              .first;
+          final title = find.descendant(
+            of: find.byType(ExploreSettings),
+            matching: find.text('Browsing & filters'),
+          );
+          expect(title, findsOneWidget);
+          final detailSurface = find
+              .ancestor(of: title, matching: find.byType(Material))
+              .first;
+          expect(
+            tester.widget<Material>(searchSurface).color,
+            tester.widget<Material>(detailSurface).color,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets(
     'desktop child pages stay beside the category sidebar',

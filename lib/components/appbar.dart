@@ -81,6 +81,7 @@ class _AppbarState extends State<Appbar> {
       decoration: BoxDecoration(
         color:
             widget.backgroundColor ??
+            Theme.of(context).appBarTheme.backgroundColor ??
             context.colorScheme.surface.toOpacity(0.86),
       ),
       height: _kAppBarHeight + context.padding.top,
@@ -111,7 +112,10 @@ class _AppbarState extends State<Appbar> {
     );
     if (widget.style == AppbarStyle.shadow) {
       return Material(
-        color: context.colorScheme.surface,
+        color:
+            widget.backgroundColor ??
+            Theme.of(context).appBarTheme.backgroundColor ??
+            context.colorScheme.surface,
         elevation: _scrolledUnder ? 2 : 0,
         child: content,
       );
@@ -221,7 +225,9 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
         child: BlurEffect(
           blur: 15,
           child: Material(
-            color: context.colorScheme.surface.toOpacity(0.86),
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                context.colorScheme.surface.toOpacity(0.86),
             elevation: 0,
             borderRadius: BorderRadius.circular(radius),
             child: body,
@@ -231,7 +237,9 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     } else {
       return SizedBox.expand(
         child: Material(
-          color: context.colorScheme.surface,
+          color:
+              Theme.of(context).appBarTheme.backgroundColor ??
+              context.colorScheme.surface,
           elevation: shrinkOffset == 0 ? 0 : 2,
           borderRadius: BorderRadius.circular(radius),
           child: body,

@@ -186,19 +186,44 @@ class _SettingsPageState extends State<SettingsPage> {
                   color: colors.outlineVariant,
                 ),
                 Expanded(
-                  child: Column(
-                    children: [
-                      SafeArea(bottom: false, child: buildSearchField()),
-                      Expanded(
-                        child: _searchQuery.trim().isEmpty
-                            ? buildRight()
-                            : _buildSettingsSearchResults(
-                                context,
-                                _searchQuery,
-                                _openSettingsResult,
-                              ),
-                      ),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width =
+                          constraints.maxWidth -
+                          MediaQuery.paddingOf(context).horizontal;
+                      final background = width >= 700
+                          ? colors.surface
+                          : colors.surfaceContainerLow;
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          canvasColor: background,
+                          scaffoldBackgroundColor: background,
+                          appBarTheme: Theme.of(
+                            context,
+                          ).appBarTheme.copyWith(backgroundColor: background),
+                        ),
+                        child: Material(
+                          color: background,
+                          child: SafeArea(
+                            bottom: false,
+                            child: Column(
+                              children: [
+                                buildSearchField(),
+                                Expanded(
+                                  child: _searchQuery.trim().isEmpty
+                                      ? buildRight()
+                                      : _buildSettingsSearchResults(
+                                          context,
+                                          _searchQuery,
+                                          _openSettingsResult,
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
