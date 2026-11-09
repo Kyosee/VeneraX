@@ -98,7 +98,9 @@ class LocalComic with HistoryMixin implements Comic {
       cover = row['cover'] as String,
       comicType = ComicType(row['comic_type'] as int),
       downloadedChapters =
-          List.from(jsonDecode(row['downloadedChapters'] as String)),
+          List<String>.from(jsonDecode(row['downloadedChapters'] as String))
+              .toSet()
+              .toList(),
       createdAt = DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
       description = (row['description'] as String?) ?? "";
 
@@ -539,11 +541,11 @@ class LocalManager with ChangeNotifier {
   Future<void> add(LocalComic comic, [String? id]) async {
     final storedId = id ?? comic.id;
     var old = find(storedId, comic.comicType);
-    var downloaded = List<String>.from(comic.downloadedChapters);
+    var downloaded = comic.downloadedChapters.toSet();
     if (old != null) {
       downloaded.addAll(old.downloadedChapters);
     }
-    _writeComic(comic, storedId, downloaded);
+    _writeComic(comic, storedId, downloaded.toList());
     try {
       // Importers pass the real id separately from a placeholder on [comic];
       // mirroring the placeholder would write another comic's domain row.
