@@ -336,15 +336,16 @@ abstract class CBZ {
     );
   }
 
-  /// Whether every chapter range stays inside a page list of [total] entries.
-  /// A mismatch means the metadata does not describe this archive's pages, and
-  /// slicing by it would throw.
+  /// Whether chapter ranges cover every page exactly once and in order.
+  /// Invalid or older overlapping ranges fall back to the full flat page list.
   @visibleForTesting
   static bool rangesFit(List<ComicChapter> chapters, int total) {
+    var nextPage = 1;
     for (var c in chapters) {
-      if (c.start < 1 || c.end < c.start || c.end > total) return false;
+      if (c.start != nextPage || c.end < c.start || c.end > total) return false;
+      nextPage = c.end + 1;
     }
-    return true;
+    return nextPage == total + 1;
   }
 
   static Future<void> _copyPages(List<File> pages, Directory dest) async {

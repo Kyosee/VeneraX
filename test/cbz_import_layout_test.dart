@@ -66,5 +66,12 @@ void main() {
       expect(CBZ.rangesFit([c('a', 0, 3)], 6), isFalse);
       expect(CBZ.rangesFit([c('a', 4, 2)], 6), isFalse);
     });
+
+    test('rejects overlapping, missing and reordered pages', () {
+      expect(CBZ.rangesFit([c('a', 1, 2), c('b', 2, 4)], 5), isFalse);
+      expect(CBZ.rangesFit([c('a', 1, 2), c('b', 4, 5)], 5), isFalse);
+      expect(CBZ.rangesFit([c('a', 1, 2)], 3), isFalse);
+      expect(CBZ.rangesFit([c('b', 3, 5), c('a', 1, 2)], 5), isFalse);
+    });
   });
 }
