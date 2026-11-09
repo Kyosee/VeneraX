@@ -548,6 +548,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
       final topLeft = itemBox.localToGlobal(Offset.zero);
       final start = vertical
           ? topLeft.dy - viewportLeadingGlobal.dy
+          : _reverse
+          ? viewportLeadingGlobal.dx +
+                box.size.width -
+                topLeft.dx -
+                itemBox.size.width
           : topLeft.dx - viewportLeadingGlobal.dx;
       final extent = vertical ? itemBox.size.height : itemBox.size.width;
       // The entry crossing the anchor line: starts at/above it and ends below.
@@ -1504,6 +1509,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final itemLeading = itemBox.localToGlobal(Offset.zero);
     return vertical
         ? itemLeading.dy - viewportLeading.dy
+        : _reverse
+        ? viewportLeading.dx +
+              selfBox.size.width -
+              itemLeading.dx -
+              itemBox.size.width
         : itemLeading.dx - viewportLeading.dx;
   }
 
