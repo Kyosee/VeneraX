@@ -400,16 +400,40 @@ class HistoryManager with ChangeNotifier {
     }
   }
 
-  ReadingStatisticsSummary getReadingStatistics({DateTime? now, DateTime? month}) {
+  ReadingStatisticsSummary getReadingStatistics({
+    DateTime? now,
+    DateTime? month,
+    DateTime? start,
+    DateTime? end,
+    bool allTime = false,
+  }) {
     final current = now ?? DateTime.now();
     if (!isInitialized || _isCorrupted) {
-      return ReadingStatisticsSummary.empty(current, month: month);
+      return ReadingStatisticsSummary.empty(
+        current,
+        month: month,
+        start: start,
+        end: end,
+        allTime: allTime,
+      );
     }
     try {
-      return _readingStatistics.readSummary(now: current, month: month);
+      return _readingStatistics.readSummary(
+        now: current,
+        month: month,
+        start: start,
+        end: end,
+        allTime: allTime,
+      );
     } on SqliteException catch (e) {
       _handleCorruption(e);
-      return ReadingStatisticsSummary.empty(current, month: month);
+      return ReadingStatisticsSummary.empty(
+        current,
+        month: month,
+        start: start,
+        end: end,
+        allTime: allTime,
+      );
     }
   }
 
