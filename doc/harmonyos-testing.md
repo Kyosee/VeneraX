@@ -1,4 +1,4 @@
-# VeneraX 鸿蒙开发预览 / HarmonyOS developer preview
+# VeneraX 鸿蒙开发预览版 / HarmonyOS developer preview
 
 应用版本保持 **2.3.12+257**。`harmonyos-2.3.12-test.1` 是独立测试发布标签，不替换其他平台的稳定版。**本次提供未签名开发预览；ARM64 真机签名安装尚未验收。**
 
