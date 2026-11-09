@@ -3,8 +3,10 @@
 Experimental HarmonyOS port of VeneraX. The complete application builds for
 ARM64 and x64; runtime validation currently uses the official x64 phone emulator.
 Directory access, credential authentication, native PDF rendering and signed
-phone installation still need a suitable device. The unsigned debug HAP is for
-local emulator testing and is not a distributable VeneraX release.
+phone installation still need a suitable device. The preview ships an unsigned
+ARM64 release HAP that requires device-specific signing before phone installation.
+See [preview installation and limitations](harmonyos-testing.md). Debug probes
+are only for local development and are not release assets.
 
 ## Isolated workspace
 
@@ -35,7 +37,8 @@ rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolcha
   -DevEcoStudio 'D:/Program Files/Huawei/DevEco Studio'
 ```
 
-This builds `tool/ohos_smoke.dart`. Install
+This builds the complete `lib/main.dart` application in debug mode for x64.
+Add `-Target tool/ohos_smoke.dart` for the isolated bootstrap probe. Install
 `build/ohos/hap/entry-default-unsigned.hap` with the SDK's `hdc`, then start
 `com.github.kyosee.venera` / `EntryAbility`. The probe checks sandbox directories,
 package information, file read/write, SQLite WAL, QuickJS values/Promises on
@@ -43,9 +46,11 @@ separate isolates, Unicode ZIP entries, 7z extraction and PNG pixel round trips.
 Restart it: the launch counter must increase. Persistent probe data uses only
 a dedicated `ohos_smoke.db` inside the app sandbox.
 
-For the complete application, add `-Target lib/main.dart`. Add
-`-TargetPlatform ohos-arm64` when building for an ARM device. A probe is a separate
-entrypoint: rebuild and reinstall the complete application after probe validation.
+For a phone preview, use `-Target lib/main.dart -TargetPlatform ohos-arm64 -BuildMode release`.
+Native compilation and packaging follow the selected ABI.
+Builds are unsigned unless `-CodeSign` is explicitly supplied after configuring
+your own valid signing identity in DevEco Studio. A probe is a separate entrypoint:
+rebuild and reinstall the complete application after probe validation.
 
 Use `-Target tool/ohos_network_smoke.dart` for the HTTP probe. It runs local
 servers on the device and verifies DNS, redirects, cookies, streams, a worker
@@ -130,8 +135,9 @@ can run locally with `node --test test/ohos/pdf_bridge_test.cjs`; Dart import
 cleanup is covered by `test/ohos_pdf_import_test.dart` under the OH Flutter SDK.
 Those tests do not substitute for native PDF rendering.
 
-The unsigned package is for the local emulator. ARM64 compilation does not
-verify a real phone. Device signing and end-user sideloading remain unverified.
+ARM64 compilation does not verify a real phone. Device signing and end-user
+sideloading remain unverified. Never distribute a developer's private signing key
+or a device-bound profile as a universal installation solution.
 
 ## Validation coverage
 
