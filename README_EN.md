@@ -49,7 +49,7 @@ To update, download the new AppImage and replace the old file. Application data 
 
 ## New Features & Improvements
 
-<details>
+<details open>
 <summary><b>View all features</b></summary>
 
 ### Reading
@@ -219,7 +219,7 @@ Also: the two `Update_AltStore_*` jobs commit an AltStore manifest back to maste
 > [!NOTE]
 > **Special Notice:** Please read and fully understand this statement before downloading, installing, or using this software. By downloading, installing, copying, modifying, or using this software, you are deemed to have read, understood, and accepted all of its terms.
 
-<details>
+<details open>
 <summary><b>Read the full User Agreement & Disclaimer</b></summary>
 
 **1. Nature of the Software**

@@ -49,7 +49,7 @@ chmod +x VeneraX-<版本>-x86_64.AppImage
 
 ## 新功能&优化
 
-<details>
+<details open>
 <summary><b>查看完整功能列表</b></summary>
 
 ### 阅读体验
@@ -219,7 +219,7 @@ const kUpdateRepoName = 'VeneraX';
 > [!NOTE]
 > **特别提示：** 在下载、安装或使用本软件前，请您务必仔细阅读并充分理解本声明的全部内容。您一旦下载、安装、复制、修改或使用本软件，即视为已阅读、理解并同意接受本声明的全部内容。
 
-<details>
+<details open>
 <summary><b>展开用户协议与免责声明全文</b></summary>
 
 **一、软件性质**
