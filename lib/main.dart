@@ -7,8 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/auth_page.dart';
-import 'package:venera/pages/disclaimer.dart';
-import 'package:venera/pages/main_page.dart';
+import 'package:venera/pages/startup_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
@@ -107,10 +106,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     syncOhosStartupTheme();
     syncReaderNightModeWithSystem(rebuild: false);
-    initDeferred().then((_) {
-      checkUpdates();
-      if (mounted) setState(() {});
-    });
     super.initState();
   }
 
@@ -208,7 +203,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return;
     }
     appdata.settings['readerNightMode'] = isDark;
-    appdata.saveData();
+    appdata.saveData(deferredInitCompleter.isCompleted);
     if (rebuild) {
       App.forceRebuild();
     }
@@ -295,23 +290,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    Widget home;
-    if (!deferredInitCompleter.isCompleted) {
-      home = const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    } else if (appdata.settings['requireDisclaimerConsent'] == true &&
-        appdata.settings['disclaimerConsented'] != true) {
-      home = const DisclaimerConsentPage();
-    } else if (appdata.settings['authorizationRequired']) {
-      home = AuthPage(
-        onSuccessfulAuth: () {
-          App.rootContext.toReplacement(() => const MainPage());
-        },
-      );
-    } else {
-      home = const MainPage();
-    }
     return DynamicColorBuilder(builder: (light, dark) {
       Color? primary, secondary, tertiary;
       if (appdata.settings['color'] != 'system' ||
@@ -325,7 +303,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
       return MaterialApp(
         title: "VeneraX",
-        home: home,
+        home: const StartupPage(),
         debugShowCheckedModeBanner: false,
         theme: getTheme(primary, secondary, tertiary, Brightness.light),
         navigatorKey: App.rootNavigatorKey,

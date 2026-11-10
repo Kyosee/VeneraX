@@ -14,6 +14,7 @@ import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/ohos_follow_scheduler.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/reading_widget.dart';
@@ -46,10 +47,11 @@ extension _FutureInit<T> on Future<T> {
 
 /// Critical initialization that must complete before UI renders.
 /// Only includes what's needed for theme, locale, and basic app state.
-Future<void> init() async {
+Future<void> init({bool interactive = true}) async {
   await App.init().wait();
   // Never load shared state before the background extension has released it.
   await OhosFollowScheduler.acquireUiData();
+  if (interactive) await OnboardingStore.instance.load(App.dataPath);
   await LauncherIconService.initialize().wait();
   if (App.isAndroid || App.isOhos || App.isIOS || App.isMacOS) {
     startAppLinkCapture();
@@ -91,16 +93,8 @@ Future<void> initDeferred() async {
     CacheManager().setLimitSize(appdata.settings['cacheSize']);
     RelatedSourceTaskManager.instance;
     _checkOldConfigs();
-    _autoCleanHistory();
-    ReadingWidgetService.instance.start();
     if (App.isAndroid) {
-      initAndroidExtras();
       await trySetHighRefreshRate();
-    }
-    if (App.isOhos) {
-      handleLinks();
-      handleTextShare();
-      handleNotificationRoute();
     }
     FlutterError.onError = (details) {
       Log.error(
@@ -195,6 +189,20 @@ void checkUpdates() {
   Future.delayed(const Duration(seconds: 2), _checkAppUpdates).wait();
   FollowUpdatesService.initChecker();
   PreTranslationTaskManager.instance.resumePendingTasks();
+}
+
+/// Start navigation and scheduled work after setup, agreement and app unlock.
+void startInteractiveServices() {
+  _autoCleanHistory();
+  ReadingWidgetService.instance.start();
+  if (App.isAndroid) initAndroidExtras();
+  if (App.isOhos) {
+    handleLinks();
+    handleTextShare();
+    handleNotificationRoute();
+  }
+  if (App.isIOS || App.isMacOS) handleLinks();
+  checkUpdates();
 }
 
 Future<void> initPlatformServices() async {

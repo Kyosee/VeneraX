@@ -32,7 +32,7 @@ Future<void> runHeadlessMode(List<String> args) async {
   }
 
   // Need to initialize the app for some features to work
-  await init();
+  await init(interactive: false);
   // The import path restores backups into LIVE stores (in-place, via the
   // SQLite backup API) instead of swapping files, so every store must be open
   // before a `webdav down` applies data — this also satisfies

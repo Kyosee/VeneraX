@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/onboarding.dart';
 
 /// 拼装后台任务前台通知正文。纯函数，方便单测。
 /// 有 detail（如「3/10」「正在导出 xxx」）时附在标题后，让用户一眼看出后台确实在跑。
@@ -70,6 +71,17 @@ class BackgroundKeepAlive {
   static const tagWebdavMigration = 'webdav_migration';
 
   bool get _supported => App.isAndroid || App.isOhos;
+
+  Future<bool> notificationGranted() async =>
+      _supported && await _invoke('notificationGranted') == true;
+
+  /// Called only after an explicit permission button tap.
+  Future<bool> requestNotificationPermission() async {
+    if (!_supported) return false;
+    if (await notificationGranted()) return true;
+    _permissionAsked = true;
+    return await _invoke('requestNotification') == true;
+  }
 
   /// tag -> 最近一次上报给原生的文案。用于去重，避免重复的通道往返与通知刷新。
   final _statuses = <String, String>{};
@@ -184,6 +196,7 @@ class BackgroundKeepAlive {
   /// 与下载保活共用同一套原生通知权限实现（同一权限，互不冲突）。
   Future<bool> _ensurePermission() async {
     if (await _invoke('notificationGranted') == true) return true;
+    if (OnboardingStore.instance.blocksAutomaticTasks) return false;
     // Native OHOS deduplicates prompts and defers them while backgrounded.
     if (App.isOhos) return await _invoke('requestNotification') == true;
     if (_permissionAsked) return false;

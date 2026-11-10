@@ -2,6 +2,13 @@ const int kDisclaimerVersion = 1;
 const String kDisclaimerDate = '2026-11-10';
 const String kDisclaimerTitle = 'VeneraX User Agreement and Disclaimer';
 
+// Bump the version and update this summary for material agreement changes.
+const kDisclaimerChanges = [
+  'Responsibilities for third-party content, extensions, and services',
+  'Software risks, warranty exclusions, and liability limits',
+  'Separate choices for privacy, sync, and translation',
+];
+
 /// Titles and paragraphs are translation keys with English fallback.
 const List<(String, List<String>)> kDisclaimerSections = [
   (

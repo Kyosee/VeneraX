@@ -14,6 +14,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/foundation/local.dart';
@@ -106,6 +107,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       );
       return;
     }
+    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
     var result = await downloadData();
     // Startup settle (#114): pay an account the previous run left open (a
     // killed process, or an iOS session that never got a background settle).
@@ -322,6 +324,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// before the initial sync completed, or while an upload is already in
   /// flight (it carries the account).
   Future<void> settlePendingChanges() async {
+    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
     if (syncMode == WebdavSyncMode.manual) return;
     if (!hasPendingChanges) return;
     if (!isConfigured) return;
@@ -344,6 +347,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// import, headless CLI) do not come through here — they call
   /// [uploadData] with `force: true` directly.
   void requestAutoUpload() {
+    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
     if (!isConfigured) return;
     if (_isApplyingBackup) return;
     if (App.isBackgroundTask) {
@@ -542,7 +546,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     return false;
   }
 
+  bool get initialRestoreDeferred =>
+      appdata.implicitData['webdavSetupRestorePending'] == true;
+
   bool _hasCompletedInitialSync() {
+    if (initialRestoreDeferred) return false;
     if (appdata.implicitData['hasCompletedInitialSync'] == true) return true;
     if (_dataVersion() > 0) {
       _markInitialSyncCompleted();
@@ -552,6 +560,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   }
 
   void _markInitialSyncCompleted() {
+    appdata.implicitData.remove('webdavSetupRestorePending');
     appdata.implicitData['hasCompletedInitialSync'] = true;
     appdata.writeImplicitData();
   }
@@ -934,7 +943,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<Res<bool>> downloadData() async {
+  /// Explicit restores may select an older snapshot without publishing it.
+  Future<Res<bool>> downloadData({bool userRestore = false}) async {
     // Never apply a backup while heavy init is still bringing up the very
     // stores importAppData restores into — that race was the iOS startup
     // crash loop back when the import swapped files under live handles. The
@@ -1067,7 +1077,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         }
         var remoteVersion = _versionOfFileName(file.name!);
         var currentVersion = _dataVersion();
-        if (remoteVersion <= currentVersion) {
+        if (!userRestore && remoteVersion <= currentVersion) {
           Log.info("Data Sync", 'No new data to download');
           if (!_hasCompletedInitialSync()) {
             _markInitialSyncCompleted();
@@ -1124,8 +1134,9 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             () => importAppData(
               localFile,
               checkVersion: false,
-              restoreLocalComics: _syncLocalComics(),
-              mergeTranslations: _syncTranslations(),
+              restoreLocalComics: userRestore || _syncLocalComics(),
+              mergeTranslations: userRestore || _syncTranslations(),
+              userRestore: userRestore,
             ),
           );
           if (!_hasCompletedInitialSync()) {
@@ -1137,7 +1148,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           // this, the downloading device keeps its old (lower) dataVersion and
           // can later be treated as "newer" than the remote, reversing the sync
           // direction and overwriting good data with the stale local copy.
-          if (remoteVersion > _dataVersion()) {
+          if (userRestore || remoteVersion > _dataVersion()) {
             appdata.settings['dataVersion'] = remoteVersion;
             await appdata.saveData(false);
           }
@@ -1169,6 +1180,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<Res<bool>> syncData() async {
+    if (initialRestoreDeferred) return downloadData(userRestore: true);
     BackgroundKeepAlive.instance.allowTransferBackground();
     var config = _validateConfig();
     if (config == null || config.isEmpty) {
@@ -1203,10 +1215,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<Res<List<RemoteBackupInfo>>> listRemoteBackups() async {
-    var config = _validateConfig();
+  Future<Res<List<RemoteBackupInfo>>> listRemoteBackups({List<String>? configuration}) async {
+    var config = configuration ?? _validateConfig();
     if (config == null) return const Res.error('Invalid WebDAV configuration');
     if (config.isEmpty) return const Res.error('WebDAV not configured');
+    if (config.length != 3 || config.any((value) => value.trim().isEmpty)) {
+      return const Res.error('Invalid WebDAV configuration');
+    }
     String url = config[0];
     String user = config[1];
     String pass = config[2];
@@ -1370,6 +1385,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   Timer? _imageSyncTimer;
 
   void _scheduleImageSync() {
+    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
     if (!_shouldSyncImages()) return;
     _imageSyncTimer?.cancel();
     _imageSyncTimer = Timer(const Duration(seconds: 30), () {

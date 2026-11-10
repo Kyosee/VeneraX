@@ -536,7 +536,7 @@ class _SyncButtonState extends State<_SyncButton> with WidgetsBindingObserver {
       // a cheap readDir and only pulls when the server holds newer data; the
       // per-device tier governs uploads only (those settle points live inside
       // DataSync's own lifecycle observer).
-      if (!DataSync().isConfigured) return;
+      if (!DataSync().isConfigured || DataSync().initialRestoreDeferred) return;
       if (DateTime.now().difference(lastCheck) > const Duration(minutes: 10)) {
         lastCheck = DateTime.now();
         DataSync().downloadData();

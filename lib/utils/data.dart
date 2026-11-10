@@ -557,6 +557,8 @@ class ImportOutcome {
 /// marks an import the user asked for (not a background sync): its translations
 /// outrank deletions recorded on this device. A file from [exportTranslations]
 /// is recognized and only merged, whatever the flags.
+/// [restoreWebdavConfig] is false during setup: importing local data must not
+/// silently connect this device to a server from the backup.
 Future<ImportOutcome> importAppData(
   File file, {
   bool checkVersion = false,
@@ -565,6 +567,7 @@ Future<ImportOutcome> importAppData(
   bool restoreLocalComics = true,
   bool mergeTranslations = true,
   bool userRestore = false,
+  bool restoreWebdavConfig = true,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -581,6 +584,7 @@ Future<ImportOutcome> importAppData(
       restoreLocalComics: restoreLocalComics,
       mergeTranslations: mergeTranslations,
       userRestore: userRestore,
+      restoreWebdavConfig: restoreWebdavConfig,
     );
   } finally {
     _importInProgress = null;
@@ -666,6 +670,7 @@ Future<ImportOutcome> _importAppDataLocked(
   bool restoreLocalComics = true,
   bool mergeTranslations = true,
   bool userRestore = false,
+  bool restoreWebdavConfig = true,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -745,7 +750,7 @@ Future<ImportOutcome> _importAppDataLocked(
       // Refresh collection-backed pages immediately after a WebDAV restore;
       // collection settings, including detail display modes, live in appdata.
       ComicCollectionStore.notifyChanged();
-      if (data is Map<String, dynamic>) {
+      if (restoreWebdavConfig && data is Map<String, dynamic>) {
         await _restoreWebdavConfigIfAbsent(data);
       }
       // Which library each source installs and updates from rides along in the
@@ -778,6 +783,7 @@ Future<ImportOutcome> _importAppDataLocked(
             // PUT; a restored backup must not forge or erase it.
             'webdavPendingPublish',
             'hasCompletedInitialSync',
+            'webdavSetupRestorePending',
             'sync_logs',
             'data_sync_tasks',
             'follow_update_active_tasks',
