@@ -8,8 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/onboarding.dart';
@@ -18,6 +20,46 @@ import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
+
+final class _FailPendingCompletion extends IOOverrides {
+  bool failed = false;
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return path.endsWith('implicitData.json.tmp')
+        ? _PendingFile(file, this)
+        : file;
+  }
+}
+
+class _PendingFile implements File {
+  _PendingFile(this.file, this.failure);
+  final File file;
+  final _FailPendingCompletion failure;
+
+  @override
+  void writeAsStringSync(String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) {
+    final data = jsonDecode(contents) as Map;
+    if (!failure.failed &&
+        data['hasCompletedInitialSync'] == true &&
+        data['webdavSetupRestorePending'] != true) {
+      failure.failed = true;
+      throw const FileSystemException('fixture completion write failed');
+    }
+    file.writeAsStringSync(contents, mode: mode, encoding: encoding, flush: flush);
+  }
+
+  @override
+  File renameSync(String newPath) => file.renameSync(newPath);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -121,11 +163,13 @@ void main() {
   );
 
   test(
-    'explicit older WebDAV restore applies, aligns its version, and never uploads',
+    'immediate and deferred WebDAV restores align versions without publishing',
     () async {
       final archive = await backup();
       final bytes = await archive.readAsBytes();
       final requests = <String>[];
+      var rejectDownload = false;
+      var rejectUpload = false;
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final root = 'http://127.0.0.1:${server.port}';
       server.listen((request) async {
@@ -148,7 +192,13 @@ void main() {
         } else if (request.method == 'HEAD') {
           request.response.contentLength = bytes.length;
         } else if (request.method == 'GET') {
-          request.response.add(bytes);
+          if (rejectDownload) {
+            request.response.statusCode = 500;
+          } else {
+            request.response.add(bytes);
+          }
+        } else if (request.method == 'PUT') {
+          request.response.statusCode = rejectUpload ? 500 : 201;
         } else {
           request.response.statusCode = 405;
         }
@@ -166,6 +216,7 @@ void main() {
         await App.readLater.init();
         await LocalManager().init();
         await App.domain.init(App.dataPath);
+        await TranslationStore().init();
         if (!deferredInitCompleter.isCompleted) {
           deferredInitCompleter.complete();
         }
@@ -175,7 +226,7 @@ void main() {
         appdata.implicitData['webdavSetupRestorePending'] = true;
         appdata.implicitData['hasCompletedInitialSync'] = false;
         appdata.searchHistory = ['local data'];
-        DataSync().setSyncMode(WebdavSyncMode.manual, settle: false);
+        await DataSync().setSyncMode(WebdavSyncMode.manual, settle: false);
 
         final result = await DataSync().downloadData(userRestore: true);
         expect(result.errorMessage, isNull, reason: requests.toString());
@@ -183,10 +234,74 @@ void main() {
         expect(appdata.settings['dataVersion'], 4);
         expect(DataSync().initialRestoreDeferred, isFalse);
         expect(requests, containsAll(['PROPFIND', 'GET']));
+
+        // Complete setup, then restore the connection saved for later in Settings.
+        await OnboardingStore.instance.completeSetup();
+        appdata.settings['dataVersion'] = 100;
+        appdata.implicitData['webdavSetupRestorePending'] = true;
+        appdata.implicitData['hasCompletedInitialSync'] = false;
+        appdata.searchHistory = ['local data'];
+        rejectDownload = true;
+        final failed = await DataSync().downloadSpecificBackup('20767-4.win.venera');
+        expect(failed.error, isTrue);
+        expect(DataSync().initialRestoreDeferred, isTrue);
+        expect(appdata.settings['dataVersion'], 100);
+        expect(appdata.searchHistory, ['local data']);
+
+        rejectDownload = false;
+        for (final specific in [false, true]) {
+          appdata.settings['dataVersion'] = 100;
+          final failure = _FailPendingCompletion();
+          final failedCompletion = await IOOverrides.runWithIOOverrides(
+            () => specific
+                ? DataSync().downloadSpecificBackup('20767-4.win.venera')
+                : DataSync().downloadData(userRestore: true),
+            failure,
+          );
+          expect(failure.failed, isTrue);
+          expect(failedCompletion.error, isTrue);
+          expect(DataSync().initialRestoreDeferred, isTrue);
+          expect(appdata.settings['dataVersion'], 4);
+          final disk = jsonDecode(await File(
+            '${directory.path}/implicitData.json',
+          ).readAsString()) as Map;
+          expect(disk['webdavSetupRestorePending'], isTrue);
+        }
+        final restored = await DataSync().downloadSpecificBackup('20767-4.win.venera');
+        expect(restored.errorMessage, isNull);
+        expect(appdata.searchHistory, ['restored search']);
+        expect(appdata.settings['dataVersion'], 4);
+        expect(DataSync().initialRestoreDeferred, isFalse);
+        expect([
+          ...DataSyncTaskManager.instance.currentTasks,
+          ...DataSyncTaskManager.instance.historyTasks,
+        ].where((task) => task.type == DataSyncTaskType.upload), isEmpty);
         expect(
           requests.where((method) => method == 'PUT' || method == 'DELETE'),
           isEmpty,
         );
+
+        // A later explicit upload can choose the local backup instead of pulling.
+        appdata.implicitData['webdavSetupRestorePending'] = true;
+        appdata.implicitData['hasCompletedInitialSync'] = false;
+        appdata.searchHistory = ['chosen local data'];
+        final requestCount = requests.length;
+        final automatic = await DataSync().uploadData();
+        expect(automatic.error, isTrue);
+        expect(requests, hasLength(requestCount));
+        rejectUpload = true;
+        final rejected = await DataSync().uploadData(force: true);
+        expect(rejected.error, isTrue);
+        expect(DataSync().initialRestoreDeferred, isTrue);
+        expect(appdata.settings['dataVersion'], 4);
+        rejectUpload = false;
+        final published = await DataSync().uploadData(force: true);
+        expect(published.errorMessage, isNull);
+        expect(DataSync().initialRestoreDeferred, isFalse);
+        expect(appdata.settings['dataVersion'], 5);
+        expect(appdata.searchHistory, ['chosen local data']);
+        expect(requests.skip(requestCount), contains('PUT'));
+        expect(requests.skip(requestCount), isNot(contains('GET')));
       } finally {
         await server.close(force: true);
         HistoryManager().close();
@@ -194,6 +309,7 @@ void main() {
         App.readLater.close();
         LocalManager().close();
         App.domain.close();
+        TranslationStore().close();
         SingleInstanceCookieJar.instance?.dispose();
         SingleInstanceCookieJar.instance = null;
         JsEngine().dispose();

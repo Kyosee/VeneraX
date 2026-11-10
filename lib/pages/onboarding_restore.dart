@@ -83,7 +83,7 @@ class _OnboardingWebdavDialogState extends State<OnboardingWebdavDialog> {
       appdata.implicitData['hasCompletedInitialSync'] = false;
       appdata.implicitData['webdavSetupRestorePending'] = true;
       appdata.implicitData.remove('webdavPendingPublish');
-      DataSync().setSyncMode(WebdavSyncMode.manual, settle: false);
+      await DataSync().setSyncMode(WebdavSyncMode.manual, settle: false);
       appdata.settings['webdav'] = List<String>.from(_testedConfig!);
       await appdata.saveData(false);
       if (restore) {
@@ -98,7 +98,7 @@ class _OnboardingWebdavDialogState extends State<OnboardingWebdavDialog> {
           return;
         }
         if (_autoSync) {
-          DataSync().setSyncMode(WebdavSyncMode.realtime, settle: false);
+          await DataSync().setSyncMode(WebdavSyncMode.realtime, settle: false);
         }
       }
       if (mounted) Navigator.pop(context, restore ? 'webdav' : 'connected');

@@ -298,7 +298,7 @@ class Appdata with Init, ChangeNotifier {
     };
   }
 
-  void writeImplicitData() async {
+  Future<void> writeImplicitData() async {
     if (App.isBackgroundTask) {
       writeStringAtomicSync(
         FilePath.join(App.dataPath, 'implicitData.json'), jsonEncode(implicitData),

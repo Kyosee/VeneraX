@@ -25,7 +25,7 @@ class _Sync extends ChangeNotifier implements DataSync {
   int syncs = 0;
 
   @override
-  void setSyncMode(WebdavSyncMode mode, {bool settle = true}) {
+  Future<void> setSyncMode(WebdavSyncMode mode, {bool settle = true}) async {
     syncMode = mode;
     settlements.add(settle);
     notifyListeners();
@@ -50,6 +50,7 @@ class _Writes {
   final implicitSnapshots = <Map<String, dynamic>>[];
   Completer<void>? gate;
   bool fail = false;
+  bool failImplicit = false;
 }
 
 class _ConfigFile implements File {
@@ -76,7 +77,10 @@ class _ConfigFile implements File {
       writes.implicitSnapshots.add(jsonDecode(contents));
     }
     await writes.gate?.future;
-    if (writes.fail) throw FileSystemException('fixture write failed', path);
+    if (writes.fail ||
+        (writes.failImplicit && path.endsWith('implicitData.json.tmp'))) {
+      throw FileSystemException('fixture write failed', path);
+    }
     return this;
   }
 
@@ -151,8 +155,9 @@ void main() {
     try {
       await IOOverrides.runZoned(() async {
         for (final mode in WebdavSyncMode.values) {
-          actual.setSyncMode(mode, settle: false);
+          final savedMode = actual.setSyncMode(mode, settle: false);
           await tester.pumpAndSettle();
+          await savedMode;
           expect(writes.implicitSnapshots.last['webdavSyncMode'], mode.name);
           expect(
             writes.implicitSnapshots.last['webdavAutoSync'],
@@ -170,6 +175,16 @@ void main() {
             expect(settings.containsKey('webdavAutoSync'), isFalse);
           }
         }
+        writes.failImplicit = true;
+        appdata.implicitData['webdavSetupRestorePending'] = true;
+        await expectLater(
+          actual.setSyncMode(WebdavSyncMode.manual, settle: false),
+          throwsA(isA<FileSystemException>()),
+        );
+        final saved = appdata.saveData(false);
+        await tester.pumpAndSettle();
+        await saved;
+        writes.failImplicit = false;
       }, createFile: (path) => _ConfigFile(path, writes));
     } finally {
       WidgetsBinding.instance.removeObserver(actual);

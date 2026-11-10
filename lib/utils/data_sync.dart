@@ -226,12 +226,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             : null,
       );
 
-  void setSyncMode(WebdavSyncMode mode, {bool settle = true}) {
+  Future<void> setSyncMode(WebdavSyncMode mode, {bool settle = true}) {
     appdata.implicitData[_syncModeKey] = mode.name;
     // Keep the legacy boolean coherent: QR config payloads and downgraded
     // installs still read it.
     appdata.implicitData['webdavAutoSync'] = mode != WebdavSyncMode.manual;
-    appdata.writeImplicitData();
+    final saved = appdata.writeImplicitData();
     if (mode != WebdavSyncMode.dataSaver) {
       _pendingSettleTimer?.cancel();
       _pendingSettleTimer = null;
@@ -246,6 +246,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       _pendingAutoUpload = null;
     }
     notifyListeners();
+    return saved;
   }
 
   /// True when local changes exist that no successful upload has covered yet.
@@ -551,18 +552,22 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
   bool _hasCompletedInitialSync() {
     if (initialRestoreDeferred) return false;
-    if (appdata.implicitData['hasCompletedInitialSync'] == true) return true;
-    if (_dataVersion() > 0) {
-      _markInitialSyncCompleted();
-      return true;
-    }
-    return false;
+    return appdata.implicitData['hasCompletedInitialSync'] == true ||
+        _dataVersion() > 0;
   }
 
-  void _markInitialSyncCompleted() {
+  Future<void> _markInitialSyncCompleted() async {
+    final pending = initialRestoreDeferred;
+    final completed = appdata.implicitData['hasCompletedInitialSync'];
     appdata.implicitData.remove('webdavSetupRestorePending');
     appdata.implicitData['hasCompletedInitialSync'] = true;
-    appdata.writeImplicitData();
+    try {
+      await appdata.writeImplicitData();
+    } catch (_) {
+      if (pending) appdata.implicitData['webdavSetupRestorePending'] = true;
+      appdata.implicitData['hasCompletedInitialSync'] = completed;
+      rethrow;
+    }
   }
 
   bool _isFavoriteDbValid() {
@@ -692,7 +697,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     try {
       taskManager.updateTask(task.id, currentPhase: 'Validating', progress: 0.0);
 
-      if (!_hasCompletedInitialSync()) {
+      // Explicit publishing of restored local data may replace a deferred pull.
+      if (!_hasCompletedInitialSync() && !(force && _dataVersion() > 0)) {
         _lastError = 'Please complete initial sync download first';
         _addSyncLog('upload', null, false, 'Blocked: initial sync not completed');
         taskManager.failTask(task.id, 'Initial sync not completed');
@@ -891,6 +897,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // The backup is on the server — only now adopt the version locally.
         appdata.settings['dataVersion'] = nextVersion;
         await appdata.saveData(false);
+        if (initialRestoreDeferred) await _markInitialSyncCompleted();
         _clearPendingPublish();
         // The published snapshot covers every change up to the export —
         // settle the deferred-tier account (no-op unless it was open and
@@ -1033,7 +1040,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           // blocked every upload ("complete initial sync first"), which meant
           // the server stayed empty forever. An empty server IS a completed
           // initial sync: this device holds the fleet's only data.
-          _markInitialSyncCompleted();
+          await _markInitialSyncCompleted();
           Log.info("Data Sync", 'No backups on server; initial sync complete');
           taskManager.completeTask(task.id);
           return const Res(true);
@@ -1062,7 +1069,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             }
             _clearPendingPublish();
             if (!_hasCompletedInitialSync()) {
-              _markInitialSyncCompleted();
+              await _markInitialSyncCompleted();
             }
             Log.info(
               "Data Sync",
@@ -1080,7 +1087,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         if (!userRestore && remoteVersion <= currentVersion) {
           Log.info("Data Sync", 'No new data to download');
           if (!_hasCompletedInitialSync()) {
-            _markInitialSyncCompleted();
+            await _markInitialSyncCompleted();
           }
           taskManager.completeTask(task.id, fileName: file.name);
           return const Res(true);
@@ -1139,11 +1146,6 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
               userRestore: userRestore,
             ),
           );
-          if (!_hasCompletedInitialSync()) {
-            _markInitialSyncCompleted();
-          }
-          _addSyncLog('download', file.name, true, null);
-          taskManager.completeTask(task.id, fileName: file.name);
           // Align the local version with the backup we just imported. Without
           // this, the downloading device keeps its old (lower) dataVersion and
           // can later be treated as "newer" than the remote, reversing the sync
@@ -1152,6 +1154,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             appdata.settings['dataVersion'] = remoteVersion;
             await appdata.saveData(false);
           }
+          if (!_hasCompletedInitialSync()) {
+            await _markInitialSyncCompleted();
+          }
+          _addSyncLog('download', file.name, true, null);
+          taskManager.completeTask(task.id, fileName: file.name);
 
           // The backup replaced settings in place; rebuild the UI so imported
           // appearance changes (e.g. a non-default theme color) take effect now
@@ -1196,7 +1203,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       if (file == null) {
         // Empty server: this device's data is the fleet's only copy. Mark
         // initial sync complete so the first publish isn't gated, then upload.
-        _markInitialSyncCompleted();
+        await _markInitialSyncCompleted();
         return uploadData();
       }
       if (_versionOfFileName(file.name!) > _dataVersion()) {
@@ -1280,6 +1287,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       await Future.delayed(const Duration(milliseconds: 100));
     }
     _haveWaitingTask = false;
+    final initialRestore = initialRestoreDeferred;
     _isDownloading = true;
     _lastError = null;
     notifyListeners();
@@ -1311,8 +1319,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             () => importAppData(
               localFile,
               checkVersion: false,
-              restoreLocalComics: _syncLocalComics(),
-              mergeTranslations: _syncTranslations(),
+              restoreLocalComics: initialRestore || _syncLocalComics(),
+              mergeTranslations: initialRestore || _syncTranslations(),
               userRestore: true,
             ),
           );
@@ -1332,13 +1340,17 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // so a force upload here lands above everything on the server.)
         App.forceRebuild();
 
-        if (!_hasCompletedInitialSync()) _markInitialSyncCompleted();
+        if (initialRestore) {
+          appdata.settings['dataVersion'] = _versionOfFileName(fileName);
+          await appdata.saveData(false);
+        }
+        if (!_hasCompletedInitialSync()) await _markInitialSyncCompleted();
         _addSyncLog('download', fileName, true, null);
 
         // Release the download lock before the publish upload; uploadData
         // busy-waits on it otherwise.
         _isDownloading = false;
-        unawaited(uploadData(force: true));
+        if (!initialRestore) unawaited(uploadData(force: true));
 
         // Mirror downloadData: the backup only restores base app data. If the
         // user has image-pack sync enabled locally, download the comic image
