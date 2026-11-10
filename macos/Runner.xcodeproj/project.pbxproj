@@ -29,6 +29,47 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		9AAB77A3144A0B6FD2450013 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE8ED61D226C0C340EA664CF /* Pods_RunnerTests.framework */; };
 		B42C947B57A4214D325B1301 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83BE1AA042D77D05E3117D79 /* Pods_Runner.framework */; };
+		33820000000000000000000D /* ReadingWidgets.appex in Embed App Extensions */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000002;
+			settings = {
+				ATTRIBUTES = (
+					RemoveHeadersOnCopy,
+				);
+			};
+		};
+		338200000000000000000016 /* ReadingWidgetData.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000010;
+		};
+		338200000000000000000017 /* ReadingWidgetBridge.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000011;
+		};
+		338200000000000000000018 /* ReadingWidgetData.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000010;
+		};
+		338200000000000000000019 /* ReadingWidgets.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000012;
+		};
+		33820000000000000000001E /* Localizable.strings in Resources */ = {
+			isa = PBXBuildFile;
+			fileRef = 33820000000000000000001A;
+		};
+		338200000000000000000021 /* WidgetKit.framework in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = 33820000000000000000001F;
+		};
+		338200000000000000000022 /* SwiftUI.framework in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = 338200000000000000000020;
+		};
+		338200000000000000000023 /* WidgetKit.framework in Frameworks */ = {
+			isa = PBXBuildFile;
+			fileRef = 33820000000000000000001F;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +87,13 @@
 			remoteGlobalIDString = 33CC111A2044C6BA0003C045;
 			remoteInfo = FLX;
 		};
+		33820000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 33CC10E52044A3C60003C045;
+			proxyType = 1;
+			remoteGlobalIDString = 338200000000000000000001;
+			remoteInfo = ReadingWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -57,6 +105,17 @@
 			files = (
 			);
 			name = "Bundle Framework";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		33820000000000000000000C /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				33820000000000000000000D,
+			);
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -88,6 +147,84 @@
 		DAC5CAEDAA7FACA992E4F3D0 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		EAFABBF7776BF069792186A5 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		EE8ED61D226C0C340EA664CF /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		338200000000000000000002 /* ReadingWidgets.appex */ = {
+			isa = PBXFileReference;
+			explicitFileType = "wrapper.app-extension";
+			includeInIndex = 0;
+			path = ReadingWidgets.appex;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		338200000000000000000010 /* ReadingWidgetData.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ReadingWidgetData.swift;
+			sourceTree = "<group>";
+		};
+		338200000000000000000011 /* ReadingWidgetBridge.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ReadingWidgetBridge.swift;
+			sourceTree = "<group>";
+		};
+		338200000000000000000012 /* ReadingWidgets.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ReadingWidgets.swift;
+			sourceTree = "<group>";
+		};
+		338200000000000000000013 /* Info.plist */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.xml;
+			path = Info.plist;
+			sourceTree = "<group>";
+		};
+		338200000000000000000014 /* ReadingWidgets.entitlements */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.entitlements;
+			path = ReadingWidgets.entitlements;
+			sourceTree = "<group>";
+		};
+		338200000000000000000015 /* Widgets.xcconfig */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xcconfig;
+			path = Widgets.xcconfig;
+			sourceTree = "<group>";
+		};
+		33820000000000000000001B /* en */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = en;
+			path = Resources/en.lproj/Localizable.strings;
+			sourceTree = "<group>";
+		};
+		33820000000000000000001C /* zh-Hans */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "zh-Hans";
+			path = "Resources/zh-Hans.lproj/Localizable.strings";
+			sourceTree = "<group>";
+		};
+		33820000000000000000001D /* zh-Hant */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "zh-Hant";
+			path = "Resources/zh-Hant.lproj/Localizable.strings";
+			sourceTree = "<group>";
+		};
+		33820000000000000000001F /* WidgetKit.framework */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
+			name = WidgetKit.framework;
+			path = System/Library/Frameworks/WidgetKit.framework;
+			sourceTree = SDKROOT;
+		};
+		338200000000000000000020 /* SwiftUI.framework */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
+			name = SwiftUI.framework;
+			path = System/Library/Frameworks/SwiftUI.framework;
+			sourceTree = SDKROOT;
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,7 +240,17 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				338200000000000000000023 /* WidgetKit.framework in Frameworks */,
 				B42C947B57A4214D325B1301 /* Pods_Runner.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		338200000000000000000009 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				338200000000000000000021,
+				338200000000000000000022,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,6 +293,8 @@
 		33CC10E42044A3C60003C045 = {
 			isa = PBXGroup;
 			children = (
+				33820000000000000000000E /* WidgetsShared */,
+				33820000000000000000000F /* ReadingWidgets */,
 				33FAB671232836740065AC1E /* Runner */,
 				33CEB47122A05771004F2AC0 /* Flutter */,
 				331C80D6294CF71000263BE5 /* RunnerTests */,
@@ -158,6 +307,7 @@
 		33CC10EE2044A3C60003C045 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				338200000000000000000002 /* ReadingWidgets.appex */,
 				33CC10ED2044A3C60003C045 /* venera.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
 			);
@@ -202,10 +352,34 @@
 		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				33820000000000000000001F /* WidgetKit.framework */,
+				338200000000000000000020 /* SwiftUI.framework */,
 				83BE1AA042D77D05E3117D79 /* Pods_Runner.framework */,
 				EE8ED61D226C0C340EA664CF /* Pods_RunnerTests.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		33820000000000000000000E /* WidgetsShared */ = {
+			isa = PBXGroup;
+			children = (
+				338200000000000000000010,
+				338200000000000000000011,
+				338200000000000000000012,
+				33820000000000000000001A,
+			);
+			name = WidgetsShared;
+			path = ../apple/Widgets;
+			sourceTree = "<group>";
+		};
+		33820000000000000000000F /* ReadingWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				338200000000000000000013,
+				338200000000000000000014,
+				338200000000000000000015,
+			);
+			path = ReadingWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -238,6 +412,7 @@
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
+				33820000000000000000000C /* Embed App Extensions */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				9635D3A6D08BF5053750BABC /* [CP] Embed Pods Frameworks */,
@@ -245,12 +420,32 @@
 			buildRules = (
 			);
 			dependencies = (
+				33820000000000000000000B /* PBXTargetDependency */,
 				33CC11202044C79F0003C045 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* venera.app */;
 			productType = "com.apple.product-type.application";
+		};
+		338200000000000000000001 /* ReadingWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 338200000000000000000003;
+			buildPhases = (
+				338200000000000000000007,
+				338200000000000000000009,
+				338200000000000000000008,
+			);
+			buildRules = (
+
+			);
+			dependencies = (
+
+			);
+			name = ReadingWidgets;
+			productName = ReadingWidgets;
+			productReference = 338200000000000000000002;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -263,6 +458,13 @@
 				LastUpgradeCheck = 1510;
 				ORGANIZATIONNAME = "";
 				TargetAttributes = {
+					338200000000000000000001 = {
+						CreatedOnToolsVersion = 16.4;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups = { enabled = 1; };
+						};
+					};
 					331C80D4294CF70F00263BE5 = {
 						CreatedOnToolsVersion = 14.0;
 						TestTargetID = 33CC10EC2044A3C60003C045;
@@ -272,6 +474,7 @@
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
+							com.apple.ApplicationGroups = { enabled = 1; };
 							com.apple.Sandbox = {
 								enabled = 1;
 							};
@@ -288,6 +491,8 @@
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				"zh-Hans",
+				"zh-Hant",
 				en,
 				Base,
 			);
@@ -296,6 +501,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				338200000000000000000001 /* ReadingWidgets */,
 				33CC10EC2044A3C60003C045 /* Runner */,
 				331C80D4294CF70F00263BE5 /* RunnerTests */,
 				33CC111A2044C6BA0003C045 /* Flutter Assemble */,
@@ -317,6 +523,14 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		338200000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				33820000000000000000001E,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -437,9 +651,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				338200000000000000000016 /* ReadingWidgetData.swift in Sources */,
+				338200000000000000000017 /* ReadingWidgetBridge.swift in Sources */,
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		338200000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				338200000000000000000018,
+				338200000000000000000019,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -456,6 +681,11 @@
 			target = 33CC111A2044C6BA0003C045 /* Flutter Assemble */;
 			targetProxy = 33CC111F2044C79F0003C045 /* PBXContainerItemProxy */;
 		};
+		33820000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 338200000000000000000001;
+			targetProxy = 33820000000000000000000A;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -466,6 +696,16 @@
 			);
 			name = MainMenu.xib;
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		33820000000000000000001A /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				33820000000000000000001B,
+				33820000000000000000001C,
+				33820000000000000000001D,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -752,6 +992,87 @@
 			};
 			name = Release;
 		};
+		338200000000000000000004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 338200000000000000000015;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ReadingWidgets/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.kyosee.venera.ReadingWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		338200000000000000000005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 338200000000000000000015;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ReadingWidgets/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.kyosee.venera.ReadingWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		338200000000000000000006 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 338200000000000000000015;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ReadingWidgets/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.kyosee.venera.ReadingWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -791,6 +1112,16 @@
 				33CC111C2044C6BA0003C045 /* Debug */,
 				33CC111D2044C6BA0003C045 /* Release */,
 				338D0CEB231458BD00FA5F75 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		338200000000000000000003 /* Build configuration list for PBXNativeTarget "ReadingWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				338200000000000000000004,
+				338200000000000000000005,
+				338200000000000000000006,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,0 +1,59 @@
+name: Apple widget SDK checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, 'codex/**']
+    paths:
+      - apple/**
+      - ios/**
+      - macos/**
+      - test/apple_widgets*
+      - .github/workflows/apple-widgets-check.yml
+  pull_request:
+    paths:
+      - apple/**
+      - ios/**
+      - macos/**
+      - test/apple_widgets*
+      - .github/workflows/apple-widgets-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.44.3'
+          architecture: x64
+      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - run: flutter precache --ios --macos
+      - name: Check native extensions and host bridges without packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          mac_sdk=$(xcrun --sdk macosx --show-sdk-path)
+          ios_sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          mac_framework=$(find "$FLUTTER_ROOT/bin/cache/artifacts/engine" -type d -path '*/macos-arm64_x86_64/FlutterMacOS.framework' -print -quit)
+          ios_framework=$(find "$FLUTTER_ROOT/bin/cache/artifacts/engine" -type d -path '*/ios-arm64_x86_64-simulator/Flutter.framework' -print -quit)
+          test -n "$mac_framework"
+          test -n "$ios_framework"
+          shared=(apple/Widgets/ReadingWidgetData.swift)
+          xcrun swiftc -typecheck -parse-as-library -sdk "$mac_sdk" -target x86_64-apple-macosx14.0 "${shared[@]}" apple/Widgets/ReadingWidgets.swift
+          xcrun swiftc -typecheck -parse-as-library -sdk "$ios_sdk" -target x86_64-apple-ios15.1-simulator "${shared[@]}" apple/Widgets/ReadingWidgets.swift
+          xcrun swiftc -typecheck -parse-as-library -sdk "$mac_sdk" -target x86_64-apple-macosx14.0 -F "$(dirname "$mac_framework")" "${shared[@]}" apple/Widgets/ReadingWidgetBridge.swift macos/Runner/AppDelegate.swift
+          xcrun swiftc -typecheck -parse-as-library -sdk "$ios_sdk" -target x86_64-apple-ios15.1-simulator -F "$(dirname "$ios_framework")" -I ios/Runner -import-objc-header ios/Runner/Runner-Bridging-Header.h "${shared[@]}" apple/Widgets/ReadingWidgetBridge.swift ios/Runner/AppDelegate.swift
+      - name: Check Xcode references and localized resources
+        run: node --test test/apple_widgets_test.cjs
+      - name: Run shared store XCTest without an app package
+        shell: bash
+        run: |
+          set -euo pipefail
+          frameworks="$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+          xcrun swiftc -parse-as-library -D WIDGET_STORE_STANDALONE -F "$frameworks" -Xlinker -rpath -Xlinker "$frameworks" apple/Widgets/ReadingWidgetData.swift ios/RunnerTests/RunnerTests.swift test/apple_widgets_main.swift -o "$RUNNER_TEMP/widget-store-tests"
+          "$RUNNER_TEMP/widget-store-tests"

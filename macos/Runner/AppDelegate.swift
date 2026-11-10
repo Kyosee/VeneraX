@@ -8,6 +8,7 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
       let controller: FlutterViewController = mainFlutterWindow?.contentViewController as! FlutterViewController
+      ReadingWidgetBridge.register(messenger: controller.engine.binaryMessenger)
       let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.engine.binaryMessenger)
 
       methodChannel.setMethodCallHandler { (call, result) in

@@ -25,6 +25,7 @@ import Foundation // 添加此行
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    ReadingWidgetBridge.register(messenger: engineBridge.applicationRegistrar.messenger())
     flutterRegistrar = engineBridge.pluginRegistry
       .registrar(forPlugin: "VeneraAppDelegate")
 
