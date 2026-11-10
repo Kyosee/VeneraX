@@ -263,7 +263,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         ),
                       ),
                     ),
-                    if (_step == 2)
+                    if (_step == 2 && !App.isDesktop)
                       TextButton(
                         onPressed: _busy
                             ? null
@@ -330,7 +330,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
-                                      _setupSteps[i].tl,
+                                      (i == 2 && App.isDesktop
+                                              ? 'Access information'
+                                              : _setupSteps[i])
+                                          .tl,
                                       style: TextStyle(
                                         color: i == _step
                                             ? colors.primary
@@ -435,20 +438,28 @@ class _OnboardingPageState extends State<OnboardingPage> {
         children: [
           _title(
             context,
-            'Permissions, when you need them',
-            'Optional permissions can be skipped. Only grant what you want to use.',
+            App.isDesktop
+                ? 'Features and access'
+                : 'Permissions, when you need them',
+            App.isDesktop
+                ? 'No permissions need to be granted here. These notes explain how the desktop app uses your network and files.'
+                : 'Optional permissions can be skipped. Only grant what you want to use.',
           ),
           _permission(
             Icons.public,
             'Network access',
-            App.isIOS
+            App.isDesktop
+                ? 'Online reading, updates, and optional WebDAV sync use your network connection. Desktop systems usually do not ask for separate network permission; system or firewall settings may still restrict access.'
+                : App.isIOS
                 ? 'Network access is managed by iOS. Allow access in system settings when needed.'
                 : 'Online reading, updates, and optional sync use your network connection. No separate network permission prompt is needed.',
           ),
           _permission(
             Icons.notifications_none,
             'Notifications',
-            'Show progress and results for downloads and background tasks.',
+            App.isDesktop
+                ? 'This desktop version does not request system notification permission during setup. Download and background task progress is available in the app.'
+                : 'Show progress and results for downloads and background tasks.',
             trailing: App.isAndroid || App.isOhos
                 ? TextButton(
                     onPressed: _busy || _notifications == true ? null : _notify,
@@ -461,6 +472,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           .tl,
                     ),
                   )
+                : App.isDesktop
+                ? null
                 : Text(
                     'No notification request on this platform'.tl,
                     style: const TextStyle(fontSize: 12),
@@ -469,7 +482,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
           _permission(
             Icons.folder_outlined,
             'File access',
-            'Choose a file when importing a backup. Setup does not request access to all files.',
+            App.isDesktop
+                ? 'Choose files or folders in the system picker when importing, exporting, or adding local content. Access to protected folders may still require system confirmation.'
+                : 'Choose a file when importing a backup. Setup does not request access to all files.',
           ),
         ],
       );

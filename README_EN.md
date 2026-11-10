@@ -110,6 +110,8 @@ The accepted agreement version, acceptance time, and reading language are stored
 
 System permissions, WebDAV, translation and any other data processing that legally requires separate consent are chosen or authorized separately. Accepting the agreement does not replace those authorizations. This flow is a current development change; release notes determine its availability in a published version.
 
+On desktop, step three shows “Features and access” without inactive permission controls. It explains network and system restrictions, in-app task progress, and file selection during import and export; protected folders may still require system confirmation. Android and HarmonyOS retain the supported notification permission action.
+
 ### Changelog
 
 See the **[Changelog](CHANGELOG_EN.md)** for what each version added, changed and fixed. It updates automatically after every stable release. When the app finds a new version, the update dialog also shows what changed.

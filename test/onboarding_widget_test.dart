@@ -212,4 +212,36 @@ void main() {
     expect(store.state.needsAgreement(), isFalse);
     expect(tester.takeException(), isNull);
   });
+
+  for (final platform in [
+    TargetPlatform.windows,
+    TargetPlatform.macOS,
+    TargetPlatform.linux,
+  ]) {
+    for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
+      testWidgets('desktop access notes fit $platform in $language', (
+        tester,
+      ) async {
+        appdata.settings['language'] = language;
+        await tester.runAsync(() => store.accept(language));
+        tester.view.physicalSize = const Size(1100, 760);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(MaterialApp(
+          home: OnboardingPage(
+            ensureServices: () async {},
+            onFinished: () {},
+            onDeclined: () {},
+          ),
+        ));
+        await tester.tap(find.text('Continue'.tl));
+        await tester.pump();
+        expect(find.text('Features and access'.tl), findsOneWidget);
+        expect(find.text('Access information'.tl), findsOneWidget);
+        expect(find.text('Enable notifications'.tl), findsNothing);
+        expect(find.text('Skip for now'.tl), findsNothing);
+        expect(tester.takeException(), isNull);
+      }, variant: TargetPlatformVariant({platform}));
+    }
+  }
 }
