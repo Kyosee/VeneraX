@@ -2,8 +2,55 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'package:venera/foundation/disclaimer_content.dart';
 import 'package:venera/foundation/onboarding.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
+
+void _createUsageDatabase(
+  File file, {
+  bool favorite = false,
+  bool populated = false,
+  String folder = 'Favorites',
+}) {
+  file.createSync();
+  final db = openRawDatabase(file.path);
+  try {
+    final table = favorite ? '"${folder.replaceAll('"', '""')}"' : 'history';
+    db.execute(
+      favorite
+          ? '''
+          CREATE TABLE $table (
+            id TEXT, name TEXT, author TEXT, type INT, tags TEXT,
+            cover_path TEXT, time TEXT, display_order INT, translated_tags TEXT,
+            authors TEXT, comic_status TEXT, update_time_meta TEXT,
+            extra_meta TEXT, PRIMARY KEY (id, type)
+          );
+        '''
+          : '''
+          CREATE TABLE history (
+            id TEXT, title TEXT, subtitle TEXT, cover TEXT, time INT,
+            type INT, ep INT, page INT, readEpisode TEXT, max_page INT,
+            chapter_group INT, hidden INT, PRIMARY KEY (id, type)
+          );
+        ''',
+    );
+    if (favorite) {
+      db.execute('''
+        CREATE TABLE folder_order (folder_name TEXT PRIMARY KEY, order_value INT);
+        INSERT INTO folder_order VALUES ('Favorites', 0);
+      ''');
+    }
+    if (populated) {
+      db.execute('INSERT INTO $table (id, type) VALUES (?, ?);', [
+        'fixture-comic',
+        0,
+      ]);
+    }
+  } finally {
+    db.dispose();
+  }
+}
 
 class _UnreadableOnboardingFile implements File {
   _UnreadableOnboardingFile(this.path);
@@ -101,6 +148,132 @@ void main() {
       expect(nextLaunch.blocksAutomaticTasks, isTrue);
     },
   );
+
+  test(
+    'existing usage repairs stale unfinished setup without accepting agreement',
+    () async {
+      final firstLaunch = OnboardingStore();
+      await firstLaunch.load(directory.path);
+      final appData = File('${directory.path}/appdata.json');
+      final existingData = jsonEncode({
+        'settings': <String, Object?>{},
+        'searchHistory': ['fixture query'],
+      });
+      await appData.writeAsString(existingData);
+
+      final nextLaunch = OnboardingStore();
+      await nextLaunch.load(directory.path);
+
+      expect(nextLaunch.state.setupCompleted, isTrue);
+      expect(nextLaunch.state.acceptedVersion, 0);
+      expect(nextLaunch.state.acceptedAt, isNull);
+      expect(nextLaunch.state.acceptedLanguage, isNull);
+      expect(nextLaunch.state.needsAgreement(), isTrue);
+      expect(nextLaunch.blocksAutomaticTasks, isTrue);
+      expect(await appData.readAsString(), existingData);
+      expect(
+        (jsonDecode(await record.readAsString()) as Map)['setupCompleted'],
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'empty initialized SQLite stores and folder metadata keep setup unfinished',
+    () async {
+      final firstLaunch = OnboardingStore();
+      await firstLaunch.load(directory.path);
+      final history = File('${directory.path}/history.db');
+      final favorites = File('${directory.path}/local_favorite.db');
+      _createUsageDatabase(history);
+      _createUsageDatabase(favorites, favorite: true);
+      final historyBytes = await history.readAsBytes();
+      final favoriteBytes = await favorites.readAsBytes();
+
+      final nextLaunch = OnboardingStore();
+      await nextLaunch.load(directory.path);
+
+      expect(nextLaunch.loadError, isNull);
+      expect(nextLaunch.state.setupCompleted, isFalse);
+      expect(nextLaunch.state.needsAgreement(), isTrue);
+      expect(nextLaunch.blocksAutomaticTasks, isTrue);
+      expect(await history.readAsBytes(), historyBytes);
+      expect(await favorites.readAsBytes(), favoriteBytes);
+    },
+  );
+
+  for (final favorite in [false, true]) {
+    final name = favorite ? 'quoted favorite folder' : 'history';
+    test('$name repairs setup and preserves acceptance and database', () async {
+      final firstLaunch = OnboardingStore();
+      await firstLaunch.load(directory.path);
+      await firstLaunch.accept('zh-TW', version: kDisclaimerVersion + 1);
+      final accepted = firstLaunch.state;
+      final database = File(
+        '${directory.path}/${favorite ? 'local_favorite.db' : 'history.db'}',
+      );
+      _createUsageDatabase(
+        database,
+        favorite: favorite,
+        populated: true,
+        folder: 'Reader\'s "shelf"; DROP TABLE folder_order; --',
+      );
+      final previousBytes = await database.readAsBytes();
+
+      final nextLaunch = OnboardingStore();
+      await nextLaunch.load(directory.path);
+
+      expect(nextLaunch.loadError, isNull);
+      expect(nextLaunch.state.setupCompleted, isTrue);
+      expect(nextLaunch.state.acceptedVersion, accepted.acceptedVersion);
+      expect(nextLaunch.state.acceptedAt, accepted.acceptedAt);
+      expect(nextLaunch.state.acceptedLanguage, accepted.acceptedLanguage);
+      expect(nextLaunch.state.needsAgreement(), isFalse);
+      expect(nextLaunch.blocksAutomaticTasks, isFalse);
+      expect(await database.readAsBytes(), previousBytes);
+      expect(jsonDecode(await record.readAsString()), {
+        ...accepted.toJson(),
+        'setupCompleted': true,
+      });
+    });
+  }
+
+  test('a busy usage database blocks setup and permits a safe retry', () async {
+    final firstLaunch = OnboardingStore();
+    await firstLaunch.load(directory.path);
+    await firstLaunch.accept('en-US');
+    final previousRecord = await record.readAsString();
+    final database = File('${directory.path}/history.db');
+    _createUsageDatabase(database, populated: true);
+    final nextLaunch = OnboardingStore();
+    final locked = openRawDatabase(database.path);
+    try {
+      locked.execute('BEGIN EXCLUSIVE;');
+
+      await nextLaunch.load(directory.path);
+
+      expect(nextLaunch.loadError, isA<SqliteException>());
+      expect((nextLaunch.loadError as SqliteException).resultCode, 5);
+      expect(nextLaunch.state.setupCompleted, isFalse);
+      expect(nextLaunch.blocksAutomaticTasks, isTrue);
+      expect(await record.readAsString(), previousRecord);
+      locked.execute('ROLLBACK;');
+    } finally {
+      locked.dispose();
+    }
+
+    await nextLaunch.load(directory.path);
+
+    expect(nextLaunch.loadError, isNull);
+    expect(nextLaunch.state.setupCompleted, isTrue);
+    expect(nextLaunch.state.acceptedAt, firstLaunch.state.acceptedAt);
+    expect(nextLaunch.state.acceptedLanguage, 'en-US');
+    expect(nextLaunch.blocksAutomaticTasks, isFalse);
+    expect(
+      (jsonDecode(await record.readAsString()) as Map)['setupCompleted'],
+      isTrue,
+    );
+  });
 
   test(
     'acceptance persists its version, UTC time and language before setup',

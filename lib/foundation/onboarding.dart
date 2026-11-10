@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:sqlite3/sqlite3.dart' show OpenMode, SqliteException;
 import 'package:venera/foundation/disclaimer_content.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/utils/io.dart' show FilePath, writeStringAtomic;
 
 class OnboardingState {
@@ -75,6 +77,16 @@ class OnboardingStore {
             throw const FormatException();
           }
           state = OnboardingState.fromJson(json);
+          if (!state.setupCompleted && await _hasUserData(dataPath)) {
+            await _save(
+              OnboardingState(
+                setupCompleted: true,
+                acceptedVersion: state.acceptedVersion,
+                acceptedAt: state.acceptedAt,
+                acceptedLanguage: state.acceptedLanguage,
+              ),
+            );
+          }
           return;
         } on FormatException {
           // A damaged record cannot stand in for acceptance.
@@ -86,6 +98,78 @@ class OnboardingStore {
     } catch (error) {
       loadError = error;
     }
+  }
+
+  /// Empty stores created by an interrupted setup are not evidence of use.
+  static Future<bool> _hasUserData(String dataPath) async {
+    final appData = File(FilePath.join(dataPath, 'appdata.json'));
+    if (await appData.exists()) {
+      try {
+        final json = jsonDecode(await appData.readAsString());
+        if (json is Map &&
+            json['searchHistory'] is List &&
+            (json['searchHistory'] as List).isNotEmpty) {
+          return true;
+        }
+      } on FormatException {
+        // Other stores may still contain usable data.
+      }
+    }
+    final sources = Directory(FilePath.join(dataPath, 'comic_source'));
+    if (await sources.exists()) {
+      await for (final entry in sources.list(followLinks: false)) {
+        if (entry is File &&
+            entry.path.endsWith('.js') &&
+            await entry.length() > 0) {
+          return true;
+        }
+      }
+    }
+    for (final store in const {
+      'history.db': ['history'],
+      'local.db': ['comics'],
+      'read_later.db': ['read_later'],
+      'data/venera.db': [
+        'comics',
+        'favorites',
+        'history_events',
+        'local_library_items',
+      ],
+      'local_favorite.db': <String>[],
+    }.entries) {
+      final file = File(FilePath.join(dataPath, store.key));
+      if (!await file.exists() || await file.length() == 0) continue;
+      try {
+        // Startup owns these files here; close the read-only probe before any await.
+        final db = openRawDatabase(file.path, mode: OpenMode.readOnly);
+        try {
+          for (final row in db.select(
+            "SELECT name FROM sqlite_master WHERE type='table'",
+          )) {
+            final name = row['name'] as String;
+            final quoted = '"${name.replaceAll('"', '""')}"';
+            if (store.key == 'local_favorite.db') {
+              final columns = db
+                  .select('PRAGMA table_info($quoted)')
+                  .map((row) => row['name'])
+                  .toSet();
+              if (!columns.containsAll(['id', 'name', 'cover_path'])) continue;
+            } else if (!store.value.contains(name)) {
+              continue;
+            }
+            if (db.select('SELECT 1 FROM $quoted LIMIT 1').isNotEmpty) {
+              return true;
+            }
+          }
+        } finally {
+          db.dispose();
+        }
+      } on SqliteException catch (error) {
+        // A damaged database cannot prove setup is complete.
+        if (error.resultCode != 11 && error.resultCode != 26) rethrow;
+      }
+    }
+    return false;
   }
 
   /// Run before appdata or database initialization creates empty stores.
