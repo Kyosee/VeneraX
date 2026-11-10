@@ -11,6 +11,7 @@ import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/onboarding_page.dart';
+import 'package:venera/pages/onboarding_style.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -108,52 +109,52 @@ class _StartupPageState extends State<StartupPage> {
       );
     }
     if (_store.state.needsAgreement()) {
-      return PopScope(
-        canPop: false,
-        child: Scaffold(
-          body: SafeArea(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                const ExcludeSemantics(child: _HomeBackdrop()),
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                  child: ColoredBox(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.scrim.withValues(alpha: .28),
+      return OnboardingTheme(
+        builder: (context) => PopScope(
+          canPop: false,
+          child: Scaffold(
+            body: SafeArea(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const ExcludeSemantics(child: _HomeBackdrop()),
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                    child: ColoredBox(
+                      color: const Color(0xff13233c).withValues(alpha: .4),
+                    ),
                   ),
-                ),
-                LayoutBuilder(
-                  builder: (context, size) => Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(size.maxWidth < 600 ? 10 : 28),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 760,
-                          maxHeight: 860,
-                        ),
-                        child: Material(
-                          elevation: 12,
-                          borderRadius: BorderRadius.circular(20),
-                          color: Theme.of(context).colorScheme.surface,
-                          child: Padding(
-                            padding: EdgeInsets.all(
-                              size.maxWidth < 600 ? 18 : 28,
+                  LayoutBuilder(
+                    builder: (context, size) => Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(size.maxWidth < 600 ? 10 : 28),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 700),
+                          child: Material(
+                            elevation: 12,
+                            borderRadius: BorderRadius.circular(
+                              size.maxWidth < 600 ? 17 : 18,
                             ),
-                            child: AgreementPanel(
-                              isUpdate: true,
-                              previousVersion: _store.state.acceptedVersion,
-                              onAccepted: _acceptUpdate,
-                              onDeclined: _decline,
+                            color: Theme.of(context).colorScheme.surface,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: size.maxWidth < 600 ? 17 : 26,
+                                vertical: size.maxWidth < 600 ? 18 : 22,
+                              ),
+                              child: AgreementPanel(
+                                isUpdate: true,
+                                previousVersion: _store.state.acceptedVersion,
+                                onAccepted: _acceptUpdate,
+                                onDeclined: _decline,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

@@ -116,148 +116,206 @@ class _OnboardingWebdavDialogState extends State<OnboardingWebdavDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_busy,
-      child: Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, size) {
+        final wide = size.maxWidth >= 600;
+        Widget field(
+          String label,
+          TextEditingController controller, {
+          bool secret = false,
+          bool url = false,
+        }) => Padding(
+          padding: const EdgeInsets.only(top: 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                label.tl,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Semantics(
+                label: label.tl,
+                child: TextField(
+                  controller: controller,
+                  enabled: !_busy,
+                  keyboardType: url ? TextInputType.url : null,
+                  obscureText: secret,
+                  autocorrect: false,
+                  enableSuggestions: !secret,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: url ? 'https://dav.example.com/backups/' : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        return PopScope(
+          canPop: !_busy,
+          child: Dialog(
+            alignment: wide ? Alignment.center : Alignment.bottomCenter,
+            insetPadding: EdgeInsets.all(wide ? 28 : 0),
+            backgroundColor: colors.surface,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: wide
+                  ? BorderRadius.circular(20)
+                  : const BorderRadius.vertical(top: Radius.circular(25)),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 540,
+                maxHeight: wide ? size.maxHeight : size.maxHeight * .89,
+              ),
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  wide ? 26 : 23,
+                  wide ? 23 : 8,
+                  wide ? 26 : 23,
+                  24,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Restore from WebDAV'.tl,
-                        style: Theme.of(context).textTheme.titleLarge,
+                    if (!wide) ...[
+                      Center(
+                        child: Container(
+                          width: 32,
+                          height: 4,
+                          margin: const EdgeInsets.only(top: 2, bottom: 15),
+                          decoration: BoxDecoration(
+                            color: colors.outlineVariant,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
                       ),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Restore from WebDAV'.tl,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _busy
+                              ? null
+                              : () => Navigator.pop(context),
+                          tooltip: 'Close'.tl,
+                          iconSize: 18,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: _busy ? null : () => Navigator.pop(context),
-                      tooltip: 'Close'.tl,
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'First restore downloads your remote data. It does not upload an empty library.'
-                      .tl,
-                  style: const TextStyle(height: 1.6),
-                ),
-                const SizedBox(height: 18),
-                if (_backups == null) ...[
-                  TextField(
-                    controller: _url,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: InputDecoration(
-                      labelText: 'WebDAV URL'.tl,
-                      hintText: 'https://dav.example.com/backups/',
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _user,
-                    enabled: !_busy,
-                    autocorrect: false,
-                    decoration: InputDecoration(
-                      labelText: 'Username'.tl,
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _password,
-                    enabled: !_busy,
-                    obscureText: true,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: InputDecoration(
-                      labelText: 'Password'.tl,
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: _busy ? null : _connect,
-                    child: Text('Connect and check backups'.tl),
-                  ),
-                ] else ...[
-                  const Icon(Icons.cloud_done_outlined, size: 40),
-                  const SizedBox(height: 14),
-                  Text(
-                    (_backups!.isEmpty
-                            ? 'Connected. No app data backup was found.'
-                            : 'Connection successful')
-                        .tl,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  if (_backups!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
-                      _backups!.first.fileName,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      value: _autoSync,
-                      onChanged: _busy
-                          ? null
-                          : (value) =>
-                                setState(() => _autoSync = value ?? false),
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Enable automatic uploads after restoring'.tl,
-                      ),
-                    ),
-                    Text(
-                      'Off by default. You can change this later in Settings.'
+                      'First restore downloads your remote data. It does not upload an empty library.'
                           .tl,
-                      style: const TextStyle(fontSize: 12),
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.9,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
-                    const SizedBox(height: 18),
-                    FilledButton(
-                      onPressed: _busy ? null : () => _save(restore: true),
-                      child: Text('Restore latest backup'.tl),
-                    ),
+                    if (_backups == null) ...[
+                      field('WebDAV URL', _url, url: true),
+                      field('Username', _user),
+                      field('Password', _password, secret: true),
+                      const SizedBox(height: 18),
+                      FilledButton(
+                        onPressed: _busy ? null : _connect,
+                        child: Text('Connect and check backups'.tl),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 18),
+                      const Icon(Icons.cloud_done_outlined, size: 40),
+                      const SizedBox(height: 14),
+                      Text(
+                        (_backups!.isEmpty
+                                ? 'Connected. No app data backup was found.'
+                                : 'Connection successful')
+                            .tl,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (_backups!.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _backups!.first.fileName,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          value: _autoSync,
+                          onChanged: _busy
+                              ? null
+                              : (value) =>
+                                    setState(() => _autoSync = value ?? false),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Enable automatic uploads after restoring'.tl,
+                            style: const TextStyle(fontSize: 13, height: 1.8),
+                          ),
+                        ),
+                        Text(
+                          'Off by default. You can change this later in Settings.'
+                              .tl,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 18),
+                        FilledButton(
+                          onPressed: _busy ? null : () => _save(restore: true),
+                          child: Text('Restore latest backup'.tl),
+                        ),
+                      ],
+                      TextButton(
+                        onPressed: _busy ? null : () => _save(restore: false),
+                        child: Text('Save connection for later'.tl),
+                      ),
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() {
+                                _backups = null;
+                                _testedConfig = null;
+                              }),
+                        child: Text('Edit connection'.tl),
+                      ),
+                    ],
+                    if (_busy)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: LinearProgressIndicator(),
+                      ),
+                    if (_error != null)
+                      Text(
+                        _error!.tl,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                   ],
-                  TextButton(
-                    onPressed: _busy ? null : () => _save(restore: false),
-                    child: Text('Save connection for later'.tl),
-                  ),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                            _backups = null;
-                            _testedConfig = null;
-                          }),
-                    child: Text('Edit connection'.tl),
-                  ),
-                ],
-                if (_busy)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: LinearProgressIndicator(),
-                  ),
-                if (_error != null)
-                  Text(
-                    _error!.tl,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-              ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

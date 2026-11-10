@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/disclaimer_content.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/onboarding_page.dart';
+import 'package:venera/pages/onboarding_restore.dart';
+import 'package:venera/pages/onboarding_style.dart';
 import 'package:venera/pages/startup_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -66,6 +69,306 @@ void main() {
       ),
     );
     await tester.pump();
+  }
+
+  void expectVisibleButton(WidgetTester tester, Finder button, Size size) {
+    expect(button, findsOneWidget);
+    final bounds = tester.getRect(button);
+    expect(bounds.width, greaterThan(0));
+    expect(bounds.height, greaterThan(0));
+    expect(bounds.left, greaterThanOrEqualTo(0));
+    expect(bounds.top, greaterThanOrEqualTo(0));
+    expect(bounds.right, lessThanOrEqualTo(size.width));
+    expect(bounds.bottom, lessThanOrEqualTo(size.height));
+    expect(button.hitTestable(), findsOneWidget);
+  }
+
+  void expectTitleLeading(WidgetTester tester, Type artType, String title) {
+    final art = find.byType(artType);
+    final heading = find.text(title.tl);
+    expect(art, findsOneWidget);
+    expect(heading, findsOneWidget);
+    final box = tester.renderObject<RenderBox>(art);
+    // Include the leading artwork's FittedBox scale in its screen bounds.
+    final artBounds = Rect.fromPoints(
+      box.localToGlobal(Offset.zero),
+      box.localToGlobal(box.size.bottomRight(Offset.zero)),
+    );
+    final headingBounds = tester.getRect(heading);
+    expect(artBounds.width, greaterThan(0));
+    expect(artBounds.height, greaterThan(0));
+    expect(artBounds.right, lessThanOrEqualTo(headingBounds.left));
+    expect(artBounds.top, lessThan(headingBounds.bottom));
+    expect(artBounds.bottom, greaterThan(headingBounds.top));
+  }
+
+  Widget setupPage() => OnboardingPage(
+    ensureServices: () async {},
+    onFinished: () {},
+    onDeclined: () {},
+  );
+
+  for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
+    testWidgets('agreement shortcuts scroll to their sections in $language', (
+      tester,
+    ) async {
+      appdata.settings['language'] = language;
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(home: setupPage()));
+      await tester.pumpAndSettle();
+      final scroll = find.ancestor(
+        of: find.byType(DisclaimerBody),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is SingleChildScrollView &&
+              widget.scrollDirection == Axis.vertical,
+        ),
+      );
+      final controller = tester
+          .widget<SingleChildScrollView>(scroll)
+          .controller!;
+      final accept = find.byKey(const ValueKey('agreement-accept'));
+      final footer = tester.getRect(accept);
+      final offsets = <int, double>{};
+      for (final target in [
+        (6, 'Risks & liability'),
+        (4, 'Privacy & data'),
+        (8, 'Acceptance & changes'),
+      ]) {
+        // Reveal the horizontal shortcut, never its target section.
+        final shortcut = find.widgetWithText(TextButton, target.$2.tl);
+        await tester.ensureVisible(shortcut);
+        await tester.pumpAndSettle();
+        await tester.tap(shortcut);
+        await tester.pumpAndSettle();
+        final heading = find.descendant(
+          of: find.byType(DisclaimerBody),
+          matching: find.text(kDisclaimerSections[target.$1].$1.tl),
+        );
+        final viewport = tester.getRect(scroll);
+        final headingBounds = tester.getRect(heading);
+        expect(controller.offset, greaterThan(0));
+        expect(headingBounds.top, greaterThanOrEqualTo(viewport.top - 1));
+        expect(
+          headingBounds.bottom,
+          lessThanOrEqualTo(viewport.bottom + 1),
+          reason: '${target.$2}: heading=$headingBounds, viewport=$viewport',
+        );
+        expect(tester.getRect(accept), footer);
+        offsets[target.$1] = controller.offset;
+      }
+      expect(offsets[6], greaterThan(offsets[4]!));
+      expect(offsets[8], greaterThan(offsets[6]!));
+      final backToTop = find.widgetWithText(TextButton, 'Back to top'.tl);
+      await tester.ensureVisible(backToTop);
+      await tester.pumpAndSettle();
+      await tester.tap(backToTop);
+      await tester.pumpAndSettle();
+      expect(controller.offset, closeTo(0, 1));
+      expect(tester.getRect(accept), footer);
+      expect(store.state.acceptedVersion, 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('changing language resets consent on the first setup screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: setupPage()));
+    await tester.tap(find.byKey(const ValueKey('agreement-consent')));
+    await tester.pump();
+    final accept = find.byKey(const ValueKey('agreement-accept'));
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    expect(tester.widget<FilledButton>(accept).onPressed, isNotNull);
+
+    final dynamic changeLanguage = tester
+        .widget<DropdownButton<String>>(find.byType(DropdownButton<String>))
+        .onChanged!;
+    await tester.runAsync(() async {
+      // Await the real callback's disk write before checking the rebuilt panel.
+      await changeLanguage('zh-CN');
+    });
+    await tester.pumpAndSettle();
+    expect(appdata.settings['language'], 'zh-CN');
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+    expect(tester.widget<FilledButton>(accept).onPressed, isNull);
+    expect(store.state.acceptedVersion, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
+    for (final device in [
+      (TargetPlatform.android, const Size(320, 700)),
+      (TargetPlatform.windows, const Size(1100, 760)),
+    ]) {
+      for (final brightness in Brightness.values) {
+        testWidgets(
+          'setup and existing-user notice fit $language ${device.$2} $brightness',
+          (tester) async {
+            appdata.settings['language'] = language;
+            tester.view.physicalSize = device.$2;
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.reset);
+            Widget themed(Widget home) => MaterialApp(
+              theme: ThemeData(brightness: brightness),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: const TextScaler.linear(1.2)),
+                child: child!,
+              ),
+              home: home,
+            );
+            final accept = find.byKey(const ValueKey('agreement-accept'));
+            await tester.pumpWidget(themed(setupPage()));
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+            expectVisibleButton(tester, accept, device.$2);
+            expect(tester.widget<FilledButton>(accept).onPressed, isNull);
+            expect(
+              Theme.of(tester.element(find.byType(AgreementPanel))).brightness,
+              brightness,
+            );
+
+            // Acceptance persistence is covered separately; keep layout offline.
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.runAsync(() => store.accept(language));
+            await tester.pumpWidget(themed(setupPage()));
+            await tester.pumpAndSettle();
+            expectTitleLeading(
+              tester,
+              OnboardingLanguageArt,
+              'Choose your app language',
+            );
+            for (var step = 1; step <= 3; step++) {
+              final next = find.widgetWithText(
+                FilledButton,
+                (step == 3 ? 'Skip and start reading' : 'Continue').tl,
+              );
+              expectVisibleButton(tester, next, device.$2);
+              expect(tester.widget<FilledButton>(next).onPressed, isNotNull);
+              expect(tester.takeException(), isNull);
+              if (step == 2) {
+                expect(
+                  find.text(
+                    (device.$1 == TargetPlatform.android
+                            ? 'Permission settings'
+                            : 'Features and access')
+                        .tl,
+                  ),
+                  findsOneWidget,
+                );
+              } else if (step == 3) {
+                expectTitleLeading(
+                  tester,
+                  OnboardingRestoreArt,
+                  'Import or restore data',
+                );
+              }
+              if (step < 3) {
+                await tester.tap(next);
+                await tester.pumpAndSettle();
+              }
+            }
+
+            await tester.pumpWidget(const SizedBox.shrink());
+            store.state = const OnboardingState(setupCompleted: true);
+            await tester.pumpWidget(themed(const StartupPage()));
+            await tester.pumpAndSettle();
+            expect(find.byType(OnboardingPage), findsNothing);
+            expect(
+              tester
+                  .widget<AgreementPanel>(find.byType(AgreementPanel))
+                  .isUpdate,
+              isTrue,
+            );
+            expectVisibleButton(tester, accept, device.$2);
+            expect(tester.widget<FilledButton>(accept).onPressed, isNull);
+            expect(tester.takeException(), isNull);
+          },
+          variant: TargetPlatformVariant({device.$1}),
+        );
+      }
+    }
+  }
+
+  for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
+    testWidgets(
+      'WebDAV form remains reachable above a small-screen keyboard in $language',
+      (tester) async {
+        appdata.settings['language'] = language;
+        tester.view.physicalSize = const Size(320, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.2)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => OnboardingTheme(
+                      builder: (_) => const OnboardingWebdavDialog(),
+                    ),
+                  ),
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        expect(find.byType(TextField), findsNWidgets(3));
+        expect(tester.takeException(), isNull);
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await tester.pumpAndSettle();
+        for (var index = 0; index < 3; index++) {
+          final field = find.byType(TextField).at(index);
+          await tester.ensureVisible(field);
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            field,
+            ['https://example.invalid/backups/', 'fixture', 'fixture'][index],
+          );
+          await tester.pumpAndSettle();
+          expectVisibleButton(tester, field, const Size(320, 400));
+          expect(tester.takeException(), isNull);
+        }
+        final connect = find.widgetWithText(
+          FilledButton,
+          'Connect and check backups'.tl,
+        );
+        await tester.ensureVisible(connect);
+        await tester.pumpAndSettle();
+        expectVisibleButton(tester, connect, const Size(320, 400));
+        expect(tester.widget<FilledButton>(connect).onPressed, isNotNull);
+        expect(tester.takeException(), isNull);
+
+        final close = find.byTooltip('Close'.tl);
+        await tester.ensureVisible(close);
+        await tester.pumpAndSettle();
+        expectVisibleButton(tester, close, const Size(320, 400));
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(find.byType(OnboardingWebdavDialog), findsNothing);
+        expect(store.state.acceptedVersion, 0);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({TargetPlatform.android}),
+    );
   }
 
   for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
@@ -219,29 +522,33 @@ void main() {
     TargetPlatform.linux,
   ]) {
     for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
-      testWidgets('desktop access notes fit $platform in $language', (
-        tester,
-      ) async {
-        appdata.settings['language'] = language;
-        await tester.runAsync(() => store.accept(language));
-        tester.view.physicalSize = const Size(1100, 760);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.reset);
-        await tester.pumpWidget(MaterialApp(
-          home: OnboardingPage(
-            ensureServices: () async {},
-            onFinished: () {},
-            onDeclined: () {},
-          ),
-        ));
-        await tester.tap(find.text('Continue'.tl));
-        await tester.pump();
-        expect(find.text('Features and access'.tl), findsOneWidget);
-        expect(find.text('Access information'.tl), findsOneWidget);
-        expect(find.text('Enable notifications'.tl), findsNothing);
-        expect(find.text('Skip for now'.tl), findsNothing);
-        expect(tester.takeException(), isNull);
-      }, variant: TargetPlatformVariant({platform}));
+      testWidgets(
+        'desktop access notes fit $platform in $language',
+        (tester) async {
+          appdata.settings['language'] = language;
+          await tester.runAsync(() => store.accept(language));
+          tester.view.physicalSize = const Size(1100, 760);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            MaterialApp(
+              home: OnboardingPage(
+                ensureServices: () async {},
+                onFinished: () {},
+                onDeclined: () {},
+              ),
+            ),
+          );
+          await tester.tap(find.text('Continue'.tl));
+          await tester.pump();
+          expect(find.text('Features and access'.tl), findsOneWidget);
+          expect(find.text('Access information'.tl), findsOneWidget);
+          expect(find.text('Enable notifications'.tl), findsNothing);
+          expect(find.text('Skip for now'.tl), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
     }
   }
 }
