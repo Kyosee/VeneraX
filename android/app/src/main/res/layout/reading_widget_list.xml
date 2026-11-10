@@ -8,6 +8,15 @@
     android:padding="12dp">
     <include layout="@layout/reading_widget_header" />
     <TextView
+        android:id="@+id/reading_widget_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/reading_widget_secondary"
+        android:textSize="10sp"
+        android:visibility="gone" />
+    <TextView
         android:id="@+id/reading_widget_empty"
         android:layout_width="match_parent"
         android:layout_height="0dp"

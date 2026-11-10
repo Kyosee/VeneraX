@@ -9,7 +9,7 @@ export class ReadingWidgetService implements MethodCallHandler {
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
     if (call.method === 'hasWidgets') {
-      result.success(this.store.hasWidgets());
+      result.success(this.store.hasWidgets(call.args as string));
       return;
     }
     if (call.method !== 'update') {
@@ -19,9 +19,9 @@ export class ReadingWidgetService implements MethodCallHandler {
     try {
       const json: string = call.args as string;
       if (typeof json !== 'string') throw new Error('Invalid snapshot');
-      this.store.save(json);
+      const kind = this.store.save(json);
       // A later privacy update must be the last update delivered to every form.
-      this.updates = this.updates.catch(() => {}).then(() => this.store.updateAll());
+      this.updates = this.updates.catch(() => {}).then(() => this.store.updateAll(kind));
       this.updates.then(() => result.success(null)).catch(() => {
         result.error('WIDGET_UPDATE_FAILED', 'Unable to update reading widgets.', null);
       });

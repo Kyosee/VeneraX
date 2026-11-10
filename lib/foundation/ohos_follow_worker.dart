@@ -11,6 +11,7 @@ import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/ohos_follow_scheduler.dart';
+import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/io.dart';
@@ -134,6 +135,13 @@ void runOhosFollowWorker(List<String> args) {
           }
           await notifyPending();
           outcome = cancelled ? 'cancelled' : 'checked';
+          await ReadingWidgetService.instance.refresh(
+            kinds: const [
+              ReadingWidgetKind.following,
+              ReadingWidgetKind.updates,
+            ],
+            loadCovers: false,
+          );
         } catch (_) {
           // Do not send source URLs, credentials or comic titles to system logs.
         } finally {

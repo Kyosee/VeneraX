@@ -120,8 +120,8 @@ export class IncomingService implements MethodCallHandler {
       } catch (_) {}
     }
     if (typeof widgetUri === 'string' && widgetUri.length <= MAX_LINK_LENGTH &&
-      (widgetUri === 'venerax://reading-widget/history' ||
-        /^venerax:\/\/reading-widget\/read\?id=[^&#]+&type=-?\d+$/.test(widgetUri))) {
+      (/^venerax:\/\/reading-widget\/(history|following|updates|local)$/.test(widgetUri) ||
+        /^venerax:\/\/reading-widget\/(?:following\/|updates\/|local\/)?read\?id=[^&#]+&type=-?\d+$/.test(widgetUri))) {
       if (initial && this.initialLink === null) this.initialLink = widgetUri;
       this.latestLink = widgetUri;
       this.links.publish(widgetUri);

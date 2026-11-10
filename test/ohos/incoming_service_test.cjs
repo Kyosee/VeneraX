@@ -122,6 +122,20 @@ test('malformed Form Kit JSON and foreign destinations are ignored', async () =>
   assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: null }]);
 });
 
+test('all card kinds accept their list and comic routes from Form Kit', async () => {
+  const h = harness();
+  const values = h.listen(LINKS);
+  const expected = [];
+  for (const kind of ['following', 'updates', 'local']) {
+    for (const suffix of ['', '/read?id=book%26one&type=42']) {
+      const uri = `venerax://reading-widget/${kind}${suffix}`;
+      expected.push(uri);
+      await h.service.handleWant({ parameters: { params: JSON.stringify({ 'venera.readingWidget.uri': uri }) } });
+    }
+  }
+  assert.deepEqual(values, expected);
+});
+
 test('reading card parameters reject arbitrary and malformed destinations', async () => {
   const h = harness();
   const values = h.listen(LINKS);

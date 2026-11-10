@@ -15,28 +15,49 @@ import 'app.dart';
 import 'appdata.dart';
 import 'comic_source/comic_source.dart';
 import 'comic_state_repository.dart';
+import 'comic_type.dart';
+import 'favorites.dart';
+import 'follow_update_scope.dart';
+import 'follow_update_tasks.dart';
 import 'history.dart';
-import 'image_provider/history_image_provider.dart';
+import 'image_provider/base_image_provider.dart';
+import 'local.dart';
 import 'log.dart';
 
 const readingWidgetHistoryUri = 'venerax://reading-widget/history';
 const readingWidgetChannel = MethodChannel('venera/reading_widget');
 
-String readingWidgetComicUri(History history) => Uri(
+enum ReadingWidgetKind { history, following, updates, local }
+
+ComicType readingWidgetComicType(Comic comic) => switch (comic) {
+  History() => comic.type,
+  FavoriteItem() => comic.type,
+  LocalComic() => comic.comicType,
+  _ => ComicType.fromKey(comic.sourceKey),
+};
+
+String readingWidgetComicUri(
+  Comic comic, [
+  ReadingWidgetKind kind = ReadingWidgetKind.history,
+]) => Uri(
   scheme: 'venerax',
   host: 'reading-widget',
-  path: '/read',
-  queryParameters: {'id': history.id, 'type': '${history.type.value}'},
+  path: kind == ReadingWidgetKind.history ? '/read' : '/${kind.name}/read',
+  queryParameters: {
+    'id': comic.id,
+    'type': '${readingWidgetComicType(comic).value}',
+  },
 ).toString();
 
 /// History lacks tags; enrich it from local metadata before exposing it outside
 /// the app. Unknown tags stay private when a tag filter is configured.
-bool isReadingWidgetHistoryVisible(History history) {
+bool isReadingWidgetHistoryVisible(Comic history) {
   try {
     if (isBlocked(history) != null) return false;
     final repository = const ComicStateRepository();
     final state = repository.load(history.sourceKey, history.id);
-    if (state.localComic == null && history.type.comicSource == null) {
+    if (state.localComic == null &&
+        readingWidgetComicType(history).comicSource == null) {
       return false;
     }
     final info = repository.displayInfoFor(history);
@@ -61,20 +82,42 @@ bool isReadingWidgetHistoryVisible(History history) {
   }
 }
 
+List<FavoriteItemWithUpdateInfo> readingWidgetFollowedComics() {
+  final items = App.favorites.getComicsWithUpdatesInfoIn(
+    FollowUpdateScope.folders(),
+  );
+  items.sort((a, b) {
+    final unread =
+        (b.hasNewUpdate == true ? 1 : 0) - (a.hasNewUpdate == true ? 1 : 0);
+    if (unread != 0) return unread;
+    final updated = (b.updateTime ?? '').compareTo(a.updateTime ?? '');
+    return updated != 0 ? updated : b.time.compareTo(a.time);
+  });
+  return items;
+}
+
 /// Publishes a small native snapshot; no source credentials or remote URLs leave
 /// Dart. Each refresh invalidates older thumbnail work before it can publish.
 class ReadingWidgetService with WidgetsBindingObserver {
   ReadingWidgetService({
-    List<History> Function()? recent,
-    bool Function(History)? visible,
+    List<Comic> Function()? recent,
+    List<FavoriteItemWithUpdateInfo> Function()? following,
+    List<LocalComic> Function()? local,
+    bool Function(Comic)? visible,
     this.coverBytes,
   }) : _recent = recent ?? (() => HistoryManager().getRecent()),
+       _following = following ?? readingWidgetFollowedComics,
+       _local =
+           local ??
+           (() => App.local.isInitialized ? App.local.getRecent() : []),
        _visible = visible ?? isReadingWidgetHistoryVisible;
 
   static final instance = ReadingWidgetService();
-  final List<History> Function() _recent;
-  final bool Function(History) _visible;
-  final Future<Uint8List> Function(History)? coverBytes;
+  final List<Comic> Function() _recent;
+  final List<FavoriteItemWithUpdateInfo> Function() _following;
+  final List<LocalComic> Function() _local;
+  final bool Function(Comic) _visible;
+  final Future<Uint8List> Function(Comic)? coverBytes;
   final Map<String, String> _covers = {};
   bool _coversRestored = false;
   Timer? _timer;
@@ -82,7 +125,9 @@ class ReadingWidgetService with WidgetsBindingObserver {
   bool _started = false;
 
   void start() {
-    if (_started || App.isBackgroundTask || !(App.isAndroid || App.isOhos)) {
+    if (_started ||
+        App.isBackgroundTask ||
+        !(App.isAndroid || App.isOhos || App.isIOS || App.isMacOS)) {
       return;
     }
     _started = true;
@@ -93,6 +138,7 @@ class ReadingWidgetService with WidgetsBindingObserver {
     appdata.settings.addListener(_schedule);
     appdata.addListener(_schedule);
     DataSync().addListener(_schedule);
+    FollowUpdateTaskManager.instance.addListener(_schedule);
     WidgetsBinding.instance.addObserver(this);
     _schedule();
   }
@@ -119,73 +165,138 @@ class ReadingWidgetService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({
+    List<ReadingWidgetKind> kinds = ReadingWidgetKind.values,
+    bool loadCovers = true,
+  }) async {
     final revision = ++_revision;
     try {
       final locked = appdata.settings['authorizationRequired'] == true;
       if (!locked) _restoreCovers();
-      final histories = locked
-          ? <History>[]
-          : _recent().where(_visible).take(6).toList();
-      final items = histories
-          .map(
-            (history) => <String, Object>{
-              'id': history.id,
-              'type': history.type.value,
-              'title': history.title,
-              'progress': history.description,
-              'coverPath': _covers[_coverKey(history)] ?? '',
-              'uri': readingWidgetComicUri(history),
-            },
-          )
-          .toList();
-      final snapshot = <String, Object>{
-        'title': 'Recent reading'.tl,
-        'emptyText':
-            (locked
-                    ? 'Open VeneraX to view reading history'
-                    : 'No recent comics to show')
-                .tl,
-        'items': items,
-      };
-      // Publish removals and privacy changes before waiting for any image work.
-      await readingWidgetChannel.invokeMethod<void>(
-        'update',
-        jsonEncode(snapshot),
+      final followed =
+          locked ||
+              !kinds.any(
+                (kind) =>
+                    kind == ReadingWidgetKind.following ||
+                    kind == ReadingWidgetKind.updates,
+              )
+          ? <FavoriteItemWithUpdateInfo>[]
+          : _following();
+      final collections =
+          <ReadingWidgetKind, List<Comic>>{
+            ReadingWidgetKind.history:
+                locked || !kinds.contains(ReadingWidgetKind.history)
+                ? []
+                : _recent(),
+            ReadingWidgetKind.following: followed,
+            ReadingWidgetKind.updates: followed
+                .where((item) => item.hasNewUpdate == true)
+                .toList(),
+            ReadingWidgetKind.local:
+                locked || !kinds.contains(ReadingWidgetKind.local)
+                ? []
+                : _local()
+                      .where(
+                        (item) => item.status != LocalComicStatus.notDownloaded,
+                      )
+                      .toList(),
+          }.map(
+            (kind, comics) =>
+                MapEntry(kind, comics.where(_visible).take(6).toList()),
+          );
+      final checked = followed.fold<int>(
+        0,
+        (latest, item) => math.max(latest, item.lastCheckTime ?? 0),
       );
-      if (revision != _revision) return;
-      if (histories.isEmpty) {
-        _covers.clear();
-        _saveCovers();
-        _removeUnusedCovers();
-        return;
-      }
-      final active =
-          await readingWidgetChannel.invokeMethod<bool>('hasWidgets') ?? false;
-      if (revision != _revision) return;
-      if (!active) {
-        _pruneCovers(histories);
-        return;
-      }
-      for (var i = 0; i < histories.length; i++) {
+      final checkText = checked == 0
+          ? 'Not checked yet'.tl
+          : 'Last checked: @t'.tlParams({
+              't': DateTime.fromMillisecondsSinceEpoch(
+                checked,
+              ).toIso8601String().replaceFirst('T', ' ').substring(0, 16),
+            });
+      final snapshots = <ReadingWidgetKind, Map<String, Object>>{};
+      for (final kind in kinds) {
+        final comics = collections[kind]!;
+        final snapshot = <String, Object>{
+          'kind': kind.name,
+          'locked': locked,
+          'title': switch (kind) {
+            ReadingWidgetKind.history => 'Recent reading'.tl,
+            ReadingWidgetKind.following => 'Follow Updates'.tl,
+            ReadingWidgetKind.updates => 'New updates'.tl,
+            ReadingWidgetKind.local => 'Local comics'.tl,
+          },
+          'subtitle':
+              !locked &&
+                  (kind == ReadingWidgetKind.following ||
+                      kind == ReadingWidgetKind.updates)
+              ? checkText
+              : '',
+          'emptyText': locked
+              ? 'Open VeneraX to view comics'.tl
+              : switch (kind) {
+                  ReadingWidgetKind.history => 'No recent comics to show'.tl,
+                  ReadingWidgetKind.following => 'No followed comics'.tl,
+                  ReadingWidgetKind.updates => 'No updates found'.tl,
+                  ReadingWidgetKind.local => 'No local comics'.tl,
+                },
+          'items': comics
+              .map(
+                (comic) => <String, Object>{
+                  'id': comic.id,
+                  'type': readingWidgetComicType(comic).value,
+                  'title': comic.title,
+                  'progress': _progress(comic),
+                  'coverPath': _covers[_coverKey(comic)] ?? '',
+                  'uri': readingWidgetComicUri(comic, kind),
+                },
+              )
+              .toList(),
+        };
+        snapshots[kind] = snapshot;
+        // Clear all four kinds before waiting for any cover downloads.
+        await readingWidgetChannel.invokeMethod<void>(
+          'update',
+          jsonEncode(snapshot),
+        );
         if (revision != _revision) return;
-        final history = histories[i];
-        final key = _coverKey(history);
-        var path = _covers[key];
-        if (path == null || !File(path).existsSync()) {
-          path = await _thumbnail(history, revision);
-          if (revision != _revision) return;
-          if (path.isNotEmpty) _covers[key] = path;
-        }
-        items[i]['coverPath'] = path;
       }
-      if (revision != _revision) return;
-      await readingWidgetChannel.invokeMethod<void>(
-        'update',
-        jsonEncode(snapshot),
-      );
-      if (revision != _revision) return;
-      _pruneCovers(histories);
+      for (final kind in loadCovers ? kinds : <ReadingWidgetKind>[]) {
+        final comics = collections[kind]!;
+        if (comics.isEmpty) continue;
+        final active =
+            await readingWidgetChannel.invokeMethod<bool>(
+              'hasWidgets',
+              kind.name,
+            ) ??
+            false;
+        if (revision != _revision) return;
+        // Warm a compact preview so the first added card already has covers.
+        final count = active ? comics.length : math.min(2, comics.length);
+        final snapshot = snapshots[kind]!;
+        final items = snapshot['items']! as List<Map<String, Object>>;
+        for (var i = 0; i < count; i++) {
+          if (revision != _revision) return;
+          final comic = comics[i];
+          final key = _coverKey(comic);
+          var path = _covers[key];
+          if (path == null || !File(path).existsSync()) {
+            path = await _thumbnail(comic, revision);
+            if (revision != _revision) return;
+            if (path.isNotEmpty) _covers[key] = path;
+          }
+          items[i]['coverPath'] = path;
+        }
+        await readingWidgetChannel.invokeMethod<void>(
+          'update',
+          jsonEncode(snapshot),
+        );
+        if (revision != _revision) return;
+      }
+      if (ReadingWidgetKind.values.every(kinds.contains)) {
+        _pruneCovers(collections.values.expand((items) => items));
+      }
     } on MissingPluginException {
       // Desktop and older platform hosts have no home-screen widget bridge.
     } catch (_) {
@@ -193,8 +304,22 @@ class ReadingWidgetService with WidgetsBindingObserver {
     }
   }
 
-  String _coverKey(History history) =>
-      jsonEncode([history.type.value, history.id, history.cover]);
+  String _progress(Comic comic) {
+    if (comic is History) return comic.description;
+    if (comic is FavoriteItemWithUpdateInfo) {
+      return [
+        if (comic.hasNewUpdate == true) 'New updates'.tl,
+        comic.updateTime ?? '',
+      ].where((value) => value.isNotEmpty).join(' · ');
+    }
+    final history = App.history.isInitialized
+        ? App.history.find(comic.id, readingWidgetComicType(comic))
+        : null;
+    return history?.description ?? 'Continue reading'.tl;
+  }
+
+  String _coverKey(Comic comic) =>
+      jsonEncode([readingWidgetComicType(comic).value, comic.id, comic.cover]);
 
   Directory get _directory =>
       Directory(FilePath.join(App.dataPath, 'reading_widget_covers'));
@@ -228,14 +353,14 @@ class ReadingWidgetService with WidgetsBindingObserver {
 
   void _saveCovers() => writeStringAtomicSync(_coverIndex, jsonEncode(_covers));
 
-  void _pruneCovers(List<History> histories) {
+  void _pruneCovers(Iterable<Comic> histories) {
     final retained = histories.map(_coverKey).toSet();
     _covers.removeWhere((key, _) => !retained.contains(key));
     _saveCovers();
     _removeUnusedCovers();
   }
 
-  Future<String> _thumbnail(History history, int revision) async {
+  Future<String> _thumbnail(Comic comic, int revision) async {
     final chunks = StreamController<ImageChunkEvent>();
     try {
       void checkCurrent() {
@@ -244,9 +369,11 @@ class ReadingWidgetService with WidgetsBindingObserver {
         }
       }
 
+      final provider = coverBytes == null ? findImageProvider(comic) : null;
+      if (coverBytes == null && provider is! BaseImageProvider) return '';
       final bytes =
-          await (coverBytes?.call(history) ??
-                  HistoryImageProvider(history).load(chunks, checkCurrent))
+          await (coverBytes?.call(comic) ??
+                  (provider! as BaseImageProvider).load(chunks, checkCurrent))
               .timeout(const Duration(seconds: 8));
       checkCurrent();
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);

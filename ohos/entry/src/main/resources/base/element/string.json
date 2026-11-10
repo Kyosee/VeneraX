@@ -1,8 +1,11 @@
 {
   "string": [
+    {"name": "reading_widget_following", "value": "Following"},
+    {"name": "reading_widget_updates", "value": "New updates"},
+    {"name": "reading_widget_local", "value": "Local comics"},
     {"name": "reading_widget_title", "value": "Recent reading"},
-    {"name": "reading_widget_description", "value": "View recent comics and continue reading."},
-    {"name": "reading_widget_open", "value": "Open VeneraX to view reading history"},
+    {"name": "reading_widget_description", "value": "View comics and continue reading."},
+    {"name": "reading_widget_open", "value": "Open VeneraX to view comics"},
     {
       "name": "module_desc",
       "value": "module description"

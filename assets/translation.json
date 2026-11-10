@@ -1,6 +1,12 @@
 {
   "zh_CN": {
     "Recent reading": "最近阅读",
+    "New updates": "有更新",
+    "Local comics": "本地漫画",
+    "Not checked yet": "尚未检查",
+    "Open VeneraX to view comics": "打开 VeneraX 查看漫画",
+    "No followed comics": "暂无追更漫画",
+    "No local comics": "暂无本地漫画",
     "No recent comics to show": "暂无可显示的最近阅读",
     "Open VeneraX to view reading history": "打开 VeneraX 查看阅读历史",
     "More": "更多",
@@ -1756,6 +1762,12 @@
   },
   "zh_TW": {
     "Recent reading": "最近閱讀",
+    "New updates": "有更新",
+    "Local comics": "本機漫畫",
+    "Not checked yet": "尚未檢查",
+    "Open VeneraX to view comics": "開啟 VeneraX 查看漫畫",
+    "No followed comics": "暫無追更漫畫",
+    "No local comics": "暫無本機漫畫",
     "No recent comics to show": "暫無可顯示的最近閱讀",
     "Open VeneraX to view reading history": "開啟 VeneraX 查看閱讀歷史",
     "More": "更多",

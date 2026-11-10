@@ -298,7 +298,9 @@ class _FollowUpdateProgressBarState extends State<FollowUpdateProgressBar> {
 }
 
 class FollowUpdatesPage extends StatefulWidget {
-  const FollowUpdatesPage({super.key});
+  const FollowUpdatesPage({super.key, this.showAll = false});
+
+  final bool showAll;
 
   static Future<void> openSettings(BuildContext context) async {
     final applied = await showDialog<_SettingsChoice>(
@@ -677,6 +679,14 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   }
 
   Widget buildConfiguredTabs(BuildContext context) {
+    if (widget.showAll) {
+      return Column(
+        children: [
+          buildSummary(context),
+          Expanded(child: buildComicsTab(allComics, emptyText: 'No comics'.tl)),
+        ],
+      );
+    }
     return DefaultTabController(
       length: 3,
       child: Column(

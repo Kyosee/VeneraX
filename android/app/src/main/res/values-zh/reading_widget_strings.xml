@@ -3,7 +3,16 @@
     <string name="reading_widget_title">最近閱讀</string>
     <string name="reading_widget_cover_name">閱讀歷史 · 封面</string>
     <string name="reading_widget_list_name">閱讀歷史 · 清單</string>
-    <string name="reading_widget_description">顯示最近閱讀的漫畫，點擊繼續閱讀。</string>
-    <string name="reading_widget_open">開啟 VeneraX 載入閱讀歷史。</string>
+    <string name="reading_widget_description">查看漫畫與閱讀進度，點擊開啟 VeneraX。</string>
+    <string name="reading_widget_open">開啟 VeneraX 查看漫畫。</string>
     <string name="reading_widget_continue">繼續閱讀</string>
+    <string name="reading_widget_following">追更</string>
+    <string name="reading_widget_following_cover">追更 · 封面</string>
+    <string name="reading_widget_following_list">追更 · 清單</string>
+    <string name="reading_widget_updates">有更新</string>
+    <string name="reading_widget_updates_cover">有更新 · 封面</string>
+    <string name="reading_widget_updates_list">有更新 · 清單</string>
+    <string name="reading_widget_local">本機漫畫</string>
+    <string name="reading_widget_local_cover">本機漫畫 · 封面</string>
+    <string name="reading_widget_local_list">本機漫畫 · 清單</string>
 </resources>

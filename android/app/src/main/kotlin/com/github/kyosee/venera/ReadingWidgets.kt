@@ -20,13 +20,27 @@ import java.io.File
 import kotlin.math.ceil
 import kotlin.math.max
 
-class ReadingCoverWidget : ReadingWidgetProvider(true)
+enum class ReadingKind(val key: String, val titleResource: Int) {
+    HISTORY("history", R.string.reading_widget_title),
+    FOLLOWING("following", R.string.reading_widget_following),
+    UPDATES("updates", R.string.reading_widget_updates),
+    LOCAL("local", R.string.reading_widget_local);
 
-class ReadingListWidget : ReadingWidgetProvider(false)
+    val uri: Uri get() = Uri.parse("venerax://reading-widget/$key")
+}
 
-open class ReadingWidgetProvider(private val covers: Boolean) : AppWidgetProvider() {
+class ReadingCoverWidget : ReadingWidgetProvider(ReadingKind.HISTORY, true)
+class ReadingListWidget : ReadingWidgetProvider(ReadingKind.HISTORY, false)
+class FollowingCoverWidget : ReadingWidgetProvider(ReadingKind.FOLLOWING, true)
+class FollowingListWidget : ReadingWidgetProvider(ReadingKind.FOLLOWING, false)
+class UpdatesCoverWidget : ReadingWidgetProvider(ReadingKind.UPDATES, true)
+class UpdatesListWidget : ReadingWidgetProvider(ReadingKind.UPDATES, false)
+class LocalCoverWidget : ReadingWidgetProvider(ReadingKind.LOCAL, true)
+class LocalListWidget : ReadingWidgetProvider(ReadingKind.LOCAL, false)
+
+open class ReadingWidgetProvider(private val kind: ReadingKind, private val covers: Boolean) : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val snapshot = ReadingWidgets.load(context)
+        val snapshot = ReadingWidgets.load(context, kind)
         ids.forEach { ReadingWidgets.render(context, manager, it, covers, snapshot) }
     }
 
@@ -36,7 +50,7 @@ open class ReadingWidgetProvider(private val covers: Boolean) : AppWidgetProvide
         id: Int,
         newOptions: Bundle,
     ) {
-        ReadingWidgets.render(context, manager, id, covers, ReadingWidgets.load(context))
+        ReadingWidgets.render(context, manager, id, covers, ReadingWidgets.load(context, kind))
     }
 }
 
@@ -47,8 +61,8 @@ data class ReadingWidgetItem(
     val progress: String,
     val coverPath: String,
 ) {
-    val uri: Uri
-        get() = Uri.Builder().scheme("venerax").authority("reading-widget").path("/read")
+    fun uri(kind: ReadingKind): Uri = Uri.Builder().scheme("venerax").authority("reading-widget")
+            .path(if (kind == ReadingKind.HISTORY) "/read" else "/${kind.key}/read")
             .appendQueryParameter("id", id).appendQueryParameter("type", type.toString()).build()
 }
 
@@ -56,6 +70,9 @@ data class ReadingWidgetSnapshot(
     val title: String,
     val emptyText: String,
     val items: List<ReadingWidgetItem>,
+    val kind: ReadingKind,
+    val subtitle: String = "",
+    val locked: Boolean = false,
 )
 
 object ReadingWidgets {
@@ -63,14 +80,13 @@ object ReadingWidgets {
     private const val SNAPSHOT = "snapshot"
     private const val MAX_ITEMS = 6
     private const val MAX_IMAGE_SIZE = 256
-    private val historyUri = Uri.parse("venerax://reading-widget/history")
 
     fun register(context: Context, messenger: BinaryMessenger) {
         val appContext = context.applicationContext
         MethodChannel(messenger, "venera/reading_widget").setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasWidgets" -> result.success(
-                    providers(appContext).any { (_, ids) -> ids.isNotEmpty() },
+                    providers(appContext).any { (kind, _, ids) -> kind.key == call.arguments && ids.isNotEmpty() },
                 )
                 "update" -> {
                     val json = call.arguments as? String
@@ -80,10 +96,19 @@ object ReadingWidgets {
                     }
                     try {
                         val snapshot = parse(appContext, json)
-                        val stored = preferences(appContext).edit().putString(SNAPSHOT, json).commit()
+                        val wasLocked = preferences(appContext).getBoolean("locked", true)
+                        val editor = preferences(appContext).edit()
+                        if (snapshot.locked || wasLocked) {
+                            ReadingKind.entries.forEach { editor.remove("${SNAPSHOT}_${it.key}") }
+                        }
+                        if (!snapshot.locked) editor.putString("${SNAPSHOT}_${snapshot.kind.key}", json)
+                        val stored = editor.putBoolean("locked", snapshot.locked).commit()
                         val manager = AppWidgetManager.getInstance(appContext)
-                        providers(appContext).forEach { (covers, ids) ->
-                            ids.forEach { render(appContext, manager, it, covers, snapshot) }
+                        providers(appContext).forEach { (kind, covers, ids) ->
+                            if (kind == snapshot.kind || snapshot.locked || wasLocked) {
+                                val data = if (kind == snapshot.kind) snapshot else load(appContext, kind)
+                                ids.forEach { render(appContext, manager, it, covers, data) }
+                            }
                         }
                         if (stored) {
                             result.success(null)
@@ -102,16 +127,23 @@ object ReadingWidgets {
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    private fun providers(context: Context): List<Pair<Boolean, IntArray>> {
+    private fun providers(context: Context): List<Triple<ReadingKind, Boolean, IntArray>> {
         val manager = AppWidgetManager.getInstance(context)
         return listOf(
-            true to manager.getAppWidgetIds(ComponentName(context, ReadingCoverWidget::class.java)),
-            false to manager.getAppWidgetIds(ComponentName(context, ReadingListWidget::class.java)),
-        )
+            Triple(ReadingKind.HISTORY, true, ReadingCoverWidget::class.java),
+            Triple(ReadingKind.HISTORY, false, ReadingListWidget::class.java),
+            Triple(ReadingKind.FOLLOWING, true, FollowingCoverWidget::class.java),
+            Triple(ReadingKind.FOLLOWING, false, FollowingListWidget::class.java),
+            Triple(ReadingKind.UPDATES, true, UpdatesCoverWidget::class.java),
+            Triple(ReadingKind.UPDATES, false, UpdatesListWidget::class.java),
+            Triple(ReadingKind.LOCAL, true, LocalCoverWidget::class.java),
+            Triple(ReadingKind.LOCAL, false, LocalListWidget::class.java),
+        ).map { (kind, covers, type) -> Triple(kind, covers, manager.getAppWidgetIds(ComponentName(context, type))) }
     }
 
     private fun parse(context: Context, json: String): ReadingWidgetSnapshot {
         val objectValue = JSONObject(json)
+        val kind = ReadingKind.entries.first { it.key == objectValue.getString("kind") }
         val array = objectValue.getJSONArray("items")
         val items = (0 until minOf(array.length(), MAX_ITEMS)).map { index ->
             val item = array.getJSONObject(index)
@@ -124,21 +156,25 @@ object ReadingWidgets {
             )
         }.filter { it.id.isNotEmpty() }
         return ReadingWidgetSnapshot(
-            title = objectValue.optString("title").ifEmpty { context.getString(R.string.reading_widget_title) },
+            title = objectValue.optString("title").ifEmpty { context.getString(kind.titleResource) },
             emptyText = objectValue.optString("emptyText").ifEmpty { context.getString(R.string.reading_widget_open) },
             items = items,
+            kind = kind,
+            subtitle = objectValue.optString("subtitle"),
+            locked = objectValue.optBoolean("locked"),
         )
     }
 
-    fun load(context: Context): ReadingWidgetSnapshot {
-        val json = preferences(context).getString(SNAPSHOT, null)
+    fun load(context: Context, kind: ReadingKind): ReadingWidgetSnapshot {
+        val json = preferences(context).getString("${SNAPSHOT}_${kind.key}", null)
         if (json != null) {
             runCatching { parse(context, json) }.getOrNull()?.let { return it }
         }
         return ReadingWidgetSnapshot(
-            context.getString(R.string.reading_widget_title),
+            context.getString(kind.titleResource),
             context.getString(R.string.reading_widget_open),
             emptyList(),
+            kind,
         )
     }
 
@@ -154,17 +190,20 @@ object ReadingWidgets {
             !JSONObject(File(context.filesDir, "appdata.json").readText())
                 .getJSONObject("settings").optBoolean("authorizationRequired", true)
         }.getOrDefault(false)
-        val visible = if (contentAllowed) snapshot else ReadingWidgetSnapshot(
-            context.getString(R.string.reading_widget_title),
+        val visible = if (contentAllowed && !preferences(context).getBoolean("locked", true)) snapshot else ReadingWidgetSnapshot(
+            context.getString(snapshot.kind.titleResource),
             context.getString(R.string.reading_widget_open),
             emptyList(),
+            snapshot.kind,
         )
         val layout = if (covers) R.layout.reading_widget_cover else R.layout.reading_widget_list
         val views = RemoteViews(context.packageName, layout)
-        val openHistory = pendingIntent(context, historyUri)
+        val openHistory = pendingIntent(context, visible.kind.uri)
         views.setOnClickPendingIntent(android.R.id.background, openHistory)
         views.setTextViewText(R.id.reading_widget_title, visible.title)
         views.setTextViewText(R.id.reading_widget_empty, visible.emptyText)
+        views.setTextViewText(R.id.reading_widget_subtitle, visible.subtitle)
+        views.setViewVisibility(R.id.reading_widget_subtitle, if (visible.subtitle.isEmpty()) View.GONE else View.VISIBLE)
         views.removeAllViews(R.id.reading_widget_items)
 
         val options = manager.getAppWidgetOptions(id)
@@ -176,7 +215,7 @@ object ReadingWidgets {
         )
         val fontScale = context.resources.configuration.fontScale
         val rowHeight = max(56, ceil(37 * fontScale + 8).toInt())
-        val headerHeight = max(28, ceil(18 * fontScale).toInt())
+        val headerHeight = max(28, ceil(18 * fontScale).toInt()) + if (visible.subtitle.isEmpty()) 0 else ceil(18 * fontScale).toInt()
         val count = if (covers) 2 else ((height - 32 - headerHeight) / rowHeight).coerceIn(1, MAX_ITEMS)
         visible.items.take(count).forEach { item ->
             val child = RemoteViews(
@@ -189,7 +228,7 @@ object ReadingWidgets {
                 R.id.reading_widget_item,
                 listOf(item.title, item.progress).filter { it.isNotEmpty() }.joinToString(", "),
             )
-            child.setOnClickPendingIntent(R.id.reading_widget_item, pendingIntent(context, item.uri))
+            child.setOnClickPendingIntent(R.id.reading_widget_item, pendingIntent(context, item.uri(visible.kind)))
             val image = loadCover(context, item.coverPath)
             if (image == null) {
                 child.setImageViewResource(R.id.reading_widget_image, R.drawable.reading_widget_placeholder)

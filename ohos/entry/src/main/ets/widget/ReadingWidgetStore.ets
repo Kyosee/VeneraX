@@ -1,6 +1,6 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { formBindingData, formProvider } from '@kit.FormKit';
-import { ReadingWidgetData, parseReadingWidgetData } from './ReadingWidgetData';
+import { ReadingWidgetData, parseReadingWidgetData, isReadingWidgetKind } from './ReadingWidgetData';
 
 interface WidgetPrivacySettings {
   authorizationRequired: boolean;
@@ -13,9 +13,11 @@ interface WidgetAppdata {
 class ReadingForm {
   id: string;
   dimension: number;
-  constructor(id: string, dimension: number) {
+  kind: string;
+  constructor(id: string, dimension: number, kind: string) {
     this.id = id;
     this.dimension = dimension;
+    this.kind = kind;
   }
 }
 
@@ -50,25 +52,42 @@ export class ReadingWidgetStore {
     fs.renameSync(`${target}.tmp`, target);
   }
 
-  save(json: string): void {
-    this.write('reading_widget.json', JSON.stringify(parseReadingWidgetData(json)));
+  save(json: string): string | undefined {
+    const data = parseReadingWidgetData(json);
+    let wasLocked = true;
+    try { wasLocked = fs.readTextSync(`${this.filesDir}/reading_widget_privacy.json`) !== 'false'; } catch (_) {}
+    if (data.locked || wasLocked) {
+      this.write('reading_widget_privacy.json', 'true');
+      for (const kind of ['history', 'following', 'updates', 'local']) {
+        const empty = new ReadingWidgetData();
+        empty.kind = kind;
+        this.write(`reading_widget_${kind}.json`, JSON.stringify(empty));
+      }
+      if (data.locked) return undefined;
+    }
+    this.write(`reading_widget_${data.kind}.json`, JSON.stringify(data));
+    this.write('reading_widget_privacy.json', 'false');
+    return wasLocked ? undefined : data.kind;
   }
 
   private forms(): ReadingForm[] {
     try {
       const forms = JSON.parse(fs.readTextSync(`${this.filesDir}/reading_widget_forms.json`)) as ReadingForm[];
       if (!Array.isArray(forms)) return [];
-      return forms.filter((form: ReadingForm) => typeof form.id === 'string' && /^-?\d+$/.test(form.id));
+      return forms.filter((form: ReadingForm) => typeof form.id === 'string' && /^-?\d+$/.test(form.id) && isReadingWidgetKind(form.kind));
     } catch (_) { return []; }
   }
 
-  hasWidgets(): boolean { return this.forms().length > 0; }
+  hasWidgets(kind?: string): boolean { return this.forms().some((form: ReadingForm) => kind === undefined || form.kind === kind); }
 
-  register(id: string, dimension: number): void {
+  register(id: string, dimension: number, kind?: string): void {
     if (!/^-?\d+$/.test(id)) return;
-    const forms = this.forms().filter((form: ReadingForm) => form.id !== id);
-    forms.push(new ReadingForm(id, dimension));
-    this.write('reading_widget_forms.json', JSON.stringify(forms));
+    const forms = this.forms();
+    const selected = kind ?? forms.find((form: ReadingForm) => form.id === id)?.kind ?? 'history';
+    if (!isReadingWidgetKind(selected)) return;
+    const retained = forms.filter((form: ReadingForm) => form.id !== id);
+    retained.push(new ReadingForm(id, dimension, selected));
+    this.write('reading_widget_forms.json', JSON.stringify(retained));
   }
 
   remove(id: string): void {
@@ -78,19 +97,24 @@ export class ReadingWidgetStore {
   private contentAllowed(): boolean {
     try {
       const appdata = JSON.parse(fs.readTextSync(`${this.filesDir}/appdata.json`)) as WidgetAppdata;
-      return appdata.settings.authorizationRequired === false;
+      const privateSnapshot = fs.readTextSync(`${this.filesDir}/reading_widget_privacy.json`) !== 'false';
+      return appdata.settings.authorizationRequired === false && !privateSnapshot;
     } catch (_) { return false; }
   }
 
   binding(id: string): ReadingWidgetBinding {
     let snapshot = new ReadingWidgetData();
+    const form = this.forms().find((item: ReadingForm) => item.id === id);
+    const kind = form?.kind ?? 'history';
     try {
       // Settings may persist before Dart clears the last public snapshot.
       if (this.contentAllowed()) {
-        snapshot = parseReadingWidgetData(fs.readTextSync(`${this.filesDir}/reading_widget.json`));
+        snapshot = parseReadingWidgetData(fs.readTextSync(`${this.filesDir}/reading_widget_${kind}.json`));
       }
     } catch (_) {}
-    snapshot.dimension = this.forms().find((form: ReadingForm) => form.id === id)?.dimension ?? 2;
+    snapshot.kind = kind;
+    snapshot.uri = `venerax://reading-widget/${kind}`;
+    snapshot.dimension = form?.dimension ?? 2;
     snapshot.items = snapshot.items.slice(0, snapshot.dimension === 4 ? 4 : 2);
     const files: fs.File[] = [];
     snapshot.items.forEach((item) => {
@@ -127,8 +151,9 @@ export class ReadingWidgetStore {
     if (binding.hasContent && !this.contentAllowed()) await this.update(id);
   }
 
-  async updateAll(): Promise<void> {
+  async updateAll(kind?: string): Promise<void> {
     for (const form of this.forms()) {
+      if (kind !== undefined && form.kind !== kind) continue;
       try { await this.update(form.id); } catch (_) {
         // One removed or temporarily unavailable form must not block others.
       }

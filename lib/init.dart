@@ -51,7 +51,7 @@ Future<void> init() async {
   // Never load shared state before the background extension has released it.
   await OhosFollowScheduler.acquireUiData();
   await LauncherIconService.initialize().wait();
-  if (App.isAndroid || App.isOhos) {
+  if (App.isAndroid || App.isOhos || App.isIOS || App.isMacOS) {
     startAppLinkCapture();
   }
   await appdata.init().wait();

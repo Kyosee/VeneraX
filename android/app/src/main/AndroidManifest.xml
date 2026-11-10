@@ -147,6 +147,30 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_list" />
         </receiver>
+        <receiver android:name=".FollowingCoverWidget" android:exported="false" android:label="@string/reading_widget_following_cover">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_cover" />
+        </receiver>
+        <receiver android:name=".FollowingListWidget" android:exported="false" android:label="@string/reading_widget_following_list">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_list" />
+        </receiver>
+        <receiver android:name=".UpdatesCoverWidget" android:exported="false" android:label="@string/reading_widget_updates_cover">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_cover" />
+        </receiver>
+        <receiver android:name=".UpdatesListWidget" android:exported="false" android:label="@string/reading_widget_updates_list">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_list" />
+        </receiver>
+        <receiver android:name=".LocalCoverWidget" android:exported="false" android:label="@string/reading_widget_local_cover">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_cover" />
+        </receiver>
+        <receiver android:name=".LocalListWidget" android:exported="false" android:label="@string/reading_widget_local_list">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_list" />
+        </receiver>
         <!-- Service required by the icon-switching plugin. -->
         <service
             android:name="com.solusibejo.flutter_dynamic_icon_plus.FlutterDynamicIconPlusService"

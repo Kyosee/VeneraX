@@ -1,7 +1,10 @@
 {
   "string": [
+    {"name": "reading_widget_following", "value": "追更"},
+    {"name": "reading_widget_updates", "value": "有更新"},
+    {"name": "reading_widget_local", "value": "本機漫畫"},
     {"name": "reading_widget_title", "value": "最近閱讀"},
-    {"name": "reading_widget_description", "value": "查看最近閱讀的漫畫並繼續閱讀。"},
-    {"name": "reading_widget_open", "value": "開啟 VeneraX 查看閱讀歷史"}
+    {"name": "reading_widget_description", "value": "查看漫畫並繼續閱讀。"},
+    {"name": "reading_widget_open", "value": "開啟 VeneraX 查看漫畫"}
   ]
 }

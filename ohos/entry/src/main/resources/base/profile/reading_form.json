@@ -11,5 +11,65 @@
     "updateEnabled": false,
     "defaultDimension": "2*2",
     "supportDimensions": ["2*2", "2*4", "4*4"]
+  },
+  {
+    "name": "reading_following",
+    "displayName": "$string:reading_widget_following",
+    "description": "$string:reading_widget_description",
+    "src": "./ets/widget/pages/ReadingCard.ets",
+    "uiSyntax": "arkts",
+    "window": {
+      "designWidth": 720,
+      "autoDesignWidth": true
+    },
+    "colorMode": "auto",
+    "isDefault": false,
+    "updateEnabled": false,
+    "defaultDimension": "2*2",
+    "supportDimensions": [
+      "2*2",
+      "2*4",
+      "4*4"
+    ]
+  },
+  {
+    "name": "reading_updates",
+    "displayName": "$string:reading_widget_updates",
+    "description": "$string:reading_widget_description",
+    "src": "./ets/widget/pages/ReadingCard.ets",
+    "uiSyntax": "arkts",
+    "window": {
+      "designWidth": 720,
+      "autoDesignWidth": true
+    },
+    "colorMode": "auto",
+    "isDefault": false,
+    "updateEnabled": false,
+    "defaultDimension": "2*2",
+    "supportDimensions": [
+      "2*2",
+      "2*4",
+      "4*4"
+    ]
+  },
+  {
+    "name": "reading_local",
+    "displayName": "$string:reading_widget_local",
+    "description": "$string:reading_widget_description",
+    "src": "./ets/widget/pages/ReadingCard.ets",
+    "uiSyntax": "arkts",
+    "window": {
+      "designWidth": 720,
+      "autoDesignWidth": true
+    },
+    "colorMode": "auto",
+    "isDefault": false,
+    "updateEnabled": false,
+    "defaultDimension": "2*2",
+    "supportDimensions": [
+      "2*2",
+      "2*4",
+      "4*4"
+    ]
   }]
 }

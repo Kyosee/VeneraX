@@ -4,11 +4,13 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/pages/history_page.dart';
+import 'package:venera/pages/follow_updates_page.dart';
+import 'package:venera/pages/local_comics_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/utils/handle_notification_route.dart';
 import 'package:venera/utils/translations.dart';
 
-typedef ReadingWidgetTarget = ({String? id, int? type});
+typedef ReadingWidgetTarget = ({ReadingWidgetKind kind, String? id, int? type});
 
 ReadingWidgetTarget? resolveReadingWidgetLink(Uri uri) {
   if (uri.scheme != 'venerax' ||
@@ -19,8 +21,20 @@ ReadingWidgetTarget? resolveReadingWidgetLink(Uri uri) {
       uri.toString().length > 4096) {
     return null;
   }
-  if (uri.path == '/history' && !uri.hasQuery) return (id: null, type: null);
-  if (uri.path != '/read' ||
+  final kind = uri.path == '/read'
+      ? ReadingWidgetKind.history
+      : ReadingWidgetKind.values
+            .where(
+              (kind) =>
+                  uri.path == '/${kind.name}' ||
+                  uri.path == '/${kind.name}/read',
+            )
+            .firstOrNull;
+  if (kind == null) return null;
+  if (uri.path == '/${kind.name}' && !uri.hasQuery) {
+    return (kind: kind, id: null, type: null);
+  }
+  if (!(uri.path == '/read' || uri.path == '/${kind.name}/read') ||
       uri.queryParametersAll.length != 2 ||
       uri.queryParametersAll['id']?.length != 1 ||
       uri.queryParametersAll['type']?.length != 1) {
@@ -29,7 +43,7 @@ ReadingWidgetTarget? resolveReadingWidgetLink(Uri uri) {
   final id = uri.queryParameters['id'];
   final type = int.tryParse(uri.queryParameters['type'] ?? '');
   if (id == null || id.isEmpty || type == null) return null;
-  return (id: id, type: type);
+  return (kind: kind, id: id, type: type);
 }
 
 int _latestReadingWidgetTap = 0;
@@ -43,22 +57,37 @@ Future<bool> handleReadingWidgetLink(Uri uri) async {
   revealMainNavigator(navigator);
   if (target.id != null) {
     final type = ComicType(target.type!);
-    final history = HistoryManager()
-        .getRecent()
-        .where((item) => item.id == target.id && item.type == type)
-        .firstOrNull;
+    final local = App.local.isInitialized
+        ? App.local.find(target.id!, type)
+        : null;
+    final comic = switch (target.kind) {
+      ReadingWidgetKind.history =>
+        HistoryManager()
+            .getRecent()
+            .where((item) => item.id == target.id && item.type == type)
+            .firstOrNull,
+      ReadingWidgetKind.local => local,
+      ReadingWidgetKind.following || ReadingWidgetKind.updates =>
+        readingWidgetFollowedComics()
+            .where(
+              (item) =>
+                  item.id == target.id &&
+                  item.type == type &&
+                  (target.kind != ReadingWidgetKind.updates ||
+                      item.hasNewUpdate == true),
+            )
+            .firstOrNull,
+    };
     // A stale card must not reopen an item that was hidden, removed or blocked.
-    if (history != null && isReadingWidgetHistoryVisible(history)) {
-      final local = App.local.isInitialized
-          ? App.local.find(target.id!, type)
-          : null;
+    if (comic != null && isReadingWidgetHistoryVisible(comic)) {
       if (local != null && local.status != LocalComicStatus.notDownloaded) {
         local.read();
         return true;
       }
-      if (type.comicSource?.loadComicInfo != null) {
+      if (target.kind != ReadingWidgetKind.local &&
+          type.comicSource?.loadComicInfo != null) {
         navigator.context.to(
-          () => ReaderWithLoading(id: history.id, sourceKey: history.sourceKey),
+          () => ReaderWithLoading(id: comic.id, sourceKey: comic.sourceKey),
         );
         return true;
       }
@@ -67,6 +96,13 @@ Future<bool> handleReadingWidgetLink(Uri uri) async {
       message: 'This comic is no longer available'.tl,
     );
   }
-  navigator.context.to(() => const HistoryPage());
+  navigator.context.to(
+    () => switch (target.kind) {
+      ReadingWidgetKind.history => const HistoryPage(),
+      ReadingWidgetKind.local => const LocalComicsPage(),
+      ReadingWidgetKind.following => const FollowUpdatesPage(showAll: true),
+      ReadingWidgetKind.updates => const FollowUpdatesPage(),
+    },
+  );
   return true;
 }

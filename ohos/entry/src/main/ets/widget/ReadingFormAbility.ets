@@ -9,7 +9,9 @@ export default class ReadingFormAbility extends FormExtensionAbility {
     const store = new ReadingWidgetStore(this.context.filesDir);
     const id = `${want.parameters?.[formInfo.FormParam.IDENTITY_KEY] ?? ''}`;
     const size = want.parameters?.[formInfo.FormParam.DIMENSION_KEY];
-    try { store.register(id, typeof size === 'number' ? size : 2); } catch (_) {}
+    const name = want.parameters?.[formInfo.FormParam.NAME_KEY];
+    const kind = typeof name === 'string' ? name.replace(/^reading_/, '') : 'history';
+    try { store.register(id, typeof size === 'number' ? size : 2, kind); } catch (_) {}
     const binding = store.binding(id);
     this.initialImages.get(id)?.close();
     this.initialImages.set(id, binding);

@@ -153,6 +153,9 @@ function harness(options = {}) {
 
   const context = vm.createContext({
     fs, workScheduler, FlutterEngine, MethodChannel, DartEntrypoint,
+    ReadingWidgetService: class {
+      constructor(filesDir) { assert.equal(filesDir, abilityContext.filesDir); }
+    },
     WorkSchedulerExtensionAbility: class {},
     bundleManager: { getBundleInfoForSelfSync: () => ({ name: 'com.github.venera.test', versionName: '2.3.12' }) },
     connection: { getDefaultHttpProxy: async () => ({ host: '', port: 0, exclusionList: [] }) },

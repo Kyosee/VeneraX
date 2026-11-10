@@ -36,7 +36,7 @@ function harness() {
   class FormExtensionAbility { context = { filesDir: '/private' }; }
   const context = vm.createContext({
     fs, FormExtensionAbility,
-    formInfo: { FormParam: { IDENTITY_KEY: 'id', DIMENSION_KEY: 'size' } },
+    formInfo: { FormParam: { IDENTITY_KEY: 'id', DIMENSION_KEY: 'size', NAME_KEY: 'name' } },
     formBindingData: { createFormBindingData: data => ({ data: copy(data) }) },
     formProvider: {
       async updateForm(id, binding) {
@@ -66,8 +66,8 @@ function harness() {
   return { context, contents, handles, updates, call, setUpdateHandler: handler => updateHandler = handler };
 }
 
-function snapshot(count = 6) {
-  return JSON.stringify({ title: 'Recent reading', emptyText: 'Open VeneraX',
+function snapshot(count = 6, kind = 'history') {
+  return JSON.stringify({ kind, locked: false, title: 'Recent reading', emptyText: 'Open VeneraX',
     items: Array.from({ length: count }, (_, i) => ({
       id: `book/${i}?one=1&two=2`, type: 41, title: `Book ${i}`, progress: 'Chapter 2 · Page 7',
       coverPath: `/private/reading_widget_covers/cover-${i}.png`, uri: 'https://untrusted.invalid',
@@ -169,7 +169,7 @@ test('a queued privacy change is delivered after an older in-flight update', asy
   const first = h.call(service, 'update', snapshot(1));
   await flush();
   assert.equal(h.updates[0].data.items.length, 1);
-  const masked = h.call(service, 'update', JSON.stringify({ title: 'Recent reading', emptyText: 'Open VeneraX', items: [] }));
+  const masked = h.call(service, 'update', JSON.stringify({ kind: 'history', locked: true, title: 'Recent reading', emptyText: 'Open VeneraX', items: [] }));
   h.setUpdateHandler(async () => {});
   release();
   await flush();
@@ -230,4 +230,43 @@ test('a delayed extension update cannot restore content after the app enables it
   await pending;
   assert.deepEqual(h.updates.at(-1).data.items, []);
   assert.equal(h.handles.size, 0);
+});
+
+test('form names select independent snapshots and resizing preserves the kind', async () => {
+  const h = harness();
+  const store = new h.context.ReadingWidgetStore('/private');
+  const ability = new h.context.ReadingFormAbility();
+  const kinds = ['history', 'following', 'updates', 'local'];
+  for (const [index, kind] of kinds.entries()) {
+    store.save(snapshot(index + 1, kind));
+    const data = ability.onAddForm({ parameters: { id: String(30 + index), size: 4, name: 'reading_' + kind } }).data;
+    assert.equal(data.kind, kind);
+    assert.equal(data.items.length, index + 1);
+    assert.equal(data.uri, 'venerax://reading-widget/' + kind);
+    assert.equal(store.hasWidgets(kind), true);
+    const path = kind === 'history' ? '/read' : '/' + kind + '/read';
+    assert.equal(new URL(data.items[0].uri).pathname, path);
+  }
+  ability.onSizeChanged('33', 2, {});
+  await flush();
+  assert.equal(h.updates.at(-1).data.kind, 'local');
+  assert.equal(h.updates.at(-1).data.items.length, 2);
+  store.save(JSON.stringify({ kind: 'history', locked: true, items: [] }));
+  await store.updateAll();
+  assert.ok(h.updates.slice(-4).every(update => update.data.items.length === 0));
+  ability.onStop();
+});
+
+test('an interrupted lock and unlock cannot resurrect another card kind', () => {
+  const h = harness();
+  const store = new h.context.ReadingWidgetStore('/private');
+  store.save(snapshot(2, 'following'));
+  store.save(JSON.stringify({ kind: 'history', locked: true, items: [] }));
+  // Only one of Dart's four unlock messages reached the native process.
+  new h.context.ReadingWidgetStore('/private').save(snapshot(1, 'history'));
+  const ability = new h.context.ReadingFormAbility();
+  const data = ability.onAddForm({ parameters: { id: '39', size: 4, name: 'reading_following' } }).data;
+  assert.deepEqual(copy(data.items), []);
+  assert.equal(data.kind, 'following');
+  ability.onStop();
 });

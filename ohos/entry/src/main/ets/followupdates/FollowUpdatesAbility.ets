@@ -6,6 +6,7 @@ import { connection } from '@kit.NetworkKit';
 import { Any, FlutterEngine, MethodCall, MethodChannel, MethodResult } from '@ohos/flutter_ohos';
 import { DartEntrypoint } from '@ohos/flutter_ohos/src/main/ets/embedding/engine/dart/DartExecutor';
 import { FOLLOW_WORK_ID } from '../bridge/FollowSchedulerService';
+import { ReadingWidgetService } from '../widget/ReadingWidgetService';
 
 const FOLLOW_STAGES: string[] = ['data', 'translation', 'network', 'stores', 'sources', 'checks', 'cleanup'];
 
@@ -14,6 +15,7 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
   private channel?: MethodChannel;
   private paths?: MethodChannel;
   private system?: MethodChannel;
+  private widgets?: MethodChannel;
   private lease?: fs.File;
   private deadline?: number;
   private stopping = false;
@@ -35,6 +37,8 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
       this.engine = engine;
       engine.init(this.context, null, false);
       const messenger = engine.getDartExecutor().getBinaryMessenger();
+      this.widgets = new MethodChannel(messenger, 'venera/reading_widget');
+      this.widgets.setMethodCallHandler(new ReadingWidgetService(this.context.filesDir));
       this.paths = new MethodChannel(messenger, 'plugins.flutter.io/path_provider');
       this.paths.setMethodCallHandler({
         onMethodCall: (call: MethodCall, result: MethodResult): void => {
@@ -165,8 +169,10 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
     this.channel = undefined;
     this.paths?.setMethodCallHandler(null);
     this.system?.setMethodCallHandler(null);
+    this.widgets?.setMethodCallHandler(null);
     this.paths = undefined;
     this.system = undefined;
+    this.widgets = undefined;
     const engine = this.engine;
     this.engine = undefined;
     try {

@@ -3,7 +3,16 @@
     <string name="reading_widget_title">Recently read</string>
     <string name="reading_widget_cover_name">Reading history · Covers</string>
     <string name="reading_widget_list_name">Reading history · List</string>
-    <string name="reading_widget_description">Recently read comics. Tap a comic to continue reading.</string>
-    <string name="reading_widget_open">Open VeneraX to load reading history.</string>
+    <string name="reading_widget_description">Comics and reading progress. Tap to open VeneraX.</string>
+    <string name="reading_widget_open">Open VeneraX to view comics.</string>
     <string name="reading_widget_continue">Continue reading</string>
+    <string name="reading_widget_following">Following</string>
+    <string name="reading_widget_following_cover">Following · Covers</string>
+    <string name="reading_widget_following_list">Following · List</string>
+    <string name="reading_widget_updates">New updates</string>
+    <string name="reading_widget_updates_cover">New updates · Covers</string>
+    <string name="reading_widget_updates_list">New updates · List</string>
+    <string name="reading_widget_local">Local comics</string>
+    <string name="reading_widget_local_cover">Local comics · Covers</string>
+    <string name="reading_widget_local_list">Local comics · List</string>
 </resources>

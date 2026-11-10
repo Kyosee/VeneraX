@@ -9,11 +9,19 @@ export class ReadingWidgetItem {
 }
 
 export class ReadingWidgetData {
+  kind: string = 'history';
+  locked: boolean = false;
   title: string = '';
+  subtitle: string = '';
   emptyText: string = '';
+  uri: string = 'venerax://reading-widget/history';
   items: ReadingWidgetItem[] = [];
   dimension: number = 2;
   formImages: Record<string, number> = {};
+}
+
+export function isReadingWidgetKind(kind: string): boolean {
+  return ['history', 'following', 'updates', 'local'].includes(kind);
 }
 
 export function parseReadingWidgetData(json: string): ReadingWidgetData {
@@ -22,8 +30,16 @@ export function parseReadingWidgetData(json: string): ReadingWidgetData {
     throw new Error('Invalid reading widget snapshot');
   }
   const result = new ReadingWidgetData();
+  if (typeof parsed.kind !== 'string' || !isReadingWidgetKind(parsed.kind)) {
+    throw new Error('Unknown reading widget kind');
+  }
+  result.kind = parsed.kind;
+  result.locked = parsed.locked === true;
+  result.uri = `venerax://reading-widget/${result.kind}`;
   result.title = typeof parsed.title === 'string' ? parsed.title : '';
+  result.subtitle = typeof parsed.subtitle === 'string' ? parsed.subtitle : '';
   result.emptyText = typeof parsed.emptyText === 'string' ? parsed.emptyText : '';
+  if (result.locked) return result;
   // API 17 supports at most five transferred images. Four rows fit a 4x4 card.
   parsed.items.slice(0, 4).forEach((item: ReadingWidgetItem) => {
     if (item === null || typeof item !== 'object' || typeof item.id !== 'string' ||
@@ -35,7 +51,8 @@ export function parseReadingWidgetData(json: string): ReadingWidgetData {
     entry.title = item.title;
     entry.progress = typeof item.progress === 'string' ? item.progress : '';
     entry.coverPath = typeof item.coverPath === 'string' ? item.coverPath : '';
-    entry.uri = `venerax://reading-widget/read?id=${encodeURIComponent(item.id)}&type=${item.type}`;
+    const path = result.kind === 'history' ? 'read' : `${result.kind}/read`;
+    entry.uri = `venerax://reading-widget/${path}?id=${encodeURIComponent(item.id)}&type=${item.type}`;
     result.items.push(entry);
   });
   return result;
