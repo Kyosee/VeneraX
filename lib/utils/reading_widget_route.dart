@@ -86,7 +86,7 @@ Future<bool> handleReadingWidgetLink(Uri uri) async {
       }
       if (target.kind != ReadingWidgetKind.local &&
           type.comicSource?.loadComicInfo != null) {
-        navigator.context.to(
+        App.rootContext.to(
           () => ReaderWithLoading(id: comic.id, sourceKey: comic.sourceKey),
         );
         return true;

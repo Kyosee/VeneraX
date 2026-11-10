@@ -2,7 +2,7 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/reading_widget_description"
     android:initialLayout="@layout/reading_widget_list"
-    android:previewLayout="@layout/reading_widget_list"
+    android:previewLayout="@layout/reading_widget_preview_list"
     android:minWidth="250dp"
     android:minHeight="180dp"
     android:minResizeWidth="220dp"

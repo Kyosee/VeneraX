@@ -1,15 +1,59 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
+import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/reading_widget.dart';
+import 'package:venera/foundation/res.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
+import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/utils/reading_widget_route.dart';
 import 'package:venera/utils/translations.dart';
+
+const _sourceKey = 'reading_widget_route_test';
+
+ComicSource _source(LoadComicFunc loadDetails) => ComicSource(
+  'Widget route test',
+  _sourceKey,
+  null,
+  null,
+  null,
+  null,
+  const [],
+  null,
+  null,
+  loadDetails,
+  null,
+  null,
+  null,
+  null,
+  '',
+  '',
+  '1.0.0',
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  false,
+  false,
+  null,
+  null,
+);
 
 Future<GlobalKey<NavigatorState>> _pumpMainPage(WidgetTester tester) async {
   final mainNavigatorKey = GlobalKey<NavigatorState>();
@@ -47,6 +91,7 @@ void main() {
     App.dataPath = directory.path;
     await appdata.init();
     await LocalFavoritesManager().init();
+    await HistoryManager().init();
   });
 
   setUp(() {
@@ -64,8 +109,57 @@ void main() {
   tearDownAll(() async {
     await appdata.saveData(false);
     LocalFavoritesManager().close();
+    HistoryManager().close();
     App.dataPath = originalDataPath;
     directory.deleteSync(recursive: true);
+  });
+
+  testWidgets('an online comic widget opens the reader above the main shell', (
+    tester,
+  ) async {
+    // Keep details pending so navigation is tested without reader image IO.
+    final details = Completer<Res<ComicDetails>>();
+    final requestedIds = <String>[];
+    ComicSourceManager().add(
+      _source((id) {
+        requestedIds.add(id);
+        return details.future;
+      }),
+    );
+    addTearDown(() => ComicSourceManager().remove(_sourceKey));
+    final history = History.fromMap({
+      'id': 'online-comic',
+      'type': _sourceKey.hashCode,
+      'title': 'Online comic',
+      'ep': 6,
+      'page': 29,
+    });
+    HistoryManager().addHistory(history);
+    addTearDown(() => HistoryManager().remove(history.id, history.type));
+    final mainNavigatorKey = await _pumpMainPage(tester);
+
+    expect(
+      await handleReadingWidgetLink(Uri.parse(readingWidgetComicUri(history))),
+      isTrue,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final reader = find.byType(ReaderWithLoading);
+    expect(reader, findsOneWidget);
+    expect(requestedIds, ['online-comic']);
+    expect(
+      ModalRoute.of(tester.element(reader))!.navigator,
+      same(App.rootNavigatorKey.currentState),
+    );
+    expect(App.rootNavigatorKey.currentState!.canPop(), isTrue);
+    expect(mainNavigatorKey.currentState!.canPop(), isFalse);
+
+    App.rootNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ReaderWithLoading, skipOffstage: false), findsNothing);
+    expect(find.text('main-home'), findsOneWidget);
+    expect(mainNavigatorKey.currentState!.canPop(), isFalse);
   });
 
   testWidgets('a widget tap waits behind the lock until unlock', (
