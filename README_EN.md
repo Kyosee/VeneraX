@@ -8,61 +8,26 @@
 [![Stars](https://img.shields.io/github/stars/Kyosee/VeneraX?style=flat)](https://github.com/Kyosee/VeneraX/stargazers)
 [![Release](https://img.shields.io/github/v/release/Kyosee/VeneraX)](https://github.com/Kyosee/VeneraX/releases)
 
-  <h3><a href="README.md">中文</a> | English</h3>
+  <p><a href="README.md">中文</a> | English</p>
 </div>
 
-VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original.
+VeneraX is a free, open-source comic reader for multiple platforms, maintained and enhanced from Venera.
+
+**[Download](#download--installation) · [Features](#new-features--improvements) · [Guide](doc/guide.en.md) · [Changelog](CHANGELOG_EN.md) · [Feedback](#feedback--contributions)**
 
 > **Original Project:** This project is forked from [venera-app/venera](https://github.com/venera-app/venera).
 
 > [!IMPORTANT]
 > **Before downloading, installing, or using this software, please read and fully understand the [User Agreement & Disclaimer](#user-agreement--disclaimer).** By downloading, installing, copying, modifying, or using this software, you are deemed to have read, understood, and accepted it in its entirety; if you do not agree, do not use the software and delete it immediately.
 
-## New Features & Improvements
+## Download & Installation
 
-<details open>
-<summary><b>Feature list</b></summary>
+**[Download the latest release](https://github.com/Kyosee/VeneraX/releases/latest)** · [All releases](https://github.com/Kyosee/VeneraX/releases)
 
-- [x] Improved WebDAV backup & sync, with a per-item choice of settings to skip
-- [x] Automatic update checks on Windows and Android APK
-- [x] Seamless continuous-chapter reading
-- [x] Improved local library, follow-updates & favorites; follow updates across several favorite folders, with a check interval, a check on startup and a daily scheduled check
-- [x] Task system with background execution and related views
-- [x] Chapter read-status changes
-- [x] Reading background color (per-comic)
-- [x] Night-view mode (warm/black/dim-red overlay, adjustable intensity)
-- [x] Android background downloads, follow-update checks, comic import/export
-- [x] Windows tray minimize
-- [x] Simple image-quality enhancement, with a live before/after preview
-- [x] Various UI & UX refinements
-- [x] Read-later
-- [x] Customizable automatic history cleanup
-- [x] Quick WebDAV config sync across devices via QR code
-- [x] Long-press to reorder the home screen's function modules
-- [x] Multiple library management
-- [x] WebDAV comic library (experimental)
-- [x] App lock adds PIN, password and pattern unlock
-- [x] AI page translation while reading (experimental): images and OCR stay on-device, and only recognized text is sent to an LLM you configure; beginner provider templates/model fetching plus advanced custom settings, resource-saving/balanced/fast presets, whole-chapter pre-translation, smart erase and bounded text layout; Traditional Chinese (including vertical text), custom target languages, custom translation API scripts, and a "Translated Comics" section on the home page
-- [x] Custom collections: read comics published as separate volumes or parts as one, across sources
-- [x] Reading statistics: tracks reading time, with sorting and swipe-to-delete
-- [x] Draw a comic: pick a random comic from your favorites, with a selectable scope
-- [x] Custom chapter order: sort chapters in bulk by name, in reverse or by folder modified time, hide duplicate chapters; the order syncs
-- [x] Import local PDF comics
-- [x] Custom comic cache directory
-- [x] Auto page turning adds a steady scroll mode, plus an option to keep the screen on while reading
-- [x] E-ink screen support (experimental): full refresh on page turn to clear ghosting, and the system ripple page turn on iReader devices
+Choose a package for your operating system and processor architecture, and read the installation notes for that release.
 
-</details>
-
-## Changelog
-
-See the **[Changelog](CHANGELOG_EN.md)** for what each version added, changed and fixed. It updates automatically after every stable release. When the app finds a new version, the update dialog also shows what changed.
-
-## Guide
-
-Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.
-
-### Linux AppImage
+<details>
+<summary><b>Linux AppImage installation</b></summary>
 
 Download `VeneraX-<version>-x86_64.AppImage` (64-bit Intel / AMD) or `VeneraX-<version>-aarch64.AppImage` (ARM64) from [Releases](https://github.com/Kyosee/VeneraX/releases). Make it executable and run it directly:
 
@@ -79,6 +44,77 @@ Replace the version and architecture in these examples. AppImages bundle GTK, We
 ```
 
 To update, download the new AppImage and replace the old file. Application data stays in the existing user data directory.
+
+</details>
+
+## New Features & Improvements
+
+<details open>
+<summary><b>View all features</b></summary>
+
+### Reading
+
+- [x] Seamless continuous-chapter reading
+- [x] Chapter read-status changes
+- [x] Custom chapter order: sort chapters in bulk by name, in reverse or by folder modified time, hide duplicate chapters; the order syncs
+- [x] Auto page turning adds a steady scroll mode, plus an option to keep the screen on while reading
+- [x] Night-view mode (warm/black/dim-red overlay, adjustable intensity)
+- [x] Reading background color (per-comic)
+- [x] E-ink screen support (experimental): full refresh on page turn to clear ghosting, and the system ripple page turn on iReader devices
+
+### Library management
+
+- [x] Improved local library, follow-updates & favorites; follow updates across several favorite folders, with a check interval, a check on startup and a daily scheduled check
+- [x] Read-later
+- [x] Multiple library management
+- [x] Custom collections: read comics published as separate volumes or parts as one, across sources
+- [x] Reading statistics: tracks reading time, with sorting and swipe-to-delete
+- [x] Draw a comic: pick a random comic from your favorites, with a selectable scope
+- [x] Import local PDF comics
+- [x] Custom comic cache directory
+- [x] Customizable automatic history cleanup
+
+### Sync & privacy
+
+- [x] Improved WebDAV backup & sync, with a per-item choice of settings to skip
+- [x] Quick WebDAV config sync across devices via QR code
+- [x] WebDAV comic library (experimental)
+- [x] App lock adds PIN, password and pattern unlock
+
+### Translation & image quality
+
+- [x] AI page translation while reading (experimental): images and OCR stay on-device, and only recognized text is sent to an LLM you configure; beginner provider templates/model fetching plus advanced custom settings, resource-saving/balanced/fast presets, whole-chapter pre-translation, smart erase and bounded text layout; Traditional Chinese (including vertical text), custom target languages, custom translation API scripts, and a "Translated Comics" section on the home page
+- [x] Simple image-quality enhancement, with a live before/after preview
+
+### Platform & interface
+
+- [x] Task system with background execution and related views
+- [x] Android background downloads, follow-update checks, comic import/export
+- [x] Windows tray minimize
+- [x] Customizable desktop keyboard shortcuts: fullscreen, page turning, chapter switching, reading menu and more; Windows global shortcuts can hide the app to the tray or bring its window back
+- [x] Automatic update checks on Windows and Android APK
+- [x] Long-press to reorder the home screen's function modules
+- [x] Various UI & UX refinements
+
+</details>
+
+## Guide
+
+Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.
+
+### Changelog
+
+See the **[Changelog](CHANGELOG_EN.md)** for what each version added, changed and fixed. It updates automatically after every stable release. When the app finds a new version, the update dialog also shows what changed.
+
+### Migration
+
+If migrating from [venera-app/venera](https://github.com/venera-app/venera), use a separate WebDAV sync directory. Back up your old data before migrating.
+
+## Feedback & Contributions
+
+Report app bugs and suggest features in [Issues](https://github.com/Kyosee/VeneraX/issues). Include the app version, operating system and device information, and steps to reproduce the problem.
+
+Submit code improvements through [Pull requests](https://github.com/Kyosee/VeneraX/pulls).
 
 ## Building
 
@@ -178,14 +214,13 @@ Also: the two `Update_AltStore_*` jobs commit an AltStore manifest back to maste
 
 </details>
 
-## Migration
-
-If migrating from [venera-app/venera](https://github.com/venera-app/venera), use a separate WebDAV sync directory. Back up your old data before migrating.
-
 ## User Agreement & Disclaimer
 
 > [!NOTE]
 > **Special Notice:** Please read and fully understand this statement before downloading, installing, or using this software. By downloading, installing, copying, modifying, or using this software, you are deemed to have read, understood, and accepted all of its terms.
+
+<details open>
+<summary><b>Read the full User Agreement & Disclaimer</b></summary>
 
 **1. Nature of the Software**
 
@@ -238,6 +273,8 @@ This repository's issue tracker and other public channels are for feedback about
 2. This software is licensed and distributed under the license set out in the LICENSE file at the root of the repository; this disclaimer does not modify or limit the rights granted by that license, and the license prevails in case of conflict.
 3. By downloading, copying, modifying, or using this project, you are deemed to have read and accepted this disclaimer in its entirety. The maintainers reserve the right to modify or supplement this disclaimer at any time, effective upon publication.
 
+</details>
+
 ## Star History
 
 <a href="https://www.star-history.com/?type=date&repos=Kyosee%2FVeneraX">
@@ -247,3 +284,9 @@ This repository's issue tracker and other public channels are for feedback about
     <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Kyosee/VeneraX&type=date&legend=top-left&sealed_token=t_CyvEveWN9HuG5CZb1KoUGGLxlcTA0a5341bBCAAV63Hh34aiVyEOvU9gpq1q9Wvcw48bzlVHPdlWQ5s-tz-bn9iq8_TBG0oU-Zk7CFAb_Pf7SqzE9J0eEazga6bCemssv2kIYq-9xlbymcG6S000iehp3Zs_TRV73aoOaEMv7pZP-qrRwaP6a7vuB1" />
   </picture>
 </a>
+
+## Acknowledgements
+
+- [Venera](https://github.com/venera-app/venera): The upstream project of VeneraX. Thanks to its developers and contributors.
+- [EhTagTranslation](https://github.com/EhTagTranslation/Database): Chinese translations of comic tags.
+- Thanks to everyone who reports issues, tests, or contributes code to VeneraX.
