@@ -105,6 +105,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     App.registerForceRebuild(forceRebuild);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addObserver(this);
+    syncOhosStartupTheme();
     syncReaderNightModeWithSystem(rebuild: false);
     initDeferred().then((_) {
       checkUpdates();
@@ -114,6 +115,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   OverlayEntry? hideContentOverlay;
+  String? _ohosThemeMode;
+
+  void syncOhosStartupTheme() {
+    if (!App.isOhos) return;
+    final mode = switch (appdata.settings['theme_mode']) {
+      'light' => 'light',
+      'dark' => 'dark',
+      _ => 'system',
+    };
+    if (_ohosThemeMode == mode) return;
+    _ohosThemeMode = mode;
+    unawaited(const MethodChannel('venera/method_channel')
+        .invokeMethod<void>('setThemeMode', mode)
+        .catchError((Object error) {
+      if (_ohosThemeMode == mode) _ohosThemeMode = null;
+      Log.warning('Theme', 'Unable to synchronize the startup theme.');
+    }));
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -196,6 +215,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void forceRebuild() {
+    syncOhosStartupTheme();
     void rebuild(Element el) {
       el.markNeedsBuild();
       el.visitChildren(rebuild);

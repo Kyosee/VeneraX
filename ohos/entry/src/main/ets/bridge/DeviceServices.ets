@@ -9,6 +9,7 @@ import inputConsumer from '@ohos.multimodalInput.inputConsumer';
 import { KeyEvent } from '@ohos.multimodalInput.keyEvent';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { BusinessError } from '@ohos.base';
+import { StartupTheme } from './StartupTheme';
 import {
   Any, EventChannel, EventSink, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, MethodResult, StreamHandler
 } from '@ohos/flutter_ohos';
@@ -47,13 +48,24 @@ export class DeviceServices {
 
   // Route the shared venera channel here without replacing its other handlers.
   handleMethodCall(call: MethodCall, result: MethodResult): boolean {
-    if (call.method !== 'getProxy' && call.method !== 'setScreenOn') return false;
+    if (call.method !== 'getProxy' && call.method !== 'setScreenOn' && call.method !== 'setThemeMode') return false;
     if (this.disposed) {
       result.error('DEVICE_SERVICES_CLOSED', 'Device services have been disposed.', null);
       return true;
     }
     if (call.method === 'getProxy') {
       this.getProxy(result);
+    } else if (call.method === 'setThemeMode') {
+      const mode: Any = call.args;
+      if (typeof mode !== 'string' || !['light', 'dark', 'system'].includes(mode as string)) {
+        result.error('INVALID_ARGUMENT', 'Unknown theme mode.', null);
+        return true;
+      }
+      StartupTheme.setMode(this.context, mode as string).then(() => {
+        result.success(null);
+      }).catch((_error: BusinessError) => {
+        result.error('THEME_UNAVAILABLE', 'Unable to save the startup theme.', null);
+      });
     } else {
       this.setScreenOn(call, result);
     }

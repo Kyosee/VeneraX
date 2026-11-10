@@ -2,6 +2,7 @@
 import common from '@ohos.app.ability.common';
 import { FlutterPage } from '@ohos/flutter_ohos'
 import { LauncherIconService } from '../bridge/LauncherIconService';
+import { StartupTheme } from '../bridge/StartupTheme';
 
 let storage = LocalStorage.getShared()
 const EVENT_BACK_PRESS = 'EVENT_BACK_PRESS'
@@ -9,9 +10,11 @@ const EVENT_BACK_PRESS = 'EVENT_BACK_PRESS'
 @Component
 struct StartupSplash {
   @State private icon: Resource | undefined = undefined;
+  @StorageLink('veneraThemeMode') private themeMode: string = 'system';
   private visible = false;
 
   aboutToAppear(): void {
+    StartupTheme.restore(getContext(this) as common.UIAbilityContext);
     this.visible = true;
     LauncherIconService.getStartupIcon().then((icon: Resource | undefined): void => {
       if (this.visible) this.icon = icon;
@@ -33,7 +36,7 @@ struct StartupSplash {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.start_window_background'))
+    .backgroundColor(StartupTheme.background(this.themeMode))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }
