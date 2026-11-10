@@ -1,22 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/reading_widget_header"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="24dp"
+    android:minHeight="32dp"
+    android:background="@drawable/reading_widget_item_background"
     android:gravity="center_vertical"
     android:orientation="horizontal">
     <ImageView
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:layout_marginEnd="7dp"
+        android:id="@+id/reading_widget_kind_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/reading_widget_icon_background"
         android:importantForAccessibility="no"
-        android:src="@mipmap/ic_launcher" />
+        android:padding="5dp"
+        android:src="@drawable/reading_widget_history" />
     <TextView
         android:id="@+id/reading_widget_title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:ellipsize="end"
+        android:includeFontPadding="false"
         android:maxLines="1"
         android:text="@string/reading_widget_title"
         android:textColor="@color/reading_widget_primary"
@@ -28,6 +34,6 @@
         android:gravity="end"
         android:importantForAccessibility="no"
         android:text="›"
-        android:textColor="@color/reading_widget_secondary"
+        android:textColor="@color/reading_widget_accent"
         android:textSize="22dp" />
 </LinearLayout>

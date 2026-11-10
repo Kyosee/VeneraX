@@ -4,4 +4,9 @@
     <color name="reading_widget_primary">#24212D</color>
     <color name="reading_widget_secondary">#625C70</color>
     <color name="reading_widget_placeholder_surface">#EEEAF3</color>
+    <color name="reading_widget_accent">#7253A1</color>
+    <color name="reading_widget_on_accent">#FFFFFF</color>
+    <color name="reading_widget_accent_surface">#EEE5FA</color>
+    <color name="reading_widget_track">#DED7E9</color>
+    <color name="reading_widget_pressed">#187253A1</color>
 </resources>

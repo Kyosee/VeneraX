@@ -6,6 +6,9 @@
     <string name="reading_widget_description">Comics and reading progress. Tap to open VeneraX.</string>
     <string name="reading_widget_open">Open VeneraX to view comics.</string>
     <string name="reading_widget_continue">Continue reading</string>
+    <string name="reading_widget_chapter_progress">Chapter %1$d%% read</string>
+    <string name="reading_widget_preview_covers">Covers</string>
+    <string name="reading_widget_preview_list">List</string>
     <string name="reading_widget_following">Following</string>
     <string name="reading_widget_following_cover">Following · Covers</string>
     <string name="reading_widget_following_list">Following · List</string>

@@ -10,7 +10,9 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import io.flutter.plugin.common.BinaryMessenger
@@ -20,11 +22,11 @@ import java.io.File
 import kotlin.math.ceil
 import kotlin.math.max
 
-enum class ReadingKind(val key: String, val titleResource: Int) {
-    HISTORY("history", R.string.reading_widget_title),
-    FOLLOWING("following", R.string.reading_widget_following),
-    UPDATES("updates", R.string.reading_widget_updates),
-    LOCAL("local", R.string.reading_widget_local);
+enum class ReadingKind(val key: String, val titleResource: Int, val iconResource: Int) {
+    HISTORY("history", R.string.reading_widget_title, R.drawable.reading_widget_history),
+    FOLLOWING("following", R.string.reading_widget_following, R.drawable.reading_widget_following),
+    UPDATES("updates", R.string.reading_widget_updates, R.drawable.reading_widget_updates),
+    LOCAL("local", R.string.reading_widget_local, R.drawable.reading_widget_local);
 
     val uri: Uri get() = Uri.parse("venerax://reading-widget/$key")
 }
@@ -60,6 +62,9 @@ data class ReadingWidgetItem(
     val title: String,
     val progress: String,
     val coverPath: String,
+    val sourceName: String = "",
+    val badge: String = "",
+    val pageProgress: Int = -1,
 ) {
     fun uri(kind: ReadingKind): Uri = Uri.Builder().scheme("venerax").authority("reading-widget")
             .path(if (kind == ReadingKind.HISTORY) "/read" else "/${kind.key}/read")
@@ -153,6 +158,9 @@ object ReadingWidgets {
                 title = item.getString("title"),
                 progress = item.optString("progress"),
                 coverPath = item.optString("coverPath"),
+                sourceName = item.optString("sourceName"),
+                badge = item.optString("badge"),
+                pageProgress = item.optInt("pageProgress", -1).takeIf { it in 0..100 } ?: -1,
             )
         }.filter { it.id.isNotEmpty() }
         return ReadingWidgetSnapshot(
@@ -198,35 +206,67 @@ object ReadingWidgets {
         )
         val layout = if (covers) R.layout.reading_widget_cover else R.layout.reading_widget_list
         val views = RemoteViews(context.packageName, layout)
-        val openHistory = pendingIntent(context, visible.kind.uri)
-        views.setOnClickPendingIntent(android.R.id.background, openHistory)
+        val openList = pendingIntent(context, visible.kind.uri)
+        views.setOnClickPendingIntent(android.R.id.background, openList)
+        views.setOnClickPendingIntent(R.id.reading_widget_header, openList)
+        views.setImageViewResource(R.id.reading_widget_kind_icon, visible.kind.iconResource)
         views.setTextViewText(R.id.reading_widget_title, visible.title)
         views.setTextViewText(R.id.reading_widget_empty, visible.emptyText)
         views.setTextViewText(R.id.reading_widget_subtitle, visible.subtitle)
-        views.setViewVisibility(R.id.reading_widget_subtitle, if (visible.subtitle.isEmpty()) View.GONE else View.VISIBLE)
         views.removeAllViews(R.id.reading_widget_items)
 
         val options = manager.getAppWidgetOptions(id)
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val width = options.getInt(
+            if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH,
+            if (covers) 180 else 250,
+        ).takeIf { it > 0 } ?: 180
         val height = options.getInt(
-            if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
-                AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
-            else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT,
+            if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT,
             options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180),
-        )
+        ).takeIf { it > 0 } ?: 180
         val fontScale = context.resources.configuration.fontScale
-        val rowHeight = max(56, ceil(37 * fontScale + 8).toInt())
-        val headerHeight = max(28, ceil(18 * fontScale).toInt()) + if (visible.subtitle.isEmpty()) 0 else ceil(18 * fontScale).toInt()
+        val showSubtitle = visible.subtitle.isNotEmpty() && height >= 200
+        val showSource = width >= 240 && height >= 260
+        val titleLines = if (height < 240 || width < 220) 1 else 2
+        val headerHeight = max(32, ceil(18 * fontScale + 4).toInt()) +
+                if (showSubtitle) ceil(14 * fontScale + 2).toInt() else 0
+        val hasMetadata = showSource || visible.items.any { it.badge.isNotEmpty() }
+        val rowHeight = max(66, ceil((17 * titleLines + 14 + if (hasMetadata) 14 else 0) * fontScale + 21).toInt())
         val count = if (covers) 2 else ((height - 32 - headerHeight) / rowHeight).coerceIn(1, MAX_ITEMS)
+        val coverTextHeight = ceil((16 * titleLines + 13 + if (showSource) 12 else 0) * fontScale + 20).toInt()
+        val coverHeight = minOf(160, ((width - 40) / 2f / 0.72f).toInt(), height - 32 - headerHeight - coverTextHeight)
+            .coerceAtLeast(28)
+        views.setViewVisibility(R.id.reading_widget_subtitle, if (showSubtitle) View.VISIBLE else View.GONE)
         visible.items.take(count).forEach { item ->
             val child = RemoteViews(
                 context.packageName,
                 if (covers) R.layout.reading_widget_book else R.layout.reading_widget_row,
             )
             child.setTextViewText(R.id.reading_widget_item_title, item.title)
-            child.setTextViewText(R.id.reading_widget_item_progress, item.progress)
+            child.setInt(R.id.reading_widget_item_title, "setMaxLines", titleLines)
+            child.setTextViewText(R.id.reading_widget_item_progress, item.progress.ifEmpty {
+                context.getString(R.string.reading_widget_continue)
+            })
+            child.setTextViewText(R.id.reading_widget_item_source, item.sourceName)
+            child.setViewVisibility(R.id.reading_widget_item_source, if (showSource && item.sourceName.isNotEmpty()) View.VISIBLE else View.GONE)
+            child.setTextViewText(R.id.reading_widget_item_badge, item.badge)
+            child.setViewVisibility(R.id.reading_widget_item_badge, if (item.badge.isEmpty()) View.GONE else View.VISIBLE)
+            child.setViewVisibility(R.id.reading_widget_item_bar, if (item.pageProgress >= 0) View.VISIBLE else View.GONE)
+            child.setProgressBar(R.id.reading_widget_item_bar, 100, item.pageProgress.coerceAtLeast(0), false)
+            if (covers) {
+                // Bound the artwork independently from the launcher's tall widget canvas.
+                child.setInt(R.id.reading_widget_image, "setMaxHeight", (coverHeight * context.resources.displayMetrics.density).toInt())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    child.setViewLayoutWidth(R.id.reading_widget_cover_frame, coverHeight * 0.72f, TypedValue.COMPLEX_UNIT_DIP)
+                    child.setViewLayoutHeight(R.id.reading_widget_image, coverHeight.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+                }
+            }
             child.setContentDescription(
                 R.id.reading_widget_item,
-                listOf(item.title, item.progress).filter { it.isNotEmpty() }.joinToString(", "),
+                listOf(item.title, item.progress, item.sourceName, item.badge,
+                    if (item.pageProgress >= 0) context.getString(R.string.reading_widget_chapter_progress, item.pageProgress) else "",
+                ).filter { it.isNotEmpty() }.joinToString(", "),
             )
             child.setOnClickPendingIntent(R.id.reading_widget_item, pendingIntent(context, item.uri(visible.kind)))
             val image = loadCover(context, item.coverPath)

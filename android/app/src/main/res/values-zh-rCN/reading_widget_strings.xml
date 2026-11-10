@@ -6,6 +6,9 @@
     <string name="reading_widget_description">查看漫画与阅读进度，点击打开 VeneraX。</string>
     <string name="reading_widget_open">打开 VeneraX 查看漫画。</string>
     <string name="reading_widget_continue">继续阅读</string>
+    <string name="reading_widget_chapter_progress">本章已读 %1$d%%</string>
+    <string name="reading_widget_preview_covers">封面</string>
+    <string name="reading_widget_preview_list">列表</string>
     <string name="reading_widget_following">追更</string>
     <string name="reading_widget_following_cover">追更 · 封面</string>
     <string name="reading_widget_following_list">追更 · 列表</string>

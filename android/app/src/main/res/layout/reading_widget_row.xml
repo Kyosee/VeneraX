@@ -3,15 +3,16 @@
     android:id="@+id/reading_widget_item"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="56dp"
+    android:minHeight="66dp"
+    android:background="@drawable/reading_widget_item_background"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
     <ImageView
         android:id="@+id/reading_widget_image"
-        android:layout_width="36dp"
-        android:layout_height="48dp"
+        android:layout_width="40dp"
+        android:layout_height="56dp"
         android:layout_marginEnd="10dp"
         android:background="@drawable/reading_widget_cover_background"
         android:clipToOutline="true"
@@ -28,19 +29,70 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/reading_widget_title"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="@string/reading_widget_continue"
             android:textColor="@color/reading_widget_primary"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:textStyle="bold" />
         <TextView
             android:id="@+id/reading_widget_item_progress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
             android:ellipsize="end"
+            android:includeFontPadding="false"
             android:maxLines="1"
-            android:text="@string/reading_widget_continue"
             android:textColor="@color/reading_widget_secondary"
             android:textSize="11sp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/reading_widget_item_source"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/reading_widget_secondary"
+                android:textSize="10sp"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/reading_widget_item_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/reading_widget_badge_background"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:maxWidth="76dp"
+                android:paddingStart="5dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="5dp"
+                android:paddingBottom="2dp"
+                android:textColor="@color/reading_widget_on_accent"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+        <ProgressBar
+            android:id="@+id/reading_widget_item_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="5dp"
+            android:importantForAccessibility="no"
+            android:indeterminate="false"
+            android:max="100"
+            android:progressBackgroundTint="@color/reading_widget_track"
+            android:progressDrawable="@drawable/reading_widget_progress"
+            android:progressTint="@color/reading_widget_accent"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>
