@@ -33,6 +33,8 @@ jobs:
           architecture: x64
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
       - run: flutter precache --ios --macos
+      - name: Generate Flutter plugin registrants for host checks
+        run: flutter pub get
       - name: Check native extensions and host bridges without packaging
         shell: bash
         run: |
@@ -47,7 +49,7 @@ jobs:
           xcrun swiftc -typecheck -parse-as-library -sdk "$mac_sdk" -target x86_64-apple-macosx14.0 "${shared[@]}" apple/Widgets/ReadingWidgets.swift
           xcrun swiftc -typecheck -parse-as-library -sdk "$ios_sdk" -target x86_64-apple-ios15.1-simulator "${shared[@]}" apple/Widgets/ReadingWidgets.swift
           xcrun swiftc -typecheck -parse-as-library -sdk "$mac_sdk" -target x86_64-apple-macosx14.0 -F "$(dirname "$mac_framework")" "${shared[@]}" apple/Widgets/ReadingWidgetBridge.swift macos/Runner/AppDelegate.swift
-          xcrun swiftc -typecheck -parse-as-library -sdk "$ios_sdk" -target x86_64-apple-ios15.1-simulator -F "$(dirname "$ios_framework")" -I ios/Runner -import-objc-header ios/Runner/Runner-Bridging-Header.h "${shared[@]}" apple/Widgets/ReadingWidgetBridge.swift ios/Runner/AppDelegate.swift
+          xcrun swiftc -typecheck -parse-as-library -sdk "$ios_sdk" -target x86_64-apple-ios15.1-simulator -F "$(dirname "$ios_framework")" -I ios/Runner -import-objc-header ios/Runner/Runner-Bridging-Header.h "${shared[@]}" apple/Widgets/ReadingWidgetBridge.swift ios/Runner/AppDelegate.swift ios/Runner/DirectoryPicker.swift
       - name: Check Xcode references and localized resources
         run: node --test test/apple_widgets_test.cjs
       - name: Run shared store XCTest without an app package

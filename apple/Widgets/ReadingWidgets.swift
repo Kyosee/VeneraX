@@ -14,6 +14,14 @@ struct VeneraReadingWidgets: WidgetBundle {
 private struct ReadingWidget: Widget {
     let kind: ReadingWidgetKind
 
+    init() {
+        self.init(kind: .history)
+    }
+
+    init(kind: ReadingWidgetKind) {
+        self.kind = kind
+    }
+
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind.rawValue, provider: ReadingWidgetProvider(kind: kind)) { entry in
             ReadingWidgetView(entry: entry)
