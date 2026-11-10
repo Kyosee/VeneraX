@@ -47,9 +47,9 @@ void main() {
 - Parent
   - Child
 1. Step
-\`\`\`
+```
 # literal code
-\`\`\`
+```
 ''');
     expect(blocks[2].indent, 1);
     expect(blocks[3].type, GuideBlockType.numbered);

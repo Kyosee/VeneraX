@@ -283,15 +283,14 @@ String _changelogLangSlug() {
   return App.locale.languageCode == 'zh' ? 'zh-CN' : 'en';
 }
 
-/// Fetches the per-language changelog for [release] and splits it into display
-/// lines. The notes live in the repo at
+/// Fetches the per-language changelog for [release], preserving its sections.
+/// The notes live in the repo at
 /// `release-notes/<tag>.<lang>.md` and are read via raw.githubusercontent.com,
 /// pinned to the release tag so the content always matches that version.
 ///
 /// Falls back to the English file when the localized one is missing, and
-/// returns an empty list when neither can be fetched (the dialog then simply
-/// omits the details section instead of failing).
-Future<List<String>> _fetchChangelogLines(
+/// returns an empty list when neither can be fetched.
+Future<List<GuideBlock>> _fetchChangelog(
   _GithubUpdateConfig config,
   _GitHubRelease release,
 ) async {
@@ -317,23 +316,7 @@ Future<List<String>> _fetchChangelogLines(
   var content = await fetch(lang);
   content ??= lang == 'en' ? null : await fetch('en');
   if (content == null) return const [];
-  return _parseChangelogLines(content);
-}
-
-/// Parses a markdown changelog into one entry per line, stripping list markers
-/// and headings so the dialog can render a clean bullet list.
-List<String> _parseChangelogLines(String markdown) {
-  final lines = <String>[];
-  for (var raw in markdown.split('\n')) {
-    var line = raw.trim();
-    if (line.isEmpty) continue;
-    if (line.startsWith('#')) continue; // section headings
-    if (line.startsWith('**') && line.endsWith('**')) continue; // footers
-    line = line.replaceFirst(RegExp(r'^[-*+]\s+'), '');
-    if (line.isEmpty) continue;
-    lines.add(line);
-  }
-  return lines;
+  return parseAppChangelog(content);
 }
 
 Future<void> checkUpdateUi([
@@ -344,49 +327,54 @@ Future<void> checkUpdateUi([
     var value = await _checkUpdateDetails();
     if (value.hasUpdate && value.release != null) {
       if (delay) await Future.delayed(const Duration(seconds: 2));
-      var changelog =
-          await _fetchChangelogLines(value.config, value.release!);
-      showDialog(
+      final release = value.release!;
+      final changelog = await _fetchChangelog(value.config, release);
+      final asset = App.isWindows
+          ? _selectWindowsAsset(release.assets)
+          : (App.isAndroid ? _selectAndroidAsset(release.assets) : null);
+      await showDialog<void>(
         context: App.rootContext,
+        barrierColor: Theme.of(App.rootContext).brightness == Brightness.dark
+            ? const Color(0x77070c16)
+            : const Color(0x4a1c2941),
         builder: (context) {
-          return ContentDialog(
-            title: "New version available".tl,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text("A new version is available. Do you want to update now?".tl),
-                const SizedBox(height: 8),
-                Text("Current version: @v".tlParams({"v": App.version})),
-                Text("Latest version: @v"
-                    .tlParams({"v": value.release!.version})),
-                if (changelog.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    "What's Changed".tl,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 6),
-                  _ChangelogView(lines: changelog),
-                ],
-              ],
-            ).paddingHorizontal(16).paddingVertical(8),
-            actions: [
-              Button.text(
-                onPressed: () {
-                  Navigator.pop(context);
-                  launchUrlString(value.release!.htmlUrl);
-                },
-                child: Text("View Release Page".tl),
-              ),
-              Button.filled(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _doUpdate(value);
-                },
-                child: Text("Update Now".tl),
-              ),
-            ],
+          return AppUpdateDialog(
+            currentVersion: App.version,
+            latestVersion: release.version,
+            changelog: changelog,
+            restartsAfterInstall: App.isWindows,
+            onReleasePage: () async {
+              var opened = false;
+              try {
+                opened = await launchUrlString(release.htmlUrl);
+              } catch (e, s) {
+                Log.error('Open Update Release', e.toString(), s);
+              }
+              if (!opened) {
+                App.rootContext.showMessage(message: 'Failed to open release page'.tl);
+              }
+            },
+            prepareUpdate: asset == null ? null : (cancelToken, onProgress) async {
+              final downloaded = await _downloadUpdateAsset(
+                value.config, asset,
+                cancelToken: cancelToken, onProgress: onProgress,
+              );
+              final path = downloaded.path;
+              try {
+                if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+                if (!await _verifyDigestIfNeeded(path, asset.digest)) {
+                  throw StateError('Update package verification failed'.tl);
+                }
+                if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+              } catch (_) {
+                await _discardUpdateAttempt(downloaded.directory);
+                rethrow;
+              }
+              return PreparedAppUpdate(
+                install: () => _installDownloadedUpdate(release, asset, path),
+                discard: () => _discardUpdateAttempt(downloaded.directory),
+              );
+            },
           );
         },
       );
@@ -402,48 +390,28 @@ Future<void> checkUpdateUi([
 }
 // --- Platform dispatch ---
 
-Future<void> _doUpdate(_UpdateCheckResult updateResult) async {
-  final release = updateResult.release;
-  if (release == null) return;
-
-  if (App.isWindows) {
-    await _updateWindows(updateResult.config, release);
-    return;
+Future<void> _installDownloadedUpdate(
+  _GitHubRelease release,
+  _GitHubAsset asset,
+  String filePath,
+) async {
+  try {
+    if (App.isWindows) {
+      await _updateWindows(release, asset, filePath);
+    } else if (App.isAndroid) {
+      await _updateAndroid(filePath);
+    } else {
+      await launchUrlString(release.htmlUrl);
+    }
+  } catch (e, s) {
+    Log.error('Install Update', e.toString(), s);
+    App.rootContext.showMessage(message: 'Failed to start update installer'.tl);
   }
-  if (App.isAndroid) {
-    await _updateAndroid(updateResult.config, release);
-    return;
-  }
-  await launchUrlString(release.htmlUrl);
-  App.rootContext.showMessage(
-    message: "This platform opens the release page for update".tl,
-  );
 }
 
 // --- Android ---
 
-Future<void> _updateAndroid(
-  _GithubUpdateConfig config,
-  _GitHubRelease release,
-) async {
-  var asset = _selectAndroidAsset(release.assets);
-  if (asset == null) {
-    await launchUrlString(release.htmlUrl);
-    App.rootContext.showMessage(
-      message: "No compatible update package found for this platform".tl,
-    );
-    return;
-  }
-  var filePath = await _downloadUpdateAsset(config, asset);
-  if (filePath == null) return;
-
-  var ok = await _verifyDigestIfNeeded(filePath, asset.digest);
-  if (!ok) {
-    File(filePath).deleteIfExistsSync();
-    App.rootContext.showMessage(message: "Update package verification failed".tl);
-    return;
-  }
-
+Future<void> _updateAndroid(String filePath) async {
   var opened = await _installAndroidApk(filePath);
   if (!opened) {
     opened = await launchUrlString(Uri.file(filePath).toString());
@@ -472,27 +440,10 @@ Future<bool> _installAndroidApk(String filePath) async {
 const _windowsUpdaterExeName = "venera_updater.exe";
 
 Future<void> _updateWindows(
-  _GithubUpdateConfig config,
   _GitHubRelease release,
+  _GitHubAsset asset,
+  String filePath,
 ) async {
-  var asset = _selectWindowsAsset(release.assets);
-  if (asset == null) {
-    await launchUrlString(release.htmlUrl);
-    App.rootContext.showMessage(
-      message: "No compatible update package found for this platform".tl,
-    );
-    return;
-  }
-  var filePath = await _downloadUpdateAsset(config, asset);
-  if (filePath == null) return;
-
-  var ok = await _verifyDigestIfNeeded(filePath, asset.digest);
-  if (!ok) {
-    File(filePath).deleteIfExistsSync();
-    App.rootContext.showMessage(message: "Update package verification failed".tl);
-    return;
-  }
-
   if (asset.isExe) {
     await _runWindowsInstaller(filePath);
     return;
@@ -506,80 +457,46 @@ Future<void> _updateWindows(
 
 // --- Download ---
 
-Future<String?> _downloadUpdateAsset(
+Future<({String path, Directory directory})> _downloadUpdateAsset(
   _GithubUpdateConfig config,
-  _GitHubAsset asset,
-) async {
+  _GitHubAsset asset, {
+  required CancelToken cancelToken,
+  required ValueChanged<double?> onProgress,
+}) async {
   var updatesDir = Directory(FilePath.join(App.cachePath, "updates"));
   if (!updatesDir.existsSync()) updatesDir.createSync(recursive: true);
-
-  var savePath = FilePath.join(updatesDir.path, asset.name);
-  File(savePath).deleteIfExistsSync();
-
-  bool canceled = false;
-  final cancelToken = CancelToken();
-  var loading = showLoadingDialog(
-    App.rootContext,
-    withProgress: true,
-    message: "Downloading update package".tl,
-    onCancel: () {
-      canceled = true;
-      cancelToken.cancel();
-    },
-  );
-
+  // A canceled attempt may still be closing its stream when a retry starts.
+  final attemptDir = await updatesDir.createTemp('download-');
+  final destination = File(FilePath.join(attemptDir.path, asset.name));
   try {
-    final response = await AppDio().get<ResponseBody>(
-      asset.browserDownloadUrl,
+    await downloadAppUpdate(
+      dio: AppDio(),
+      url: asset.browserDownloadUrl,
+      destination: destination,
       cancelToken: cancelToken,
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: _buildGithubHeaders(config, binary: true),
-      ),
+      onProgress: onProgress,
+      headers: _buildGithubHeaders(config, binary: true),
+      expectedSize: asset.size,
     );
-    final body = response.data!;
-    final totalBytes = int.tryParse(
-      body.headers['content-length']?.first ?? '',
-    ) ?? asset.size;
-
-    var downloadedBytes = 0;
-    final sink = File(savePath).openWrite();
-    await for (var chunk in body.stream) {
-      if (canceled || loading.closed) {
-        canceled = true;
-        break;
-      }
-      sink.add(chunk);
-      downloadedBytes += chunk.length;
-      loading.setProgress(
-        totalBytes > 0 ? downloadedBytes / totalBytes : null,
-      );
-      loading.setMessage(
-        "${bytesToReadableString(downloadedBytes)} / "
-        "${totalBytes > 0 ? bytesToReadableString(totalBytes) : '?'}",
-      );
-    }
-    await sink.close();
   } catch (e, s) {
-    if (canceled) {
-      // ignore cancel errors
-    } else {
+    if (!cancelToken.isCancelled) {
       Log.error("Update Download", e.toString(), s);
-      App.rootContext.showMessage(message: "Failed to download update package".tl);
-      loading.close();
-      return null;
     }
-  } finally {
-    loading.close();
+    await _discardUpdateAttempt(attemptDir);
+    if (e is FileSystemException) {
+      throw StateError('Could not save the update. Check free space and folder access'.tl);
+    }
+    rethrow;
   }
+  return (path: destination.path, directory: attemptDir);
+}
 
-  if (canceled) {
-    File(savePath).deleteIfExistsSync();
-    App.rootContext.showMessage(message: "Update download canceled".tl);
-    return null;
+Future<void> _discardUpdateAttempt(Directory directory) async {
+  try {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  } catch (e, s) {
+    Log.error('Update cleanup', e.toString(), s);
   }
-  if (!File(savePath).existsSync()) return null;
-  return savePath;
 }
 
 // --- Verification ---
@@ -899,46 +816,4 @@ bool _compareVersion(String version1, String version2) {
     if (value1 < value2) return false;
   }
   return false;
-}
-
-/// Renders changelog entries as a scrollable bullet list, one entry per line.
-/// Capped in height so a long changelog scrolls instead of overflowing the
-/// update dialog.
-class _ChangelogView extends StatelessWidget {
-  const _ChangelogView({required this.lines});
-
-  final List<String> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 220),
-      decoration: BoxDecoration(
-        color: context.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Scrollbar(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var line in lines)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("•  "),
-                      Expanded(child: Text(line)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
