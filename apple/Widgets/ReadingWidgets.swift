@@ -61,6 +61,13 @@ private struct ReadingWidgetProvider: TimelineProvider {
 private struct ReadingWidgetView: View {
     let entry: ReadingWidgetEntry
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var accent: Color {
+        colorScheme == .dark
+            ? Color(red: 0.82, green: 0.74, blue: 1)
+            : Color(red: 0.40, green: 0.31, blue: 0.64)
+    }
 
     private var snapshot: ReadingWidgetSnapshot {
         guard let store = try? ReadingWidgetStore(), !store.isLocked else {
@@ -90,10 +97,13 @@ private struct ReadingWidgetView: View {
                     .buttonStyle(.plain)
             }
             if data.items.isEmpty {
-                Text(data.emptyText.isEmpty ? data.kind.emptyText(locked: data.locked) : data.emptyText)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 8) {
+                    Image(systemName: data.locked ? "lock" : data.kind.symbol)
+                        .font(.title2).foregroundStyle(accent).accessibilityHidden(true)
+                    Text(data.emptyText.isEmpty ? data.kind.emptyText(locked: data.locked) : data.emptyText)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        .multilineTextAlignment(.center)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if family == .systemSmall {
                 item(data.items[0], large: false)
                     .frame(maxHeight: .infinity, alignment: .center)
@@ -110,17 +120,18 @@ private struct ReadingWidgetView: View {
                     }
                 }.frame(maxHeight: .infinity, alignment: .top)
             }
-            if !data.subtitle.isEmpty {
+            if !data.subtitle.isEmpty && family != .systemSmall {
                 Text(data.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .widgetURL(destination)
+        .tint(accent)
         .privacySensitive()
     }
 
     private func header(_ data: ReadingWidgetSnapshot) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: data.kind.symbol).foregroundStyle(.tint)
+            Image(systemName: data.kind.symbol).foregroundStyle(accent)
             Text(data.title.isEmpty ? data.kind.displayName : data.title)
                 .font(.caption.weight(.semibold)).lineLimit(1)
             Spacer(minLength: 0)
@@ -135,20 +146,45 @@ private struct ReadingWidgetView: View {
     }
 
     private func item(_ book: ReadingWidgetItem, large: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            ReadingWidgetCover(path: book.coverPath)
-                .frame(width: large ? 38 : 42, height: large ? 52 : 62)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(book.title).font(.caption.weight(.medium))
-                    .foregroundStyle(.primary).lineLimit(2)
-                if !book.progress.isEmpty {
-                    Text(book.progress).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center, spacing: 9) {
+                ReadingWidgetCover(path: book.coverPath)
+                    .frame(width: large ? 36 : 44, height: large ? 52 : 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(book.title).font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary).lineLimit(2)
+                    if let badge = book.badge, !badge.isEmpty {
+                        Text(badge).font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(colorScheme == .dark ? Color.orange : Color(red: 0.60, green: 0.35, blue: 0))
+                            .lineLimit(1)
+                    } else if let source = book.sourceName, !source.isEmpty, !large {
+                        Text(source).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    if large {
+                        progress(book)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !large {
+                progress(book)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func progress(_ book: ReadingWidgetItem) -> some View {
+        if !book.progress.isEmpty {
+            Text(book.progress).font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.85)
+        }
+        if let percent = book.pageProgress, percent >= 0 {
+            ProgressView(value: Double(min(percent, 100)), total: 100)
+                .progressViewStyle(.linear).tint(accent).accessibilityHidden(true)
+        }
     }
 
     private var background: Color {

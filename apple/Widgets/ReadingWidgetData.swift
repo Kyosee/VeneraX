@@ -30,6 +30,9 @@ struct ReadingWidgetItem: Codable {
     let title: String
     let progress: String
     var coverPath: String
+    var sourceName: String? = nil
+    var badge: String? = nil
+    var pageProgress: Int? = nil
 }
 
 struct ReadingWidgetSnapshot: Codable {

@@ -86,4 +86,22 @@ class RunnerTests: XCTestCase {
     }
     XCTAssertThrowsError(try ReadingWidgetSnapshot.decode("{\"kind\":\"unknown\",\"locked\":false}"))
   }
+
+  func testOldSnapshotDecodesWithoutNewDisplayMetadata() throws {
+    let json = """
+    {"kind":"history","locked":false,"title":"Recent","emptyText":"","subtitle":"","items":[{"id":"book","type":42,"title":"Book","progress":"Page 3","coverPath":""}]}
+    """
+    let legacy = try ReadingWidgetSnapshot.decode(json)
+    XCTAssertNil(legacy.items[0].sourceName)
+    XCTAssertNil(legacy.items[0].pageProgress)
+    var enriched = legacy
+    enriched.items[0].sourceName = "My source"
+    enriched.items[0].badge = "New"
+    enriched.items[0].pageProgress = 35
+    try store.update(enriched, sourceDirectory: source)
+    let restored = store.load(.history).items[0]
+    XCTAssertEqual(restored.sourceName, "My source")
+    XCTAssertEqual(restored.badge, "New")
+    XCTAssertEqual(restored.pageProgress, 35)
+  }
 }
