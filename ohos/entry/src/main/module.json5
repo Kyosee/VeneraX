@@ -52,6 +52,13 @@
     ],
     "extensionAbilities": [
       {
+        "name": "ReadingFormAbility",
+        "srcEntry": "./ets/widget/ReadingFormAbility.ets",
+        "type": "form",
+        "exported": true,
+        "metadata": [{"name": "ohos.extension.form", "resource": "$profile:reading_form"}]
+      },
+      {
         "name": "FollowUpdatesAbility",
         "srcEntry": "./ets/followupdates/FollowUpdatesAbility.ets",
         "type": "workScheduler",

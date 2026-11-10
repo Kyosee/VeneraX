@@ -10,6 +10,7 @@ import { IncomingService } from '../bridge/IncomingService';
 import { BackgroundService } from '../bridge/BackgroundService';
 import { LauncherIconService } from '../bridge/LauncherIconService';
 import { FollowSchedulerService } from '../bridge/FollowSchedulerService';
+import { ReadingWidgetService } from '../widget/ReadingWidgetService';
 
 export default class EntryAbility extends FlutterAbility {
   private channels: MethodChannel[] = [];
@@ -71,7 +72,9 @@ export default class EntryAbility extends FlutterAbility {
     pdf.setMethodCallHandler(this.pdf);
     const follow = new MethodChannel(messenger, 'venera/follow_scheduler');
     follow.setMethodCallHandler(new FollowSchedulerService(this.context.abilityInfo.bundleName, this.context.filesDir));
-    this.channels = [paths, packageInfo, system, pdf, follow];
+    const readingWidget = new MethodChannel(messenger, 'venera/reading_widget');
+    readingWidget.setMethodCallHandler(new ReadingWidgetService(this.context.filesDir));
+    this.channels = [paths, packageInfo, system, pdf, follow, readingWidget];
   }
 
   cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

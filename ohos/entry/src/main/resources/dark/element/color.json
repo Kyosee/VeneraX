@@ -1,5 +1,9 @@
 {
   "color": [
+    {"name": "reading_widget_background", "value": "#202630"},
+    {"name": "reading_widget_text", "value": "#EDF2FA"},
+    {"name": "reading_widget_secondary", "value": "#AAB6C8"},
+    {"name": "reading_widget_placeholder", "value": "#343F50"},
     {
       "name": "start_window_background",
       "value": "#121212"

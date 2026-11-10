@@ -1,5 +1,8 @@
 {
   "string": [
+    {"name": "reading_widget_title", "value": "Recent reading"},
+    {"name": "reading_widget_description", "value": "View recent comics and continue reading."},
+    {"name": "reading_widget_open", "value": "Open VeneraX to view reading history"},
     {
       "name": "module_desc",
       "value": "module description"

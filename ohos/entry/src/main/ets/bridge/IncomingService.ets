@@ -110,6 +110,23 @@ export class IncomingService implements MethodCallHandler {
 
   async handleWant(want: Want, initial: boolean = false): Promise<void> {
     if (this.disposed || want === undefined || want === null) return;
+    let widgetUri = want.parameters?.['venera.readingWidget.uri'];
+    const formParams = want.parameters?.['params'];
+    if (widgetUri === undefined && typeof formParams === 'string' && formParams.length <= MAX_TEXT_BYTES) {
+      try {
+        // Form Kit serializes postCardAction params into Want.parameters.params.
+        const parsed = JSON.parse(formParams) as Record<string, string>;
+        widgetUri = parsed['venera.readingWidget.uri'];
+      } catch (_) {}
+    }
+    if (typeof widgetUri === 'string' && widgetUri.length <= MAX_LINK_LENGTH &&
+      (widgetUri === 'venerax://reading-widget/history' ||
+        /^venerax:\/\/reading-widget\/read\?id=[^&#]+&type=-?\d+$/.test(widgetUri))) {
+      if (initial && this.initialLink === null) this.initialLink = widgetUri;
+      this.latestLink = widgetUri;
+      this.links.publish(widgetUri);
+      return;
+    }
     const route = want.parameters?.['venera.notification.route'];
     if (typeof route === 'string' &&
       (route === 'downloading' || route === 'tasks' || route === 'follow_updates')) {

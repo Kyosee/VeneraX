@@ -94,6 +94,48 @@ function deferred() {
   return { promise, resolve };
 }
 
+for (const serialized of [false, true]) {
+test(`reading card ${serialized ? 'Form Kit JSON' : 'direct'} parameters deliver cold and hot routes`, async () => {
+  const h = harness();
+  const params = uri => serialized ? { params: JSON.stringify({ 'venera.readingWidget.uri': uri }) }
+    : { 'venera.readingWidget.uri': uri };
+  const first = 'venerax://reading-widget/read?id=book%2Fone%26two&type=0';
+  await h.service.handleWant({ parameters: params(first) }, true);
+  assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: first }]);
+  const values = h.listen(LINKS);
+  assert.deepEqual(values, [first]);
+  const next = 'venerax://reading-widget/history';
+  await h.service.handleWant({ parameters: params(next) });
+  assert.deepEqual(values, [first, next]);
+  assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: first }]);
+  assert.deepEqual(h.call('getLatestLink'), [{ kind: 'success', value: next }]);
+});
+}
+
+test('malformed Form Kit JSON and foreign destinations are ignored', async () => {
+  const h = harness();
+  for (const params of ['{invalid', 'null', '{}', JSON.stringify({ 'venera.readingWidget.uri': 'file:///private' }),
+    JSON.stringify({ 'venera.readingWidget.uri': 'venerax://reading-widget/history', extra: 'x'.repeat(16384) })]) {
+    await h.service.handleWant({ parameters: { params } }, true);
+  }
+  assert.deepEqual(h.listen(LINKS), []);
+  assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: null }]);
+});
+
+test('reading card parameters reject arbitrary and malformed destinations', async () => {
+  const h = harness();
+  const values = h.listen(LINKS);
+  for (const value of [null, {}, 'file:///private', 'https://example.org',
+    'venerax://reading-widget/read?id=a&type=not-number',
+    'venerax://reading-widget/read?id=a&type=0&path=/private',
+    'venerax://reading-widget/history#other',
+    'venerax://reading-widget/read?id=' + 'a'.repeat(4096) + '&type=0']) {
+    await h.service.handleWant({ parameters: { 'venera.readingWidget.uri': value } }, true);
+  }
+  assert.deepEqual(values, []);
+  assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: null }]);
+});
+
 test('cold links retain initial/latest values and drain once after subscription', async () => {
   const h = harness();
   assert.deepEqual(h.call('getInitialLink'), [{ kind: 'success', value: null }]);

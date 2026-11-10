@@ -1,0 +1,15 @@
+{
+  "forms": [{
+    "name": "reading_history",
+    "displayName": "$string:reading_widget_title",
+    "description": "$string:reading_widget_description",
+    "src": "./ets/widget/pages/ReadingCard.ets",
+    "uiSyntax": "arkts",
+    "window": { "designWidth": 720, "autoDesignWidth": true },
+    "colorMode": "auto",
+    "isDefault": true,
+    "updateEnabled": false,
+    "defaultDimension": "2*2",
+    "supportDimensions": ["2*2", "2*4", "4*4"]
+  }]
+}
