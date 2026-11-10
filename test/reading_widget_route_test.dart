@@ -192,6 +192,27 @@ void main() {
     expect(App.rootNavigatorKey.currentState!.canPop(), isFalse);
   });
 
+  testWidgets(
+    'a background widget tap waits for foreground before navigating',
+    (tester) async {
+      final mainNavigatorKey = await _pumpMainPage(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      bool? handled;
+      final navigation = handleReadingWidgetLink(
+        Uri.parse('venerax://reading-widget/following'),
+      ).then((value) => handled = value);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(handled, isNull);
+      expect(mainNavigatorKey.currentState!.canPop(), isFalse);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      await navigation;
+      expect(handled, isTrue);
+      expect(find.byType(FollowUpdatesPage), findsOneWidget);
+    },
+  );
+
   testWidgets('following and updates headers open their respective lists', (
     tester,
   ) async {

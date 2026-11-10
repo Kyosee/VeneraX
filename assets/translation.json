@@ -1,5 +1,14 @@
 {
   "zh_CN": {
+    "Ch. @chapter · @page/@total": "@chapter 章 · @page/@total 页",
+    "Ch. @chapter · p. @page": "@chapter 章 · @page 页",
+    "On this device": "本机",
+    "Start reading": "开始阅读",
+    "No new updates": "暂无更新",
+    "Read a comic to keep your place here.": "读过的漫画会显示在这里，点击即可续读。",
+    "Add favorites to your follow list to see them here.": "将收藏加入追更，即可在这里查看。",
+    "No new updates. Open your follow list to check.": "暂无更新，打开追更页检查新章节。",
+    "Import or download comics to read them here.": "导入或下载漫画，即可从这里开始阅读。",
     "Recent reading": "最近阅读",
     "New updates": "有更新",
     "Local comics": "本地漫画",
@@ -1761,6 +1770,15 @@
     "Undo page shift": "取消错开"
   },
   "zh_TW": {
+    "Ch. @chapter · @page/@total": "@chapter 章 · @page/@total 頁",
+    "Ch. @chapter · p. @page": "@chapter 章 · @page 頁",
+    "On this device": "本機",
+    "Start reading": "開始閱讀",
+    "No new updates": "暫無更新",
+    "Read a comic to keep your place here.": "讀過的漫畫會顯示在這裡，點選即可續讀。",
+    "Add favorites to your follow list to see them here.": "將收藏加入追更，即可在這裡查看。",
+    "No new updates. Open your follow list to check.": "暫無更新，開啟追更頁檢查新章節。",
+    "Import or download comics to read them here.": "匯入或下載漫畫，即可從這裡開始閱讀。",
     "Recent reading": "最近閱讀",
     "New updates": "有更新",
     "Local comics": "本機漫畫",

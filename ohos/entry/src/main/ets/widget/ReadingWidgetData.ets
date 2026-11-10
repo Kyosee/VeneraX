@@ -3,6 +3,9 @@ export class ReadingWidgetItem {
   type: number = 0;
   title: string = '';
   progress: string = '';
+  sourceName: string = '';
+  badge: string = '';
+  pageProgress: number = -1;
   coverPath: string = '';
   uri: string = '';
   image: string = '';
@@ -50,6 +53,10 @@ export function parseReadingWidgetData(json: string): ReadingWidgetData {
     entry.type = item.type;
     entry.title = item.title;
     entry.progress = typeof item.progress === 'string' ? item.progress : '';
+    entry.sourceName = typeof item.sourceName === 'string' ? item.sourceName : '';
+    entry.badge = typeof item.badge === 'string' ? item.badge : '';
+    entry.pageProgress = typeof item.pageProgress === 'number' && Number.isFinite(item.pageProgress) && item.pageProgress >= 0
+      ? Math.min(100, Math.round(item.pageProgress)) : -1;
     entry.coverPath = typeof item.coverPath === 'string' ? item.coverPath : '';
     const path = result.kind === 'history' ? 'read' : `${result.kind}/read`;
     entry.uri = `venerax://reading-widget/${path}?id=${encodeURIComponent(item.id)}&type=${item.type}`;

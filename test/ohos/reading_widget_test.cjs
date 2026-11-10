@@ -87,6 +87,21 @@ test('bounds images for API 17 and reconstructs destinations from comic identity
   assert.throws(() => h.context.parseReadingWidgetData('{"items":null}'));
 });
 
+test('old snapshots and optional reading metadata remain compatible', () => {
+  const h = harness();
+  const legacy = h.context.parseReadingWidgetData(snapshot(1));
+  assert.equal(legacy.items[0].pageProgress, -1);
+  assert.equal(legacy.items[0].sourceName, '');
+  const data = JSON.parse(snapshot(1));
+  Object.assign(data.items[0], { sourceName: 'My source', badge: 'New', pageProgress: 120 });
+  const parsed = h.context.parseReadingWidgetData(JSON.stringify(data));
+  assert.equal(parsed.items[0].sourceName, 'My source');
+  assert.equal(parsed.items[0].badge, 'New');
+  assert.equal(parsed.items[0].pageProgress, 100);
+  data.items[0].pageProgress = '35';
+  assert.equal(h.context.parseReadingWidgetData(JSON.stringify(data)).items[0].pageProgress, -1);
+});
+
 test('published forms and snapshots survive a new store instance', async () => {
   const h = harness();
   const store = new h.context.ReadingWidgetStore('/private');

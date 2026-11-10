@@ -236,10 +236,14 @@ class ReadingWidgetService with WidgetsBindingObserver {
           'emptyText': locked
               ? 'Open VeneraX to view comics'.tl
               : switch (kind) {
-                  ReadingWidgetKind.history => 'No recent comics to show'.tl,
-                  ReadingWidgetKind.following => 'No followed comics'.tl,
-                  ReadingWidgetKind.updates => 'No updates found'.tl,
-                  ReadingWidgetKind.local => 'No local comics'.tl,
+                  ReadingWidgetKind.history =>
+                    'Read a comic to keep your place here.'.tl,
+                  ReadingWidgetKind.following =>
+                    'Add favorites to your follow list to see them here.'.tl,
+                  ReadingWidgetKind.updates =>
+                    'No new updates. Open your follow list to check.'.tl,
+                  ReadingWidgetKind.local =>
+                    'Import or download comics to read them here.'.tl,
                 },
           'items': comics
               .map(
@@ -248,6 +252,15 @@ class ReadingWidgetService with WidgetsBindingObserver {
                   'type': readingWidgetComicType(comic).value,
                   'title': comic.title,
                   'progress': _progress(comic),
+                  'sourceName':
+                      readingWidgetComicType(comic).comicSource?.name ??
+                      'On this device'.tl,
+                  'badge':
+                      comic is FavoriteItemWithUpdateInfo &&
+                          comic.hasNewUpdate == true
+                      ? 'New updates'.tl
+                      : '',
+                  'pageProgress': _pageProgress(comic),
                   'coverPath': _covers[_coverKey(comic)] ?? '',
                   'uri': readingWidgetComicUri(comic, kind),
                 },
@@ -305,17 +318,42 @@ class ReadingWidgetService with WidgetsBindingObserver {
   }
 
   String _progress(Comic comic) {
-    if (comic is History) return comic.description;
     if (comic is FavoriteItemWithUpdateInfo) {
-      return [
-        if (comic.hasNewUpdate == true) 'New updates'.tl,
-        comic.updateTime ?? '',
-      ].where((value) => value.isNotEmpty).join(' · ');
+      return comic.updateTime?.isNotEmpty == true
+          ? comic.updateTime!
+          : (comic.hasNewUpdate == true
+                ? 'New updates'.tl
+                : 'No new updates'.tl);
     }
-    final history = App.history.isInitialized
-        ? App.history.find(comic.id, readingWidgetComicType(comic))
-        : null;
-    return history?.description ?? 'Continue reading'.tl;
+    final history = _history(comic);
+    if (history == null) return 'Start reading'.tl;
+    final progress = (history.maxPage ?? 0) > 0
+        ? 'Ch. @chapter · @page/@total'.tlParams({
+            'chapter': math.max(1, history.ep),
+            'page': history.page.clamp(1, history.maxPage!),
+            'total': history.maxPage!,
+          })
+        : 'Ch. @chapter · p. @page'.tlParams({
+            'chapter': math.max(1, history.ep),
+            'page': math.max(1, history.page),
+          });
+    return (history.group ?? 1) > 1
+        ? '${'Group @group'.tlParams({'group': history.group!})} · $progress'
+        : progress;
+  }
+
+  History? _history(Comic comic) => comic is History
+      ? comic
+      : App.history.isInitialized
+      ? App.history.find(comic.id, readingWidgetComicType(comic))
+      : null;
+
+  int _pageProgress(Comic comic) {
+    if (comic is FavoriteItemWithUpdateInfo) return -1;
+    final history = _history(comic);
+    final total = history?.maxPage ?? 0;
+    if (history == null || total <= 0) return -1;
+    return (history.page / total * 100).round().clamp(0, 100);
   }
 
   String _coverKey(Comic comic) =>

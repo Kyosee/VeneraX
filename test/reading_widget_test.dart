@@ -108,6 +108,27 @@ void main() {
     },
   );
 
+  test(
+    'chapter progress stays compact and preserves non-default groups',
+    () async {
+      final record = history('progress')..maxPage = 20;
+      await service([record]).refresh();
+      var item = (latest()['items'] as List).single as Map;
+      expect(item['progress'], 'Ch. 2 · 7/20');
+      expect(item['pageProgress'], 35);
+      record.group = 3;
+      record.page = 25;
+      await service([record]).refresh();
+      item = (latest()['items'] as List).single as Map;
+      expect(item['progress'], contains('Group 3'));
+      expect(item['pageProgress'], 100);
+      record.maxPage = null;
+      await service([record]).refresh();
+      item = (latest()['items'] as List).single as Map;
+      expect(item['pageProgress'], -1);
+    },
+  );
+
   test('app lock never reads history or fetches covers', () async {
     appdata.settings['authorizationRequired'] = true;
     await ReadingWidgetService(

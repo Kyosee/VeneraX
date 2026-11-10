@@ -12,14 +12,21 @@ bool _isHandling = false;
 /// Only the most recent tap navigates; older ones still waiting give up.
 int _latestTap = 0;
 
-/// Waits until the main navigator exists and no lock screen is up.
+/// Waits until the app is foreground, the main navigator exists and is unlocked.
 ///
 /// A cold start delivers the tap before the main page is built (loading,
 /// disclaimer or lock screen still showing). Gives up after about a minute.
 Future<NavigatorState?> waitForUnlockedMainNavigator() async {
   for (var i = 0; i < 600; i++) {
     final navigator = App.mainNavigatorKey?.currentState;
-    if (navigator != null && navigator.mounted && !AuthPage.isActive) {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    // Native launch events can arrive before the rendering surface resumes.
+    final foreground =
+        lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    if (foreground &&
+        navigator != null &&
+        navigator.mounted &&
+        !AuthPage.isActive) {
       return navigator;
     }
     await Future.delayed(const Duration(milliseconds: 100));

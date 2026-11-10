@@ -1,9 +1,11 @@
 {
   "color": [
-    {"name": "reading_widget_background", "value": "#202630"},
-    {"name": "reading_widget_text", "value": "#EDF2FA"},
-    {"name": "reading_widget_secondary", "value": "#AAB6C8"},
-    {"name": "reading_widget_placeholder", "value": "#343F50"},
+    {"name": "reading_widget_background", "value": "#211E28"},
+    {"name": "reading_widget_text", "value": "#F3EDF7"},
+    {"name": "reading_widget_secondary", "value": "#CAC2D4"},
+    {"name": "reading_widget_placeholder", "value": "#3D3549"},
+    {"name": "reading_widget_accent", "value": "#D0BCFF"},
+    {"name": "reading_widget_badge", "value": "#FFBE62"},
     {
       "name": "start_window_background",
       "value": "#121212"
