@@ -33,9 +33,13 @@ class Appdata with Init {
       // Atomic replace: a kill mid-write used to truncate appdata.json, and
       // the load path resets a corrupt file — silently wiping every setting
       // (WebDAV credentials, dataVersion, ...) on the next launch.
-      futures.add(
-        writeStringAtomic(FilePath.join(App.dataPath, 'appdata.json'), data),
-      );
+      if (App.isBackgroundTask) {
+        writeStringAtomicSync(FilePath.join(App.dataPath, 'appdata.json'), data);
+      } else {
+        futures.add(
+          writeStringAtomic(FilePath.join(App.dataPath, 'appdata.json'), data),
+        );
+      }
 
       var disableSyncFields = json["settings"]["disableSyncFields"] as String;
       var json4sync = jsonDecode(data);
@@ -47,14 +51,14 @@ class Appdata with Init {
         json4sync.remove('searchHistory');
       }
       var data4sync = jsonEncode(json4sync);
-      futures.add(
-        writeStringAtomic(
-          FilePath.join(App.dataPath, 'syncdata.json'),
-          data4sync,
-        ),
-      );
-
-      await Future.wait(futures);
+      if (App.isBackgroundTask) {
+        writeStringAtomicSync(FilePath.join(App.dataPath, 'syncdata.json'), data4sync);
+      } else {
+        futures.add(
+          writeStringAtomic(FilePath.join(App.dataPath, 'syncdata.json'), data4sync),
+        );
+        await Future.wait(futures);
+      }
     } finally {
       _isSavingData = false;
     }
@@ -293,6 +297,12 @@ class Appdata with Init {
   }
 
   void writeImplicitData() async {
+    if (App.isBackgroundTask) {
+      writeStringAtomicSync(
+        FilePath.join(App.dataPath, 'implicitData.json'), jsonEncode(implicitData),
+      );
+      return;
+    }
     while (_isSavingData) {
       await Future.delayed(const Duration(milliseconds: 20));
     }

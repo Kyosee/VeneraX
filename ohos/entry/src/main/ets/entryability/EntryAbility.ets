@@ -9,6 +9,7 @@ import { ScanService } from '../bridge/ScanService';
 import { IncomingService } from '../bridge/IncomingService';
 import { BackgroundService } from '../bridge/BackgroundService';
 import { LauncherIconService } from '../bridge/LauncherIconService';
+import { FollowSchedulerService } from '../bridge/FollowSchedulerService';
 
 export default class EntryAbility extends FlutterAbility {
   private channels: MethodChannel[] = [];
@@ -68,7 +69,9 @@ export default class EntryAbility extends FlutterAbility {
     const pdf = new MethodChannel(messenger, 'venera/pdf');
     this.pdf = new PdfService();
     pdf.setMethodCallHandler(this.pdf);
-    this.channels = [paths, packageInfo, system, pdf];
+    const follow = new MethodChannel(messenger, 'venera/follow_scheduler');
+    follow.setMethodCallHandler(new FollowSchedulerService(this.context.abilityInfo.bundleName, this.context.filesDir));
+    this.channels = [paths, packageInfo, system, pdf, follow];
   }
 
   cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

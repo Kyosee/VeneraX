@@ -10,6 +10,7 @@ import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 import 'components/app_slider_theme.dart';
 import 'components/components.dart';
@@ -17,11 +18,15 @@ import 'components/window_frame.dart';
 import 'foundation/app.dart';
 import 'foundation/appdata.dart';
 import 'foundation/launcher_icon.dart';
+import 'foundation/ohos_follow_worker.dart';
 import 'foundation/download_keepalive.dart';
 import 'foundation/shortcuts.dart';
 import 'foundation/tray.dart';
 import 'headless.dart';
 import 'init.dart';
+
+@pragma('vm:entry-point')
+void followUpdatesBackgroundMain(List<String> args) => runOhosFollowWorker(args);
 
 void main(List<String> args) {
   if (args.contains('--headless')) {
@@ -32,7 +37,25 @@ void main(List<String> args) {
   overrideIO(() {
     runZonedGuarded(() async {
       WidgetsFlutterBinding.ensureInitialized();
-      await init();
+      try {
+        await init();
+      } on PlatformException catch (error) {
+        if (error.code != 'FOLLOW_SCHEDULE_UNAVAILABLE') rethrow;
+        await AppTranslation.init();
+        // This screen must not initialize or read shared application stores.
+        runApp(MaterialApp(
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          home: Scaffold(body: SafeArea(child: Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('Unable to access app data. Close and reopen VeneraX to retry.'.tl),
+              TextButton(onPressed: SystemNavigator.pop, child: Text('Close'.tl)),
+            ]),
+          )))),
+        ));
+        return;
+      }
       runApp(const MyApp());
       if (App.isDesktop) {
         await windowManager.ensureInitialized();

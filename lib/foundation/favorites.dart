@@ -408,6 +408,7 @@ class LocalFavoritesManager with ChangeNotifier {
     for (var folder in folderNames) {
       counts[folder] = count(folder);
     }
+    if (App.isBackgroundTask) return;
     _initHashedIds(folderNames, _dbPath).then((value) {
       _hashedIds = value;
       notifyListeners();

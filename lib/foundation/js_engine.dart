@@ -292,8 +292,15 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
   void dispose() {
     _cache = null;
     _closed = true;
-    _engine?.close();
-    _engine?.port.close();
+    _dio?.close(force: true);
+    _dio = null;
+    try {
+      _engine?.close();
+    } finally {
+      // QuickJS can report leaked references after freeing its runtime.
+      _engine?.port.close();
+      _engine = null;
+    }
   }
 }
 

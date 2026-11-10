@@ -50,6 +50,17 @@ class _App {
   // If current Isolate is main Isolate, this value is always true.
   bool isInitialized = false;
 
+  /// A short system-scheduled worker must not start unrelated sync or downloads.
+  bool isBackgroundTask = false;
+
+  void initBackgroundTask(String files, String cache, String appVersion) {
+    dataPath = files;
+    cachePath = cache;
+    _version = appVersion;
+    isBackgroundTask = true;
+    isInitialized = true;
+  }
+
   Locale get locale {
     Locale deviceLocale = PlatformDispatcher.instance.locale;
     if (deviceLocale.languageCode == "zh" &&

@@ -584,6 +584,13 @@ class ComicSource {
   bool _haveWaitingTask = false;
 
   Future<void> saveData() async {
+    if (App.isBackgroundTask) {
+      final file = File("${App.dataPath}/comic_source/$key.data");
+      file.parent.createSync(recursive: true);
+      writeStringAtomicSync(file.path, jsonEncode(data));
+      DataSync().requestAutoUpload();
+      return;
+    }
     if (_haveWaitingTask) return;
     while (_isSaving) {
       _haveWaitingTask = true;

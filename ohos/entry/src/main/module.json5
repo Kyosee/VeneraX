@@ -50,6 +50,14 @@
         ]
       }
     ],
+    "extensionAbilities": [
+      {
+        "name": "FollowUpdatesAbility",
+        "srcEntry": "./ets/followupdates/FollowUpdatesAbility.ets",
+        "type": "workScheduler",
+        "exported": false
+      }
+    ],
     "requestPermissions": [
       {"name" :  "ohos.permission.INTERNET"},
       {"name" :  "ohos.permission.GET_NETWORK_INFO"},

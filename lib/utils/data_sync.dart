@@ -36,6 +36,7 @@ export 'package:venera/utils/sync_protocol.dart';
 
 class DataSync with ChangeNotifier, WidgetsBindingObserver {
   DataSync._() {
+    if (App.isBackgroundTask) return;
     // Downloads run in EVERY sync tier (the probe is a cheap readDir and only
     // pulls when the server genuinely holds newer data); the per-device
     // [syncMode] governs upload automation only.
@@ -345,6 +346,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   void requestAutoUpload() {
     if (!isConfigured) return;
     if (_isApplyingBackup) return;
+    if (App.isBackgroundTask) {
+      if (!hasPendingChanges) {
+        appdata.implicitData[_pendingChangesKey] = true;
+        appdata.writeImplicitData();
+      }
+      return;
+    }
     switch (syncMode) {
       case WebdavSyncMode.realtime:
         _pendingAutoUpload?.cancel();
