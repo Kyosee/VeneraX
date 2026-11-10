@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Recent reading": "最近阅读",
+    "No recent comics to show": "暂无可显示的最近阅读",
+    "Open VeneraX to view reading history": "打开 VeneraX 查看阅读历史",
     "More": "更多",
     "Related settings": "关联设置",
     "Appearance & layout": "外观与布局",
@@ -1752,6 +1755,9 @@
     "Undo page shift": "取消错开"
   },
   "zh_TW": {
+    "Recent reading": "最近閱讀",
+    "No recent comics to show": "暫無可顯示的最近閱讀",
+    "Open VeneraX to view reading history": "開啟 VeneraX 查看閱讀歷史",
     "More": "更多",
     "Related settings": "相關設定",
     "Appearance & layout": "外觀與佈局",

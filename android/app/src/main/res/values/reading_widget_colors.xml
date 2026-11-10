@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="reading_widget_surface">#F9F8FC</color>
+    <color name="reading_widget_primary">#24212D</color>
+    <color name="reading_widget_secondary">#625C70</color>
+    <color name="reading_widget_placeholder_surface">#EEEAF3</color>
+</resources>

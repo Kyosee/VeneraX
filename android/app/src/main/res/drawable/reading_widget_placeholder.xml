@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="64dp"
+    android:viewportWidth="48"
+    android:viewportHeight="64">
+    <path
+        android:fillColor="@color/reading_widget_placeholder_surface"
+        android:pathData="M0,0h48v64h-48z" />
+    <path
+        android:fillColor="@color/reading_widget_secondary"
+        android:pathData="M12,22h10c1,0 2,1 2,2c0,-1 1,-2 2,-2h10v22h-10c-1,0 -2,1 -2,2c0,-1 -1,-2 -2,-2h-10zM15,25v16h7v-16zM26,25v16h7v-16z"
+        android:fillType="evenOdd" />
+</vector>

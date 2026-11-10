@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reading_widget_title">最近閱讀</string>
+    <string name="reading_widget_cover_name">閱讀歷史 · 封面</string>
+    <string name="reading_widget_list_name">閱讀歷史 · 清單</string>
+    <string name="reading_widget_description">顯示最近閱讀的漫畫，點擊繼續閱讀。</string>
+    <string name="reading_widget_open">開啟 VeneraX 載入閱讀歷史。</string>
+    <string name="reading_widget_continue">繼續閱讀</string>
+</resources>

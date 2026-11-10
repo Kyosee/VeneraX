@@ -29,7 +29,7 @@ Future<NavigatorState?> waitForUnlockedMainNavigator() async {
 
 /// Closes root routes (reader, dialogs) stacked over the main page, so a page
 /// pushed into the main navigator is not hidden beneath them.
-void _revealMainNavigator(NavigatorState navigator) {
+void revealMainNavigator(NavigatorState navigator) {
   final host = ModalRoute.of(navigator.context);
   if (host == null || host.isCurrent) return;
   host.navigator?.popUntil((route) => route == host || route.isFirst);
@@ -49,7 +49,7 @@ Future<void> openNotificationRoute(String event) async {
   final tap = ++_latestTap;
   final navigator = await waitForUnlockedMainNavigator();
   if (navigator == null || tap != _latestTap) return;
-  _revealMainNavigator(navigator);
+  revealMainNavigator(navigator);
   navigator.context.to(() => page);
 }
 

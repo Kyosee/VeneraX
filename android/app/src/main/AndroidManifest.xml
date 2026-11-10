@@ -129,6 +129,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <receiver
+            android:name=".ReadingCoverWidget"
+            android:exported="false"
+            android:label="@string/reading_widget_cover_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_cover" />
+        </receiver>
+        <receiver
+            android:name=".ReadingListWidget"
+            android:exported="false"
+            android:label="@string/reading_widget_list_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/reading_widget_list" />
+        </receiver>
         <!-- Service required by the icon-switching plugin. -->
         <service
             android:name="com.solusibejo.flutter_dynamic_icon_plus.FlutterDynamicIconPlusService"

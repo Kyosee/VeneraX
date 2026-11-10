@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="24dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="7dp"
+        android:importantForAccessibility="no"
+        android:src="@mipmap/ic_launcher" />
+    <TextView
+        android:id="@+id/reading_widget_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/reading_widget_title"
+        android:textColor="@color/reading_widget_primary"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+    <TextView
+        android:layout_width="16dp"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:importantForAccessibility="no"
+        android:text="›"
+        android:textColor="@color/reading_widget_secondary"
+        android:textSize="22dp" />
+</LinearLayout>

@@ -16,6 +16,7 @@ import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/ohos_follow_scheduler.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
+import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -91,6 +92,7 @@ Future<void> initDeferred() async {
     RelatedSourceTaskManager.instance;
     _checkOldConfigs();
     _autoCleanHistory();
+    ReadingWidgetService.instance.start();
     if (App.isAndroid) {
       initAndroidExtras();
       await trySetHighRefreshRate();

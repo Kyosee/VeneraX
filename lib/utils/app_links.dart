@@ -7,6 +7,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/handle_notification_route.dart';
+import 'package:venera/utils/reading_widget_route.dart';
 
 typedef AppLinkCandidate = ({String sourceKey, LinkHandler? linkHandler});
 typedef AppLinkTarget = ({String sourceKey, String comicId});
@@ -68,6 +69,7 @@ AppLinkTarget? resolveAppLink(Uri uri, Iterable<AppLinkCandidate> candidates) {
 }
 
 Future<bool> handleAppLink(Uri uri) async {
+  if (await handleReadingWidgetLink(uri)) return true;
   final target = resolveAppLink(
     uri,
     ComicSource.all().map(

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reading_widget_title">Recently read</string>
+    <string name="reading_widget_cover_name">Reading history · Covers</string>
+    <string name="reading_widget_list_name">Reading history · List</string>
+    <string name="reading_widget_description">Recently read comics. Tap a comic to continue reading.</string>
+    <string name="reading_widget_open">Open VeneraX to load reading history.</string>
+    <string name="reading_widget_continue">Continue reading</string>
+</resources>

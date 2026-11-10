@@ -12,7 +12,7 @@ import 'package:venera/utils/init.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/sync_skip.dart';
 
-class Appdata with Init {
+class Appdata with Init, ChangeNotifier {
   Appdata._create();
 
   final Settings settings = Settings._create();
@@ -62,6 +62,8 @@ class Appdata with Init {
     } finally {
       _isSavingData = false;
     }
+    // Collection settings can change in place without invoking Settings.[]=.
+    notifyListeners();
     if (sync) {
       // Funnel through the auto-upload gate: honors the user's auto-sync
       // toggle (a configured-but-disabled device must NOT upload on every
