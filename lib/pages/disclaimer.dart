@@ -540,7 +540,7 @@ class _AgreementPanelState extends State<AgreementPanel> {
                       ? null
                       : () => setState(() => _checked = !_checked),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       SizedBox(
                         width: 21,
@@ -563,7 +563,7 @@ class _AgreementPanelState extends State<AgreementPanel> {
                       const SizedBox(width: 9),
                       Expanded(
                         child: Text(
-                          'I have read and agree to the legally valid and applicable terms, and acknowledge the risk notices and liability limits.'
+                          'I have read and agree to the User Agreement & Disclaimer.'
                               .tl,
                           style: TextStyle(
                             fontSize: narrow ? 10 : 11,
