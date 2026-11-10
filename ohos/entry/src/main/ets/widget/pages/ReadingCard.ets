@@ -43,7 +43,7 @@ struct ReadingCard {
   private progress(item: ReadingWidgetItem) {
     Text(item.progress).fontSize(11).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
       .fontColor($r('app.color.reading_widget_secondary')).width('100%')
-    if (item.pageProgress >= 0) {
+    if (item.pageProgress >= 0 && this.dimension !== 3) {
       Progress({ value: item.pageProgress, total: 100, type: ProgressType.Linear })
         .color($r('app.color.reading_widget_accent'))
         .backgroundColor($r('app.color.reading_widget_placeholder'))
@@ -108,12 +108,12 @@ struct ReadingCard {
         Column({ space: 6 }) {
           ForEach(this.items.slice(0, this.dimension === 4 ? 4 : 2), (item: ReadingWidgetItem) => {
             Row({ space: 10 }) {
-              this.cover(item, 40, 58)
+              this.cover(item, this.dimension === 3 ? 28 : 40, this.dimension === 3 ? 40 : 58)
               Column({ space: 4 }) {
-                Text(item.title).fontSize(13).fontWeight(FontWeight.Medium).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(item.title).fontSize(13).fontWeight(FontWeight.Medium).maxLines(this.dimension === 3 ? 1 : 2).textOverflow({ overflow: TextOverflow.Ellipsis })
                   .fontColor($r('app.color.reading_widget_text')).width('100%')
                 this.progress(item)
-                if (item.badge.length > 0) {
+                if (item.badge.length > 0 && this.dimension !== 3) {
                   Text(item.badge).fontSize(10).fontColor($r('app.color.reading_widget_badge')).maxLines(1)
                 }
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
@@ -122,7 +122,7 @@ struct ReadingCard {
           }, (item: ReadingWidgetItem) => item.uri)
         }.width('100%').layoutWeight(1)
       }
-      if (this.subtitle.length > 0 && this.dimension !== 2) {
+      if (this.subtitle.length > 0 && this.dimension === 4) {
         Text(this.subtitle).fontSize(10).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .fontColor($r('app.color.reading_widget_secondary')).width('100%')
       }
