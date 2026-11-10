@@ -182,6 +182,12 @@ Also: the two `Update_AltStore_*` jobs commit an AltStore manifest back to maste
 
 If migrating from [venera-app/venera](https://github.com/venera-app/venera), use a separate WebDAV sync directory. Back up your old data before migrating.
 
+## Acknowledgements
+
+- [Venera](https://github.com/venera-app/venera): The upstream project of VeneraX. Thanks to its developers and contributors.
+- [EhTagTranslation](https://github.com/EhTagTranslation/Database): Chinese translations of comic tags.
+- Thanks to everyone who reports issues, tests, or contributes code to VeneraX.
+
 ## User Agreement & Disclaimer
 
 > [!NOTE]

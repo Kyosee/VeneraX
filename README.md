@@ -182,6 +182,12 @@ const kUpdateRepoName = 'VeneraX';
 
 从 [venera-app/venera](https://github.com/venera-app/venera) 迁移时，请为 WebDAV 同步指定独立目录，不要与原项目共用。迁移前建议备份旧数据。
 
+## 致谢
+
+- [Venera](https://github.com/venera-app/venera)：VeneraX 的上游项目，感谢其开发者与贡献者。
+- [EhTagTranslation](https://github.com/EhTagTranslation/Database)：漫画标签中文翻译数据。
+- 感谢为 VeneraX 提交 Issue、参与测试及贡献代码的用户。
+
 ## 用户协议与免责声明
 
 > [!NOTE]
