@@ -13,9 +13,9 @@
 
 VeneraX 是一款免费开源的多平台漫画阅读应用，基于 Venera 持续维护与增强。
 
-> **原始项目：** 本项目 fork 自 [venera-app/venera](https://github.com/venera-app/venera)。
-
 **[下载](#下载与安装) · [功能](#新功能优化) · [使用说明](doc/guide.zh.md) · [更新日志](CHANGELOG.md) · [反馈](#反馈与贡献)**
+
+> **原始项目：** 本项目 fork 自 [venera-app/venera](https://github.com/venera-app/venera)。
 
 > [!IMPORTANT]
 > **在下载、安装或使用本软件前，请务必仔细阅读并充分理解[《用户协议与免责声明》](#用户协议与免责声明)的全部内容。** 您一旦下载、安装、复制、修改或使用本软件，即视为已阅读、理解并同意接受该声明的全部内容；如不同意，请勿使用并立即删除本软件。
@@ -214,12 +214,6 @@ const kUpdateRepoName = 'VeneraX';
 
 </details>
 
-## 致谢
-
-- [Venera](https://github.com/venera-app/venera)：VeneraX 的上游项目，感谢其开发者与贡献者。
-- [EhTagTranslation](https://github.com/EhTagTranslation/Database)：漫画标签中文翻译数据。
-- 感谢为 VeneraX 提交 Issue、参与测试及贡献代码的用户。
-
 ## 用户协议与免责声明
 
 > [!NOTE]
@@ -290,3 +284,9 @@ const kUpdateRepoName = 'VeneraX';
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Kyosee/VeneraX&type=date&legend=top-left&sealed_token=t_CyvEveWN9HuG5CZb1KoUGGLxlcTA0a5341bBCAAV63Hh34aiVyEOvU9gpq1q9Wvcw48bzlVHPdlWQ5s-tz-bn9iq8_TBG0oU-Zk7CFAb_Pf7SqzE9J0eEazga6bCemssv2kIYq-9xlbymcG6S000iehp3Zs_TRV73aoOaEMv7pZP-qrRwaP6a7vuB1" />
  </picture>
 </a>
+
+## 致谢
+
+- [Venera](https://github.com/venera-app/venera)：VeneraX 的上游项目，感谢其开发者与贡献者。
+- [EhTagTranslation](https://github.com/EhTagTranslation/Database)：漫画标签中文翻译数据。
+- 感谢为 VeneraX 提交 Issue、参与测试及贡献代码的用户。

@@ -13,9 +13,9 @@
 
 VeneraX is a free, open-source comic reader for multiple platforms, maintained and enhanced from Venera.
 
-> **Original Project:** This project is forked from [venera-app/venera](https://github.com/venera-app/venera).
-
 **[Download](#download--installation) · [Features](#new-features--improvements) · [Guide](doc/guide.en.md) · [Changelog](CHANGELOG_EN.md) · [Feedback](#feedback--contributions)**
+
+> **Original Project:** This project is forked from [venera-app/venera](https://github.com/venera-app/venera).
 
 > [!IMPORTANT]
 > **Before downloading, installing, or using this software, please read and fully understand the [User Agreement & Disclaimer](#user-agreement--disclaimer).** By downloading, installing, copying, modifying, or using this software, you are deemed to have read, understood, and accepted it in its entirety; if you do not agree, do not use the software and delete it immediately.
@@ -214,12 +214,6 @@ Also: the two `Update_AltStore_*` jobs commit an AltStore manifest back to maste
 
 </details>
 
-## Acknowledgements
-
-- [Venera](https://github.com/venera-app/venera): The upstream project of VeneraX. Thanks to its developers and contributors.
-- [EhTagTranslation](https://github.com/EhTagTranslation/Database): Chinese translations of comic tags.
-- Thanks to everyone who reports issues, tests, or contributes code to VeneraX.
-
 ## User Agreement & Disclaimer
 
 > [!NOTE]
@@ -290,3 +284,9 @@ This repository's issue tracker and other public channels are for feedback about
     <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Kyosee/VeneraX&type=date&legend=top-left&sealed_token=t_CyvEveWN9HuG5CZb1KoUGGLxlcTA0a5341bBCAAV63Hh34aiVyEOvU9gpq1q9Wvcw48bzlVHPdlWQ5s-tz-bn9iq8_TBG0oU-Zk7CFAb_Pf7SqzE9J0eEazga6bCemssv2kIYq-9xlbymcG6S000iehp3Zs_TRV73aoOaEMv7pZP-qrRwaP6a7vuB1" />
   </picture>
 </a>
+
+## Acknowledgements
+
+- [Venera](https://github.com/venera-app/venera): The upstream project of VeneraX. Thanks to its developers and contributors.
+- [EhTagTranslation](https://github.com/EhTagTranslation/Database): Chinese translations of comic tags.
+- Thanks to everyone who reports issues, tests, or contributes code to VeneraX.
