@@ -1,180 +1,145 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
 
-// Covers the two write semantics HistoryManager needs for the `hidden` column:
-//
-// - `addHistory` (_insertHistorySql) omits `hidden`, so `insert or replace`
-//   resets it to NULL and the comic reappears in the list. That is intended for
-//   reading — see history_hide_preserves_read_state_test.dart.
-// - `updateHistoryKeepingVisibility` (_updateHistoryKeepVisibilitySql) carries
-//   the existing flag over, so a maintenance write (cover resolution, local
-//   rescan, info refresh) cannot resurrect a record the user deleted (#270).
-//
-// The subquery reading `hidden` sits inside the VALUES row, so whether it sees
-// the pre-existing flag or the already-deleted row is SQLite behaviour, not
-// something the Dart side can enforce. That ordering is what these tests pin
-// down, against the exact SQL HistoryManager runs.
+const _type = ComicType(1);
 
-const _schema = """
-  create table history (
-    id text,
-    title text,
-    subtitle text,
-    cover text,
-    time int,
-    type int,
-    ep int,
-    page int,
-    readEpisode text,
-    max_page int,
-    chapter_group int,
-    hidden int,
-    primary key (id, type)
-  );
-""";
-
-// _insertHistorySql — reading; drops `hidden`.
-const _insert = """
-  insert or replace into history (id, title, subtitle, cover, time, type, ep, page, readEpisode, max_page, chapter_group)
-  values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-""";
-
-// _updateHistoryKeepVisibilitySql — maintenance; preserves `hidden`.
-const _insertKeepVisibility = """
-  insert or replace into history (id, title, subtitle, cover, time, type, ep, page, readEpisode, max_page, chapter_group, hidden)
-  values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (select hidden from history where id == ? and type == ?));
-""";
-
-int _listCount(Database db) => db
-    .select("select count(*) from history where ifnull(hidden, 0) = 0;")
-    .first[0] as int;
-
-Row? _find(Database db, String id, int type) {
-  var res = db.select(
-    "select * from history where id == ? and type == ?;",
-    [id, type],
-  );
-  return res.isEmpty ? null : res.first;
-}
-
-void _read(Database db, String id, {int time = 1000, String cover = "c.jpg"}) {
-  db.execute(_insert, [id, "t-$id", "", cover, time, 1, 3, 42, "1,2", 100, null]);
-}
-
-void _maintain(
-  Database db,
-  String id, {
-  int time = 1000,
-  String cover = "c.jpg",
-}) {
-  db.execute(_insertKeepVisibility, [
-    id,
-    "t-$id",
-    "",
-    cover,
-    time,
-    1,
-    3,
-    42,
-    "1,2",
-    100,
-    null,
-    id,
-    1,
-  ]);
-}
-
-void _hide(Database db, String id) => db.execute(
-  "update history set hidden = 1 where id == ? and type == ?;",
-  [id, 1],
-);
+History _history(String id, {int time = 1000, String cover = 'c.jpg'}) =>
+    History.fromMap({
+      'id': id,
+      'type': 1,
+      'title': 't-$id',
+      'subtitle': '',
+      'cover': cover,
+      'time': time,
+      'ep': 3,
+      'page': 42,
+      'readEpisode': '1,2',
+      'max_page': 100,
+    });
 
 void main() {
-  late Database db;
+  final manager = HistoryManager();
+  late Directory directory;
+  late String originalDataPath;
+  late String originalCachePath;
 
-  setUp(() {
-    db = sqlite3.openInMemory();
-    db.execute(_schema);
+  setUpAll(TestWidgetsFlutterBinding.ensureInitialized);
+
+  setUp(() async {
+    originalDataPath = App.dataPath;
+    originalCachePath = App.cachePath;
+    directory = Directory.systemTemp.createTempSync(
+      'venera-history-visibility-',
+    );
+    App.dataPath = directory.path;
+    App.cachePath = directory.path;
+    appdata.implicitData['image_favorites_cache_key_fix_v1'] = true;
+    await manager.init();
   });
 
-  tearDown(() => db.dispose());
+  tearDown(() {
+    manager.close();
+    App.dataPath = originalDataPath;
+    App.cachePath = originalCachePath;
+    directory.deleteSync(recursive: true);
+  });
 
   test('maintenance write on a hidden row leaves it hidden', () {
-    _read(db, "a");
-    _hide(db, "a");
-    expect(_listCount(db), 0);
+    manager.addHistory(_history('a'));
+    manager.hide('a', _type);
 
-    // A background cover fetch landing after the user deleted the record.
-    _maintain(db, "a", cover: "https://example.test/new.jpg");
+    manager.updateHistoryKeepingVisibility(
+      _history('a', cover: 'https://example.test/new.jpg'),
+    );
 
-    expect(_listCount(db), 0, reason: "deleted record stays out of the list");
-    expect(_find(db, "a", 1)!["cover"], "https://example.test/new.jpg",
-        reason: "the refreshed field is still written");
-    expect(_find(db, "a", 1)!["hidden"], 1);
+    expect(manager.getAll(), isEmpty);
+    expect(manager.find('a', _type)!.cover, 'https://example.test/new.jpg');
+    expect(manager.find('a', _type)!.page, 42);
+    expect(manager.find('a', _type)!.readEpisode, {'1', '2'});
   });
 
   test('repeated maintenance writes keep it hidden', () {
-    _read(db, "a");
-    _hide(db, "a");
+    manager.addHistory(_history('a'));
+    manager.hide('a', _type);
 
-    // The image provider retries with backoff; each attempt writes again.
     for (var i = 0; i < 4; i++) {
-      _maintain(db, "a", cover: "https://example.test/$i.jpg");
+      manager.updateHistoryKeepingVisibility(
+        _history('a', cover: 'https://example.test/$i.jpg'),
+      );
     }
 
-    expect(_listCount(db), 0, reason: "no resurrection across retries");
+    expect(manager.getAll(), isEmpty);
   });
 
   test('maintenance write on a visible row leaves it visible', () {
-    _read(db, "a");
-    expect(_listCount(db), 1);
+    manager.addHistory(_history('a'));
 
-    _maintain(db, "a", cover: "https://example.test/new.jpg");
+    manager.updateHistoryKeepingVisibility(
+      _history('a', cover: 'https://example.test/new.jpg'),
+    );
 
-    expect(_listCount(db), 1);
-    expect(_find(db, "a", 1)!["hidden"], isNull);
+    expect(manager.getAll(), hasLength(1));
+    expect(manager.find('a', _type)!.cover, 'https://example.test/new.jpg');
   });
 
-  test('maintenance write creating a new row makes it visible', () {
-    // No pre-existing row: the subquery yields NULL, which reads as visible.
-    _maintain(db, "fresh");
+  test('maintenance cannot create a missing history record', () {
+    manager.updateHistoryKeepingVisibility(_history('fresh'));
 
-    expect(_listCount(db), 1);
-    expect(_find(db, "fresh", 1)!["hidden"], isNull);
+    expect(manager.getAll(), isEmpty);
+    expect(manager.find('fresh', _type), isNull);
   });
 
-  test('maintenance write preserves reading state like any other write', () {
-    _read(db, "a");
-    _hide(db, "a");
+  test(
+    'maintenance persists remapped local reading state without unhiding',
+    () async {
+      manager.addHistory(_history('a'));
+      manager.hide('a', _type);
+      final remapped = _history('a')
+        ..ep = 1
+        ..page = 7
+        ..group = 2
+        ..readEpisode = {'2-1'};
 
-    _maintain(db, "a");
+      manager.updateHistoryKeepingVisibility(remapped);
+      manager.close();
+      await manager.init();
 
-    final row = _find(db, "a", 1)!;
-    expect(row["readEpisode"], "1,2");
-    expect(row["ep"], 3);
-    expect(row["page"], 42);
+      expect(manager.getAll(), isEmpty);
+      final saved = manager.find('a', _type)!;
+      expect(saved.ep, 1);
+      expect(saved.page, 7);
+      expect(saved.group, 2);
+      expect(saved.readEpisode, {'2-1'});
+    },
+  );
+
+  test('reading still unhides after maintenance', () {
+    manager.addHistory(_history('a'));
+    manager.hide('a', _type);
+    manager.updateHistoryKeepingVisibility(_history('a'));
+
+    manager.addHistory(_history('a', time: 2000));
+
+    expect(manager.getAll(), hasLength(1));
   });
 
-  test('reading still un-hides — maintenance writes did not change that', () {
-    _read(db, "a");
-    _hide(db, "a");
-    _maintain(db, "a");
-    expect(_listCount(db), 0);
+  test('maintenance touches only the addressed comic and source', () {
+    manager.addHistory(_history('a'));
+    manager.addHistory(_history('b'));
+    manager.addHistory(_history('a')..type = const ComicType(2));
+    manager.hide('a', _type);
 
-    // Opening the comic goes through addHistory, which clears the flag.
-    _read(db, "a", time: 2000);
+    manager.updateHistoryKeepingVisibility(
+      _history('a', cover: 'https://example.test/new.jpg'),
+    );
 
-    expect(_listCount(db), 1, reason: "reading brings the comic back");
-  });
-
-  test('maintenance write touches only the addressed row', () {
-    _read(db, "a");
-    _read(db, "b");
-    _hide(db, "a");
-
-    _maintain(db, "a");
-
-    expect(_find(db, "b", 1)!["hidden"], isNull);
-    expect(_listCount(db), 1, reason: "b unaffected");
+    expect(manager.getAll(), hasLength(2));
+    expect(manager.find('b', _type)!.cover, 'c.jpg');
+    expect(manager.find('a', const ComicType(2))!.cover, 'c.jpg');
   });
 }

@@ -488,16 +488,12 @@ class HistoryManager with ChangeNotifier {
         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       """;
 
-  /// Same write as [_insertHistorySql], but carries the row's current `hidden`
-  /// value over instead of letting `insert or replace` reset it to NULL.
-  ///
-  /// The subquery is part of the VALUES row, so SQLite evaluates it before
-  /// REPLACE deletes the conflicting row — it reads the pre-existing flag. Done
-  /// in one statement on purpose: a read-then-write would race the isolate
-  /// writer in [_addHistoryAsync].
+  /// Updates existing history without changing visibility or recreating a
+  /// record whose reading progress has been deleted.
   static const _updateHistoryKeepVisibilitySql = """
-        insert or replace into history (id, title, subtitle, cover, time, type, ep, page, readEpisode, max_page, chapter_group, hidden)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (select hidden from history where id == ? and type == ?));
+        update history set id = ?, title = ?, subtitle = ?, cover = ?, time = ?,
+        type = ?, ep = ?, page = ?, readEpisode = ?, max_page = ?, chapter_group = ?
+        where id == ? and type == ?;
       """;
 
   static String _cacheKey(String id, ComicType type) => "${type.value}:$id";
@@ -613,22 +609,37 @@ class HistoryManager with ChangeNotifier {
     cachedHistories.clear();
   }
 
-  bool _haveAsyncTask = false;
+  Future<void> _pendingHistoryWrite = Future.value();
+
+  Future<T> _queueHistoryWrite<T>(FutureOr<T> Function() action) {
+    final write = _pendingHistoryWrite.then((_) => action());
+    // Report errors to the caller without blocking later writes or deletions.
+    _pendingHistoryWrite = write.then<void>((_) {}, onError: (Object _) {});
+    return write;
+  }
 
   /// Create a isolate to add history to prevent blocking the UI thread.
-  Future<void> addHistoryAsync(History newItem) async {
+  Future<void> addHistoryAsync(History newItem) => _queueHistoryWrite(() async {
     if (!isInitialized) return;
-    while (_haveAsyncTask) {
-      await Future.delayed(Duration(milliseconds: 20));
-    }
-
-    _haveAsyncTask = true;
     await _addHistoryAsync(_dbPath, newItem);
     _mirrorToDomain(newItem);
-    _haveAsyncTask = false;
     _cacheAddedHistory(newItem);
     notifyListeners();
-  }
+  });
+
+  /// Clears progress after earlier reader saves, retaining reading statistics.
+  /// Returns the saved record for undo, independent of stale UI references.
+  Future<History?> clearReadingProgress(String id, ComicType type) =>
+      _queueHistoryWrite(() {
+        if (!isInitialized) return null;
+        final rows = _db.select(
+          'select * from history where id == ? and type == ?;',
+          [id, type.value],
+        );
+        final removed = rows.isEmpty ? null : History.fromRow(rows.first);
+        remove(id, type);
+        return removed;
+      });
 
   /// add history. if exists, update time.
   ///
@@ -655,6 +666,7 @@ class HistoryManager with ChangeNotifier {
       newItem.id,
       newItem.type.value,
     ]);
+    if (_db.updatedRows == 0) return;
     _mirrorToDomain(newItem);
     _cacheAddedHistory(newItem);
     notifyListeners();
@@ -810,7 +822,7 @@ class HistoryManager with ChangeNotifier {
   /// Permanently deletes a history record, including its reading state. Use for
   /// genuine comic removal (e.g. a local comic deleted from disk), NOT for
   /// clearing the history list — use [hide] for that.
-  void remove(String id, ComicType type) async {
+  void remove(String id, ComicType type) {
     if (!isInitialized) return;
     _db.execute(
       """
@@ -1006,20 +1018,13 @@ class HistoryManager with ChangeNotifier {
         try {
           const ComicStateRepository().mirrorComicDetails(comicDetails);
         } catch (_) {}
-        // Update history info while keeping reading progress
-        var updatedHistory = History.fromMap({
-          'type': history.type.value,
-          'time': history.time.millisecondsSinceEpoch,
-          'title': comicDetails.title,
-          'subtitle': comicDetails.subTitle ?? '',
-          'cover': comicDetails.cover,
-          'ep': history.ep,
-          'page': history.page,
-          'id': history.id,
-          'readEpisode': history.readEpisode.toList(),
-          'max_page': history.maxPage,
-        });
-        updatedHistory.group = history.group;
+        // Reading may have advanced or been cleared while the request ran.
+        final updatedHistory = find(history.id, history.type);
+        if (updatedHistory == null) return const _HistoryRefreshResult(true);
+        updatedHistory
+          ..title = comicDetails.title
+          ..subtitle = comicDetails.subTitle ?? ''
+          ..cover = comicDetails.cover;
 
         // A refresh only rewrites display fields, so it must not pull a record
         // the user removed from the list back into it — the refresh-all task

@@ -183,7 +183,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   void onReadEnd() {
-    history ??= _comicStateRepository.load(widget.sourceKey, widget.id).history;
+    _onHistoryChanged();
+  }
+
+  void _onHistoryChanged() {
+    if (!mounted) return;
+    history = _comicStateRepository.load(widget.sourceKey, widget.id).history;
     update();
   }
 
@@ -288,6 +293,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   void initState() {
     scrollController.addListener(onScroll);
+    HistoryManager().addListener(_onHistoryChanged);
     ComicCollectionStore.changes.addListener(_onCollectionChanged);
     PreTranslationTaskManager.instance.addListener(update);
     // The per-comic translation toggle lives in the service; listen so the
@@ -299,6 +305,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   void dispose() {
     scrollController.removeListener(onScroll);
+    HistoryManager().removeListener(_onHistoryChanged);
     ComicCollectionStore.changes.removeListener(_onCollectionChanged);
     PreTranslationTaskManager.instance.removeListener(update);
     ImageTranslationService.instance.removeListener(update);

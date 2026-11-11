@@ -210,4 +210,80 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  for (final grouped in [false, true]) {
+    testWidgets(
+      'chapter selection respects cleared history, grouped=$grouped',
+      (tester) async {
+        final wasInitialized = App.isInitialized;
+        App.isInitialized = true;
+        addTearDown(() {
+          App.domain.close();
+          App.isInitialized = wasInitialized;
+        });
+        tester.view.physicalSize = const Size(1200, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final details = ComicDetails.fromJson({
+          'title': 'Cached comic',
+          'cover': _coverUrl,
+          'comicId': _comicId,
+          'sourceKey': _sourceKey,
+          'tags': <String, List<String>>{},
+          'chapters': grouped
+              ? const ComicChapters.grouped({
+                  'Group A': {'a': 'Old chapter', 'b': 'New chapter'},
+                  'Group B': {'c': 'Other chapter'},
+                })
+              : const ComicChapters({'a': 'Old chapter', 'b': 'New chapter'}),
+        });
+        expect(details.chapters!.isGrouped, grouped);
+        ComicSourceManager().remove(_sourceKey);
+        ComicSourceManager().add(_source((_) async => Res(details)));
+        ComicDetailsCache().update(_sourceKey, _comicId, details);
+        final history = History.fromModel(
+          model: details,
+          ep: 1,
+          page: 7,
+          group: grouped ? 1 : null,
+          readChapters: {grouped ? '1-1' : '1'},
+        );
+        HistoryManager().addHistory(history);
+        final pixels = await tester.runAsync(
+          () => createTestImage(width: 20, height: 30),
+        );
+        PaintingBinding.instance.imageCache.putIfAbsent(
+          _provider,
+          () => OneFrameImageStreamCompleter(
+            SynchronousFuture(ImageInfo(image: pixels!)),
+          ),
+        );
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: ComicPage(id: _comicId, sourceKey: _sourceKey),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byTooltip('Batch manage'));
+        await tester.tap(find.byTooltip('Batch manage'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('New chapter'));
+        await tester.pumpAndSettle();
+
+        await tester.runAsync(
+          () => HistoryManager().clearReadingProgress(history.id, history.type),
+        );
+        await tester.pumpAndSettle();
+        expect(HistoryManager().find(history.id, history.type), isNull);
+        await tester.tap(find.byTooltip('Mark as read'));
+        await tester.pumpAndSettle();
+
+        expect(HistoryManager().find(history.id, history.type)!.readEpisode, {
+          grouped ? '1-2' : '2',
+        });
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 }

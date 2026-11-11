@@ -330,6 +330,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
   @override
   void didUpdateWidget(covariant _NormalComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _history = widget.history;
     // A background details refresh can replace the chapter map while this
     // widget stays mounted (cache-first load). Freeze it during multi-select:
     // selection keys are chapter indices, so a list that grows or reorders
@@ -339,7 +340,6 @@ class _NormalComicChaptersState extends State<_NormalComicChapters>
       setState(() {
         chapters = state.comic.chapters!;
         _computeVisible();
-        _history = widget.history;
       });
     }
   }
@@ -695,6 +695,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   @override
   void didUpdateWidget(covariant _GroupedComicChapters oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _history = widget.history;
     // The chapter map is re-read on every rebuild, not just captured on first
     // mount: renaming/reordering a collection's members, or a background
     // details refresh adding chapters/tabs, reloads the detail in place, and a
@@ -706,9 +707,6 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
       chapters = state.comic.chapters!;
       _syncTabController();
       _computeVisible();
-      setState(() {
-        _history = widget.history;
-      });
     }
   }
 
