@@ -1,31 +1,18 @@
-# VeneraX HarmonyOS development
+# VeneraX 鸿蒙开发
 
-Experimental HarmonyOS port of VeneraX. The complete application builds for
-ARM64 and x64; runtime validation currently uses the official x64 phone emulator.
-Directory access, credential authentication, native PDF rendering and signed
-phone installation still need a suitable device. The preview ships an unsigned
-ARM64 release HAP that requires device-specific signing before phone installation.
-See [preview installation and limitations](harmonyos-testing.md). Debug probes
-are only for local development and are not release assets.
+中文 | [English](harmonyos.en.md)
 
-## Isolated workspace
+VeneraX 的实验性鸿蒙适配。完整应用已能为 ARM64 和 x64 构建；运行验证目前使用官方 x64 手机模拟器。目录访问、身份认证、原生 PDF 渲染及签名后的真机安装仍需在合适设备上验证。预览版提供未签名的 ARM64 release HAP，安装到手机前需要针对设备签名。参见 [预览版安装说明与限制](harmonyos-testing.md)。调试探针仅供本地开发，不作为发布附件。
 
-Use a separate checkout for HarmonyOS. Both Flutter SDKs write
-`.dart_tool/package_config.json` and generated plugin files, so changing only
-the Flutter executable is insufficient when another platform builds concurrently.
-Keep standard Flutter 3.44.3 for existing platforms.
+## 独立工作目录
 
-The tested OH SDK is CPF-Flutter `3.44.9+ohos-1.0.0-beta`, commit
-`744cbb4f08e577787774c04033cc19a9d318d0d2` (Dart 3.12.2). This is the adaptation
-project linked by [Huawei's documentation](https://developer.huawei.com/consumer/cn/doc/guidebook/solution-0000002784651007/),
-not an upstream Google Flutter release. Obtain it from
-[CPF-Flutter/flutter_flutter](https://gitcode.com/CPF-Flutter/flutter_flutter).
-The current version is a development candidate, not a stable release commitment.
+为鸿蒙使用单独检出的项目目录。两套 Flutter SDK 都会写入 `.dart_tool/package_config.json` 和生成的插件文件，因此在其他平台同时构建时，仅切换 Flutter 可执行文件并不足以隔离环境。现有平台继续使用标准 Flutter 3.44.3。
 
-Install DevEco Studio from Huawei. Tested with DevEco 26.0.0.865, API 26 SDK,
-and a HarmonyOS 7 x86_64 phone emulator. Run in the isolated checkout:
+已验证的 OH SDK 为 CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`（Dart 3.12.2）。这是 [华为文档](https://developer.huawei.com/consumer/cn/doc/guidebook/solution-0000002784651007/) 链接的适配项目，并非 Google 上游 Flutter 发布版，可从 [CPF-Flutter/flutter_flutter](https://gitcode.com/CPF-Flutter/flutter_flutter) 获取。当前版本属于开发候选版，不代表稳定版承诺。
 
-Install Rust 1.85.1 and its OHOS targets through official rustup first:
+从华为官网下载 DevEco Studio。已验证环境为 DevEco 26.0.0.865、API 26 SDK 和 HarmonyOS 7 x86_64 手机模拟器。以下操作均在独立的项目目录中执行。
+
+先通过官方 rustup 安装 Rust 1.85.1 及其 OHOS 编译目标：
 
 ```powershell
 rustup toolchain install 1.85.1
@@ -37,178 +24,62 @@ rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolcha
   -DevEcoStudio 'D:/Program Files/Huawei/DevEco Studio'
 ```
 
-This builds the complete `lib/main.dart` application in debug mode for x64.
-Add `-Target tool/ohos_smoke.dart` for the isolated bootstrap probe. Install
-`build/ohos/hap/entry-default-unsigned.hap` with the SDK's `hdc`, then start
-`com.github.kyosee.venera` / `EntryAbility`. The probe checks sandbox directories,
-package information, file read/write, SQLite WAL, QuickJS values/Promises on
-separate isolates, Unicode ZIP entries, 7z extraction and PNG pixel round trips.
-Restart it: the launch counter must increase. Persistent probe data uses only
-a dedicated `ohos_smoke.db` inside the app sandbox.
+上述命令会为 x64 构建 debug 模式的完整 `lib/main.dart` 应用。添加 `-Target tool/ohos_smoke.dart` 可构建独立的启动验证探针。使用 SDK 自带的 `hdc` 安装 `build/ohos/hap/entry-default-unsigned.hap`，然后启动 `com.github.kyosee.venera` / `EntryAbility`。该探针检查沙箱目录、包信息、文件读写、SQLite WAL、独立 isolate 中的 QuickJS 值与 Promise、Unicode ZIP 条目、7z 解压及 PNG 像素往返处理。重启后，启动计数应增加。探针持久数据仅写入应用沙箱内专用的 `ohos_smoke.db`。
 
-For a phone preview, use `-Target lib/main.dart -TargetPlatform ohos-arm64 -BuildMode release`.
-Native compilation and packaging follow the selected ABI.
-Builds are unsigned unless `-CodeSign` is explicitly supplied after configuring
-your own valid signing identity in DevEco Studio. A probe is a separate entrypoint:
-rebuild and reinstall the complete application after probe validation.
+构建手机预览版时，使用 `-Target lib/main.dart -TargetPlatform ohos-arm64 -BuildMode release`。原生编译和打包会遵循所选 ABI。默认构建不签名；只有在 DevEco Studio 配置自己的有效签名身份后，显式传入 `-CodeSign` 才会签名。探针使用独立入口，验证结束后应重新构建并安装完整应用。
 
-Use `-Target tool/ohos_network_smoke.dart` for the HTTP probe. It runs local
-servers on the device and verifies DNS, redirects, cookies, streams, a worker
-isolate, the app's Dio adapter, cancellation, timeout and an HTTP proxy. Its
-test-only certificate verifies rejection by default, explicit local trust and
-hostname rejection without changing any system or application trust settings.
+使用 `-Target tool/ohos_network_smoke.dart` 运行 HTTP 探针。它在设备上启动本地服务，验证 DNS、重定向、Cookie、流、工作 isolate、应用的 Dio 适配器、取消、超时及 HTTP 代理。测试专用证书用于验证默认拒绝、显式本地信任和主机名不匹配时的拒绝行为，不改变系统或应用的信任设置。
 
-Use `-Target tool/ohos_onnx_smoke.dart` for ONNX CPU inference through the
-application's FFI binding. It covers a worker isolate, a Unicode model filename,
-output shapes, repeated runs/sessions, invalid inputs and greedy decoding.
-This verifies the runtime; OCR models and the complete translation workflow
-still need separate application-level validation.
+使用 `-Target tool/ohos_onnx_smoke.dart`，通过应用的 FFI 绑定验证 ONNX CPU 推理。覆盖工作 isolate、Unicode 模型文件名、输出形状、重复运行与会话、无效输入及贪心解码。这只验证运行时；OCR 模型及完整翻译流程仍需单独进行应用层验证。
 
-Use `-Target tool/ohos_reader_smoke.dart` for the real source and download
-pipeline, using a self-contained loopback comic source and generated images.
-It verifies source import/reload, QuickJS network search/details/chapters,
-image headers and decoded pixels, background history writes, a queued chapter
-download, and offline reads after closing the server. Force-stop and start
-the app a second time to verify source, progress and downloads persist across
-processes. All probe data stays in a separate `ohos_reader_probe` directory.
-This does not verify reader gestures, background recovery or synchronization.
+使用 `-Target tool/ohos_reader_smoke.dart` 验证实际书源和下载流程，测试使用自包含的本地回环漫画源与生成的图片。覆盖书源导入与重载、QuickJS 网络搜索、详情、章节、图片请求头与解码像素、后台历史记录写入、章节排队下载，以及关闭服务后的离线读取。强制停止应用后再次启动，确认书源、进度和下载内容能跨进程保留。所有探针数据均放在独立的 `ohos_reader_probe` 目录中。此探针不验证阅读器手势、后台恢复或同步。
 
-Use `-Target tool/ohos_reader_ui_smoke.dart` for the production Reader with
-generated pages, six reading modes, volume navigation, saved progress and the
-image enhancement shader. It uses the reader probe's isolated data directory.
-Interactive results must be checked separately from compilation.
+使用 `-Target tool/ohos_reader_ui_smoke.dart`，以生成的页面验证正式阅读器的六种阅读模式、音量键翻页、进度保存及图像增强着色器。它使用阅读器探针的独立数据目录。交互效果需要单独检查，编译结果不能替代交互验证。
 
-Use `-Target tool/ohos_backup_smoke.dart` for a complete `.venera` backup
-round trip in a fresh temporary directory. It uploads and downloads through a
-local authenticated WebDAV server and the production RHttpAdapter, modifies
-the fixture, then restores scripts, settings, history, favorites and cookies.
-It never configures a remote sync account or restores into the normal app data.
+使用 `-Target tool/ohos_backup_smoke.dart`，在新建的临时目录中验证完整的 `.venera` 备份往返流程。它通过本地带认证的 WebDAV 服务和正式 RHttpAdapter 上传、下载备份，修改测试数据后恢复脚本、设置、历史、收藏和 Cookie。它不会配置远程同步账号，也不会向正常应用数据目录恢复内容。
 
-Use `-Target tool/ohos_webview_smoke.dart` for the WebView probe. It verifies
-initial custom headers and redirects, JavaScript results, native and HttpOnly
-cookies (including deletion), local/session storage, malicious storage keys,
-origin isolation, reloads, custom/direct/system proxy switching and rejection
-of an untrusted TLS certificate. It uses local servers and no user account.
-Passing it does not verify every source's login or anti-bot flow.
+使用 `-Target tool/ohos_webview_smoke.dart` 运行 WebView 探针。覆盖初始自定义请求头与重定向、JavaScript 返回值、原生与 HttpOnly Cookie（含删除）、local/session storage、恶意存储键、来源隔离、重载、自定义/直连/系统代理切换，以及拒绝不受信任的 TLS 证书。测试只使用本地服务，不使用用户账号。探针通过不代表所有书源的登录或反爬流程都已验证。
 
-Use `-Target tool/ohos_system_smoke.dart` for battery, power-saving state,
-connectivity methods/events, screen wake requests, system proxy and available
-authentication types. The authentication bridge cancels on backgrounding and
-only accepts the official success result. The current emulator has no enrolled
-credential; real PIN/biometric success still needs a suitable device.
+使用 `-Target tool/ohos_system_smoke.dart` 验证电量、省电状态、网络连接方法与事件、保持屏幕唤醒请求、系统代理及可用的认证类型。认证桥接会在应用进入后台时取消认证，并且只接受官方定义的成功结果。当前模拟器未设置认证凭据；PIN 或生物认证成功流程仍需在合适设备上验证。
 
-Use `-Target tool/ohos_file_smoke.dart` for an interactive file export/import
-round trip and picker cancellation. The share check opens the system panel;
-cancel it without choosing a recipient. Persistent directory authorization and
-incoming text/link shares are implemented separately; neither the file round trip
-nor mocked bridge tests prove that every device supports directory selection.
+使用 `-Target tool/ohos_file_smoke.dart`，交互验证文件导出/导入往返流程及选择器取消操作。分享测试会打开系统面板；应直接取消，不选择接收方。持久目录授权及接收外部分享的文本/链接采用独立实现；文件往返测试和模拟桥接测试均不能证明所有设备都支持目录选择。
 
-The official API 26 phone emulator currently advertises folder selection but
-does not expose a completion action inside a directory. A standalone native
-UIAbility using the documented FILE/FOLDER options reproduces this behavior.
-Directory imports and custom storage paths still need a working picker and an
-authorized-directory round trip on a suitable device.
-HarmonyOS comic exports use the system save dialog for each generated CBZ, PDF,
-EPUB or `.venera_comics` file. Cancellation stops the task; an unsuccessful save
-does not count as a completed export. Merged comic archives use one save dialog.
+官方 API 26 手机模拟器目前声明支持文件夹选择，但进入目录后没有完成选择的操作入口。使用文档规定的 FILE/FOLDER 选项编写独立原生 UIAbility，也能复现该行为。目录导入和自定义存储路径仍需在选择器可用的合适设备上验证授权目录的往返访问。鸿蒙漫画导出会为每个生成的 CBZ、PDF、EPUB 或 `.venera_comics` 文件打开系统保存对话框。取消会停止任务；保存失败不会计为导出完成。合并漫画归档只使用一次保存对话框。
 
-Scan Kit provides the system QR scanner; opening and cancelling its UI is verified.
-Cold and warm notification Wants route the complete app to downloading and tasks.
-The background bridge shares one official data-transfer task across active
-downloads and WebDAV requests, uses actual progress, and releases it when the
-last request ends. `tool/ohos_background_smoke.dart` verifies real concurrent HTTP
-transfers after backgrounding, truncation/recovery, and notification removal.
-Local compression and OCR never claim a network background task. Data Saver
-settles pending changes on resume and during active use; it does not promise
-unlimited background packaging or uploading.
+Scan Kit 提供系统二维码扫描器；已验证界面的打开与取消。通知携带的 Want 在冷启动和热启动时均可将完整应用引导至下载及任务页面。后台桥接会让活动下载和 WebDAV 请求共享一个官方数据传输任务，按实际进度更新，并在最后一个请求结束时释放任务。`tool/ohos_background_smoke.dart` 验证进入后台后的真实并发 HTTP 传输、中断与恢复，以及通知移除。本地压缩和 OCR 不会申请网络后台任务。「省流」会在恢复前台及正常使用期间处理待保存的变更，不保证无限制的后台打包或上传。
 
-API 26 alternate launcher icons use the system bundle manager. Startup checks
-actual API availability and all configured presets before showing the setting.
-`prepare_ohos.dart` generates only OHOS icon resources from the existing project
-PNGs; after editing icon assets, `dart tool/prepare_ohos_icons.dart` refreshes them
-without re-preparing dependencies. Earlier systems keep their default icon.
+API 26 的桌面图标切换使用系统包管理器。启动时会检查 API 是否实际可用，以及所有已配置的图标预设，再决定是否显示设置项。`prepare_ohos.dart` 仅使用项目现有 PNG 生成 OHOS 图标资源；修改图标素材后，可用 `dart tool/prepare_ohos_icons.dart` 刷新资源，无需重新准备依赖。较早的系统保持默认图标。
 
-`-Target tool/ohos_pdf_smoke.dart` exercises PDF conversion through the official
-PDF Kit. Huawei does not support this kit on the x86 emulator; an ARM emulator
-or real device is required for native rendering verification. Lifecycle checks
-can run locally with `node --test test/ohos/pdf_bridge_test.cjs`; Dart import
-cleanup is covered by `test/ohos_pdf_import_test.dart` under the OH Flutter SDK.
-Those tests do not substitute for native PDF rendering.
+`-Target tool/ohos_pdf_smoke.dart` 通过官方 PDF Kit 验证 PDF 转换。华为不支持在 x86 模拟器上使用此 Kit；原生渲染验证需要 ARM 模拟器或真机。生命周期检查可在本地运行 `node --test test/ohos/pdf_bridge_test.cjs`；Dart 端的导入清理逻辑由 OH Flutter SDK 下的 `test/ohos_pdf_import_test.dart` 覆盖。这些测试不能替代原生 PDF 渲染验证。
 
-ARM64 compilation does not verify a real phone. Device signing and end-user
-sideloading remain unverified. Never distribute a developer's private signing key
-or a device-bound profile as a universal installation solution.
+ARM64 编译通过不代表真机验证通过。设备签名与用户侧加载仍未验证。不得将开发者私钥或绑定设备的 Profile 当作通用安装方案分发。
 
-## Validation coverage
+## 验证覆盖范围
 
-The following workflows have run on the API 26 x64 emulator. Generated fixtures
-are used by the checked-in probes; private acceptance data must stay outside the
-repository, build inputs, logs and screenshots. Never upload a user's backup to
-cloud devices or external analysis services.
+以下流程已在 API 26 x64 模拟器上运行。仓库内的探针使用生成的测试数据；私有验收数据必须留在仓库、构建输入、日志和截图之外。不得将用户备份上传到云设备或外部分析服务。
 
-| Workflow | Observed result |
+| 流程 | 已观察到的结果 |
 |---|---|
-| Source and network | QuickJS import, search, details, chapters, image headers/pixels, TLS rejection, cookies, proxy, cancellation and restart persistence passed |
-| Reader | Six reading modes, gesture and volume navigation, double-tap zoom, portrait/landscape rotation and saved progress passed |
-| Downloads | Queued complete chapters, restart persistence, offline image decoding and background transfer/recovery passed |
-| Backup and WebDAV | Export/restore and authenticated loopback PUT/GET passed, including settings, source data, history, favorites and cookies |
-| Comic export | CBZ, PDF, EPUB and single/merged `.venera_comics` system saves passed; cancellation did not count as completion |
-| Images and OCR | Native PNG, image enhancement shader, real OCR models, local translation script and stored translated-image redraw passed |
-| System integration | File picker round trip/cancellation, share-panel cancellation, WebView storage, notification routes, volume and icon switching passed |
+| 书源与网络 | QuickJS 导入、搜索、详情、章节、图片请求头与像素、TLS 拒绝、Cookie、代理、取消及重启后数据保留均通过 |
+| 阅读器 | 六种阅读模式、手势和音量键翻页、双击缩放、横竖屏旋转及进度保存均通过 |
+| 下载 | 完整章节排队下载、重启后数据保留、离线图片解码及后台传输与恢复均通过 |
+| 备份与 WebDAV | 导出/恢复及带认证的本地回环 PUT/GET 均通过，覆盖设置、书源数据、历史、收藏和 Cookie |
+| 漫画导出 | CBZ、PDF、EPUB 及单独/合并 `.venera_comics` 的系统保存均通过；取消不会计为完成 |
+| 图片与 OCR | 原生 PNG、图像增强着色器、真实 OCR 模型、本地翻译脚本及已保存翻译图片的重新绘制均通过 |
+| 系统集成 | 文件选择器往返与取消、分享面板取消、WebView 存储、通知跳转、音量键和图标切换均通过 |
 
-Remaining device checks include directory authorization, enrolled PIN/biometric
-success, ARM PDF Kit import/rendering, real QR recognition, source-specific login
-and online translation services. Existing bridge/unit tests cover error handling
-but do not replace those device checks. Signing and public sideloading must be
-validated separately before publishing a test release.
+仍需设备验证的项目包括目录授权、已设置凭据的 PIN/生物认证成功流程、ARM PDF Kit 导入与渲染、真实二维码识别、具体书源登录及在线翻译服务。现有桥接和单元测试覆盖错误处理，不能替代这些设备检查。发布测试版本前，签名和面向用户的侧加载仍需单独验证。
 
-## Dependencies
+## 依赖
 
-WebView uses the official CPF-Flutter/flutter_inappwebview OH adapter at commit
-`389cf40dbb647f1df7272de5ea6b3401efe27a75`. Supply an existing clean checkout with
-`-WebViewSource`, or let preparation fetch that commit from GitCode. Only tracked
-source is copied into `.dart_tool/ohos`; the public Flutter wrapper and interface
-keep their existing locked versions. Local patches cover interface compatibility,
-initial request ordering, HttpOnly deletion, storage isolation and key escaping,
-SSL error reporting, and preservation of browser TLS/origin/network boundaries.
-The SDK's plugin generator runs after preparation to register the native adapter.
-The source checkout and shared Pub cache are never patched.
+WebView 使用官方 CPF-Flutter/flutter_inappwebview OH 适配器，提交为 `389cf40dbb647f1df7272de5ea6b3401efe27a75`。可以通过 `-WebViewSource` 提供现有的干净检出目录，也可以让准备步骤从 GitCode 获取该提交。只有 Git 跟踪的源码会复制到 `.dart_tool/ohos`；公共 Flutter 封装和接口保持原有锁定版本。本地补丁覆盖接口兼容、初始请求顺序、HttpOnly 删除、存储隔离与键转义、SSL 错误报告，并保留浏览器的 TLS、来源和网络边界。准备完成后，SDK 的插件生成器会注册原生适配器。不会修改源检出目录或共享 Pub 缓存。
 
-SQLite is built only by the OHOS CMake project, from the official 3.54.1
-amalgamation and [published SHA3-256 digest](https://www.sqlite.org/download.html).
-The archive is not a Git dependency or covered by pub's lockfile; checking its
-published digest detects replacement/corruption of that downloaded source.
-No SQLite binary is added to shared Flutter assets or other platform builds.
-The older 3.52.0 source referenced by the existing platform plugin was withdrawn
-upstream and is not reused for this new target.
+SQLite 仅由 OHOS CMake 工程构建，使用官方 3.54.1 合并源码及其 [公布的 SHA3-256 摘要](https://www.sqlite.org/download.html)。该归档不属于 Git 依赖，也不受 pub 锁文件覆盖；校验官方摘要用于发现下载源码被替换或损坏。不会向共享 Flutter 资源或其他平台构建加入 SQLite 二进制文件。现有平台插件引用的旧版 3.52.0 源码已被上游撤回，新平台不复用该版本。
 
-QuickJS, ZIP, 7z and PNG use the source already included in the locked packages.
-`prepare_ohos.dart` copies their Dart libraries and licenses into `.dart_tool/ohos`
-and adds only the OHOS dynamic-library loader branch. It updates the isolated
-checkout's generated package config; it does not modify the shared Pub cache.
-CMake compiles the original locked C/C++ sources for both ARM64 and x86_64.
+QuickJS、ZIP、7z 和 PNG 使用锁定依赖中已有的源码。`prepare_ohos.dart` 会将它们的 Dart 库与许可证复制到 `.dart_tool/ohos`，仅增加 OHOS 动态库加载分支。它会更新独立检出目录中生成的包配置，不修改共享 Pub 缓存。CMake 使用原始锁定的 C/C++ 源码，为 ARM64 和 x86_64 构建。
 
-`build_ohos_rhttp.ps1` builds the locked rhttp package's Rust source for both
-OHOS targets using Cargo's `--locked` flag and the official SDK's Clang.
-HTTP/3 remains enabled. Generated libraries are copied only into `ohos/entry/libs`;
-the shared Pub cache and Cargo.lock are not changed. The OHOS loader explicitly
-opens this library, while other platforms retain their existing initialization.
+`build_ohos_rhttp.ps1` 使用 Cargo 的 `--locked` 参数及官方 SDK 的 Clang，将锁定的 rhttp 包内 Rust 源码编译为两个 OHOS 目标。HTTP/3 保持启用。生成的库仅复制到 `ohos/entry/libs`，不修改共享 Pub 缓存或 Cargo.lock。OHOS 加载器会显式打开此库，其他平台保持原有初始化流程。
 
-`build_ohos_onnx.ps1` builds ONNX Runtime 1.22.0 from Microsoft's commit
-`f217402897f40ebba457e2421bc0a4702771968e`, with Eigen's pinned commit
-`1d8b82b0740839c0de7f1242a3585e3390ff5f33` from its official GitLab repository.
-The initial build fetches these Git sources into `.dart_tool/ohos/sources`.
-Existing checkouts can be supplied using `-OnnxSource` and `-EigenSource` on the
-main build script. Modified sources other than `tool/ohos/onnxruntime.patch` are
-rejected. The patch handles missing pthread affinity and compiler feature
-declarations; CPUINFO is disabled, and the complete CPU operator set is retained.
-Upstream dependency download checks and TLS verification remain enabled.
-Both libraries and their license notices are packaged only in the OHOS target.
+`build_ohos_onnx.ps1` 使用微软提交 `f217402897f40ebba457e2421bc0a4702771968e` 构建 ONNX Runtime 1.22.0，并使用 Eigen 官方 GitLab 仓库锁定的提交 `1d8b82b0740839c0de7f1242a3585e3390ff5f33`。首次构建会将这些 Git 源码获取到 `.dart_tool/ohos/sources`。可以在主构建脚本中通过 `-OnnxSource` 和 `-EigenSource` 提供现有检出目录。除 `tool/ohos/onnxruntime.patch` 外的源码修改会被拒绝。该补丁处理缺失的 pthread 亲和性及编译器特性声明；CPUINFO 被禁用，完整 CPU 算子集保持启用。上游依赖下载检查和 TLS 验证保持启用。相关库及其许可证说明仅打包到 OHOS 目标中。
 
-The script enforces `pubspec.lock`, uses only process environment variables and
-restores them afterwards. Always run preparation after `pub get`; the build script
-does both. Upstream Dart native hooks currently identify OHOS as Linux; the
-experimental build disables those code assets and builds the supported libraries
-with the HarmonyOS toolchain. PDF uses the official system kit on supported
-devices instead of a Linux PDFium binary. Do not disable TLS validation, app-lock checks or signature
-requirements to work around missing platform implementations.
+脚本严格使用 `pubspec.lock`，仅修改进程环境变量，并在结束后恢复。每次 `pub get` 后都需要运行准备步骤；构建脚本会依次执行这两步。上游 Dart 原生钩子目前会将 OHOS 识别为 Linux；实验性构建会禁用这些代码资源，改用鸿蒙工具链构建支持的库。PDF 在支持的设备上使用官方系统 Kit，不使用 Linux PDFium 二进制库。不得通过关闭 TLS 验证、应用锁检查或签名要求来绕过缺失的平台实现。
