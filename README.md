@@ -26,6 +26,8 @@ VeneraX 是一款免费开源的多平台漫画阅读应用，基于 Venera 持�
 
 请按系统和处理器架构选择安装包，并查看对应版本的安装说明。
 
+鸿蒙仍为开发预览版：[测试包安装说明](doc/harmonyos-testing.md) · [从源码构建与适配](doc/harmonyos.md)。
+
 <details>
 <summary><b>Linux AppImage 安装说明</b></summary>
 

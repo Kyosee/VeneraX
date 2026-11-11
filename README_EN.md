@@ -26,6 +26,8 @@ VeneraX is a free, open-source comic reader for multiple platforms, maintained a
 
 Choose a package for your operating system and processor architecture, and read the installation notes for that release.
 
+HarmonyOS is a developer preview: [test package installation](doc/harmonyos-testing.en.md) · [source builds and adaptation](doc/harmonyos.en.md).
+
 <details>
 <summary><b>Linux AppImage installation</b></summary>
 

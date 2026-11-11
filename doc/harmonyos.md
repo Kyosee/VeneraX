@@ -2,59 +2,293 @@
 
 中文 | [English](harmonyos.en.md)
 
-VeneraX 的实验性鸿蒙适配。完整应用已能为 ARM64 和 x64 构建；运行验证目前使用官方 x64 手机模拟器。目录访问、身份认证、原生 PDF 渲染及签名后的真机安装仍需在合适设备上验证。预览版提供未签名的 ARM64 release HAP，安装到手机前需要针对设备签名。参见 [预览版安装说明与限制](harmonyos-testing.md)。调试探针仅供本地开发，不作为发布附件。
+本手册用于在 **Windows x64** 上从源码构建和验证 VeneraX 鸿蒙版。只想安装已发布的测试包，请看 [预览版安装说明](harmonyos-testing.md)；本页只记录 VeneraX 自身的鸿蒙构建、签名、探针和设备验证。
 
-## 独立工作目录
+当前为实验性适配：完整应用可构建为 x64 和 ARM64 HAP，运行记录来自官方 x64 手机模拟器。ARM64 真机签名安装与运行、持久目录授权、认证成功及原生 PDF 渲染仍需设备验证。本页保留既有验证记录，文档更新不代表重新完成了运行测试。
 
-为鸿蒙使用单独检出的项目目录。两套 Flutter SDK 都会写入 `.dart_tool/package_config.json` 和生成的插件文件，因此在其他平台同时构建时，仅切换 Flutter 可执行文件并不足以隔离环境。现有平台继续使用标准 Flutter 3.44.3。
+## 目录
 
-已验证的 OH SDK 为 CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`（Dart 3.12.2）。这是 [华为文档](https://developer.huawei.com/consumer/cn/doc/guidebook/solution-0000002784651007/) 链接的适配项目，并非 Google 上游 Flutter 发布版，可从 [CPF-Flutter/flutter_flutter](https://gitcode.com/CPF-Flutter/flutter_flutter) 获取。当前版本属于开发候选版，不代表稳定版承诺。
+- [环境与版本](#环境与版本)
+- [快速开始：x64 模拟器](#快速开始x64-模拟器)
+- [构建阶段与参数](#构建阶段与参数)
+- [ARM64 构建、签名与安装](#arm64-构建签名与安装)
+- [探针与功能验证](#探针与功能验证)
+- [常见问题](#常见问题)
+- [验证记录与待办](#验证记录与待办)
+- [附录：依赖实现细节](#附录依赖实现细节)
 
-从华为官网下载 DevEco Studio。已验证环境为 DevEco 26.0.0.865、API 26 SDK 和 HarmonyOS 7 x86_64 手机模拟器。以下操作均在独立的项目目录中执行。
+## 环境与版本
 
-先通过官方 rustup 安装 Rust 1.85.1 及其 OHOS 编译目标：
+### 已验证的工具组合
+
+| 项目 | 要求或记录 |
+|---|---|
+| 宿主 | Windows x64、PowerShell、Git；项目脚本使用 `.bat` / `.exe`，ONNX 脚本检查 x64 宿主架构 |
+| OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`，Dart 3.12.2 |
+| DevEco | DevEco Studio 26.0.0.865，API 26 SDK |
+| SDK 组件 | JBR、Node、ohpm、hvigor、`hdc`，以及 native SDK 中的 Clang、CMake 和 Ninja |
+| Rust | Rust 1.85.1；同时安装 `x86_64-unknown-linux-ohos` 和 `aarch64-unknown-linux-ohos` targets |
+| 运行环境 | 官方 HarmonyOS 7 / API 26 x86_64 手机模拟器；ARM64 真机运行未验证 |
+| 应用声明 | 最低 HarmonyOS 5.0.5 / API 17，目标 API 26；最低版本声明不等于最低版本验收 |
+| 其他平台 | 现有标准 Flutter 环境使用 3.44.3，与 OH SDK 及项目目录分开 |
+
+CPF-Flutter 是 [华为文档](https://developer.huawei.com/consumer/cn/doc/guidebook/solution-0000002784651007/) 链接的 OpenHarmony 适配项目，不是 Google 上游 Flutter 发布版。这里记录的是已用过的开发候选版组合，不保证其他版本可以直接替换。
+
+### 获取和初始化 SDK
+
+先从华为安装 DevEco Studio，在其 SDK 管理界面安装所需组件并完成相应许可流程。Flutter OH 的 [仓库 README](https://gitcode.com/CPF-Flutter/flutter_flutter) 提供环境搭建、应用构建和插件适配文档入口。
+
+若尚未安装 OH SDK，可在新目录获取并检出上述提交：
 
 ```powershell
+git clone https://gitcode.com/CPF-Flutter/flutter_flutter.git D:/dev/tools/flutter_ohos
+git -C D:/dev/tools/flutter_ohos checkout --detach 744cbb4f08e577787774c04033cc19a9d318d0d2
+```
+
+已有可用 SDK 时直接使用；不要在含有自己修改的 SDK 目录中直接切换提交。下面的路径都是示例，应改成自己的安装位置。新开一个专用于鸿蒙的 PowerShell 窗口，执行：
+
+```powershell
+$flutterOhSdk = 'D:/dev/tools/flutter_ohos'
+$devEcoStudio = 'D:/Program Files/Huawei/DevEco Studio'
+$ohFlutter = Join-Path $flutterOhSdk 'bin/flutter.bat'
+$ohDart = Join-Path $flutterOhSdk 'bin/dart.bat'
+$hdc = Join-Path $devEcoStudio 'sdk/default/openharmony/toolchains/hdc.exe'
+$env:DEVECO_SDK_HOME = Join-Path $devEcoStudio 'sdk'
+$env:JAVA_HOME = Join-Path $devEcoStudio 'jbr'
+$env:NODE_HOME = Join-Path $devEcoStudio 'tools/node'
+$env:Path = @((Join-Path $flutterOhSdk 'bin'), $env:NODE_HOME, (Join-Path $devEcoStudio 'tools/ohpm/bin'), (Join-Path $devEcoStudio 'tools/hvigor/bin'), (Join-Path $devEcoStudio 'sdk/default/openharmony/toolchains'), $env:Path) -join [IO.Path]::PathSeparator
+$env:FLUTTER_STORAGE_BASE_URL = 'https://flutter-ohos.obs.cn-south-1.myhuaweicloud.com'
+& $ohFlutter --version
+& $ohFlutter doctor -v
+git --version
 rustup toolchain install 1.85.1
 rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.85.1
+rustup run 1.85.1 rustc --version
+rustup target list --installed --toolchain 1.85.1
 ```
+
+这些环境变量只影响当前终端及其子进程，关闭窗口后结束；不要把 OH 下载源和 SDK 路径覆盖到标准 Flutter 开发终端。下载源来自该版本 SDK 的 README，升级 SDK 时应重新核对官方说明。
+
+`--version` 应对应表中的 OH SDK / Dart 版本；`doctor -v` 中与 OHOS 工具链相关的错误应先解决。Rust targets 列表必须同时含有上表两项。主构建脚本也会检查原生组件和固定源码要求。
+
+## 快速开始：x64 模拟器
+
+先完成上一节环境设置，以下命令沿用其中的 `$flutterOhSdk`、`$devEcoStudio`、`$ohFlutter` 和 `$hdc` 变量。
+
+### 1. 使用独立项目目录
 
 ```powershell
-./tool/build_ohos.ps1 -FlutterSdk D:/dev/tools/flutter_ohos `
-  -DevEcoStudio 'D:/Program Files/Huawei/DevEco Studio'
+git clone https://github.com/Kyosee/VeneraX.git D:/dev/project/venera-harmonyos
+Set-Location D:/dev/project/venera-harmonyos
 ```
 
-上述命令会为 x64 构建 debug 模式的完整 `lib/main.dart` 应用。添加 `-Target tool/ohos_smoke.dart` 可构建独立的启动验证探针。使用 SDK 自带的 `hdc` 安装 `build/ohos/hap/entry-default-unsigned.hap`，然后启动 `com.github.kyosee.venera` / `EntryAbility`。该探针检查沙箱目录、包信息、文件读写、SQLite WAL、独立 isolate 中的 QuickJS 值与 Promise、Unicode ZIP 条目、7z 解压及 PNG 像素往返处理。重启后，启动计数应增加。探针持久数据仅写入应用沙箱内专用的 `ohos_smoke.db`。
+已有独立 checkout 时直接进入它。后续命令都在项目根目录执行。两套 Flutter SDK 都会写入 `.dart_tool/package_config.json`、包依赖图和生成的插件文件，因此标准 Flutter 与 OH Flutter 需要不同的项目目录，不能只切换可执行文件。
 
-构建手机预览版时，使用 `-Target lib/main.dart -TargetPlatform ohos-arm64 -BuildMode release`。原生编译和打包会遵循所选 ABI。默认构建不签名；只有在 DevEco Studio 配置自己的有效签名身份后，显式传入 `-CodeSign` 才会签名。探针使用独立入口，验证结束后应重新构建并安装完整应用。
+VeneraX 已包含 `ohos/` 工程，无需对本项目重新运行 `flutter create`。不要从标准 checkout 复制 `.dart_tool`、`build` 或生成的插件配置。
 
-使用 `-Target tool/ohos_network_smoke.dart` 运行 HTTP 探针。它在设备上启动本地服务，验证 DNS、重定向、Cookie、流、工作 isolate、应用的 Dio 适配器、取消、超时及 HTTP 代理。测试专用证书用于验证默认拒绝、显式本地信任和主机名不匹配时的拒绝行为，不改变系统或应用的信任设置。
+### 2. 构建完整应用
 
-使用 `-Target tool/ohos_onnx_smoke.dart`，通过应用的 FFI 绑定验证 ONNX CPU 推理。覆盖工作 isolate、Unicode 模型文件名、输出形状、重复运行与会话、无效输入及贪心解码。这只验证运行时；OCR 模型及完整翻译流程仍需单独进行应用层验证。
+```powershell
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio
+Get-ChildItem build/ohos/hap/*.hap
+```
 
-使用 `-Target tool/ohos_reader_smoke.dart` 验证实际书源和下载流程，测试使用自包含的本地回环漫画源与生成的图片。覆盖书源导入与重载、QuickJS 网络搜索、详情、章节、图片请求头与解码像素、后台历史记录写入、章节排队下载，以及关闭服务后的离线读取。强制停止应用后再次启动，确认书源、进度和下载内容能跨进程保留。所有探针数据均放在独立的 `ohos_reader_probe` 目录中。此探针不验证阅读器手势、后台恢复或同步。
+默认构建入口为 `lib/main.dart`，平台为 `ohos-x64`，模式为 `debug`，不签名。首次构建会下载部分源码并编译原生库，耗时取决于网络和主机；各阶段见 [构建阶段与参数](#构建阶段与参数)。
 
-使用 `-Target tool/ohos_reader_ui_smoke.dart`，以生成的页面验证正式阅读器的六种阅读模式、音量键翻页、进度保存及图像增强着色器。它使用阅读器探针的独立数据目录。交互效果需要单独检查，编译结果不能替代交互验证。
+构建成功输出会打印实际 HAP 路径。当前验证过的工具链将 HAP 复制到 `build/ohos/hap/`，未签名包通常为 `entry-default-unsigned.hap`。切换架构或模式后仍可能使用相同文件名，应以本次成功构建的参数和输出为准；该目录也可能留下先前构建的文件。
 
-使用 `-Target tool/ohos_backup_smoke.dart`，在新建的临时目录中验证完整的 `.venera` 备份往返流程。它通过本地带认证的 WebDAV 服务和正式 RHttpAdapter 上传、下载备份，修改测试数据后恢复脚本、设置、历史、收藏和 Cookie。它不会配置远程同步账号，也不会向正常应用数据目录恢复内容。
+### 3. 连接并核对模拟器
 
-使用 `-Target tool/ohos_webview_smoke.dart` 运行 WebView 探针。覆盖初始自定义请求头与重定向、JavaScript 返回值、原生与 HttpOnly Cookie（含删除）、local/session storage、恶意存储键、来源隔离、重载、自定义/直连/系统代理切换，以及拒绝不受信任的 TLS 证书。测试只使用本地服务，不使用用户账号。探针通过不代表所有书源的登录或反爬流程都已验证。
+启动官方 HarmonyOS 7 / API 26 x86_64 手机模拟器。运行第一条命令，将 `REPLACE_WITH_DEVICE_ADDRESS` 改成输出中的设备地址，再执行后两条：
 
-使用 `-Target tool/ohos_system_smoke.dart` 验证电量、省电状态、网络连接方法与事件、保持屏幕唤醒请求、系统代理及可用的认证类型。认证桥接会在应用进入后台时取消认证，并且只接受官方定义的成功结果。当前模拟器未设置认证凭据；PIN 或生物认证成功流程仍需在合适设备上验证。
+```powershell
+& $hdc list targets
+$device = 'REPLACE_WITH_DEVICE_ADDRESS'
+& $hdc -t $device shell uname -m
+```
 
-使用 `-Target tool/ohos_file_smoke.dart`，交互验证文件导出/导入往返流程及选择器取消操作。分享测试会打开系统面板；应直接取消，不选择接收方。持久目录授权及接收外部分享的文本/链接采用独立实现；文件往返测试和模拟桥接测试均不能证明所有设备都支持目录选择。
+`uname -m` 应为 `x86_64`。模拟器外观显示的手机型号不决定 CPU 架构，ARM64 HAP 不能安装到该模拟器。
 
-官方 API 26 手机模拟器目前声明支持文件夹选择，但进入目录后没有完成选择的操作入口。使用文档规定的 FILE/FOLDER 选项编写独立原生 UIAbility，也能复现该行为。目录导入和自定义存储路径仍需在选择器可用的合适设备上验证授权目录的往返访问。鸿蒙漫画导出会为每个生成的 CBZ、PDF、EPUB 或 `.venera_comics` 文件打开系统保存对话框。取消会停止任务；保存失败不会计为导出完成。合并漫画归档只使用一次保存对话框。
+### 4. 安装、启动并验收
 
-Scan Kit 提供系统二维码扫描器；已验证界面的打开与取消。通知携带的 Want 在冷启动和热启动时均可将完整应用引导至下载及任务页面。后台桥接会让活动下载和 WebDAV 请求共享一个官方数据传输任务，按实际进度更新，并在最后一个请求结束时释放任务。`tool/ohos_background_smoke.dart` 验证进入后台后的真实并发 HTTP 传输、中断与恢复，以及通知移除。本地压缩和 OCR 不会申请网络后台任务。「省流」会在恢复前台及正常使用期间处理待保存的变更，不保证无限制的后台打包或上传。
+核对 `$hap` 与本次构建输出一致后执行：
 
-API 26 的桌面图标切换使用系统包管理器。启动时会检查 API 是否实际可用，以及所有已配置的图标预设，再决定是否显示设置项。`prepare_ohos.dart` 仅使用项目现有 PNG 生成 OHOS 图标资源；修改图标素材后，可用 `dart tool/prepare_ohos_icons.dart` 刷新资源，无需重新准备依赖。较早的系统保持默认图标。
+```powershell
+$hap = 'build/ohos/hap/entry-default-unsigned.hap'
+& $hdc -t $device install $hap
+& $hdc -t $device shell aa start -a EntryAbility -b com.github.kyosee.venera
+& $hdc -t $device shell bm dump -n com.github.kyosee.venera
+```
 
-`-Target tool/ohos_pdf_smoke.dart` 通过官方 PDF Kit 验证 PDF 转换。华为不支持在 x86 模拟器上使用此 Kit；原生渲染验证需要 ARM 模拟器或真机。生命周期检查可在本地运行 `node --test test/ohos/pdf_bridge_test.cjs`；Dart 端的导入清理逻辑由 OH Flutter SDK 下的 `test/ohos_pdf_import_test.dart` 覆盖。这些测试不能替代原生 PDF 渲染验证。
+已验证的官方 x64 模拟器允许安装该未签名包；普通真机需要签名。检查安装输出和实际主界面，再核对设置页版本与 `bm dump`，不要只凭安装命令退出码判断成功。
 
-ARM64 编译通过不代表真机验证通过。设备签名与用户侧加载仍未验证。不得将开发者私钥或绑定设备的 Profile 当作通用安装方案分发。
+源码构建版本来自当前 `pubspec.yaml`：OH SDK 会在构建时更新 OHOS 应用版本配置。不要把 `ohos/AppScope/app.json5` 的初始占位值或旧预览版的版本号当成本次产物版本。debug 构建也不应套用预览版 release 包的 `debug: false` 验收值。
 
-## 验证覆盖范围
+按自己修改的功能验证启动、阅读、下载、数据保存等流程；设备上的已有数据应先备份。若要验证 x64 release，可重新构建并重复安装检查：
+
+```powershell
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -TargetPlatform ohos-x64 -BuildMode release
+```
+
+## 构建阶段与参数
+
+### 脚本实际执行顺序
+
+| 顺序 | 阶段与入口 | 作用及失败定位 |
+|---|---|---|
+| 1 | OH Flutter `pub get --enforce-lockfile` | 从 `pubspec.lock` 解析依赖；依赖获取或 SDK 版本错误先在这里解决 |
+| 2 | [prepare_ohos.dart](../tool/prepare_ohos.dart) | 准备图标、OHOS 依赖副本、WebView 补丁、包配置和 native 源码映射 |
+| 3 | `refresh_plugins.dart` | 使用当前 OH SDK 的插件生成器注册适配器；模板在 [tool/ohos](../tool/ohos/refresh_plugins.dart.template) |
+| 4 | [build_ohos_rhttp.ps1](../tool/build_ohos_rhttp.ps1) | 从锁定 Rust 源码构建两种 OHOS ABI |
+| 5 | [build_ohos_onnx.ps1](../tool/build_ohos_onnx.ps1) | 获取指定 ONNX/Eigen 源码、应用项目补丁、构建两种 OHOS ABI |
+| 6 | OH Flutter `build hap --no-pub` | 按模式、入口和 HAP ABI 编译打包；原生 CMake 还会构建 SQLite、QuickJS、ZIP、7z 和 PNG |
+
+网络需能访问 Pub/Cargo 依赖、GitCode 的 WebView、GitHub 的 ONNX、GitLab 的 Eigen、SQLite 官方源码及 CMake 依赖下载地址。`-WebViewSource`、`-OnnxSource`、`-EigenSource` 可复用对应源码 checkout，但不代表整个构建可以离线。
+
+每次手动执行 `pub get` 后，OHOS 适配配置需要重新准备。日常直接使用主构建脚本，它会按顺序完成准备和插件注册；不要在准备后再运行一次会覆盖生成配置的依赖解析。脚本只临时修改进程环境，并在结束时恢复它修改的变量。
+
+### 参数表
+
+以下参数均属于 [build_ohos.ps1](../tool/build_ohos.ps1)。
+
+| 参数 | 默认值 | 用途 |
+|---|---|---|
+| `-FlutterSdk` | 必填 | OH Flutter SDK 根目录 |
+| `-DevEcoStudio` | 必填 | DevEco Studio 根目录 |
+| `-TargetPlatform` | `ohos-x64` | `ohos-x64` 或 `ohos-arm64`，决定最终 HAP ABI |
+| `-Target` | `lib/main.dart` | 完整应用或某个探针的 Dart 入口 |
+| `-BuildMode` | `debug` | `debug`、`profile`、`release` |
+| `-CodeSign` | 关闭 | 启用前必须在 DevEco 配好自己的有效签名身份 |
+| `-WebViewSource` | 自动准备 | WebView 固定提交的干净 checkout |
+| `-OnnxSource` | 自动准备 | ONNX 固定提交的 checkout；只允许项目规定的兼容补丁 |
+| `-EigenSource` | 自动准备 | Eigen 固定提交的干净 checkout |
+
+`-TargetPlatform` 选择最终 HAP 的 ABI；当前主脚本调用 rhttp 和 ONNX 构建时，仍各自构建 `x86_64`、`arm64-v8a` 两种库。切换到探针入口同样不会跳过这些原生构建阶段。
+
+## ARM64 构建、签名与安装
+
+生成未签名 ARM64 release HAP：
+
+```powershell
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -TargetPlatform ohos-arm64 -BuildMode release
+```
+
+该命令只完成编译打包，普通手机不能直接安装未签名 HAP。先连接目标手机，在 DevEco 打开独立 checkout 的 `ohos` 工程，按 [华为自动签名](https://developer.huawei.com/consumer/cn/doc/doccenter-deveco-studio/ide-signing-auto) 或 [手动签名](https://developer.huawei.com/consumer/cn/doc/doccenter-deveco-studio/ide-signing-manual) 流程配置自己的开发者身份、证书和包含该设备的 Profile。
+
+包名必须匹配 `com.github.kyosee.venera`，权限需匹配项目请求（包括 `ohos.permission.FILE_ACCESS_PERSIST`）。本机签名配置、证书、密码、私钥和 Profile 不提交 Git，不上传第三方签名网站。然后构建签名包：
+
+```powershell
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -TargetPlatform ohos-arm64 -BuildMode release -CodeSign
+Get-ChildItem build/ohos/hap/*.hap
+```
+
+确认最新成功输出是已签名 ARM64 HAP，替换下面的包路径和手机地址。先检查 `uname -m` 是 ARM64 架构（通常为 `aarch64`），再安装和启动：
+
+```powershell
+$signedHap = 'REPLACE_WITH_SIGNED_HAP_PATH'
+& $hdc list targets
+$device = 'REPLACE_WITH_PHONE_ADDRESS'
+& $hdc -t $device shell uname -m
+& $hdc -t $device install $signedHap
+& $hdc -t $device shell aa start -a EntryAbility -b com.github.kyosee.venera
+& $hdc -t $device shell bm dump -n com.github.kyosee.venera
+```
+
+覆盖安装需要兼容签名；不要直接卸载已有应用来绕过错误，以免丢失数据。安装后核对版本、启动及实际功能。ARM64 编译通过不代表签名、安装和运行通过；这些真机验证仍是待办，不能用 x64 模拟器记录替代。设备绑定的调试 Profile 不是通用分发方案。
+
+## 探针与功能验证
+
+### 如何运行并判断结果
+
+探针是独立的 Dart 入口，用于验证局部能力。以下示例构建基础探针，然后按快速开始中的步骤安装和启动：
+
+```powershell
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -Target tool/ohos_smoke.dart
+```
+
+将 `-Target` 替换成下表入口即可切换。基础/网络探针在界面和日志输出 `PASS` / `FAIL`；OCR 使用自己的结果前缀，后台探针输出结构化结果并提示人工检查，阅读 UI 还有单独的着色器结果。读取完整结果和交互提示；`Ready`、取消操作或某个子项通过都不代表整项完成。
+
+探针仅供本地开发，不作为发布附件。完成后用默认 `lib/main.dart` 重新构建并安装完整应用。基础探针数据在专用 `ohos_smoke.db`，阅读链路和 UI 探针使用独立 `ohos_reader_probe` 目录，备份探针使用新临时目录；不要把真实备份作为测试夹具。
+
+### 入口、覆盖范围和前置条件
+
+| 入口（位于 `tool/`） | 覆盖范围 | 额外检查与限制 |
+|---|---|---|
+| `ohos_smoke.dart` | 沙箱、包信息、文件读写、SQLite WAL、独立 isolate 的 QuickJS 值/Promise、Unicode ZIP、7z、PNG 像素往返 | 重启后启动计数应增加 |
+| `ohos_network_smoke.dart` | 设备本地 HTTP 服务上的 DNS、重定向、Cookie、流、工作 isolate、Dio、取消、超时、代理和 TLS | 测试证书覆盖默认拒绝、显式本地信任及主机名拒绝，不修改应用或系统信任设置 |
+| `ohos_onnx_smoke.dart` | FFI CPU 推理、工作 isolate、Unicode 模型名、输出形状、重复运行/会话、无效输入、贪心解码 | 运行时测试不能替代 OCR 模型及完整翻译验证 |
+| `ohos_reader_smoke.dart` | 本地回环书源导入/重载、QuickJS 搜索/详情/章节、图片请求头与像素、后台历史写入、排队下载、断网离线读取 | 强制停止后再启动，检查书源、进度和下载保留；不覆盖手势、后台恢复或同步 |
+| `ohos_reader_ui_smoke.dart` | 正式阅读器、生成页面、六种模式、音量键、进度和图像增强着色器 | 手势、交互与实际画面需单独检查，编译通过不足以判断 |
+| `ohos_backup_smoke.dart` | 本地带认证 WebDAV 与正式 RHttpAdapter 的 `.venera` 往返；修改夹具后恢复脚本、设置、历史、收藏、Cookie | 不配置远程同步账号，不恢复到正常应用数据 |
+| `ohos_webview_smoke.dart` | 初始请求头/重定向、JS 结果、原生与 HttpOnly Cookie 增删、local/session storage、恶意键、来源隔离、重载、代理切换和 TLS 拒绝 | 本地服务、无用户账号；具体书源登录与反爬仍需实测 |
+| `ohos_system_smoke.dart` | 电量、省电、网络方法/事件、屏幕唤醒、系统代理、认证类型 | 认证进入后台时取消，仅接受官方成功结果；未设置凭据的模拟器不能验证 PIN/生物认证成功 |
+| `ohos_file_smoke.dart` | 系统文件导出/导入往返与取消、打开分享面板 | 分享测试直接取消，不选接收方；不证明目录持久授权或接收外部文本/链接分享 |
+| `ohos_directory_smoke.dart` | 人工选择目录后的读写、重命名、SQLite WAL、ZIP 和授权恢复 | 需要选择器与持久授权可用；首次完成后重启复验，取消不算通过 |
+| `ohos_background_smoke.dart` | 进入后台后的本地并发 HTTP 传输、顺序、断流/恢复及通知移除 | 授予通知权限，并结合生命周期标记人工核对系统后台任务、通知及释放情况 |
+| `ohos_ocr_smoke.dart` | 真实英文 OCR、空白对照、模型释放重载、本地翻译及持久结果恢复 | 先启动下节模型服务；首次完整运行成功后再重启验证，不证明在线翻译质量 |
+| `ohos_pdf_smoke.dart` | 官方 PDF Kit 的页面转换、尺寸/像素及失败清理 | x86 模拟器不支持该 Kit；需要支持 PDF Kit 的 ARM 模拟器或真机 |
+
+### OCR 模型服务
+
+准备合法获取的本地模型目录，包含 `text_detector/det.onnx`、`ocr_en/rec.onnx`、`ocr_en/dict.txt`。三个文件大小分别须大于零且不超过 8 MiB、16 MiB、64 KiB。在第二个终端进入同一项目目录，将下面的模型根目录改成自己的路径：
+
+```powershell
+& $ohDart tool/serve_ohos_ocr_models.dart 'D:/models/translation_models' 18767
+```
+
+服务仅绑定宿主回环地址，默认端口 `18767`，只提供上述三个文件并返回 Content-Length；测试结束用 Ctrl+C 停止。探针默认从 `http://10.0.2.2:18767` 访问宿主，运行环境需要支持该模拟器宿主映射。探针只允许 HTTP 的 `127.0.0.1`、`::1`、`10.0.2.2` 根 URL，下载须完整且大小合规。
+
+主构建脚本没有 `--dart-define` 透传参数；自定义模型地址或 restore-only 模式属于源码中的进阶入口，不能直接追加到主脚本。先完成默认完整运行，再重启检查跨进程恢复；restore-only 不能跳过首次成功运行。
+
+### 需要人工核对的系统行为
+
+API 26 官方 x64 模拟器的目录选择器目前缺少进入目录后的完成动作；独立原生 UIAbility 的 FILE/FOLDER 选项也可复现。文件往返或模拟桥接测试不能证明目录授权可用。漫画导出对每个 CBZ、PDF、EPUB 或 `.venera_comics` 使用系统保存对话框，合并归档只出现一次；取消会停止任务，失败不能计为完成。
+
+Scan Kit 的打开和取消已记录通过，真实识码仍需设备测试。通知 Want 的冷/热启动跳转需要检查下载与任务页面；下载和 WebDAV 共享官方数据传输任务，按实际进度更新，最后一个请求结束时释放。本地压缩和 OCR 不申请网络后台任务，「省流」在恢复前台及正常使用时处理待保存变更，不保证无限制后台打包或上传。
+
+API 26 桌面图标切换在启动时检查 API 和全部预设后才显示设置；旧系统保留默认图标。`prepare_ohos.dart` 从项目 PNG 生成 OHOS 资源，素材更新后可用 OH SDK 的 `dart tool/prepare_ohos_icons.dart` 刷新图标，无需重新准备全部依赖。
+
+### 不打包的局部检查
+
+例如修改 PDF 生命周期和导入清理时，可以使用以下现有测试。Node 需支持测试使用的类型剥离 API；Dart 测试在已准备好的 OH checkout 中使用相同 OH SDK，`--no-pub` 避免重新解析覆盖适配配置。
+
+```powershell
+node --test test/ohos/pdf_bridge_test.cjs
+& $ohFlutter test --no-pub test/ohos_pdf_import_test.dart
+```
+
+这些检查覆盖桥接生命周期和 Dart 导入清理，不能代替原生 PDF Kit 渲染或设备交互验收。
+
+## 常见问题
+
+先找完整日志中最早失败的阶段和具体错误；主脚本的最后一行通常只是阶段失败摘要。
+
+| 现象 | 下一步 |
+|---|---|
+| 找不到 `flutter.bat`、JBR、Node、Clang、CMake 或 Ninja | 核对传入的 SDK 根目录及 DevEco SDK 组件；主脚本是 Windows 构建入口 |
+| `Flutter dependency resolution failed.` | 使用同一个 OH SDK 检查版本、网络和锁文件要求；不以随意升级锁文件绕过问题 |
+| `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | 准备脚本检测到已改写的包配置；从主构建脚本重新开始，让其按顺序解析、准备并注册 |
+| `WebView requires official commit` 或 `Cannot apply the OHOS loader patch` | 核对固定源码提交与锁定依赖；准备脚本依赖指定源码形态，不能手改共享缓存来绕过 |
+| `Missing OHOS Rust targets` | 安装两个 targets，并确认 `rustup run 1.85.1 rustc --version` 成功 |
+| `The OHOS ONNX build requires an x64 Windows host.` | 在 Windows x64 主机构建；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
+| ONNX/Eigen 下载、提交或源码修改检查失败 | 检查官方仓库访问及要求的提交；复用 checkout 时保留项目规定的补丁状态，其他修改先另存 |
+| `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | 检查前面的 Dart、hvigor 或 CMake 原始错误，以及生成配置是否被后续 `pub get` 覆盖 |
+| `00801017`、缺少 `x86_64` ABI、`install parse native so failed` | 对照设备 `uname -m`、本次目标参数与实际 HAP；排除误装另一个架构的旧产物 |
+| `Hello World` 或仍是旧版界面 | 安装失败可能保留旧应用；核对命令输出、包名和 `bm dump` 的版本 |
+| 真机签名错误 | 按官方流程配置自己的证书、设备 Profile、包名和权限；保留验签要求 |
+| 目录选择无完成按钮或 PDF 为 `PDF_UNAVAILABLE` | 对照已知设备限制；换支持对应能力的测试设备，不将此状态标为通过 |
+| OCR 下载失败或后台探针局部通过 | 检查本地模型服务、地址/大小限制，或人工核对通知与系统任务；参见探针前置条件 |
+
+反馈时提供工具版本、宿主/设备架构、所用命令、最早失败阶段和脱敏错误。不要提交账号、Cookie、令牌、私有备份或签名材料。
+
+## 验证记录与待办
+
+| 层级 | 当前记录 |
+|---|---|
+| 编译与打包 | 完整应用 x64 / ARM64 已构建；不等于设备运行验收 |
+| x64 模拟器 | 官方 HarmonyOS 7 / API 26，以下流程为既有记录 |
+| ARM64 真机 | 签名、安装、启动及功能仍需设备验证 |
+| 特定设备能力 | 目录授权、PIN/生物认证成功、ARM PDF Kit、真实扫码、具体登录和在线翻译仍需分别验证 |
 
 以下流程已在 API 26 x64 模拟器上运行。仓库内的探针使用生成的测试数据；私有验收数据必须留在仓库、构建输入、日志和截图之外。不得将用户备份上传到云设备或外部分析服务。
 
@@ -70,7 +304,7 @@ ARM64 编译通过不代表真机验证通过。设备签名与用户侧加载�
 
 仍需设备验证的项目包括目录授权、已设置凭据的 PIN/生物认证成功流程、ARM PDF Kit 导入与渲染、真实二维码识别、具体书源登录及在线翻译服务。现有桥接和单元测试覆盖错误处理，不能替代这些设备检查。发布测试版本前，签名和面向用户的侧加载仍需单独验证。
 
-## 依赖
+## 附录：依赖实现细节
 
 WebView 使用官方 CPF-Flutter/flutter_inappwebview OH 适配器，提交为 `389cf40dbb647f1df7272de5ea6b3401efe27a75`。可以通过 `-WebViewSource` 提供现有的干净检出目录，也可以让准备步骤从 GitCode 获取该提交。只有 Git 跟踪的源码会复制到 `.dart_tool/ohos`；公共 Flutter 封装和接口保持原有锁定版本。本地补丁覆盖接口兼容、初始请求顺序、HttpOnly 删除、存储隔离与键转义、SSL 错误报告，并保留浏览器的 TLS、来源和网络边界。准备完成后，SDK 的插件生成器会注册原生适配器。不会修改源检出目录或共享 Pub 缓存。
 
