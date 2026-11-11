@@ -57,6 +57,9 @@ class _GalleryModeState extends State<_GalleryMode>
   void dispose() {
     keyRepeatTimer?.cancel();
     _precacheTimer?.cancel();
+    for (final watch in _watching.values.toList()) {
+      watch.cancel();
+    }
     controller.dispose();
     for (final controller in photoViewControllers.values) {
       controller.dispose();
@@ -159,15 +162,16 @@ class _GalleryModeState extends State<_GalleryMode>
   // measured off the decodes the reader does anyway (the page on screen and
   // the precache window), and the pages regroup once the pager is at rest.
 
-  /// Providers whose image has decoded since the gallery opened.
-  final _decoded = <ImageProvider>{};
+  /// Providers with a decoded frame from their latest load.
+  final _decoded = <ImageProvider, Size>{};
 
-  /// Providers with a listener waiting for them to decode.
-  final _watching = <ImageProvider>{};
+  /// Size listeners retained until visible image widgets take over.
+  final _watching = <ImageProvider, ({Set<int> indices, VoidCallback cancel})>{};
 
-  /// Images of single-image pages built before they had decoded; those pages
-  /// are rebuilt once they have.
+  /// Images whose loading placeholders need rebuilding after decode.
   final _awaitingDecode = <int>{};
+
+  final _decodeErrors = <ImageProvider, Object>{};
 
   bool _regroupPending = false;
 
@@ -184,10 +188,107 @@ class _GalleryModeState extends State<_GalleryMode>
     _watchImage(_createImageProvider(index + 1, context), index);
   }
 
+  /// Resolve the visible grouping before drawing images into provisional slots.
+  bool _preparePageLayout(int page) {
+    if (!reader._layoutUsesWideImages) return true;
+    final (start, end) = getPageImagesRange(page);
+    var ready = true;
+    for (var index = start; index < end; index++) {
+      final provider = _createImageProvider(index + 1, context);
+      if (!_isDecoded(provider)) _awaitingDecode.add(index);
+      final cached = PaintingBinding.instance.imageCache.statusForKey(provider);
+      if (page == reader.page ||
+          cached.keepAlive ||
+          (cached.live && !cached.pending)) {
+        _watchImage(provider, index);
+      }
+      final size = reader.imageSizeOf(index);
+      if (size == null || !_isDecoded(provider)) {
+        ready = false;
+      } else if (size.width > size.height &&
+          (end - start > 1 ||
+              (reader.galleryLayout.splitWide &&
+                  reader.galleryLayout.halfOf(page) == null))) {
+        ready = false;
+      }
+    }
+    return ready;
+  }
+
+  PhotoViewGalleryPageOptions _buildPendingLayout(int page) {
+    final (start, end) = getPageImagesRange(page);
+    final error = [
+      for (var index = start; index < end; index++)
+        _decodeErrors[_createImageProvider(index + 1, context)],
+    ].whereType<Object>().firstOrNull;
+    return PhotoViewGalleryPageOptions.customChild(
+      childSize: MediaQuery.sizeOf(context),
+      disableGestures: true,
+      child: error == null
+          ? const Center(child: CircularProgressIndicator())
+          : NetworkError(
+              message: error.toString(),
+              withAppbar: false,
+              retry: () {
+                setState(() {
+                  for (var index = start; index < end; index++) {
+                    _decodeErrors.remove(
+                      _createImageProvider(index + 1, context),
+                    );
+                  }
+                });
+              },
+            ),
+    );
+  }
+
+  bool _isCurrentImage(ImageProvider provider, int index) =>
+      index >= 0 &&
+      index < (reader.images?.length ?? 0) &&
+      _createImageProvider(index + 1, context) == provider;
+
+  void _noteImageSizes(Iterable<int> indices, Size size) {
+    var needsBuild = false;
+    for (final index in indices) {
+      if (reader.noteImageSize(index, size)) _regroupPending = true;
+      if (_awaitingDecode.remove(index)) needsBuild = true;
+    }
+    _scheduleRegroup();
+    if (needsBuild) {
+      scheduleMicrotask(() {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  void _releaseAfterBuild(ImageProvider provider) {
+    final cancel = _watching[provider]?.cancel;
+    if (cancel == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_watching[provider]?.cancel == cancel) cancel();
+    });
+  }
+
+  void _releaseUnusedWatches() {
+    final (start, end) = getPageImagesRange(reader.page);
+    for (final entry in _watching.entries.toList()) {
+      entry.value.indices.removeWhere(
+        (index) => !_isCurrentImage(entry.key, index),
+      );
+      if (entry.value.indices.isEmpty ||
+          (_decoded.containsKey(entry.key) &&
+              !entry.value.indices.any(
+                (index) => index >= start && index < end,
+              ))) {
+        entry.value.cancel();
+      }
+    }
+  }
+
   /// Whether [provider]'s image has decoded and is still in memory, so a
   /// [ComicImage] shows it at once. Reader providers are their own cache key.
   bool _isDecoded(ImageProvider provider) {
-    if (!_decoded.contains(provider)) return false;
+    if (!_decoded.containsKey(provider)) return false;
     final status = PaintingBinding.instance.imageCache.statusForKey(provider);
     return !status.pending && (status.keepAlive || status.live);
   }
@@ -195,13 +296,35 @@ class _GalleryModeState extends State<_GalleryMode>
   /// Records image [index]'s size once [provider] has decoded, and rebuilds
   /// its page if that was built before.
   void _watchImage(ImageProvider provider, int index) {
-    if (_watching.contains(provider) ||
-        (_isDecoded(provider) && reader.imageSizeOf(index) != null)) {
+    if (!_isCurrentImage(provider, index) ||
+        _decodeErrors.containsKey(provider)) {
       return;
     }
-    _watching.add(provider);
+    final watching = _watching[provider];
+    if (watching != null) {
+      final size = _decoded[provider];
+      if (size != null && !_isDecoded(provider)) {
+        watching.cancel();
+      } else {
+        watching.indices.add(index);
+        if (size != null) _noteImageSizes([index], size);
+        return;
+      }
+    }
+    final size = _decoded[provider];
+    if (size != null && _isDecoded(provider)) {
+      _noteImageSizes([index], size);
+      return;
+    }
+    _decoded.remove(provider);
+    final indices = <int>{index};
     final stream = provider.resolve(createLocalImageConfiguration(context));
     late final ImageStreamListener listener;
+    late final VoidCallback cancel;
+    cancel = () {
+      stream.removeListener(listener);
+      if (_watching[provider]?.cancel == cancel) _watching.remove(provider);
+    };
     listener = ImageStreamListener(
       (info, _) {
         final size = Size(
@@ -209,27 +332,46 @@ class _GalleryModeState extends State<_GalleryMode>
           info.image.height.toDouble(),
         );
         info.dispose();
-        stream.removeListener(listener);
-        _watching.remove(provider);
-        if (!mounted) return;
-        _decoded.add(provider);
-        if (reader.noteImageSize(index, size)) {
-          _regroupPending = true;
-          _scheduleRegroup();
+        if (!mounted || _watching[provider]?.cancel != cancel) {
+          cancel();
+          return;
         }
-        if (_awaitingDecode.remove(index)) {
-          // May run inside a build when the image was already cached.
+        indices.removeWhere((index) => !_isCurrentImage(provider, index));
+        if (indices.isEmpty) {
+          cancel();
+          return;
+        }
+        _decoded[provider] = size;
+        _decodeErrors.remove(provider);
+        _noteImageSizes(indices, size);
+        // Keep visible frames alive until image widgets subscribe.
+        final (start, end) = getPageImagesRange(reader.page);
+        if (!indices.any((index) => index >= start && index < end)) {
+          cancel();
+        }
+      },
+      onError: (error, _) {
+        if (!mounted || _watching[provider]?.cancel != cancel) {
+          cancel();
+          return;
+        }
+        indices.removeWhere((index) => !_isCurrentImage(provider, index));
+        cancel();
+        _decoded.remove(provider);
+        if (indices.isEmpty) return;
+        _decodeErrors[provider] = error;
+        var needsBuild = false;
+        for (final index in indices) {
+          if (_awaitingDecode.remove(index)) needsBuild = true;
+        }
+        if (needsBuild) {
           scheduleMicrotask(() {
             if (mounted) setState(() {});
           });
         }
       },
-      onError: (_, _) {
-        stream.removeListener(listener);
-        _watching.remove(provider);
-        _decoded.remove(provider);
-      },
     );
+    _watching[provider] = (indices: indices, cancel: cancel);
     stream.addListener(listener);
   }
 
@@ -283,6 +425,7 @@ class _GalleryModeState extends State<_GalleryMode>
         photoViewControllers.removeWhere((key, _) => key != newPage);
       }
     });
+    _releaseUnusedWatches();
     context.readerScaffold.update();
     _schedulePrecache(newPage);
   }
@@ -306,6 +449,7 @@ class _GalleryModeState extends State<_GalleryMode>
     }
     if (newPage != oldPage) reader.page = newPage;
     setState(() => _remountPager = true);
+    _releaseUnusedWatches();
     context.readerScaffold.update();
     _schedulePrecache(newPage);
   }
@@ -346,6 +490,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   Widget build(BuildContext context) {
+    _releaseUnusedWatches();
     if (_remountPager) {
       _remountPager = false;
       // The page being read changed number or images: a fresh pager there,
@@ -402,6 +547,9 @@ class _GalleryModeState extends State<_GalleryMode>
               disableGestures: true,
             );
           } else {
+            if (!_preparePageLayout(index)) {
+              return _buildPendingLayout(index);
+            }
             var (startIndex, endIndex) = getPageImagesRange(index);
             List<String> pageImages = reader.images!.sublist(
               startIndex,
@@ -423,6 +571,9 @@ class _GalleryModeState extends State<_GalleryMode>
             // viewInsets, rebuilding every live gallery page on each frame of
             // the IME animation while typing in the embedded comments (#107).
             final viewportSize = MediaQuery.sizeOf(context);
+            for (var image = startIndex; image < endIndex; image++) {
+              _releaseAfterBuild(_createImageProvider(image + 1, context));
+            }
             return PhotoViewGalleryPageOptions.customChild(
               childSize: viewportSize,
               controller: photoViewControllers[index],
@@ -468,6 +619,8 @@ class _GalleryModeState extends State<_GalleryMode>
             }
           } else {
             reader.setPage(i);
+            _preparePageLayout(i);
+            _releaseUnusedWatches();
             _schedulePrecache(i);
             context.readerScaffold.update();
             // Auto close toolbar when entering chapter comments page
@@ -530,6 +683,7 @@ class _GalleryModeState extends State<_GalleryMode>
           return NetworkError(
             message: error.toString(),
             retry: () {
+              _decodeErrors.remove(provider);
               retry();
               _watchImage(provider, imageIndex);
             },
@@ -541,6 +695,7 @@ class _GalleryModeState extends State<_GalleryMode>
     final childSize = half == null ? size : Size(size.width / 2, size.height);
     final rightFirst = reader.galleryWidePageSplit == WidePageSplit.rightFirst;
     final showsRight = rightFirst == (half == GalleryHalf.first);
+    _releaseAfterBuild(provider);
     return PhotoViewGalleryPageOptions.customChild(
       controller: controller,
       childSize: childSize,
