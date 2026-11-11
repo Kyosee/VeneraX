@@ -176,6 +176,7 @@ class _SettingsSearchEntry {
         'Skip Sync Items' ||
         'Use Proxy for Sync' => 'Sync preferences',
         'Auto clean reading history' ||
+        'Clear reading progress when deleting a single history entry' ||
         'Export App Data' ||
         'Export Translation Results' ||
         'Import App Data' => 'Import, export & history',
@@ -519,6 +520,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
 
   // --- 3: Sync & backup ---
+  _SettingsSearchEntry(
+    'Clear reading progress when deleting a single history entry',
+    3,
+    keywords: ['history', 'delete', 'progress', 'read'],
+  ),
   _SettingsSearchEntry("Auto clean reading history", 3),
   _SettingsSearchEntry("Export App Data", 3, keywords: ["backup", "export"]),
   _SettingsSearchEntry(

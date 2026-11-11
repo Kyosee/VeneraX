@@ -444,6 +444,7 @@ class Settings with ChangeNotifier {
     'longPressZoomPosition': "press", // press, center
     'checkUpdateOnStart': true,
     'autoCleanHistoryDays': '0', // retention days; '0' keeps history forever
+    'clearReadingProgressOnSingleHistoryDelete': false,
     'limitImageWidth': true,
     // Image width as a percentage of viewport height when limitImageWidth is on
     // (40 - 150). Above the window's own width/height ratio the cap stops

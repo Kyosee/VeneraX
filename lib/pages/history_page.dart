@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
-import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/log.dart';
@@ -31,6 +31,7 @@ class _HistoryPageState extends State<HistoryPage>
   @override
   void initState() {
     HistoryManager().addListener(onUpdate);
+    appdata.settings.addListener(_onSettingsChanged);
     if (HistoryManager().length < _asyncHistoryLimit) {
       // Small dataset: load synchronously now. It's cheap, doesn't jank the
       // transition, and avoids a one-frame loading flash.
@@ -46,8 +47,13 @@ class _HistoryPageState extends State<HistoryPage>
   @override
   void dispose() {
     HistoryManager().removeListener(onUpdate);
+    appdata.settings.removeListener(_onSettingsChanged);
     searchTextController.dispose();
     super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   void _loadAsync() async {
@@ -243,19 +249,18 @@ class _HistoryPageState extends State<HistoryPage>
     );
   }
 
-  void _removeHistory(History comic) {
-    // Hide from the list, keeping reading position + chapter read marks so the
-    // comic's details page still shows read chapters. Reading it again (or the
-    // Undo action, which re-inserts the record) brings it back to the list.
-    if (comic.sourceKey.startsWith("Unknown")) {
-      HistoryManager().hide(
-        comic.id,
-        ComicType(int.parse(comic.sourceKey.split(':')[1])),
-      );
-    } else if (comic.sourceKey == 'local') {
-      HistoryManager().hide(comic.id, ComicType.local);
+  bool get _clearSingleHistoryProgress =>
+      appdata.settings['clearReadingProgressOnSingleHistoryDelete'] == true;
+
+  Future<History?> _removeHistory(
+    History comic, {
+    bool clearProgress = false,
+  }) async {
+    if (clearProgress) {
+      return HistoryManager().clearReadingProgress(comic.id, comic.type);
     } else {
-      HistoryManager().hide(comic.id, ComicType.fromKey(comic.sourceKey));
+      HistoryManager().hide(comic.id, comic.type);
+      return comic;
     }
   }
 
@@ -263,23 +268,39 @@ class _HistoryPageState extends State<HistoryPage>
     if (histories.isEmpty) {
       return;
     }
+    final clearProgress = histories.length == 1 && _clearSingleHistoryProgress;
     showConfirmDialog(
       context: context,
       title: "Delete".tl,
-      content: "Delete @c histories?".tlParams({"c": histories.length}),
+      content: clearProgress
+          ? 'Delete this history entry and clear its reading progress? Reading time statistics will be kept.'
+                .tl
+          : "Delete @c histories?".tlParams({"c": histories.length}),
       btnColor: context.colorScheme.error,
-      onConfirm: () {
-        var removedHistories = List<History>.from(histories);
+      onConfirm: () async {
+        final historiesToRemove = List<History>.from(histories);
+        final removedHistories = <History>[];
         exitSelectMode();
-        for (final comic in removedHistories) {
-          _removeHistory(comic);
+        try {
+          for (final comic in historiesToRemove) {
+            final removed = await _removeHistory(
+              comic,
+              clearProgress: clearProgress,
+            );
+            if (removed != null) removedHistories.add(removed);
+          }
+        } catch (e) {
+          if (mounted) context.showMessage(message: e.toString());
+          return;
         }
-        if (mounted) {
+        if (mounted && removedHistories.isNotEmpty) {
           showToast(
             context: context,
-            message: "Deleted @c histories".tlParams({
-              "c": removedHistories.length,
-            }),
+            message: clearProgress
+                ? 'History and reading progress deleted'.tl
+                : "Deleted @c histories".tlParams({
+                    "c": removedHistories.length,
+                  }),
             trailing: TextButton(
               onPressed: () {
                 for (final comic in removedHistories) {
@@ -294,16 +315,25 @@ class _HistoryPageState extends State<HistoryPage>
     );
   }
 
-  void _removeHistorySwipe(History comic) {
-    var removed = comic;
-    _removeHistory(removed);
-    if (mounted) {
+  void _removeHistorySwipe(History comic) async {
+    History? removed;
+    final clearProgress = _clearSingleHistoryProgress;
+    try {
+      removed = await _removeHistory(comic, clearProgress: clearProgress);
+    } catch (e) {
+      if (mounted) context.showMessage(message: e.toString());
+      return;
+    }
+    if (mounted && removed != null) {
+      final historyToRestore = removed;
       showToast(
         context: context,
-        message: "Deleted @c histories".tlParams({"c": 1}),
+        message: clearProgress
+            ? 'History and reading progress deleted'.tl
+            : "Deleted @c histories".tlParams({"c": 1}),
         trailing: TextButton(
           onPressed: () {
-            HistoryManager().addHistory(removed);
+            HistoryManager().addHistory(historyToRestore);
           },
           child: Text("Undo".tl),
         ),
@@ -553,6 +583,7 @@ class _HistoryPageState extends State<HistoryPage>
                             start: null,
                             end: SwipePane(
                               dismissOnFullSwipe: true,
+                              keepItemOnFullSwipe: _clearSingleHistoryProgress,
                               onFullSwipe: () =>
                                   _removeHistorySwipe(c as History),
                               actions: [

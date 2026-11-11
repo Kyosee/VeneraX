@@ -257,6 +257,15 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
             subtitle: 'App data, translated pages and reading history',
             icon: Icons.import_export,
             children: [
+              _SwitchSetting(
+                title:
+                    'Clear reading progress when deleting a single history entry'
+                        .tl,
+                settingKey: 'clearReadingProgressOnSingleHistoryDelete',
+                subtitle:
+                    'Also clear the saved page and read chapters when manually deleting one history entry. Batch deletion, clearing all history and automatic cleanup keep reading progress. Reading time statistics are kept.'
+                        .tl,
+              ),
               SelectSetting(
                 title: "Auto clean reading history".tl,
                 settingKey: "autoCleanHistoryDays",

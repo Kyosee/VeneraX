@@ -241,6 +241,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "checkUpdateOnStart",
       "minimizeToTray",
       "autoCleanHistoryDays",
+      "clearReadingProgressOnSingleHistoryDelete",
     ],
   ),
 ];

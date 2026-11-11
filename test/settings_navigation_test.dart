@@ -61,6 +61,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
+    testWidgets('single-history progress setting is usable in $locale', (
+      tester,
+    ) async {
+      const key = 'clearReadingProgressOnSingleHistoryDelete';
+      const title =
+          'Clear reading progress when deleting a single history entry';
+      final original = appdata.settings[key];
+      addTearDown(() => appdata.settings[key] = original);
+      appdata.settings['language'] = locale;
+      await open(tester, 390);
+      await search(tester, title);
+
+      final row = find.widgetWithText(ListTile, title.tl);
+      final toggle = find.descendant(of: row, matching: find.byType(Switch));
+      expect(toggle.hitTestable(), findsOneWidget);
+      expect(tester.widget<Switch>(toggle).value, isFalse);
+      await tester.runAsync(() async {
+        await tester.tap(toggle);
+        await appdata.saveData(false);
+      });
+      await tester.pumpAndSettle();
+      expect(appdata.settings[key], isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets(
     'wide settings starts populated and switches categories',
     (tester) async {
