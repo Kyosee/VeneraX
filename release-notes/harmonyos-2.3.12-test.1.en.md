@@ -18,6 +18,6 @@
 - Fix HarmonyOS background notifications opening the wrong page after switching between downloads and sync.
 - Fix HarmonyOS embedded web navigation potentially sending the full source page URL unnecessarily.
 
-**Current installation guide**: https://github.com/Kyosee/VeneraX/blob/master/doc/harmonyos-testing.md
+**Current installation guide**: https://github.com/Kyosee/VeneraX/blob/master/doc/harmonyos-testing.en.md
 
 **Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.12...harmonyos-2.3.12-test.1
