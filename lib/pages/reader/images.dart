@@ -129,7 +129,7 @@ class _ReaderImagesState extends State<_ReaderImages> {
           reader.chapter - 1,
         );
         var res = _loadedImages != null
-            ? Res(_loadedImages!)
+            ? Res(_loadedImages)
             : await reader
                   .type
                   .comicSource!
