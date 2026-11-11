@@ -228,6 +228,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   bool _isRunning = false;
 
+  /// Bumped by every [resume]. A run that was paused and superseded while
+  /// awaiting must not touch shared progress state once it wakes up.
+  int _runId = 0;
+
   bool _isError = false;
 
   String _message = "Fetching comic info...".tl;
@@ -277,8 +281,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     return source.loadComicPages!(comicId, ep);
   }
 
-  Future<void> _resolveCollectionDownloadChapters() async {
-    if (!_isRunning) return;
+  Future<void> _resolveCollectionDownloadChapters(
+    bool Function() isCurrent,
+  ) async {
+    if (!isCurrent()) return;
     final current = comic!.chapters;
     if (current == null) return;
     final pending = current.allChapters.keys
@@ -300,7 +306,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         throw 'The source of this comic is not installed'.tl;
       }
       final result = await memberSource!.loadComicInfo!(ref.comicId);
-      if (!_isRunning) return;
+      if (!isCurrent()) return;
       if (result.error) throw result.errorMessage!;
       final memberChapters = result.data.chapters?.allChapters;
       if (memberChapters == null) continue;
@@ -395,8 +401,9 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   Future<bool> _downloadChapterPool(
     List<String> images,
     String Function() buildMessage,
+    bool Function() isCurrent,
   ) async {
-    while (_isRunning && _index < images.length) {
+    while (isCurrent() && _index < images.length) {
       _scheduleTasks();
       // Fail the task if any image exhausted its retries.
       for (final t in tasks.values) {
@@ -420,7 +427,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       // Wait for ANY in-flight image rather than the head specifically.
       await Future.any(pending);
-      if (isPaused) return false;
+      if (!isCurrent()) return false;
       while (tasks[_index]?.isComplete == true) {
         _index++;
         _downloadedCount++;
@@ -428,12 +435,14 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       _message = buildMessage();
       LocalManager().scheduleSaveDownloadingTasks();
     }
-    return _isRunning;
+    return isCurrent();
   }
 
   @override
   void resume() async {
     if (_isRunning) return;
+    final runId = ++_runId;
+    bool isCurrent() => _isRunning && _runId == runId;
     _isError = false;
     _message = "Resuming...".tl;
     _isRunning = true;
@@ -454,7 +463,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           return r.data;
         }
       });
-      if (!_isRunning) {
+      if (!isCurrent()) {
         return;
       }
       if (res.error) {
@@ -475,8 +484,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         if (!(await dir.exists())) {
           await dir.create();
         }
+        if (!isCurrent()) return;
         path = dir.path;
       } catch (e, s) {
+        if (!isCurrent()) return;
         Log.error("Download", e.toString(), s);
         _setError("Error: $e");
         return;
@@ -484,6 +495,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
 
     await LocalManager().saveCurrentDownloadingTasks();
+    if (!isCurrent()) return;
 
     if (_cover == null) {
       _message = "Downloading cover...".tl;
@@ -504,6 +516,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         file.writeAsBytesSync(data);
         return "file://${file.path}";
       });
+      if (!isCurrent()) return;
       if (res.error) {
         Log.error("Download", res.errorMessage!);
         _setError("Error: ${res.errorMessage}");
@@ -533,7 +546,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
             return r.data;
           }
         });
-        if (!_isRunning) return;
+        if (!isCurrent()) return;
         if (res.error) {
           _setError("Error: ${res.errorMessage}");
           return;
@@ -552,7 +565,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
             return r.data;
           }
         });
-        if (!_isRunning) {
+        if (!isCurrent()) {
           return;
         }
         if (res.error) {
@@ -571,10 +584,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       notifyListeners();
       await LocalManager().saveCurrentDownloadingTasks();
     }
+    if (!isCurrent()) return;
 
     if (ComicCollectionStore.isCollectionSourceKey(source.key)) {
-      final result = await _runWithRetry(_resolveCollectionDownloadChapters);
-      if (!_isRunning) return;
+      final result = await _runWithRetry(
+        () => _resolveCollectionDownloadChapters(isCurrent),
+      );
+      if (!isCurrent()) return;
       if (result.error) {
         _setError("Error: ${result.errorMessage}");
         return;
@@ -615,7 +631,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
 
       for (var ci = _chapter; ci < chapterKeys.length; ci++) {
-        if (!_isRunning) return;
+        if (!isCurrent()) return;
         var key = chapterKeys[ci];
 
         startPrefetch(ci);
@@ -629,7 +645,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
           if (chapterDelay > Duration.zero && ci > _chapter) {
             await Future.delayed(chapterDelay);
-            if (!_isRunning) return;
+            if (!isCurrent()) return;
           }
 
           var startTime = prefetchStartTimes.remove(key) ?? DateTime.now();
@@ -643,7 +659,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           });
           var res = await future;
           var elapsed = DateTime.now().difference(startTime);
-          if (!_isRunning) return;
+          if (!isCurrent()) return;
           if (res.error) {
             Log.error("Download", res.errorMessage!);
             _setError("Error: ${res.errorMessage}");
@@ -667,6 +683,8 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           _images![key] = res.data;
           _totalCount += res.data.length;
           await LocalManager().saveCurrentDownloadingTasks();
+          // A superseded run must not clear the current run's tasks below.
+          if (!isCurrent()) return;
         }
 
         var images = _images![key]!;
@@ -678,6 +696,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
             "b": _index,
             "c": images.length,
           }),
+          isCurrent,
         );
         if (!ok) return;
         _index = 0;
@@ -685,11 +704,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
     } else {
       while (_chapter < _images!.length) {
+        if (!isCurrent()) return;
         var images = _images![_images!.keys.elementAt(_chapter)]!;
         tasks.clear();
         final ok = await _downloadChapterPool(
           images,
           () => "$_downloadedCount/$_totalCount",
+          isCurrent,
         );
         if (!ok) return;
         _index = 0;
@@ -916,14 +937,9 @@ class _ImageDownloadWrapper {
         lastBytes = p.currentBytes;
         if (p.imageBytes != null) {
           var fileType = detectFileType(p.imageBytes!);
-          // Reject obvious garbage before saving it as a "page": a source can
-          // answer 200 with an HTML error page, a truncated body, or an empty
-          // response. detectFileType reports image/* only for real image magic
-          // bytes, so a non-image mime (or a suspiciously tiny body) is treated
-          // as a failure and retried instead of silently storing a broken page
-          // that would surface as a corrupt image offline (#14).
-          if (!fileType.mime.startsWith('image/') ||
-              p.imageBytes!.length < 100) {
+          // Reject garbage before saving it as a page, so it is retried instead
+          // of surfacing as a corrupt image offline (#14).
+          if (!isValidDownloadedImage(p.imageBytes!)) {
             throw "Invalid image data (${p.imageBytes!.length} bytes, "
                 "${fileType.mime})";
           }
