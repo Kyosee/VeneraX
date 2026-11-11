@@ -60,6 +60,8 @@ const syncSkipCategories = <SyncSkipCategory>[
     "Reader mode, page turning, image enhancement and per-comic reader settings",
     [
       "readerMode",
+      "adaptiveReading",
+      "adaptivePagedMode",
       "enableContinuousChapterReading",
       "readerScreenPicNumberForLandscape",
       "readerScreenPicNumberForPortrait",

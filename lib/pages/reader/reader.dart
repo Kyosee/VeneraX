@@ -20,6 +20,7 @@ import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/adaptive_reading.dart';
 import 'package:venera/foundation/auto_page_turning.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/chapter_duplicates.dart';
@@ -258,6 +259,32 @@ class _ReaderState extends State<Reader>
 
   @override
   late ReaderMode mode;
+
+  AdaptiveReadingLayout? _adaptiveLayout;
+
+  ReaderMode get _preferredMode {
+    if (effectiveSetting('adaptiveReading') == true) {
+      if (_adaptiveLayout == AdaptiveReadingLayout.strip) {
+        return ReaderMode.continuousTopToBottom;
+      }
+      if (_adaptiveLayout == AdaptiveReadingLayout.paged) {
+        return ReaderMode.fromKey(effectiveSetting('adaptivePagedMode'));
+      }
+    }
+    return ReaderMode.fromKey(effectiveSetting('readerMode'));
+  }
+
+  void _refreshReadingMode() {
+    final image =
+        _openingImage ?? (images == null ? page : pageImageRange.$1 + 1);
+    _openingImage = image;
+    mode = _preferredMode;
+    _layout = null;
+    initImagesPerPage(image);
+    // Remount once, including seamless reading, at the same source image.
+    chapterJumpNonce++;
+    update();
+  }
 
   @override
   bool get isPortrait =>
@@ -551,12 +578,9 @@ class _ReaderState extends State<Reader>
               return _ReaderScaffold(
                 child: _ReaderGestureDetector(
                   child: _ReaderImages(
-                    // Seamless mode keeps a constant key so cross-chapter
-                    // scrolling doesn't remount. The nonce forces a one-off
-                    // remount when an explicit jump targets an unloaded chapter.
-                    key: _isSeamlessContinuous
-                        ? Key('seamless_$chapterJumpNonce')
-                        : Key(chapter.toString()),
+                    // Explicit chapter/mode changes remount once. Seamless
+                    // scrolling and initial layout detection keep this key.
+                    key: Key('reader_$chapterJumpNonce'),
                   ),
                 ),
               );
@@ -657,22 +681,6 @@ class _ReaderState extends State<Reader>
 
   @override
   bool isChapterHidden(int c) => _hiddenChapters.contains(c);
-
-  /// Seamless continuous reading spans every chapter inside a single
-  /// [_ContinuousMode]; scrolling into the next chapter bumps [chapter] without
-  /// a rebuild. Keying [_ReaderImages] by chapter would then tear down and
-  /// reload that widget on the next [update] (the tap-turn loading flash,
-  /// issue #117-4), so the key must stay stable in this mode.
-  bool get _isSeamlessContinuous =>
-      mode.isContinuous &&
-      widget.chapters != null &&
-      maxChapter > 1 &&
-      appdata.settings.getReaderSetting(
-            cid,
-            type.sourceKey,
-            'enableContinuousChapterReading',
-          ) ==
-          true;
 
   @override
   void onPageChanged() {

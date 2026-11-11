@@ -37,6 +37,7 @@ class _SettingsSearchEntry {
       title == 'Custom translation script' ? 'LLM providers' : title;
 
   String? get fallbackTitle => switch (title) {
+    'Paged comic reading mode' => 'Adaptive reading mode',
     'Night mode color' || 'Night mode intensity' => 'Night mode',
     'Long press zoom position' => 'Long press to zoom',
     'Custom tap-to-turn zones' => 'Page turn mode',
@@ -327,6 +328,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Page turn mode", 1, keywords: ["tap"]),
   _SettingsSearchEntry("Page animation", 1),
   _SettingsSearchEntry("Reading mode", 1, keywords: ["gallery", "continuous"]),
+  _SettingsSearchEntry(
+    'Adaptive reading mode',
+    1,
+    keywords: ['automatic', 'layout', 'strip', 'webtoon', '自适应', '条漫', '頁漫'],
+  ),
+  _SettingsSearchEntry('Paged comic reading mode', 1),
   _SettingsSearchEntry("Seamless chapter reading", 1),
   _SettingsSearchEntry(
     "The number of pic in screen for landscape (Only Gallery Mode)",

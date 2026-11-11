@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,8 +26,68 @@ void main() {
     appdata.settings['deviceSpecificSettings'] = <String, dynamic>{};
     appdata.settings['comicSpecificSettings'] = <String, dynamic>{};
     appdata.settings['readerMode'] = 'continuousTopToBottom';
+    appdata.settings['adaptiveReading'] = false;
     appdata.settings['showChapterComments'] = true;
   });
+
+  for (final scope in ['global', 'device', 'comic']) {
+    testWidgets('manual mode disables adaptive reading only in $scope scope', (
+      tester,
+    ) async {
+      appdata.settings['adaptiveReading'] = true;
+      if (scope == 'device') {
+        appdata.settings.setEnabledDeviceSpecificSettings(true);
+      } else if (scope == 'comic') {
+        appdata.settings.setEnabledComicSpecificSettings(
+          'comic',
+          'source',
+          true,
+        );
+      }
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReaderSettings(
+              comicId: scope == 'comic' ? 'comic' : null,
+              comicSource: scope == 'comic' ? 'source' : null,
+              section: 'Page layout',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final mode = find.byWidgetPredicate(
+        (widget) =>
+            widget is SelectSetting && widget.settingKey == 'readerMode',
+      );
+      await tester.ensureVisible(mode);
+      await tester.tap(mode);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gallery (Right to Left)').last);
+      await tester.pumpAndSettle();
+      var saved = false;
+      unawaited(appdata.saveData(false).then((_) => saved = true));
+      for (var i = 0; i < 100 && !saved; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 25));
+      }
+      expect(saved, isTrue);
+      expect(
+        appdata.settings.getReaderSetting('comic', 'source', 'adaptiveReading'),
+        isFalse,
+      );
+      expect(
+        appdata.settings.getReaderSetting('comic', 'source', 'readerMode'),
+        'galleryRightToLeft',
+      );
+      if (scope != 'global') {
+        expect(appdata.settings['adaptiveReading'], isTrue);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   test(
     'resetting one override restores inheritance and keeps other overrides',

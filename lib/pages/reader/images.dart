@@ -16,9 +16,53 @@ class _ReaderImagesState extends State<_ReaderImages> {
 
   late _ReaderState reader;
 
+  late final List<String>? _loadedImages;
+
+  bool _probingLayout = false;
+
+  Future<void> _prepareImages(List<String> images) async {
+    reader.images = images;
+    reader._syncLayoutChapter();
+    if (reader.effectiveSetting('adaptiveReading') == true &&
+        reader._adaptiveLayout == null) {
+      _probingLayout = true;
+      final result = await probeReadingLayout(
+        imageCount: images.length,
+        isCancelled: () => !mounted || !identical(reader.images, images),
+        readSize: (index) async {
+          final provider =
+              _createImageProvider(index + 1, context) as ReaderImageProvider;
+          final size = await provider.readDimensions(() {
+            if (!mounted ||
+                !_probingLayout ||
+                !identical(reader.images, images)) {
+              throw StateError('Reader layout probe ended');
+            }
+          });
+          if (mounted && _probingLayout && identical(reader.images, images)) {
+            reader.noteImageSize(index, size);
+          }
+          return size;
+        },
+      );
+      _probingLayout = false;
+      if (!mounted) return;
+      reader._adaptiveLayout = result;
+    }
+    if (!mounted) return;
+    reader.mode = reader._preferredMode;
+    reader._layout = null;
+    reader.initImagesPerPage(reader._openingImage ?? 1);
+    _placePageOnLoad();
+  }
+
   @override
   void initState() {
     reader = context.reader;
+    // Mode changes reuse the current chapter, including when offline.
+    _loadedImages = !reader.isLoading && reader._openingImage != null
+        ? reader.images
+        : null;
     reader.isLoading = true;
     super.initState();
   }
@@ -38,15 +82,13 @@ class _ReaderImagesState extends State<_ReaderImages> {
     if (reader._jumpToLastPageOnLoad) {
       reader._page = reader.maxPage;
       reader._jumpToLastPageOnLoad = false;
-    } else if (opening != null &&
-        reader.imagesPerPage > 1 &&
-        reader.galleryLayout.shifts.isNotEmpty) {
+    } else if (opening != null && reader.images!.isNotEmpty) {
       reader._page = reader.galleryLayout.screenOf(opening - 1);
     }
   }
 
   void load() async {
-    if (inProgress) return;
+    if (!mounted || inProgress) return;
     inProgress = true;
     if (reader.type == ComicType.local ||
         (LocalManager().isDownloaded(
@@ -56,17 +98,19 @@ class _ReaderImagesState extends State<_ReaderImages> {
           reader.widget.chapters,
         ))) {
       try {
-        var images = await LocalManager().getImages(
-          reader.cid,
-          reader.type,
-          reader.chapter,
-        );
+        var images =
+            _loadedImages ??
+            await LocalManager().getImages(
+              reader.cid,
+              reader.type,
+              reader.chapter,
+            );
+        if (!mounted) return;
+        await _prepareImages(images);
         if (!mounted) return;
         setState(() {
-          reader.images = images;
           reader.isLoading = false;
           inProgress = false;
-          _placePageOnLoad();
           Future.microtask(() {
             reader.updateHistory();
           });
@@ -84,14 +128,16 @@ class _ReaderImagesState extends State<_ReaderImages> {
         var cp = reader.widget.chapters?.ids.elementAtOrNull(
           reader.chapter - 1,
         );
-        var res = await reader
-            .type
-            .comicSource!
-            .loadComicPages!(reader.widget.cid, cp)
-            .timeout(
-              _readerPageLoadTimeout,
-              onTimeout: () => const Res.error("Network error"),
-            );
+        var res = _loadedImages != null
+            ? Res(_loadedImages!)
+            : await reader
+                  .type
+                  .comicSource!
+                  .loadComicPages!(reader.widget.cid, cp)
+                  .timeout(
+                    _readerPageLoadTimeout,
+                    onTimeout: () => const Res.error("Network error"),
+                  );
         if (!mounted) return;
         if (res.error) {
           setState(() {
@@ -100,11 +146,11 @@ class _ReaderImagesState extends State<_ReaderImages> {
             inProgress = false;
           });
         } else {
+          await _prepareImages(res.data);
+          if (!mounted) return;
           setState(() {
-            reader.images = res.data;
             reader.isLoading = false;
             inProgress = false;
-            _placePageOnLoad();
             Future.microtask(() {
               reader.updateHistory();
             });
@@ -131,7 +177,8 @@ class _ReaderImagesState extends State<_ReaderImages> {
   @override
   Widget build(BuildContext context) {
     if (reader.isLoading) {
-      load();
+      // Finish the old view's cancellation before starting this one's loads.
+      Future.microtask(load);
       return const Center(child: CircularProgressIndicator());
     } else if (error != null) {
       return GestureDetector(

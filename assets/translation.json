@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Adaptive reading mode": "自适应阅读模式",
+    "Paged comic reading mode": "页漫阅读模式",
+    "Detect page layout from several body images. Strips scroll vertically; uncertain layouts keep the selected mode. Selecting a mode manually turns this off.": "根据多张正文图片识别版式。条漫上下连续阅读，无法确定时沿用所选模式；手动选择阅读模式会关闭自适应。",
     "Ch. @chapter · @page/@total": "@chapter 章 · @page/@total 页",
     "Ch. @chapter · p. @page": "@chapter 章 · @page 页",
     "On this device": "本机",
@@ -1890,6 +1893,9 @@
     "Undo page shift": "取消错开"
   },
   "zh_TW": {
+    "Adaptive reading mode": "自適應閱讀模式",
+    "Paged comic reading mode": "頁漫閱讀模式",
+    "Detect page layout from several body images. Strips scroll vertically; uncertain layouts keep the selected mode. Selecting a mode manually turns this off.": "根據多張正文圖片識別版式。條漫上下連續閱讀，無法確定時沿用所選模式；手動選擇閱讀模式會關閉自適應。",
     "Ch. @chapter · @page/@total": "@chapter 章 · @page/@total 頁",
     "Ch. @chapter · p. @page": "@chapter 章 · @page 頁",
     "On this device": "本機",

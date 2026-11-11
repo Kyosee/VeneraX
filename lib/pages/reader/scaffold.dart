@@ -1169,16 +1169,15 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           comicId: context.reader.cid,
           comicSource: context.reader.type.sourceKey,
           currentPageImage: _snapshotCurrentPageImage,
+          currentReadingMode: () => context.reader.mode.key,
           onChanged: (key) {
             final scopeChanged = key == 'enabled';
-            if (key == "readerMode" || scopeChanged) {
-              context.reader.mode = ReaderMode.fromKey(
-                appdata.settings.getReaderSetting(
-                  context.reader.cid,
-                  context.reader.type.sourceKey,
-                  'readerMode',
-                ),
-              );
+            if (key == "readerMode" ||
+                key == 'adaptiveReading' ||
+                key == 'adaptivePagedMode' ||
+                key == 'enableContinuousChapterReading' ||
+                scopeChanged) {
+              context.reader._refreshReadingMode();
             }
             if (key == "enableTurnPageByVolumeKey" || scopeChanged) {
               if (appdata.settings.getReaderSetting(

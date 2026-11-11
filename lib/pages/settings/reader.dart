@@ -34,6 +34,7 @@ class ReaderSettings extends StatefulWidget {
     this.translationOnly = false,
     this.showSearch = false,
     this.currentPageImage,
+    this.currentReadingMode,
     this.section,
   });
 
@@ -47,6 +48,9 @@ class ReaderSettings extends StatefulWidget {
   /// Caller-owned copy of the page open in the reader, for the image
   /// enhancement preview. Null outside the reader.
   final ImageInfo? Function()? currentPageImage;
+
+  /// The active layout may differ from the saved fallback while adapting.
+  final String Function()? currentReadingMode;
 
   @override
   State<ReaderSettings> createState() => _ReaderSettingsState();
@@ -89,6 +93,11 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   /// specific comic with per-comic settings on, then this device's, else global.
   /// Used by conditional rows so they follow the same value the reader reads.
   dynamic _effectiveSetting(String key) {
+    if (key == 'readerMode' &&
+        _effectiveSetting('adaptiveReading') == true &&
+        widget.currentReadingMode != null) {
+      return widget.currentReadingMode!();
+    }
     final comicId = widget.comicId;
     final sourceKey = widget.comicSource;
     if (comicId != null && sourceKey != null) {
@@ -406,6 +415,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         "continuousTopToBottom": "Continuous (Top to Bottom)".tl,
       },
       onChanged: () {
+        _writeEffectiveSetting('adaptiveReading', false);
         setState(() {});
         var readerMode = _effectiveSetting('readerMode');
         if (readerMode?.toLowerCase().startsWith('continuous') ?? false) {
@@ -503,6 +513,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             comicSource: widget.comicSource,
             onChanged: widget.onChanged,
             currentPageImage: widget.currentPageImage,
+            currentReadingMode: widget.currentReadingMode,
           ),
         );
         refreshSettings();
@@ -514,6 +525,37 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             icon: Icons.menu_book_outlined,
             common: true,
             children: [
+              _SwitchSetting(
+                title: 'Adaptive reading mode'.tl,
+                subtitle:
+                    'Detect page layout from several body images. Strips scroll vertically; uncertain layouts keep the selected mode. Selecting a mode manually turns this off.'
+                        .tl,
+                settingKey: 'adaptiveReading',
+                onChanged: () {
+                  refreshSettings();
+                  widget.onChanged?.call('adaptiveReading');
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              if (_effectiveSetting('adaptiveReading') == true)
+                SelectSetting(
+                  title: 'Paged comic reading mode'.tl,
+                  settingKey: 'adaptivePagedMode',
+                  optionTranslation: readingMode.optionTranslation,
+                  onChanged: () {
+                    refreshSettings();
+                    widget.onChanged?.call('adaptivePagedMode');
+                  },
+                  comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                  comicSource: isEnabledSpecificSettings
+                      ? widget.comicSource
+                      : null,
+                  useDeviceSettings: useDeviceSpecificSettings,
+                ),
               if (selectedSection == null)
                 _buildReadingModes(readingMode)
               else
@@ -1336,6 +1378,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       comicId: widget.comicId,
                       comicSource: widget.comicSource,
                       onChanged: widget.onChanged,
+                      currentReadingMode: widget.currentReadingMode,
                     ),
                   ),
                 ),

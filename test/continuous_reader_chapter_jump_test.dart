@@ -17,6 +17,7 @@ import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/translations.dart';
 
 const _sourceKey = 'continuous_chapter_jump_test';
@@ -28,6 +29,25 @@ const _chapters = ComicChapters({
 });
 const _pageCounts = {'ep1': 2, 'ep2': 3, 'ep3': 4};
 const _colors = [Color(0xFFF44336), Color(0xFF4CAF50), Color(0xFF2196F3)];
+
+class _PageFile implements File {
+  _PageFile(this.path, this.bytes);
+
+  @override
+  final String path;
+  final Uint8List bytes;
+
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Future<Uint8List> readAsBytes() async => bytes;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _PlatformFiles extends IOOverrides {}
 
 List<String> _images(String ep) => [
   for (var page = 1; page <= _pageCounts[ep]!; page++)
@@ -112,10 +132,17 @@ void main() {
     WidgetTester tester,
     String mode,
     Completer<void> pending,
-    List<String?> requests,
-  ) async {
+    List<String?> requests, {
+    bool adaptive = false,
+    int initialChapter = 2,
+    int initialPage = 1,
+    Size imageSize = const Size(430, 900),
+    Map<String, Uint8List>? encodedPages,
+  }) async {
     appdata.settings['language'] = 'en-US';
     appdata.settings['readerMode'] = mode;
+    appdata.settings['adaptiveReading'] = adaptive;
+    appdata.settings['adaptivePagedMode'] = 'galleryRightToLeft';
     appdata.settings['showChapterComments'] = false;
     appdata.settings['enableContinuousChapterReading'] = true;
     appdata.settings['enableClockAndBatteryInfoInReader'] = false;
@@ -135,25 +162,38 @@ void main() {
       final recorder = ui.PictureRecorder();
       ui.Canvas(recorder).drawColor(_colors[chapter - 1], ui.BlendMode.src);
       final picture = recorder.endRecording();
-      final pixels = await tester.runAsync(() => picture.toImage(430, 900));
+      final pixels = await tester.runAsync(
+        () =>
+            picture.toImage(imageSize.width.toInt(), imageSize.height.toInt()),
+      );
       picture.dispose();
+      if (encodedPages != null) {
+        final bytes = await tester.runAsync(
+          () => pixels!.toByteData(format: ui.ImageByteFormat.png),
+        );
+        for (final image in images) {
+          encodedPages[image] = bytes!.buffer.asUint8List();
+        }
+      }
       for (var page = 1; page <= images.length; page++) {
         // A URL keeps its own artwork even if the caller uses a wrong chapter.
         for (var callerChapter = 1; callerChapter <= 3; callerChapter++) {
-          final provider = ReaderImageProvider(
-            images[page - 1],
-            _sourceKey,
-            _comicId,
-            'ep$callerChapter',
-            page,
-            enableResize: true,
-          );
-          PaintingBinding.instance.imageCache.putIfAbsent(
-            provider,
-            () => OneFrameImageStreamCompleter(
-              SynchronousFuture(ImageInfo(image: pixels!.clone())),
-            ),
-          );
+          for (final resize in [false, true]) {
+            final provider = ReaderImageProvider(
+              images[page - 1],
+              _sourceKey,
+              _comicId,
+              'ep$callerChapter',
+              page,
+              enableResize: resize,
+            );
+            PaintingBinding.instance.imageCache.putIfAbsent(
+              provider,
+              () => OneFrameImageStreamCompleter(
+                SynchronousFuture(ImageInfo(image: pixels!.clone())),
+              ),
+            );
+          }
         }
       }
       pixels!.dispose();
@@ -162,8 +202,8 @@ void main() {
       'id': _comicId,
       'type': source.intKey,
       'title': 'Chapter jump test',
-      'ep': 2,
-      'page': 1,
+      'ep': initialChapter,
+      'page': initialPage,
     });
     await tester.pumpWidget(
       MaterialApp(
@@ -177,7 +217,8 @@ void main() {
               name: 'Chapter jump test',
               chapters: _chapters,
               history: history,
-              initialChapter: 2,
+              initialChapter: initialChapter,
+              initialPage: initialPage,
               author: '',
               tags: const [],
             ),
@@ -186,7 +227,12 @@ void main() {
       ),
     );
     // The pending next-chapter loader keeps its progress indicator animating.
-    for (var frame = 0; frame < 5; frame++) {
+    for (var frame = 0; frame < (adaptive ? 20 : 5); frame++) {
+      if (adaptive) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
       await tester.pump(const Duration(milliseconds: 100));
     }
     return history;
@@ -229,7 +275,7 @@ void main() {
     }))!;
   }
 
-  testWidgets('chapter jumps keep their artwork after a background preload', (
+  testWidgets('reader modes and chapter jumps preserve artwork and position', (
     tester,
   ) async {
     // Keep the native history worker in one widget-test clock.
@@ -296,6 +342,147 @@ void main() {
         if (!pending.isCompleted) pending.complete();
         await closeReader(tester, history);
       }
+    }
+    // Keep the native history worker in this same widget-test clock.
+    final files = <String, Uint8List>{};
+    final platformFiles = IOOverrides.current ?? _PlatformFiles();
+    await IOOverrides.runZoned(
+      () async {
+        for (final (size, expectedMode) in [
+          (const Size(300, 900), ReaderMode.continuousTopToBottom),
+          (const Size(600, 900), ReaderMode.galleryRightToLeft),
+        ]) {
+          final pending = Completer<void>()..complete();
+          final requests = <String?>[];
+          final history = await openReader(
+            tester,
+            'galleryLeftToRight',
+            pending,
+            requests,
+            adaptive: true,
+            initialChapter: 3,
+            initialPage: 3,
+            imageSize: size,
+            encodedPages: files,
+          );
+          try {
+            final dynamic reader = tester.state(find.byType(Reader));
+            expect(reader.isLoading, isFalse);
+            expect(reader.mode, expectedMode);
+            expect(reader.pageImageRange.$1, 2);
+            final dynamic scaffold = tester.state(
+              find.byWidgetPredicate(
+                (widget) => widget.runtimeType.toString() == '_ReaderScaffold',
+              ),
+            );
+            scaffold.openOrClose();
+            scaffold.openSetting();
+            await tester.pump();
+            await tester.pumpAndSettle();
+            final settings = tester.widget<ReaderSettings>(
+              find.byType(ReaderSettings),
+            );
+            if (expectedMode == ReaderMode.continuousTopToBottom) {
+              await tester.enterText(
+                find.byType(TextField),
+                'Spacing between pages',
+              );
+              await tester.pumpAndSettle();
+              await tester.tap(
+                find.byKey(
+                  const ValueKey('settings-result-Spacing between pages'),
+                ),
+              );
+              await tester.pumpAndSettle();
+              expect(
+                find
+                    .widgetWithText(ListTile, 'Spacing between pages')
+                    .hitTestable(),
+                findsOneWidget,
+              );
+              appdata.settings['enableContinuousChapterReading'] = false;
+              settings.onChanged!('enableContinuousChapterReading');
+              await tester.pumpAndSettle();
+              await tester.tap(find.byTooltip('Back').hitTestable().last);
+              await tester.pumpAndSettle();
+              expect(find.byType(ReaderSettings), findsNothing);
+              scaffold.openOrClose();
+              await tester.pumpAndSettle();
+              final scroll = tester.state<ScrollableState>(
+                find
+                    .descendant(
+                      of: find.byType(CustomScrollView).hitTestable().first,
+                      matching: find.byType(Scrollable),
+                    )
+                    .first,
+              );
+              scroll.position.jumpTo(scroll.position.minScrollExtent);
+              await tester.pumpAndSettle();
+              expect(await centerPixel(tester), _colors[2]);
+              expect(reader.chapter, 3);
+              expect(reader.page, 1);
+              reader.toPage(3);
+              await tester.pumpAndSettle();
+            }
+            appdata.settings['adaptiveReading'] = false;
+            appdata.settings['readerMode'] = 'galleryLeftToRight';
+            settings.onChanged!('readerMode');
+            await tester.pumpAndSettle();
+            expect(reader.mode, ReaderMode.galleryLeftToRight);
+            expect(requests.where((chapter) => chapter == 'ep3'), hasLength(1));
+            expect(reader.pageImageRange.$1, 2);
+            expect(history.page, 3);
+            expect(reader.toChapter(2), isTrue);
+            await tester.pumpAndSettle();
+            expect(reader.images, _images('ep2'));
+            expect(reader.mode, ReaderMode.galleryLeftToRight);
+            expect(history.ep, 2);
+            expect(tester.takeException(), isNull);
+          } finally {
+            await closeReader(tester, history);
+          }
+        }
+      },
+      createFile: (path) => files.containsKey(path)
+          ? _PageFile(path, files[path]!)
+          : platformFiles.createFile(path),
+    );
+    final pending = Completer<void>();
+    final history = await openReader(
+      tester,
+      'galleryLeftToRight',
+      pending,
+      [],
+      initialChapter: 3,
+      initialPage: 3,
+    );
+    try {
+      final dynamic reader = tester.state(find.byType(Reader));
+      expect(reader.isLoading, isTrue);
+      final dynamic scaffold = tester.state(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_ReaderScaffold',
+        ),
+      );
+      scaffold.openOrClose();
+      scaffold.openSetting();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final settings = tester.widget<ReaderSettings>(
+        find.byType(ReaderSettings),
+      );
+      appdata.settings['readerMode'] = 'galleryRightToLeft';
+      settings.onChanged!('readerMode');
+      await tester.pump();
+      pending.complete();
+      await tester.pumpAndSettle();
+      expect(reader.mode, ReaderMode.galleryRightToLeft);
+      expect(reader.page, 3);
+      expect(history.page, 3);
+      expect(tester.takeException(), isNull);
+    } finally {
+      if (!pending.isCompleted) pending.complete();
+      await closeReader(tester, history);
     }
   });
 }

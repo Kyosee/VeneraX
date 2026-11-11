@@ -417,6 +417,8 @@ class Settings with ChangeNotifier {
     'autoPageTurningMode': 'page', // page, scroll
     'autoScrollSpeed': 15, // 1 - 30, higher is faster
     'readerMode': 'galleryLeftToRight', // values of [ReaderMode]
+    'adaptiveReading': false,
+    'adaptivePagedMode': 'galleryLeftToRight',
     'enableContinuousChapterReading': true,
     'readerScreenPicNumberForLandscape': 1, // 1 - 5
     'readerScreenPicNumberForPortrait': 1, // 1 - 5

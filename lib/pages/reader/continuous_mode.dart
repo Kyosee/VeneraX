@@ -491,6 +491,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
       _positionResolveScheduled = false;
       if (mounted) _onScrollPositionSettled();
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   /// Distance from the viewport's leading edge to the line the current page is
@@ -517,7 +518,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// ScrollablePositionedList's itemPositions listener). Drives the scaffold
   /// page indicator for both modes, and chapter-window loading for seamless.
   void _onScrollPositionSettled() {
-    if (!_scrollController.hasClients) return;
+    if (_repivoting || !_scrollController.hasClients) return;
     final box = context.findRenderObject();
     if (box is! RenderBox) return;
     final viewportLeadingGlobal = box.localToGlobal(Offset.zero);
@@ -590,7 +591,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (!onComments &&
         pos.hasContentDimensions &&
         pos.maxScrollExtent > pos.minScrollExtent &&
-        pos.pixels >= pos.maxScrollExtent - 1) {
+        pos.pixels >= pos.maxScrollExtent - 1 &&
+        !_hasPendingVisibleImages(box)) {
       current = _lastLaidOutImageEntry() ?? current;
     }
     current ??= _entries.firstWhere(
@@ -607,6 +609,26 @@ class _ContinuousModeState extends State<_ContinuousMode>
     } else {
       cacheImages(current.page);
     }
+  }
+
+  /// Loading placeholders cannot establish that the chapter end is visible.
+  bool _hasPendingVisibleImages(RenderBox viewport) {
+    final visible = viewport.localToGlobal(Offset.zero) & viewport.size;
+    for (final state in imageStates) {
+      if (state is! _ComicImageState ||
+          !state.mounted ||
+          state._imageInfo != null) {
+        continue;
+      }
+      final box = state.context.findRenderObject();
+      if (box is RenderBox &&
+          box.attached &&
+          box.hasSize &&
+          visible.overlaps(box.localToGlobal(Offset.zero) & box.size)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Loads the previous/next chapter as the current reading position
@@ -1377,6 +1399,15 @@ class _ContinuousModeState extends State<_ContinuousMode>
       child: child,
     );
 
+    widget = NotificationListener<ScrollMetricsNotification>(
+      onNotification: (notification) {
+        if (notification.depth == 0 && !_repivoting) {
+          _schedulePositionResolve();
+        }
+        return false;
+      },
+      child: widget,
+    );
     widget = NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (_repivoting) return true;
@@ -2181,7 +2212,7 @@ class _SwipeChangeChapterProgressState
             size: 16,
           ),
           const SizedBox(width: 4),
-          Text(msg),
+          Flexible(child: Text(msg)),
         ],
       ).paddingVertical(6).paddingHorizontal(16),
     );

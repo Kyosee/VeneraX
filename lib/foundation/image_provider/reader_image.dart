@@ -1,4 +1,5 @@
-import 'dart:async' show Future;
+import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
@@ -84,6 +85,26 @@ class ReaderImageProvider
 
   @override
   final bool enableResize;
+
+  /// Read the processed image header without allocating its full bitmap.
+  Future<Size> readDimensions(void Function() checkStop) async {
+    final chunks = StreamController<ImageChunkEvent>.broadcast();
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      checkStop();
+      final bytes = await load(chunks, checkStop);
+      checkStop();
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      checkStop();
+      return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
+      await chunks.close();
+    }
+  }
 
   @override
   Future<Uint8List> load(chunkEvents, checkStop) async {

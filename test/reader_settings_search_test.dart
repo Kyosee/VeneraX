@@ -26,6 +26,7 @@ void main() {
     appdata.settings['deviceSpecificSettings'] = <String, dynamic>{};
     appdata.settings['comicSpecificSettings'] = <String, dynamic>{};
     appdata.settings['readerMode'] = 'galleryLeftToRight';
+    appdata.settings['adaptiveReading'] = false;
     appdata.settings['readerNightMode'] = false;
     appdata.settings['readerNightModeFollowSystem'] = false;
     appdata.settings['showPageNumberInReader'] = true;
@@ -110,6 +111,13 @@ void main() {
       await search(tester, 'Split wide pages'.tl);
       await select(tester, 'Split wide pages');
       expect(find.text('Split wide pages'.tl).hitTestable(), findsOneWidget);
+      await search(tester, 'Paged comic reading mode'.tl);
+      await select(tester, 'Paged comic reading mode');
+      expect(
+        find.text('Adaptive reading mode'.tl).hitTestable(),
+        findsOneWidget,
+      );
+      expect(appdata.settings['adaptiveReading'], isFalse);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });
