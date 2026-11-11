@@ -42,9 +42,10 @@ const _sections = <int, List<String>>{
     'E-ink screen',
   ],
   2: ['Sorting and placement', 'Library maintenance'],
-  3: ['Import, export & history', 'Sync preferences'],
+  3: ['Data import & export', 'Sync preferences'],
   4: [
     'Card details',
+    'Reading history',
     'Search preferences',
     'Browsing pages',
     'Content filters',

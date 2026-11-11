@@ -175,11 +175,9 @@ class _SettingsSearchEntry {
         'Sync Local Comics' ||
         'Skip Sync Items' ||
         'Use Proxy for Sync' => 'Sync preferences',
-        'Auto clean reading history' ||
-        'Clear reading progress when deleting a single history entry' ||
         'Export App Data' ||
         'Export Translation Results' ||
-        'Import App Data' => 'Import, export & history',
+        'Import App Data' => 'Data import & export',
         _ => 'Data management',
       };
     }
@@ -191,6 +189,9 @@ class _SettingsSearchEntry {
         'Show read later status on comic tile' ||
         'Show collection status on comic tile' ||
         'Show page count on comic tile' => 'Card details',
+        'Auto clean reading history' ||
+        'Clear reading progress when deleting a single history entry' =>
+          'Reading history',
         'Default Search Target' ||
         'Auto Language Filters' ||
         'Search Sources' => 'Search preferences',
@@ -285,6 +286,12 @@ class _SettingsSearchEntry {
 /// time so this is safe to construct before [App] is initialized.
 final _settingsSearchIndex = <_SettingsSearchEntry>[
   // --- 4: Explore ---
+  _SettingsSearchEntry(
+    'Clear reading progress when deleting a single history entry',
+    4,
+    keywords: ['history', 'delete', 'progress', 'read'],
+  ),
+  _SettingsSearchEntry("Auto clean reading history", 4),
   _SettingsSearchEntry("Display mode of comic tile", 4),
   _SettingsSearchEntry("Size of comic tile", 4),
   _SettingsSearchEntry("Explore Pages", 4),
@@ -520,12 +527,6 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
 
   // --- 3: Sync & backup ---
-  _SettingsSearchEntry(
-    'Clear reading progress when deleting a single history entry',
-    3,
-    keywords: ['history', 'delete', 'progress', 'read'],
-  ),
-  _SettingsSearchEntry("Auto clean reading history", 3),
   _SettingsSearchEntry("Export App Data", 3, keywords: ["backup", "export"]),
   _SettingsSearchEntry(
     "Export Translation Results",
