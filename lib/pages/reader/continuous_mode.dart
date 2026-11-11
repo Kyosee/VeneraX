@@ -1887,6 +1887,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (images == null || images.isEmpty) return false;
     final targetPage = toLastPage ? images.length : 1;
     reader.chapter = chapter;
+    reader.images = images;
     reader.page = targetPage;
     context.readerScaffold.update();
     final animate = reader.enablePageAnimation(reader.cid, reader.type);
