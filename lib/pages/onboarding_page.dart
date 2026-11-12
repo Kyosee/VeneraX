@@ -34,7 +34,7 @@ class OnboardingPage extends StatefulWidget {
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  late int _step = OnboardingStore.instance.state.needsAgreement() ? 0 : 1;
+  int _step = 0;
   bool _busy = false;
   bool? _notifications;
   String? _restored;

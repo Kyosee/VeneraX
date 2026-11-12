@@ -204,7 +204,7 @@ void main() {
 
   for (final favorite in [false, true]) {
     final name = favorite ? 'quoted favorite folder' : 'history';
-    test('$name repairs setup and preserves acceptance and database', () async {
+    test('restored $name keeps setup unfinished', () async {
       final firstLaunch = OnboardingStore();
       await firstLaunch.load(directory.path);
       await firstLaunch.accept('zh-TW', version: kDisclaimerVersion + 1);
@@ -224,24 +224,20 @@ void main() {
       await nextLaunch.load(directory.path);
 
       expect(nextLaunch.loadError, isNull);
-      expect(nextLaunch.state.setupCompleted, isTrue);
+      expect(nextLaunch.state.setupCompleted, isFalse);
       expect(nextLaunch.state.acceptedVersion, accepted.acceptedVersion);
       expect(nextLaunch.state.acceptedAt, accepted.acceptedAt);
       expect(nextLaunch.state.acceptedLanguage, accepted.acceptedLanguage);
       expect(nextLaunch.state.needsAgreement(), isFalse);
-      expect(nextLaunch.blocksAutomaticTasks, isFalse);
+      expect(nextLaunch.blocksAutomaticTasks, isTrue);
       expect(await database.readAsBytes(), previousBytes);
-      expect(jsonDecode(await record.readAsString()), {
-        ...accepted.toJson(),
-        'setupCompleted': true,
-      });
+      expect(jsonDecode(await record.readAsString()), accepted.toJson());
     });
   }
 
   test('a busy usage database blocks setup and permits a safe retry', () async {
     final firstLaunch = OnboardingStore();
     await firstLaunch.load(directory.path);
-    await firstLaunch.accept('en-US');
     final previousRecord = await record.readAsString();
     final database = File('${directory.path}/history.db');
     _createUsageDatabase(database, populated: true);
@@ -267,8 +263,9 @@ void main() {
     expect(nextLaunch.loadError, isNull);
     expect(nextLaunch.state.setupCompleted, isTrue);
     expect(nextLaunch.state.acceptedAt, firstLaunch.state.acceptedAt);
-    expect(nextLaunch.state.acceptedLanguage, 'en-US');
-    expect(nextLaunch.blocksAutomaticTasks, isFalse);
+    expect(nextLaunch.state.acceptedLanguage, isNull);
+    expect(nextLaunch.state.needsAgreement(), isTrue);
+    expect(nextLaunch.blocksAutomaticTasks, isTrue);
     expect(
       (jsonDecode(await record.readAsString()) as Map)['setupCompleted'],
       isTrue,

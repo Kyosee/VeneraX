@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/app_update_dialog.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/disclaimer_content.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/disclaimer.dart';
+import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/onboarding_page.dart';
 import 'package:venera/pages/onboarding_restore.dart';
 import 'package:venera/pages/onboarding_style.dart';
@@ -107,6 +109,133 @@ void main() {
     onFinished: () {},
     onDeclined: () {},
   );
+
+  Future<void> acceptAgreement(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('agreement-consent')));
+    await tester.pump();
+    final dynamic accept = tester
+        .widget<FilledButton>(find.byKey(const ValueKey('agreement-accept')))
+        .onPressed!;
+    // Await the actual button callback, including its atomic disk write.
+    await tester.runAsync(() async => await accept());
+    await tester.pumpAndSettle();
+  }
+
+  for (final interruptedStep in [1, 2, 3]) {
+    testWidgets('restart at setup step $interruptedStep requires agreement', (
+      tester,
+    ) async {
+      await tester.pumpWidget(MaterialApp(home: setupPage()));
+      await acceptAgreement(tester);
+      for (var step = 1; step < interruptedStep; step++) {
+        await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+        await tester.pumpAndSettle();
+      }
+      expect(find.byType(AgreementPanel), findsNothing);
+      expect(store.state.setupCompleted, isFalse);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() => store.load(temp.path));
+      await tester.pumpWidget(MaterialApp(home: setupPage()));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgreementPanel), findsOneWidget);
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('agreement-accept')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(store.state.setupCompleted, isFalse);
+      expect(store.blocksAutomaticTasks, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final existingUser in [false, true]) {
+    testWidgets(
+      'update dialog cannot bypass agreement: existing=$existingUser',
+      (tester) async {
+        store.state = OnboardingState(setupCompleted: existingUser);
+        await tester.pumpWidget(const MaterialApp(home: StartupPage()));
+        await tester.pumpAndSettle();
+        expect(find.byType(AgreementPanel), findsOneWidget);
+        expect(find.byType(MainPage), findsNothing);
+
+        final notice = showDialog<void>(
+          context: tester.element(find.byType(AgreementPanel)),
+          builder: (_) => AppUpdateDialog(
+            currentVersion: '1.0.0',
+            latestVersion: '1.0.1',
+            changelog: const [],
+            onReleasePage: () async {},
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('update-secondary')));
+        await tester.pumpAndSettle();
+        await notice;
+
+        expect(find.byType(AppUpdateDialog), findsNothing);
+        expect(find.byType(AgreementPanel), findsOneWidget);
+        expect(find.byType(MainPage), findsNothing);
+        expect(store.state.acceptedVersion, 0);
+        expect(store.blocksAutomaticTasks, isTrue);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final entry in ['launch', 'unlock', 'retry']) {
+    testWidgets('reopening setup via $entry waits for renewed consent', (
+      tester,
+    ) async {
+      final savedWebdav = appdata.settings['webdav'];
+      final savedAutoSync = appdata.implicitData['webdavAutoSync'];
+      final savedSyncMode = appdata.implicitData['webdavSyncMode'];
+      addTearDown(() {
+        appdata.settings['webdav'] = savedWebdav;
+        appdata.implicitData['webdavAutoSync'] = savedAutoSync;
+        appdata.implicitData['webdavSyncMode'] = savedSyncMode;
+      });
+      await tester.runAsync(() async {
+        await store.accept('en-US');
+        await store.load(temp.path);
+      });
+      appdata.settings['webdav'] = <String>[];
+      appdata.implicitData['webdavAutoSync'] = true;
+      appdata.implicitData['webdavSyncMode'] = 'realtime';
+      if (entry == 'unlock') {
+        appdata.settings['authorizationRequired'] = true;
+        appdata.settings['appLockType'] = 'pin';
+      } else if (entry == 'retry') {
+        store.loadError = const FileSystemException('Fixture read failure');
+      }
+
+      await tester.pumpWidget(const MaterialApp(home: StartupPage()));
+      await tester.pump();
+      if (entry == 'unlock') {
+        expect(find.byType(AuthPage), findsOneWidget);
+        tester.widget<AuthPage>(find.byType(AuthPage)).onSuccessfulAuth!();
+      } else if (entry == 'retry') {
+        final dynamic retry = tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Retry'))
+            .onPressed!;
+        await tester.runAsync(() async => await retry());
+      }
+      await tester.pumpAndSettle();
+
+      // Service initialization must not apply setup defaults before consent.
+      expect(appdata.implicitData['webdavAutoSync'], isTrue);
+      expect(appdata.implicitData['webdavSyncMode'], 'realtime');
+      expect(find.byType(AgreementPanel), findsOneWidget);
+      expect(find.byType(MainPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
     testWidgets('agreement shortcuts scroll to their sections in $language', (
@@ -235,11 +364,7 @@ void main() {
               brightness,
             );
 
-            // Acceptance persistence is covered separately; keep layout offline.
-            await tester.pumpWidget(const SizedBox.shrink());
-            await tester.runAsync(() => store.accept(language));
-            await tester.pumpWidget(themed(setupPage()));
-            await tester.pumpAndSettle();
+            await acceptAgreement(tester);
             expectTitleLeading(
               tester,
               OnboardingLanguageArt,
@@ -486,7 +611,6 @@ void main() {
   testWidgets('fresh setup can skip optional permissions and restore', (
     tester,
   ) async {
-    await tester.runAsync(() => store.accept('en-US'));
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -500,6 +624,7 @@ void main() {
         ),
       ),
     );
+    await acceptAgreement(tester);
     await tester.tap(find.text('Continue'));
     await tester.pump();
     await tester.tap(find.text('Skip for now'));
@@ -526,7 +651,6 @@ void main() {
         'desktop access notes fit $platform in $language',
         (tester) async {
           appdata.settings['language'] = language;
-          await tester.runAsync(() => store.accept(language));
           tester.view.physicalSize = const Size(1100, 760);
           tester.view.devicePixelRatio = 1;
           addTearDown(tester.view.reset);
@@ -539,6 +663,7 @@ void main() {
               ),
             ),
           );
+          await acceptAgreement(tester);
           await tester.tap(find.text('Continue'.tl));
           await tester.pump();
           expect(find.text('Features and access'.tl), findsOneWidget);

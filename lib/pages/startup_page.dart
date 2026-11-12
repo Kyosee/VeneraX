@@ -36,6 +36,7 @@ class _StartupPageState extends State<StartupPage> {
     AuthPage.isActive = !_unlocked;
     if (_unlocked &&
         _store.loadError == null &&
+        _store.state.setupCompleted &&
         !_store.state.needsAgreement()) {
       unawaited(_ensureServices());
     }
@@ -79,6 +80,7 @@ class _StartupPageState extends State<StartupPage> {
           setState(() {});
           if (_unlocked &&
               _store.loadError == null &&
+              _store.state.setupCompleted &&
               !_store.state.needsAgreement()) {
             unawaited(_ensureServices());
           }
@@ -90,7 +92,9 @@ class _StartupPageState extends State<StartupPage> {
         onSuccessfulAuth: () {
           AuthPage.isActive = false;
           setState(() => _unlocked = true);
-          if (!_store.state.needsAgreement()) unawaited(_ensureServices());
+          if (_store.state.setupCompleted && !_store.state.needsAgreement()) {
+            unawaited(_ensureServices());
+          }
         },
       );
     }

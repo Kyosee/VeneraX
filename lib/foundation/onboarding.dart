@@ -77,7 +77,10 @@ class OnboardingStore {
             throw const FormatException();
           }
           state = OnboardingState.fromJson(json);
-          if (!state.setupCompleted && await _hasUserData(dataPath)) {
+          // Accepted, unfinished setup may already contain restored data.
+          if (!state.setupCompleted &&
+              state.acceptedVersion == 0 &&
+              await _hasUserData(dataPath)) {
             await _save(
               OnboardingState(
                 setupCompleted: true,
