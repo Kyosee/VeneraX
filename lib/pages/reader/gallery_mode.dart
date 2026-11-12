@@ -77,9 +77,9 @@ class _GalleryModeState extends State<_GalleryMode>
   void _schedulePrecache(int page) {
     _precacheTimer?.cancel();
     _precacheTimer = Timer(const Duration(milliseconds: 200), () {
-      if (!mounted || reader.page != page || isChapterCommentsPage(page)) {
-        return;
-      }
+      if (!mounted || reader.page != page) return;
+      // On the comments page this warms up the last image, the page a turn
+      // back from there shows.
       cache(page);
     });
   }
