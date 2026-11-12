@@ -359,6 +359,12 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
                           text: "Move To First".tl,
                           onClick: () => LocalManager().moveToFirst(t),
                         ),
+                        if (t.canKeepDownloadedPages)
+                          MenuEntry(
+                            icon: Icons.done,
+                            text: "Keep downloaded pages".tl,
+                            onClick: () => t.keepDownloadedPages(),
+                          ),
                       ],
                     ),
                   ],
