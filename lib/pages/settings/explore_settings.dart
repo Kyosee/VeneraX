@@ -150,6 +150,23 @@ class _ExploreSettingsState extends State<ExploreSettings> {
                 }()),
               },
             ),
+            SelectSetting(
+              title: "Auto Language Filters".tl,
+              settingKey: "autoAddLanguageFilter",
+              optionTranslation: {
+                'none': "None".tl,
+                'chinese': "Chinese",
+                'english': "English",
+                'japanese': "Japanese",
+              },
+            ),
+            _PopupWindowSetting(
+              title: "Language Filter Sources".tl,
+              subtitle:
+                  "Only add sources whose search supports the language: syntax. Searches on these sources get the selected language added, e.g. abc becomes abc language:chinese."
+                      .tl,
+              builder: setLanguageFilterSourcesWidget,
+            ),
             _PopupWindowSetting(
               title: "Search Sources".tl,
               builder: setSearchSourcesWidget,
@@ -402,6 +419,20 @@ Widget setSearchSourcesWidget() {
   return _MultiPagesFilter(
     title: "Search Sources".tl,
     settingsIndex: "searchSources",
+    pages: pages,
+  );
+}
+
+Widget setLanguageFilterSourcesWidget() {
+  var pages = <String, String>{};
+  for (var c in ComicSource.all()) {
+    if (c.searchPageData != null) {
+      pages[c.key] = c.name;
+    }
+  }
+  return _MultiPagesFilter(
+    title: "Language Filter Sources".tl,
+    settingsIndex: "languageFilterSources",
     pages: pages,
   );
 }

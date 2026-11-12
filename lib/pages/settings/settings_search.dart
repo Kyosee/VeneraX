@@ -194,6 +194,8 @@ class _SettingsSearchEntry {
         'Clear reading progress when deleting a single history entry' =>
           'Reading history',
         'Default Search Target' ||
+        'Auto Language Filters' ||
+        'Language Filter Sources' ||
         'Search Sources' => 'Search preferences',
         'Explore Pages' ||
         'Category Pages' ||
@@ -308,6 +310,12 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   _SettingsSearchEntry("Tag blocking", 4, keywords: ["block", "filter", "tag"]),
   _SettingsSearchEntry("Comment keyword blocking", 4, keywords: ["block"]),
   _SettingsSearchEntry("Default Search Target", 4, keywords: ["search"]),
+  _SettingsSearchEntry("Auto Language Filters", 4, keywords: ["language"]),
+  _SettingsSearchEntry(
+    "Language Filter Sources",
+    4,
+    keywords: ["language", "source"],
+  ),
   _SettingsSearchEntry("Initial Page", 4),
   _SettingsSearchEntry("Display mode of comic list", 4),
   _SettingsSearchEntry("Comic Source", 4, keywords: ["source", "extension"]),

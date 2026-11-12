@@ -153,8 +153,8 @@ const syncSkipCategories = <SyncSkipCategory>[
       "categories",
       "searchSources",
       "defaultSearchTarget",
-      // Retired setting; kept so saved skip lists don't surface it as unknown.
       "autoAddLanguageFilter",
+      "languageFilterSources",
       "blockedWords",
       "blockedTags",
       "blockedCommentWords",

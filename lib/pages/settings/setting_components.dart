@@ -725,16 +725,23 @@ class _SliderSettingState extends State<_SliderSetting> {
 }
 
 class _PopupWindowSetting extends StatelessWidget {
-  const _PopupWindowSetting({required this.title, required this.builder});
+  const _PopupWindowSetting({
+    required this.title,
+    required this.builder,
+    this.subtitle,
+  });
 
   final Widget Function() builder;
 
   final String title;
 
+  final String? subtitle;
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
       trailing: const Icon(Icons.arrow_right),
       onTap: () {
         showPopUpWidget(App.rootContext, builder());

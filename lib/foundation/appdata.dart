@@ -498,6 +498,8 @@ class Settings with ChangeNotifier {
     'imageTranslationScripts': <String, dynamic>{},
     'customImageProcessing': defaultCustomImageProcessing,
     'sni': true,
+    'autoAddLanguageFilter': 'none', // none, chinese, english, japanese
+    'languageFilterSources': [], // source keys picked by the user
     'comicSourceListUrl': _defaultSourceListUrl,
     'comicSourceLibraries': [],
     'comicSourceProvenance': <String, dynamic>{},

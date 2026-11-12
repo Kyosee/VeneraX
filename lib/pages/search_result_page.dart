@@ -49,15 +49,16 @@ class _SearchResultPageState extends State<SearchResultPage> {
       if (suggestionsController.entry != null) {
         suggestionsController.remove();
       }
+      text = checkAutoLanguage(text);
       // Re-searching the current target is pointless when it can't search, so
       // hand the keyword to the aggregated search rather than leaving the user
       // typing into a dead search bar.
       if (_searchData == null) {
-        context.to(() => AggregatedSearchPage(keyword: text));
+        context.to(() => AggregatedSearchPage(keyword: text!));
         return;
       }
       setState(() {
-        this.text = text;
+        this.text = text!;
       });
       appdata.addSearchHistory(text);
       controller.currentText = text;
@@ -101,10 +102,17 @@ class _SearchResultPageState extends State<SearchResultPage> {
     super.dispose();
   }
 
+  String checkAutoLanguage(String text) => applyAutoLanguageFilter(
+    text,
+    sourceKey: sourceKey,
+    language: appdata.settings["autoAddLanguageFilter"],
+    enabledSources: appdata.settings["languageFilterSources"],
+  );
+
   @override
   void initState() {
     sourceKey = widget.sourceKey;
-    text = widget.text;
+    text = checkAutoLanguage(widget.text);
     controller = SearchBarController(currentText: text, onSearch: search);
     options = widget.options ?? const [];
     validateOptions();
@@ -199,7 +207,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
               );
               if (!previousOptions.isEqualTo(options) ||
                   previousSourceKey != sourceKey) {
-                text = controller.text;
+                text = checkAutoLanguage(controller.text);
                 controller.currentText = text;
                 setState(() {});
               }
@@ -209,6 +217,25 @@ class _SearchResultPageState extends State<SearchResultPage> {
       ],
     );
   }
+}
+
+/// Appends `language:<language>` for sources the user opted into.
+String applyAutoLanguageFilter(
+  String text, {
+  required String sourceKey,
+  Object? language,
+  Object? enabledSources,
+}) {
+  if (language is! String || language.isEmpty || language == 'none') {
+    return text;
+  }
+  if (enabledSources is! List || !enabledSources.contains(sourceKey)) {
+    return text;
+  }
+  if (text.contains('language:')) {
+    return text;
+  }
+  return '$text language:$language';
 }
 
 class _SuggestionsController {
