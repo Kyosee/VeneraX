@@ -150,16 +150,6 @@ class _ExploreSettingsState extends State<ExploreSettings> {
                 }()),
               },
             ),
-            SelectSetting(
-              title: "Auto Language Filters".tl,
-              settingKey: "autoAddLanguageFilter",
-              optionTranslation: {
-                'none': "None".tl,
-                'chinese': "Chinese",
-                'english': "English",
-                'japanese': "Japanese",
-              },
-            ),
             _PopupWindowSetting(
               title: "Search Sources".tl,
               builder: setSearchSourcesWidget,

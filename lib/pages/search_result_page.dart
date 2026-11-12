@@ -49,16 +49,15 @@ class _SearchResultPageState extends State<SearchResultPage> {
       if (suggestionsController.entry != null) {
         suggestionsController.remove();
       }
-      text = checkAutoLanguage(text);
       // Re-searching the current target is pointless when it can't search, so
       // hand the keyword to the aggregated search rather than leaving the user
       // typing into a dead search bar.
       if (_searchData == null) {
-        context.to(() => AggregatedSearchPage(keyword: text!));
+        context.to(() => AggregatedSearchPage(keyword: text));
         return;
       }
       setState(() {
-        this.text = text!;
+        this.text = text;
       });
       appdata.addSearchHistory(text);
       controller.currentText = text;
@@ -102,27 +101,10 @@ class _SearchResultPageState extends State<SearchResultPage> {
     super.dispose();
   }
 
-  String checkAutoLanguage(String text) {
-    var setting = appdata.settings["autoAddLanguageFilter"] ?? 'none';
-    if (setting == 'none') {
-      return text;
-    }
-    var searchSource = sourceKey;
-    // TODO: Move it to a better place
-    const enabledSources = ['nhentai', 'ehentai'];
-    if (!enabledSources.contains(searchSource)) {
-      return text;
-    }
-    if (!text.contains('language:')) {
-      return '$text language:$setting';
-    }
-    return text;
-  }
-
   @override
   void initState() {
     sourceKey = widget.sourceKey;
-    text = checkAutoLanguage(widget.text);
+    text = widget.text;
     controller = SearchBarController(currentText: text, onSearch: search);
     options = widget.options ?? const [];
     validateOptions();
@@ -217,7 +199,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
               );
               if (!previousOptions.isEqualTo(options) ||
                   previousSourceKey != sourceKey) {
-                text = checkAutoLanguage(controller.text);
+                text = controller.text;
                 controller.currentText = text;
                 setState(() {});
               }
