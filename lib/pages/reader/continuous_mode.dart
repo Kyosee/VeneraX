@@ -476,6 +476,10 @@ class _ContinuousModeState extends State<_ContinuousMode>
   /// rapid scroll ticks coalesce into one resolution per frame.
   bool _positionResolveScheduled = false;
 
+  /// The chapter comments, not an image, hold the reading line. The page the
+  /// reader is on is then the chapter's last.
+  bool _readingComments = false;
+
   void onScroll() {
     // Swipe-past-edge to change chapter only applies in non-seamless mode.
     if (!seamlessChapterReading) {
@@ -601,6 +605,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
           ? const _ContinuousReaderEntry.separator(chapter: 0, hasNext: false)
           : _entries.first,
     );
+    _readingComments = onComments;
     if (!current.isImage) return;
     _syncReaderLocation(current);
     if (seamlessChapterReading) {
@@ -1008,25 +1013,24 @@ class _ContinuousModeState extends State<_ContinuousMode>
     if (entry.chapter > 0 && reader.showChapterCommentsAtEnd) {
       final chapters = reader.widget.chapters!;
       final vertical = reader.mode == ReaderMode.continuousTopToBottom;
+      final gestures = context.readerScaffold._gestureDetectorState;
+      final comments = EmbeddedChapterCommentsPage(
+        key: ValueKey('chapter-comments-${entry.chapter}'),
+        comicId: reader.cid,
+        epId: chapters.ids.elementAt(entry.chapter - 1),
+        source: reader.type.comicSource!,
+        comicTitle: reader.widget.name,
+        chapterTitle: _chapterTitle(entry.chapter),
+        scrollWithReader: vertical,
+        chapterNavigation: _buildCommentsNavigation(entry),
+        onPageTap: gestures?.onChapterCommentsTap,
+      );
       return KeyedSubtree(
         key: _itemKeyFor(entry.chapter, 0),
         child: SizedBox(
           width: MediaQuery.sizeOf(context).width,
           height: vertical ? null : MediaQuery.sizeOf(context).height,
-          child: Listener(
-            onPointerDown: (_) =>
-                context.readerScaffold._gestureDetectorState?.ignoreNextTap(),
-            child: EmbeddedChapterCommentsPage(
-              key: ValueKey('chapter-comments-${entry.chapter}'),
-              comicId: reader.cid,
-              epId: chapters.ids.elementAt(entry.chapter - 1),
-              source: reader.type.comicSource!,
-              comicTitle: reader.widget.name,
-              chapterTitle: _chapterTitle(entry.chapter),
-              scrollWithReader: vertical,
-              chapterNavigation: _buildCommentsNavigation(entry),
-            ),
-          ),
+          child: gestures?.wrapChapterComments(comments) ?? comments,
         ),
       );
     }
@@ -1791,8 +1795,14 @@ class _ContinuousModeState extends State<_ContinuousMode>
         ? _indexOfEntry(reader.chapter, reader.page)
         : _indexOfEntry(intended.entry.chapter, intended.entry.page);
     final current = intended?.entry ?? _entries[curIdx];
+    final fromComments = intended == null && _readingComments;
+    if (fromComments && !forward && current.isImage) {
+      // Back from the chapter comments shows the chapter's last page.
+      _requestTurn((entry: current, lowerHalf: true));
+      return true;
+    }
     // A split page taller than the screen takes two turns, one per half.
-    if (_entryTurnsByHalves(current)) {
+    if (!fromComments && _entryTurnsByHalves(current)) {
       final onLower = intended?.lowerHalf ?? _isOnLowerHalf(current);
       if (forward != onLower) {
         _requestTurn((entry: current, lowerHalf: forward));

@@ -267,113 +267,144 @@ class _ReaderGestureDetectorState
       return;
     } else if (context.readerScaffold.isOpen) {
       context.readerScaffold.openOrClose();
-    } else {
-      // Don't open toolbar on chapter comments page
-      if (reader.isOnChapterCommentsPage) {
-        return;
-      }
-      if (appdata.settings.getReaderSetting(
-        reader.cid,
-        reader.type.sourceKey,
-        'enableTapToTurnPages',
-      )) {
-        bool isLeft = false, isRight = false, isTop = false, isBottom = false;
-        final width = context.width;
-        final height = context.height;
-        final x = location.dx;
-        final y = location.dy;
-        if (x < width * _kTapToTurnPagePercent) {
-          isLeft = true;
-        } else if (x > width * (1 - _kTapToTurnPagePercent)) {
-          isRight = true;
-        }
-        if (y < height * _kTapToTurnPagePercent) {
-          isTop = true;
-        } else if (y > height * (1 - _kTapToTurnPagePercent)) {
-          isBottom = true;
-        }
-        bool isCenter = false;
-        var prev = () => context.reader.toPrevPage();
-        var next = () => context.reader.toNextPage();
-        final customZones = appdata.settings.getReaderSetting(
-          reader.cid,
-          reader.type.sourceKey,
-          'enableCustomTapZones',
-        );
-        if (customZones == true) {
-          // 自定义翻页区域：由用户为四条边缘各自指定动作。角落同属两条边时
-          // 上下优先于左右；若命中边动作为 'none' 则回退到相邻边的非 none 动作。
-          String action = 'none';
-          String? zone(String key) => appdata.settings.getReaderSetting(
-            reader.cid,
-            reader.type.sourceKey,
-            key,
-          );
-          for (final a in <String?>[
-            if (isTop) zone('tapZoneTop'),
-            if (isBottom) zone('tapZoneBottom'),
-            if (isLeft) zone('tapZoneLeft'),
-            if (isRight) zone('tapZoneRight'),
-          ]) {
-            if (a != null && a != 'none') {
-              action = a;
-              break;
-            }
-          }
-          if (action == 'prev') {
-            prev();
-            return;
-          } else if (action == 'next') {
-            next();
-            return;
-          }
-          // 'none' 或点在中心区域：落到打开/关闭工具栏
-          isCenter = true;
-        } else {
-          if (appdata.settings.getReaderSetting(
-            reader.cid,
-            reader.type.sourceKey,
-            'reverseTapToTurnPages',
-          )) {
-            prev = () => context.reader.toNextPage();
-            next = () => context.reader.toPrevPage();
-          }
-          switch (context.reader.mode) {
-            case ReaderMode.galleryLeftToRight:
-            case ReaderMode.continuousLeftToRight:
-              if (isLeft) {
-                prev();
-              } else if (isRight) {
-                next();
-              } else {
-                isCenter = true;
-              }
-            case ReaderMode.galleryRightToLeft:
-            case ReaderMode.continuousRightToLeft:
-              if (isLeft) {
-                next();
-              } else if (isRight) {
-                prev();
-              } else {
-                isCenter = true;
-              }
-            case ReaderMode.galleryTopToBottom:
-            case ReaderMode.continuousTopToBottom:
-              if (isTop) {
-                prev();
-              } else if (isBottom) {
-                next();
-              } else {
-                isCenter = true;
-              }
-          }
-        }
-        if (!isCenter) {
-          return;
-        }
-      }
+    } else if (reader.isOnChapterCommentsPage) {
+      // The toolbar doesn't open from the chapter comments page.
+      _turnPageByTap(location, onComments: true);
+    } else if (!_turnPageByTap(location)) {
       context.readerScaffold.openOrClose();
     }
+  }
+
+  /// A tap on the chapter comments that none of their controls took: hides
+  /// the toolbar, or turns the page from the tap zones. Never opens the
+  /// toolbar.
+  void onChapterCommentsTap(Offset location) {
+    if (!mounted) return;
+    if (reader._imageViewController?.handleOnTap(location) ?? false) return;
+    if (context.readerScaffold.isOpen) {
+      context.readerScaffold.openOrClose();
+    } else {
+      _turnPageByTap(location, onComments: true);
+    }
+  }
+
+  /// Turns the page when tap to turn is on and [location] falls in a tap
+  /// zone; false otherwise. [onComments]: the tap is on the chapter comments,
+  /// the chapter's last page, so going on from there opens the next chapter.
+  bool _turnPageByTap(Offset location, {bool onComments = false}) {
+    if (!appdata.settings.getReaderSetting(
+      reader.cid,
+      reader.type.sourceKey,
+      'enableTapToTurnPages',
+    )) {
+      return false;
+    }
+    bool isLeft = false, isRight = false, isTop = false, isBottom = false;
+    final width = context.width;
+    final height = context.height;
+    final x = location.dx;
+    final y = location.dy;
+    if (x < width * _kTapToTurnPagePercent) {
+      isLeft = true;
+    } else if (x > width * (1 - _kTapToTurnPagePercent)) {
+      isRight = true;
+    }
+    if (y < height * _kTapToTurnPagePercent) {
+      isTop = true;
+    } else if (y > height * (1 - _kTapToTurnPagePercent)) {
+      isBottom = true;
+    }
+    bool backward() => reader.toPrevPage();
+    bool forward() =>
+        reader.toNextPage() ||
+        (onComments && !reader.isLastChapterOfGroup && reader.toNextChapter());
+    var prev = backward;
+    var next = forward;
+    final customZones = appdata.settings.getReaderSetting(
+      reader.cid,
+      reader.type.sourceKey,
+      'enableCustomTapZones',
+    );
+    if (customZones == true) {
+      // 自定义翻页区域：由用户为四条边缘各自指定动作。角落同属两条边时
+      // 上下优先于左右；若命中边动作为 'none' 则回退到相邻边的非 none 动作。
+      String action = 'none';
+      String? zone(String key) => appdata.settings.getReaderSetting(
+        reader.cid,
+        reader.type.sourceKey,
+        key,
+      );
+      for (final a in <String?>[
+        if (isTop) zone('tapZoneTop'),
+        if (isBottom) zone('tapZoneBottom'),
+        if (isLeft) zone('tapZoneLeft'),
+        if (isRight) zone('tapZoneRight'),
+      ]) {
+        if (a != null && a != 'none') {
+          action = a;
+          break;
+        }
+      }
+      if (action == 'prev') {
+        prev();
+        return true;
+      } else if (action == 'next') {
+        next();
+        return true;
+      }
+      // 'none' 或点在中心区域：落到打开/关闭工具栏
+      return false;
+    }
+    if (appdata.settings.getReaderSetting(
+      reader.cid,
+      reader.type.sourceKey,
+      'reverseTapToTurnPages',
+    )) {
+      prev = forward;
+      next = backward;
+    }
+    switch (reader.mode) {
+      case ReaderMode.galleryLeftToRight:
+      case ReaderMode.continuousLeftToRight:
+        if (isLeft) {
+          prev();
+        } else if (isRight) {
+          next();
+        } else {
+          return false;
+        }
+      case ReaderMode.galleryRightToLeft:
+      case ReaderMode.continuousRightToLeft:
+        if (isLeft) {
+          next();
+        } else if (isRight) {
+          prev();
+        } else {
+          return false;
+        }
+      case ReaderMode.galleryTopToBottom:
+      case ReaderMode.continuousTopToBottom:
+        if (isTop) {
+          prev();
+        } else if (isBottom) {
+          next();
+        } else {
+          return false;
+        }
+    }
+    return true;
+  }
+
+  /// Chapter comments whose page taps go to [onChapterCommentsTap]: their
+  /// touches skip the reader's long press, drags and double tap, while the
+  /// right-click menu still works.
+  Widget wrapChapterComments(Widget comments) {
+    return Listener(
+      onPointerDown: (event) {
+        if ((event.buttons & kSecondaryButton) == 0) ignoreNextTap();
+      },
+      child: comments,
+    );
   }
 
   void onDoubleTap(Offset location) {
