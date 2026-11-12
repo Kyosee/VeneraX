@@ -334,6 +334,7 @@ class _IOSBackGestureDetectorState extends State<IOSBackGestureDetector> {
     _recognizer = _BackSwipeRecognizer(
       debugOwner: this,
       gestureWidth: widget.gestureWidth,
+      isEnabled: () => widget.enabledCallback(),
       isPointerInHorizontal: _isPointerInHorizontalScrollable,
       onStart: _handleDragStart,
       onUpdate: _handleDragUpdate,
@@ -350,18 +351,20 @@ class _IOSBackGestureDetectorState extends State<IOSBackGestureDetector> {
 
   @override
   Widget build(BuildContext context) {
-    return RawGestureDetector(
-      behavior: HitTestBehavior.translucent,
-      gestures: {
-        _BackSwipeRecognizer:
-            GestureRecognizerFactoryWithHandlers<_BackSwipeRecognizer>(
-              () => _recognizer,
-              (instance) {
-                instance.gestureWidth = widget.gestureWidth;
-              },
-            ),
-      },
-      child: widget.child,
+    _recognizer.gestureWidth = widget.gestureWidth;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        widget.child,
+        Positioned.fill(
+          // Check swipe ownership before child drags can hide their viewports.
+          // The translucent listener still lets taps and scrolls reach them.
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _recognizer.addPointer,
+          ),
+        ),
+      ],
     );
   }
 
@@ -456,6 +459,7 @@ class _IOSBackGestureDetectorState extends State<IOSBackGestureDetector> {
 
 class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
   _BackSwipeRecognizer({
+    required this.isEnabled,
     required this.isPointerInHorizontal,
     required this.gestureWidth,
     required this.onStart,
@@ -465,6 +469,7 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
     super.debugOwner,
   });
 
+  final bool Function() isEnabled;
   final bool Function(Offset globalPosition) isPointerInHorizontal;
   double gestureWidth;
   final ValueSetter<DragStartDetails> onStart;
@@ -472,6 +477,7 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
   final ValueSetter<DragEndDetails> onEnd;
   final VoidCallback onCancel;
 
+  int? _pointer;
   Offset? _startGlobal;
   bool _accepted = false;
   bool _startedNearLeftEdge = false;
@@ -482,6 +488,8 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void addPointer(PointerDownEvent event) {
+    if (_pointer != null || !isEnabled()) return;
+    _pointer = event.pointer;
     startTrackingPointer(event.pointer);
     _startGlobal = event.position;
     _accepted = false;
@@ -494,6 +502,7 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void handleEvent(PointerEvent event) {
+    if (event.pointer != _pointer) return;
     if (event is PointerMoveEvent || event is PointerUpEvent) {
       _velocityTracker?.addPosition(event.timeStamp, event.position);
     }
@@ -527,9 +536,7 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
           );
         } else {
           resolve(GestureDisposition.rejected);
-          stopTrackingPointer(event.pointer);
-          _startGlobal = null;
-          _velocityTracker = null;
+          _reset();
         }
       }
 
@@ -545,13 +552,13 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
       }
     } else if (event is PointerUpEvent) {
       if (_accepted) {
-        final Velocity velocity =
-            _velocityTracker?.getVelocity() ?? Velocity.zero;
+        final velocity =
+            _velocityTracker?.getVelocity().pixelsPerSecond.dx ?? 0.0;
 
         onEnd(
           DragEndDetails(
-            velocity: velocity,
-            primaryVelocity: velocity.pixelsPerSecond.dx,
+            velocity: Velocity(pixelsPerSecond: Offset(velocity, 0)),
+            primaryVelocity: velocity,
           ),
         );
       }
@@ -565,18 +572,28 @@ class _BackSwipeRecognizer extends OneSequenceGestureRecognizer {
   }
 
   void _reset() {
-    stopTrackingPointer(0);
+    final pointer = _pointer;
+    _pointer = null;
     _accepted = false;
     _startGlobal = null;
     _startedNearLeftEdge = false;
     _velocityTracker = null;
+    if (pointer != null) stopTrackingPointer(pointer);
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    // A scrollable may win before this recognizer sees the same move.
+    if (pointer == _pointer) _reset();
   }
 
   @override
   String get debugDescription => 'IOSBackSwipe';
 
   @override
-  void didStopTrackingLastPointer(int pointer) {}
+  void didStopTrackingLastPointer(int pointer) {
+    resolve(GestureDisposition.rejected);
+  }
 }
 
 class SlidePageTransitionBuilder extends PageTransitionsBuilder {

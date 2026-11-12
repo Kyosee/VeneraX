@@ -214,9 +214,19 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return Stack(
       children: [
         Positioned.fill(
-          child: AbsorbPointer(
-            absorbing: context.reader.isPageAnimating,
-            child: widget.child,
+          // Keep horizontal turns and zoomed pans protected during animations,
+          // when the content below may be absent from pointer hit tests.
+          child: SwipeRegionMarker(
+            active: () {
+              final reader = context.reader;
+              return (reader.mode != ReaderMode.galleryTopToBottom &&
+                      reader.mode != ReaderMode.continuousTopToBottom) ||
+                  (reader._imageViewController?.isImageZoomed ?? false);
+            },
+            child: AbsorbPointer(
+              absorbing: context.reader.isPageAnimating,
+              child: widget.child,
+            ),
           ),
         ),
         if (appdata.settings['readerNightMode'] == true)
