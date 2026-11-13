@@ -5,16 +5,18 @@ part of 'favorites_page.dart';
 Future<String?> newFolder({String? parent}) async {
   String? created;
   await showDialog(
-      context: App.rootContext,
-      builder: (context) {
-        var controller = TextEditingController();
-        String? error;
-        var manager = LocalFavoritesManager();
-        var location = parent;
-        var canNest = manager.supportsFolderNesting &&
-            manager.folderTree.ordered.isNotEmpty;
+    context: App.rootContext,
+    builder: (context) {
+      var controller = TextEditingController();
+      String? error;
+      var manager = LocalFavoritesManager();
+      var location = parent;
+      var canNest =
+          manager.supportsFolderNesting &&
+          manager.folderTree.ordered.isNotEmpty;
 
-        return StatefulBuilder(builder: (context, setState) {
+      return StatefulBuilder(
+        builder: (context, setState) {
           return ContentDialog(
             title: "New Folder".tl,
             content: Column(
@@ -41,57 +43,69 @@ Future<String?> newFolder({String? parent}) async {
               ],
             ).paddingHorizontal(16),
             actions: [
-              TextButton(
-                child: Text("Import from file".tl),
-                onPressed: () async {
-                  var file = await selectFile(ext: ['json']);
-                  if (file == null) return;
-                  var data = await file.readAsBytes();
-                  try {
-                    created = manager.fromJson(
-                      utf8.decode(data),
-                      parent: location,
-                    );
-                  } catch (e) {
-                    context.showMessage(message: "Failed to import".tl);
-                    return;
-                  }
-                  context.pop();
-                },
-              ).paddingRight(4),
-              FilledButton(
-                onPressed: () {
-                  var e = validateFolderName(controller.text);
-                  if (e != null) {
-                    setState(() {
-                      error = e;
-                    });
-                    return;
-                  }
-                  try {
-                    created = manager.createFolder(controller.text);
-                    if (location != null &&
-                        manager.supportsFolderNesting &&
-                        manager.existsFolder(location!)) {
-                      manager.moveFolder(created!, location);
-                    }
-                  } catch (err) {
-                    Log.error("Create Folder", err.toString());
-                    // A folder created but not moved stays at the top level,
-                    // so the dialog closes as usual; a failed create stays.
-                    if (created == null) {
-                      setState(() => error = err.toString());
-                      return;
-                    }
-                  }
-                  context.pop();
-                },
-                child: Text("Create".tl),
+              Expanded(
+                child: OverflowBar(
+                  alignment: MainAxisAlignment.end,
+                  overflowAlignment: OverflowBarAlignment.end,
+                  spacing: 4,
+                  overflowSpacing: 8,
+                  children: [
+                    TextButton(
+                      child: Text("Import from file".tl),
+                      onPressed: () async {
+                        var file = await selectFile(ext: ['json']);
+                        if (file == null) return;
+                        var data = await file.readAsBytes();
+                        try {
+                          created = manager.fromJson(
+                            utf8.decode(data),
+                            parent: location,
+                          );
+                        } catch (e) {
+                          context.showMessage(message: "Failed to import".tl);
+                          return;
+                        }
+                        context.pop();
+                      },
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        var e = validateFolderName(controller.text);
+                        if (e != null) {
+                          setState(() {
+                            error = e;
+                          });
+                          return;
+                        }
+                        try {
+                          created = manager.createFolder(controller.text);
+                          if (location != null &&
+                              manager.supportsFolderNesting &&
+                              manager.existsFolder(location!)) {
+                            manager.moveFolder(created!, location);
+                          }
+                        } catch (err) {
+                          Log.error("Create Folder", err.toString());
+                          // A folder created but not moved stays at the top level,
+                          // so the dialog closes as usual; a failed create stays.
+                          if (created == null) {
+                            setState(() => error = err.toString());
+                            return;
+                          }
+                        }
+                        context.pop();
+                      },
+                      child: Text("Create".tl),
+                    ),
+                  ],
+                ),
               ),
             ],
           );
-        });
-      });
+        },
+      );
+    },
+  );
   return created;
 }
 
@@ -116,6 +130,83 @@ String? validateFolderName(String newFolderName, {String? renaming}) {
 }
 
 void addFavorite(List<Comic> comics) {
+  if (comics.isEmpty) return;
+  if (comics.length == 1) {
+    final comic = comics.single;
+    final type = ComicType.fromKey(comic.sourceKey);
+    final source = type.comicSource;
+    final manager = LocalFavoritesManager();
+    showDialog(
+      context: App.rootContext,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: 520,
+          height: 600,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "Favorite".tl,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: "Close".tl,
+                      onPressed: context.pop,
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ComicFavoriteList(
+                  cid: comic.id,
+                  type: type,
+                  isFavorite: null,
+                  onFavorite: (_, __) {},
+                  favoriteItem: FavoriteItem(
+                    id: comic.id,
+                    name: comic.title,
+                    coverPath: comic.cover,
+                    author: comic.subtitle ?? '',
+                    type: type,
+                    tags: comic.tags ?? [],
+                  ),
+                  comicSource: source,
+                  hasNetwork: source?.favoriteData != null && source!.isLogged,
+                  localFolders: manager.folderNames,
+                  added: manager.find(comic.id, type),
+                  closeOnFavorite: false,
+                  favoriteId: comic.favoriteId,
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: FilledButton(
+                    onPressed: context.pop,
+                    child: Text("Done".tl),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return;
+  }
   var folders = LocalFavoritesManager().folderNames;
 
   showDialog(
