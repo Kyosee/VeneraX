@@ -35,6 +35,12 @@ void main() {
         remote_match_candidate_id INTEGER PRIMARY KEY
       );
       CREATE TABLE comic_titles (comic_title_id INTEGER PRIMARY KEY);
+      CREATE TABLE chapters (chapter_id TEXT PRIMARY KEY);
+      CREATE TABLE chapter_collection_items (
+        chapter_collection_item_id INTEGER PRIMARY KEY,
+        chapter_id TEXT NOT NULL,
+        FOREIGN KEY (chapter_id) REFERENCES chapters(chapter_id)
+      );
       CREATE TABLE history_events (
         history_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
         comic_id TEXT NOT NULL,
@@ -49,6 +55,12 @@ void main() {
       "INSERT INTO history_events (comic_id, occurred_at) "
       "VALUES ('local:a', 1), ('local:a', 1), ('local:a', 2);",
     );
+    // A retired child still pointing at a chapter must not fail the drop.
+    legacyDb.execute('''
+      INSERT INTO chapters (chapter_id) VALUES ('local:a:chapter:1');
+      INSERT INTO chapter_collection_items (chapter_id)
+        VALUES ('local:a:chapter:1');
+      ''');
     legacyDb.dispose();
     final domain = DomainDatabase();
 
@@ -67,6 +79,8 @@ void main() {
           'remote_match_candidates',
           'comic_titles',
           'history_events',
+          'chapters',
+          'chapter_collection_items',
         }),
         isEmpty,
       );
@@ -117,9 +131,7 @@ void main() {
           'source_tags',
           'comic_source_tags',
           'local_library_items',
-          'chapters',
-          'pages',
-          'chapter_sources',
+          'comic_source_chapters',
           'tags',
           'favorites',
         }),
@@ -127,6 +139,9 @@ void main() {
       expect(
         tables.intersection({
           'history_events',
+          'chapter_sources',
+          'pages',
+          'chapters',
           'comic_titles',
           'import_batches',
           'page_sources',
@@ -431,24 +446,18 @@ void main() {
         platform: platform,
         sourceComicId: 'abc',
         chapters: chapters('Ch 2'),
-        timestamp: 11,
       );
-      // Tamper a column outside the comparison fingerprint; an identical
-      // re-mirror must skip the delete+reinsert and leave it untouched.
-      domain.db.execute(
-        "UPDATE chapters SET title = 'TAMPERED' WHERE chapter_index = 2;",
-      );
+      int changes() =>
+          domain.db.select('SELECT total_changes() AS c;').single['c'] as int;
+      final before = changes();
       domain.replaceSourceChapters(
         platform: platform,
         sourceComicId: 'abc',
         chapters: chapters('Ch 2'),
-        timestamp: 12,
       );
       expect(
-        domain.db
-            .select('SELECT title FROM chapters WHERE chapter_index = 2;')
-            .single['title'],
-        'TAMPERED',
+        changes(),
+        before,
         reason: 'an unchanged chapter list must not be rewritten',
       );
 
@@ -457,14 +466,8 @@ void main() {
         platform: platform,
         sourceComicId: 'abc',
         chapters: chapters('Ch 2 (fixed)'),
-        timestamp: 13,
       );
-      expect(
-        domain.db
-            .select('SELECT title FROM chapters WHERE chapter_index = 2;')
-            .single['title'],
-        'Ch 2 (fixed)',
-      );
+      expect(changes(), greaterThan(before));
       expect(
         domain
             .getSourceChapters(platform: platform, sourceComicId: 'abc')
@@ -475,5 +478,288 @@ void main() {
       domain.close();
       tempDir.deleteSync(recursive: true);
     }
+  });
+
+  test('chapter lists keep grouping, explicit indexes and order', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final platform = SourcePlatformResolver.fromSourceKey('source_a');
+      final comicId = domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'abc',
+        title: 'Title',
+        timestamp: 10,
+      );
+      List<DomainComicChapterInfo> stored() =>
+          domain.getSourceChapters(platform: platform, sourceComicId: 'abc');
+
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: [
+          DomainComicChapterInfo(
+            chapterId: '$comicId:chapter:1',
+            title: 'A1',
+            chapterIndex: 1,
+            sourceChapterId: 'a1',
+            sourceChapterIndex: 1,
+            sourceChapterGroup: 1,
+            sourceGroupTitle: 'Main',
+            sourceChapterIndexInGroup: 1,
+          ),
+          DomainComicChapterInfo(
+            chapterId: '$comicId:chapter:2',
+            title: 'B1',
+            chapterIndex: 2,
+            sourceChapterId: 'b1',
+            sourceChapterIndex: 2,
+            sourceChapterGroup: 2,
+            sourceGroupTitle: 'Extra',
+            sourceChapterIndexInGroup: 1,
+          ),
+        ],
+      );
+      final grouped = stored();
+      expect(grouped.map((c) => c.title), ['A1', 'B1']);
+      expect(grouped.map((c) => c.sourceChapterId), ['a1', 'b1']);
+      expect(grouped.map((c) => c.chapterId), [
+        '$comicId:chapter:1',
+        '$comicId:chapter:2',
+      ]);
+      expect(grouped.map((c) => c.chapterIndex), [1, 2]);
+      expect(grouped.map((c) => c.sourceChapterIndex), [1, 2]);
+      expect(grouped.map((c) => c.sourceChapterGroup), [1, 2]);
+      expect(grouped.map((c) => c.sourceGroupTitle), ['Main', 'Extra']);
+      expect(grouped.map((c) => c.sourceChapterIndexInGroup), [1, 1]);
+
+      // Indexes that differ from the position, given out of order, and a
+      // chapter without an id of its own.
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: [
+          DomainComicChapterInfo(
+            chapterId: '$comicId:chapter:5',
+            title: 'Five',
+            chapterIndex: 5,
+            sourceChapterIndex: 9,
+          ),
+          DomainComicChapterInfo(
+            chapterId: '$comicId:chapter:2',
+            title: 'Two',
+            chapterIndex: 2,
+            sourceChapterId: 'two',
+            sourceChapterIndex: 3,
+          ),
+        ],
+      );
+      final sparse = stored();
+      expect(sparse.map((c) => c.title), ['Two', 'Five']);
+      expect(sparse.map((c) => c.chapterIndex), [2, 5]);
+      expect(sparse.map((c) => c.sourceChapterIndex), [3, 9]);
+      expect(sparse.map((c) => c.sourceChapterId), [
+        'two',
+        '$comicId:chapter:5',
+      ]);
+      expect(sparse.map((c) => c.sourceChapterGroup), [null, null]);
+
+      domain.replaceSourceChapters(
+        platform: platform,
+        sourceComicId: 'abc',
+        chapters: const [],
+      );
+      expect(stored(), isEmpty);
+      expect(
+        domain.db
+            .select('SELECT COUNT(*) AS count FROM comic_source_chapters;')
+            .single['count'],
+        1,
+        reason: 'a list is one row however many chapters it has',
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
+  group('chapter rows written by older versions', () {
+    late Directory tempDir;
+    late SourcePlatformRef platform;
+    late int comicSourceId;
+
+    /// Opens a current database holding one comic, then hands back a raw
+    /// handle so a test can add the tables an older version would have left.
+    Future<Database> seededLegacyFile({bool staleCompactRow = false}) async {
+      final domain = DomainDatabase();
+      await domain.init(tempDir.path);
+      final comicId = domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'abc',
+        title: 'Title',
+        timestamp: 10,
+      );
+      if (staleCompactRow) {
+        domain.replaceSourceChapters(
+          platform: platform,
+          sourceComicId: 'abc',
+          chapters: [
+            DomainComicChapterInfo(
+              chapterId: '$comicId:chapter:1',
+              title: 'Stale',
+              chapterIndex: 1,
+              sourceChapterId: 'stale',
+              sourceChapterIndex: 1,
+            ),
+          ],
+        );
+      }
+      comicSourceId =
+          domain.db
+                  .select('SELECT comic_source_id FROM comic_sources;')
+                  .single['comic_source_id']
+              as int;
+      domain.close();
+      final legacy = sqlite3.open(DomainDatabase.databasePathFor(tempDir.path));
+      legacy.execute('''
+        CREATE TABLE chapters (
+          chapter_id TEXT PRIMARY KEY,
+          comic_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          chapter_index INTEGER NOT NULL,
+          source_chapter_id TEXT,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          UNIQUE (comic_id, chapter_index),
+          FOREIGN KEY (comic_id) REFERENCES comics(comic_id) ON DELETE CASCADE
+        );
+        CREATE TABLE pages (
+          page_id TEXT PRIMARY KEY,
+          chapter_id TEXT NOT NULL,
+          FOREIGN KEY (chapter_id) REFERENCES chapters(chapter_id)
+            ON DELETE CASCADE
+        );
+        INSERT INTO chapters (
+          chapter_id, comic_id, title, chapter_index, source_chapter_id,
+          created_at
+        ) VALUES
+          ('remote:source_a:abc:chapter:1', 'remote:source_a:abc', 'Ch 1', 1, 'c1', 1),
+          ('remote:source_a:abc:chapter:2', 'remote:source_a:abc', 'Ch 2', 2, 'c2', 1),
+          -- Left behind when the list shrank: no chapter_sources row.
+          ('remote:source_a:abc:chapter:3', 'remote:source_a:abc', 'Gone', 3, 'c3', 1);
+        ''');
+      return legacy;
+    }
+
+    Future<DomainDatabase> reopen() async {
+      final domain = DomainDatabase();
+      await domain.init(tempDir.path);
+      return domain;
+    }
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+      platform = SourcePlatformResolver.fromSourceKey('source_a');
+    });
+
+    tearDown(() => tempDir.deleteSync(recursive: true));
+
+    test('fold into one row and replace a stale compact list', () async {
+      final legacy = await seededLegacyFile(staleCompactRow: true);
+      legacy.execute('''
+        CREATE TABLE chapter_sources (
+          chapter_source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chapter_id TEXT NOT NULL,
+          comic_source_id INTEGER NOT NULL,
+          source_chapter_id TEXT,
+          source_chapter_index INTEGER,
+          source_title TEXT,
+          source_chapter_group INTEGER,
+          source_group_title TEXT,
+          source_chapter_index_in_group INTEGER,
+          UNIQUE (comic_source_id, source_chapter_id),
+          FOREIGN KEY (chapter_id) REFERENCES chapters(chapter_id)
+            ON DELETE CASCADE,
+          FOREIGN KEY (comic_source_id)
+            REFERENCES comic_sources(comic_source_id) ON DELETE CASCADE
+        );
+        ''');
+      legacy.execute(
+        '''
+        INSERT INTO chapter_sources (
+          chapter_id, comic_source_id, source_chapter_id, source_chapter_index,
+          source_title, source_chapter_group, source_group_title,
+          source_chapter_index_in_group
+        ) VALUES
+          ('remote:source_a:abc:chapter:2', ?, 'c2', 2, 'Ch 2', 2, 'Extra', 1),
+          ('remote:source_a:abc:chapter:1', ?, 'c1', 1, '', 1, 'Main', 1);
+        ''',
+        [comicSourceId, comicSourceId],
+      );
+      legacy.dispose();
+
+      final domain = await reopen();
+      try {
+        final chapters = domain.getSourceChapters(
+          platform: platform,
+          sourceComicId: 'abc',
+        );
+        // An empty source_title falls back to the chapter's own title.
+        expect(chapters.map((c) => c.title), ['Ch 1', 'Ch 2']);
+        expect(chapters.map((c) => c.sourceChapterId), ['c1', 'c2']);
+        expect(chapters.map((c) => c.sourceGroupTitle), ['Main', 'Extra']);
+        expect(chapters.map((c) => c.sourceChapterGroup), [1, 2]);
+        expect(
+          domain.db
+              .select("SELECT name FROM sqlite_master WHERE type = 'table';")
+              .map((row) => row['name'])
+              .toSet()
+              .intersection({'chapters', 'chapter_sources', 'pages'}),
+          isEmpty,
+        );
+      } finally {
+        domain.close();
+      }
+    });
+
+    test('convert even without the later group columns', () async {
+      final legacy = await seededLegacyFile();
+      legacy.execute('''
+        CREATE TABLE chapter_sources (
+          chapter_source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chapter_id TEXT NOT NULL,
+          comic_source_id INTEGER NOT NULL,
+          source_chapter_id TEXT,
+          source_chapter_index INTEGER,
+          source_title TEXT
+        );
+        ''');
+      legacy.execute(
+        '''
+        INSERT INTO chapter_sources (
+          chapter_id, comic_source_id, source_chapter_id, source_chapter_index,
+          source_title
+        ) VALUES
+          ('remote:source_a:abc:chapter:1', ?, 'c1', 1, 'Ch 1'),
+          ('remote:source_a:abc:chapter:2', ?, 'c2', 2, 'Ch 2');
+        ''',
+        [comicSourceId, comicSourceId],
+      );
+      legacy.dispose();
+
+      final domain = await reopen();
+      try {
+        final chapters = domain.getSourceChapters(
+          platform: platform,
+          sourceComicId: 'abc',
+        );
+        expect(chapters.map((c) => c.title), ['Ch 1', 'Ch 2']);
+        expect(chapters.map((c) => c.sourceChapterGroup), [null, null]);
+      } finally {
+        domain.close();
+      }
+    });
   });
 }
