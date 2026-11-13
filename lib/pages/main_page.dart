@@ -17,6 +17,9 @@ import 'home_page.dart';
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
+  /// Position of the favorites tab; also the stored `initialPage` value.
+  static const favoritesIndex = 1;
+
   @override
   State<MainPage> createState() => _MainPageState();
 }

@@ -6,6 +6,10 @@
     {"name": "reading_widget_title", "value": "最近阅读"},
     {"name": "reading_widget_description", "value": "查看漫画并继续阅读。"},
     {"name": "reading_widget_open", "value": "打开 VeneraX 查看漫画"},
+    {"name": "shortcut_favorites", "value": "收藏"},
+    {"name": "shortcut_follow_updates", "value": "追更"},
+    {"name": "shortcut_history", "value": "历史"},
+    {"name": "shortcut_search", "value": "搜索"},
     {
       "name": "module_desc",
       "value": "模块描述"

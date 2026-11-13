@@ -15,6 +15,8 @@ import Foundation // 添加此行
 
   // 定义插件通道名称
   private var directoryPicker: DirectoryPicker?
+  // Scene delegates are held weakly by the engine.
+  private let appShortcuts = AppShortcutBridge()
 
   override func application(
     _ application: UIApplication,
@@ -28,6 +30,11 @@ import Foundation // 添加此行
     ReadingWidgetBridge.register(messenger: engineBridge.applicationRegistrar.messenger())
     flutterRegistrar = engineBridge.pluginRegistry
       .registrar(forPlugin: "VeneraAppDelegate")
+    FlutterEventChannel(
+      name: "venera/notification_route",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    ).setStreamHandler(appShortcuts)
+    flutterRegistrar?.addSceneDelegate(appShortcuts)
 
     let methodChannel = FlutterMethodChannel(
       name: "venera/method_channel",
@@ -72,6 +79,8 @@ import Foundation // 添加此行
         let args = call.arguments as? [String: Any]
         let alias = args?["alias"] as? String
         self.setAlternateIcon(alias?.isEmpty == false ? alias : nil, result: result)
+      } else if call.method == "setAppShortcuts" {
+        result(self.appShortcuts.publish(call.arguments))
       } else {
         result(FlutterMethodNotImplemented)
       }
@@ -134,5 +143,85 @@ import Foundation // 添加此行
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
     flutterResult?(nil)
+  }
+}
+
+/// Home-screen quick actions. A tap is sent to Dart as a route, the same way
+/// Android and HarmonyOS deliver notification and shortcut taps.
+final class AppShortcutBridge: NSObject, FlutterStreamHandler, FlutterSceneLifeCycleDelegate {
+  private static let symbols = [
+    "favorites": "star",
+    "follow_updates": "bell.badge",
+    "history": "clock.arrow.circlepath",
+    "search": "magnifyingglass",
+  ]
+  private var sink: FlutterEventSink?
+  // A cold-start tap arrives before Dart listens.
+  private var pending: String?
+
+  /// Arguments are `{route, label}` maps in display order.
+  func publish(_ arguments: Any?) -> Bool {
+    guard let items = arguments as? [[String: Any]] else { return false }
+    UIApplication.shared.shortcutItems = items.compactMap { item in
+      guard let route = item["route"] as? String,
+        let symbol = Self.symbols[route],
+        let label = item["label"] as? String, !label.isEmpty
+      else { return nil }
+      return UIApplicationShortcutItem(
+        type: route,
+        localizedTitle: label,
+        localizedSubtitle: nil,
+        icon: UIApplicationShortcutIcon(systemImageName: symbol),
+        userInfo: nil
+      )
+    }
+    return true
+  }
+
+  private func deliver(_ item: UIApplicationShortcutItem) -> Bool {
+    guard Self.symbols[item.type] != nil else { return false }
+    if let sink = sink {
+      sink(item.type)
+    } else {
+      pending = item.type
+    }
+    return true
+  }
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    sink = events
+    if let route = pending {
+      pending = nil
+      events(route)
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    sink = nil
+    return nil
+  }
+
+  func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions?
+  ) -> Bool {
+    if let item = connectionOptions?.shortcutItem {
+      _ = deliver(item)
+    }
+    // A shortcut launch carries no URL; leave the options to other delegates.
+    return false
+  }
+
+  @objc(windowScene:performActionForShortcutItem:completionHandler:)
+  func windowScene(
+    _ windowScene: UIWindowScene,
+    performActionFor shortcutItem: UIApplicationShortcutItem,
+    completionHandler: @escaping (Bool) -> Void
+  ) -> Bool {
+    guard deliver(shortcutItem) else { return false }
+    completionHandler(true)
+    return true
   }
 }

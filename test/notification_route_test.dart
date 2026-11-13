@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/pages/auth_page.dart';
+import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/tasks_page.dart';
 import 'package:venera/utils/handle_notification_route.dart';
 import 'package:venera/utils/translations.dart';
@@ -107,6 +109,64 @@ void main() {
 
     expect(done, isTrue);
     expect(find.byType(TasksPage), findsOneWidget);
+  });
+
+  testWidgets('a repeated tap does not stack the same page twice', (
+    tester,
+  ) async {
+    final mainNavigatorKey = await _pumpMainPage(tester);
+
+    await openNotificationRoute('tasks');
+    await tester.pumpAndSettle();
+    await openNotificationRoute('tasks');
+    await tester.pumpAndSettle();
+
+    mainNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(mainNavigatorKey.currentState!.canPop(), isFalse);
+  });
+
+  testWidgets('the favorites shortcut switches to the favorites tab', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final mainNavigatorKey = GlobalKey<NavigatorState>();
+    App.mainNavigatorKey = mainNavigatorKey;
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: App.rootNavigatorKey,
+        home: NaviPane(
+          paneItems: [
+            for (final label in ['Home', 'Favorites'])
+              PaneItemEntry(
+                label: label,
+                icon: Icons.circle_outlined,
+                activeIcon: Icons.circle,
+              ),
+          ],
+          paneActions: const [],
+          pageBuilder: (index) => Text('tab-$index'),
+          observer: NaviObserver(),
+          navigatorKey: mainNavigatorKey,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    mainNavigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('details')),
+    );
+    _pushRoot('reader');
+    await tester.pumpAndSettle();
+
+    await openNotificationRoute('favorites');
+    await tester.pumpAndSettle();
+
+    expect(find.text('tab-${MainPage.favoritesIndex}'), findsOneWidget);
+    expect(find.text('details'), findsNothing);
+    expect(find.text('reader'), findsNothing);
+    expect(mainNavigatorKey.currentState!.canPop(), isFalse);
   });
 
   testWidgets('only the latest of several waiting taps navigates', (

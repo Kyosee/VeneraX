@@ -1,10 +1,15 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
+import 'package:venera/pages/history_page.dart';
+import 'package:venera/pages/main_page.dart';
+import 'package:venera/pages/search_page.dart';
 import 'package:venera/pages/tasks_page.dart';
 
 bool _isHandling = false;
@@ -42,31 +47,57 @@ void revealMainNavigator(NavigatorState navigator) {
   host.navigator?.popUntil((route) => route == host || route.isFirst);
 }
 
+const _favoritesRoute = 'favorites';
+
 Widget? _pageFor(String event) => switch (event) {
       'follow_updates' => const FollowUpdatesPage(),
       'tasks' => const TasksPage(),
       'downloading' => const DownloadingPage(),
+      'history' => const HistoryPage(),
+      'search' => const SearchPage(),
       _ => null,
     };
 
-/// Opens a single background-task notification route in the main navigator.
+/// The route currently on top of [navigator], without changing the stack.
+Route<dynamic>? _topRoute(NavigatorState navigator) {
+  Route<dynamic>? top;
+  navigator.popUntil((route) {
+    top = route;
+    return true;
+  });
+  return top;
+}
+
+/// Opens a notification or launcher-shortcut route in the main navigator.
 Future<void> openNotificationRoute(String event) async {
   final page = _pageFor(event);
-  if (page == null) return;
+  if (page == null && event != _favoritesRoute) return;
   final tap = ++_latestTap;
   final navigator = await waitForUnlockedMainNavigator();
   if (navigator == null || tap != _latestTap) return;
   revealMainNavigator(navigator);
+  if (page == null) {
+    // Favorites is a main tab, not a pushed page.
+    navigator.context
+        .findAncestorStateOfType<NaviPaneState>()
+        ?.updatePage(MainPage.favoritesIndex);
+    return;
+  }
+  // A repeated tap must not stack a second copy of the open page.
+  final top = _topRoute(navigator);
+  if (top is AppPageRoute && top.label == page.runtimeType.toString()) return;
   navigator.context.to(() => page);
 }
 
-/// Handle taps on background-task notifications (Android only).
+/// Handle taps on background-task notifications and launcher shortcuts.
 ///
 /// Each foreground service tags its notification's PendingIntent with a route
-/// string (see the native `*KeepAliveService`); MainActivity forwards it over
-/// the `venera/notification_route` event channel. Here we map the route to a
-/// page and navigate, so tapping a follow-update / sync / download card lands
-/// on the matching screen instead of merely opening the app (#148).
+/// string (see the native `*KeepAliveService`); launcher shortcuts (Android
+/// `AppShortcuts`, iOS `AppShortcutBridge`, HarmonyOS `shortcuts_config.json`)
+/// carry the same kind of route. The native side forwards it over the
+/// `venera/notification_route` event channel. Here we map the route to a page
+/// and navigate, so a tap lands on the matching screen instead of merely
+/// opening the app (#148).
 void handleNotificationRoute() {
   if (_isHandling) return;
   _isHandling = true;

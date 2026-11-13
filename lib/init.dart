@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/app_shortcuts.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/eink_screen.dart';
@@ -202,6 +203,8 @@ void startInteractiveServices() {
     handleNotificationRoute();
   }
   if (App.isIOS || App.isMacOS) handleLinks();
+  if (App.isIOS) handleNotificationRoute();
+  AppShortcuts.start();
   checkUpdates();
 }
 

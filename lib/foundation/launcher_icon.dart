@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'app_shortcuts.dart';
 import 'appdata.dart';
 import 'log.dart';
 
@@ -160,6 +161,8 @@ abstract final class LauncherIconService {
           Log.warning('LauncherIcon', 'Native icon switch returned $ok');
           return false;
         }
+        // Shortcuts belong to the alias that was just disabled.
+        AppShortcuts.publish();
       } else if (App.isWindows) {
         await windowManager.setIcon(preset.windowsIcoAsset);
         // Keep the tray icon (if the tray is active) in step with the window.

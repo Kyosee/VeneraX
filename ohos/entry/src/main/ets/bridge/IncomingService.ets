@@ -10,6 +10,9 @@ import { webUrl } from './ShareService';
 const MAX_PENDING = 8;
 const MAX_TEXT_BYTES = 16 * 1024;
 const MAX_LINK_LENGTH = 4096;
+const NOTIFICATION_ROUTES: string[] = [
+  'downloading', 'tasks', 'follow_updates', 'favorites', 'history', 'search'
+];
 
 class IncomingEvents implements StreamHandler {
   private pending: string[] = [];
@@ -127,9 +130,9 @@ export class IncomingService implements MethodCallHandler {
       this.links.publish(widgetUri);
       return;
     }
+    // Notification taps and launcher shortcuts (shortcuts_config.json).
     const route = want.parameters?.['venera.notification.route'];
-    if (typeof route === 'string' &&
-      (route === 'downloading' || route === 'tasks' || route === 'follow_updates')) {
+    if (typeof route === 'string' && NOTIFICATION_ROUTES.includes(route)) {
       this.notifications.publish(route);
       return;
     }

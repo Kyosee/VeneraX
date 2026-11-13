@@ -6,6 +6,10 @@
     {"name": "reading_widget_title", "value": "Recent reading"},
     {"name": "reading_widget_description", "value": "View comics and continue reading."},
     {"name": "reading_widget_open", "value": "Open VeneraX to view comics"},
+    {"name": "shortcut_favorites", "value": "Favorites"},
+    {"name": "shortcut_follow_updates", "value": "Follow Updates"},
+    {"name": "shortcut_history", "value": "History"},
+    {"name": "shortcut_search", "value": "Search"},
     {
       "name": "module_desc",
       "value": "module description"

@@ -1,0 +1,56 @@
+{
+  "shortcuts": [
+    {
+      "shortcutId": "favorites",
+      "label": "$string:shortcut_favorites",
+      "icon": "$media:shortcut_favorites",
+      "wants": [
+        {
+          "bundleName": "com.github.kyosee.venera",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {"venera.notification.route": "favorites"}
+        }
+      ]
+    },
+    {
+      "shortcutId": "follow_updates",
+      "label": "$string:shortcut_follow_updates",
+      "icon": "$media:shortcut_follow_updates",
+      "wants": [
+        {
+          "bundleName": "com.github.kyosee.venera",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {"venera.notification.route": "follow_updates"}
+        }
+      ]
+    },
+    {
+      "shortcutId": "history",
+      "label": "$string:shortcut_history",
+      "icon": "$media:shortcut_history",
+      "wants": [
+        {
+          "bundleName": "com.github.kyosee.venera",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {"venera.notification.route": "history"}
+        }
+      ]
+    },
+    {
+      "shortcutId": "search",
+      "label": "$string:shortcut_search",
+      "icon": "$media:shortcut_search",
+      "wants": [
+        {
+          "bundleName": "com.github.kyosee.venera",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {"venera.notification.route": "search"}
+        }
+      ]
+    }
+  ]
+}
