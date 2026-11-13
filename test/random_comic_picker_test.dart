@@ -50,7 +50,10 @@ void main() {
       final picker = UniformRandomComicPicker(random: Random(4));
       final candidates = [favorite('same', 1), favorite('same', 2)];
 
-      expect(picker.pickMany(candidates, count: 3), unorderedEquals(candidates));
+      expect(
+        picker.pickMany(candidates, count: 3),
+        unorderedEquals(candidates),
+      );
     });
 
     test('returns null for an empty selection', () {
