@@ -358,6 +358,100 @@ void main() {
     },
   );
 
+  test('ensureComicSource leaves a comic it already holds untouched', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final platform = SourcePlatformResolver.fromSourceKey('source_a');
+      String mirror({
+        String coverUri = 'cover.jpg',
+        String? author = 'Author',
+        List<String>? tags = const ['genre:Action'],
+        int? pageCount = 12,
+        bool replaceMetadata = false,
+        int timestamp = 10,
+      }) => domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'abc',
+        title: 'Title',
+        subtitle: 'Sub',
+        description: 'Desc',
+        author: author,
+        coverUri: coverUri,
+        tags: tags,
+        pageCount: pageCount,
+        replaceMetadata: replaceMetadata,
+        timestamp: timestamp,
+      );
+      int changes() =>
+          domain.db.select('SELECT total_changes() AS c;').single['c'] as int;
+
+      final comicId = mirror();
+      final before = changes();
+      expect(mirror(timestamp: 11), comicId);
+      // Absent fields keep what is stored, so they are no change either.
+      mirror(author: null, tags: null, pageCount: null, timestamp: 12);
+      expect(changes(), before, reason: 'nothing differs, nothing is written');
+
+      mirror(coverUri: 'new.jpg', timestamp: 13);
+      expect(changes(), greaterThan(before));
+      expect(domain.getComicBaseInfo(comicId)!.coverUri, 'new.jpg');
+
+      final afterCover = changes();
+      mirror(coverUri: 'new.jpg', replaceMetadata: true, timestamp: 14);
+      expect(
+        changes(),
+        greaterThan(afterCover),
+        reason: 'the owner of the metadata always rewrites it',
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
+  test('a restored file gets its platforms written again', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final otherDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+    final other = DomainDatabase();
+
+    try {
+      final platform = SourcePlatformResolver.fromSourceKey('source_a');
+      await domain.init(tempDir.path);
+      domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'abc',
+        title: 'Title',
+        timestamp: 10,
+      );
+      // A file that has never seen this platform replaces the current one.
+      await other.init(otherDir.path);
+      other.close();
+      await domain.restoreFrom(DomainDatabase.databasePathFor(otherDir.path));
+
+      domain.ensureComicSource(
+        platform: platform,
+        sourceComicId: 'def',
+        title: 'Other',
+        timestamp: 11,
+      );
+      expect(
+        domain.db.select(
+          'SELECT COUNT(*) AS count FROM comic_sources WHERE platform_id = ?;',
+          [platform.platformId],
+        ).single['count'],
+        1,
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+      otherDir.deleteSync(recursive: true);
+    }
+  });
+
   test('removeComicSource purges mirror so a reused local id starts clean', () async {
     final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
     final domain = DomainDatabase();

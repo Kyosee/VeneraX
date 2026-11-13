@@ -551,14 +551,9 @@ class ComicListState extends State<ComicList> {
   }
 
   void _mirrorComicsToDomain(List<Comic> comics) {
-    Future.microtask(() {
-      final repo = const ComicStateRepository();
-      for (final comic in comics) {
-        try {
-          repo.mirrorComic(comic);
-        } catch (_) {}
-      }
-    });
+    Future.microtask(
+      () => const ComicStateRepository().mirrorBrowsedComics(comics),
+    );
   }
 
   @override

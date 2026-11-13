@@ -92,6 +92,51 @@ void main() {
     },
   );
 
+  test('caches a browsed page and skips comics it already holds', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_repo_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final repository = ComicStateRepository(domain: domain);
+      Comic browsed(String id, String title) => Comic(
+        title,
+        'cover-$id.jpg',
+        id,
+        'Author',
+        const ['genre:Action'],
+        '',
+        'source_a',
+        null,
+        null,
+      );
+      final page = [browsed('a', 'Alpha'), browsed('b', 'Beta')];
+
+      repository.mirrorBrowsedComics(page);
+      expect(
+        domain.db
+            .select('SELECT title FROM comics ORDER BY comic_id;')
+            .map((row) => row['title']),
+        ['Alpha', 'Beta'],
+      );
+
+      int changes() =>
+          domain.db.select('SELECT total_changes() AS c;').single['c'] as int;
+      final before = changes();
+      repository.mirrorBrowsedComics(page);
+      expect(changes(), before);
+
+      repository.mirrorBrowsedComics([browsed('a', 'Alpha 2')]);
+      expect(
+        domain.getComicBaseInfo('remote:source_a:a')!.title,
+        'Alpha 2',
+      );
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+    }
+  });
+
   test(
     'local comic display tags use the current local comic after refresh',
     () async {

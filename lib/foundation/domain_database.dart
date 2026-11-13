@@ -96,6 +96,10 @@ class DomainDatabase {
   CommonDatabase? _db;
   String? _dbPath;
 
+  /// Platforms already written to the open file; re-upserting them cost two
+  /// writes per mirrored comic.
+  final _ensuredPlatforms = <String>{};
+
   CommonDatabase get db {
     final database = _db;
     if (database == null) {
@@ -150,6 +154,7 @@ class DomainDatabase {
     final dbPath = _db == null ? null : _dbPath;
     _db = null;
     _dbPath = null;
+    _ensuredPlatforms.clear();
     if (dbPath != null) {
       DatabaseGateway.instance.closeManaged(dbPath);
     }
@@ -165,6 +170,7 @@ class DomainDatabase {
     }
     DatabaseGateway.instance.closeManaged(dbPath);
     _db = null;
+    _ensuredPlatforms.clear();
     try {
       restoreDatabaseFiles({dbPath: sourcePath});
     } finally {
@@ -460,6 +466,31 @@ class DomainDatabase {
     String merged(String column) => replaceMetadata
         ? 'excluded.$column'
         : 'COALESCE(excluded.$column, comics.$column)';
+    if (!replaceMetadata &&
+        _storedComicMatches(
+          platform: platform,
+          sourceComicId: sourceComicId,
+          comicId: comicId,
+          values: {
+            'title': title,
+            'subtitle': subtitle,
+            'description': description,
+            'language': language,
+            'cover_uri': coverUri,
+            'normalized_title': normalizedTitle,
+            'source_url': sourceUrl,
+            'source_title': sourceTitle ?? title,
+          },
+          mergedValues: {
+            'author': _emptyToNull(author),
+            'status': _emptyToNull(status),
+            'update_time': _emptyToNull(updateTime),
+            'tags_json': tagsJson,
+            'page_count': pageCount,
+          },
+        )) {
+      return comicId;
+    }
     ensureSourcePlatform(platform, timestamp: now);
     db.execute(
       '''
@@ -580,6 +611,42 @@ class DomainDatabase {
       timestamp: now,
     );
     return comicId;
+  }
+
+  /// Whether [ensureComicSource]'s upserts would leave the stored rows as they
+  /// are: a list page re-shows comics already held, and one read beats several
+  /// writes plus a title match. [mergedValues] are kept when absent. Write
+  /// timestamps alone don't count as a change.
+  bool _storedComicMatches({
+    required SourcePlatformRef platform,
+    required String sourceComicId,
+    required String comicId,
+    required Map<String, Object?> values,
+    required Map<String, Object?> mergedValues,
+  }) {
+    final rows = db.select(
+      '''
+      SELECT
+        c.title, c.subtitle, c.description, c.language, c.cover_uri,
+        c.normalized_title, c.author, c.status, c.update_time, c.tags_json,
+        c.page_count, s.source_url, s.source_title, s.comic_id AS linked_id,
+        s.status AS link_status
+      FROM comic_sources s
+      JOIN comics c ON c.comic_id = s.comic_id
+      WHERE s.platform_id = ? AND s.source_comic_id = ?;
+      ''',
+      [platform.platformId, sourceComicId],
+    );
+    if (rows.isEmpty) {
+      return false;
+    }
+    final row = rows.single;
+    return row['linked_id'] == comicId &&
+        row['link_status'] == 'accepted' &&
+        values.entries.every((e) => row[e.key] == e.value) &&
+        mergedValues.entries.every(
+          (e) => e.value == null || row[e.key] == e.value,
+        );
   }
 
   DomainComicBaseInfo? getComicBaseInfo(String comicId) {
@@ -1018,6 +1085,18 @@ class DomainDatabase {
   }
 
   void ensureSourcePlatform(SourcePlatformRef platform, {int? timestamp}) {
+    final key = [
+      platform.platformId,
+      platform.canonicalKey,
+      platform.displayName,
+      platform.kind.value,
+      platform.legacyIntType,
+      platform.matchedAlias,
+      platform.matchedAliasType.value,
+    ].join('\u0000');
+    if (_ensuredPlatforms.contains(key)) {
+      return;
+    }
     db.execute(
       '''
       INSERT INTO source_platforms (
@@ -1062,6 +1141,28 @@ class DomainDatabase {
         platform.legacyIntType,
       ],
     );
+    _ensuredPlatforms.add(key);
+  }
+
+  /// Runs [body] as one transaction, so a batch of small writes costs one
+  /// commit instead of one per statement.
+  void runInTransaction(void Function() body) {
+    if (!db.autocommit) {
+      body();
+      return;
+    }
+    db.execute('BEGIN TRANSACTION;');
+    try {
+      body();
+      db.execute('COMMIT;');
+    } catch (_) {
+      if (!db.autocommit) {
+        db.execute('ROLLBACK;');
+      }
+      // Rows recorded as written may have been rolled back.
+      _ensuredPlatforms.clear();
+      rethrow;
+    }
   }
 
   /// Removes a source comic and all of its dependent rows (work links, local
