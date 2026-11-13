@@ -77,10 +77,9 @@ class OnboardingStore {
             throw const FormatException();
           }
           state = OnboardingState.fromJson(json);
-          // Accepted, unfinished setup may already contain restored data.
-          if (!state.setupCompleted &&
-              state.acceptedVersion == 0 &&
-              await _hasUserData(dataPath)) {
+          // Real user data, whether it predates setup or was restored during
+          // it, ends first-run setup. Only the agreement can still be due.
+          if (!state.setupCompleted && await _hasUserData(dataPath)) {
             await _save(
               OnboardingState(
                 setupCompleted: true,

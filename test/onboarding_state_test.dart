@@ -204,7 +204,7 @@ void main() {
 
   for (final favorite in [false, true]) {
     final name = favorite ? 'quoted favorite folder' : 'history';
-    test('restored $name keeps setup unfinished', () async {
+    test('restored $name ends setup and keeps the acceptance', () async {
       final firstLaunch = OnboardingStore();
       await firstLaunch.load(directory.path);
       await firstLaunch.accept('zh-TW', version: kDisclaimerVersion + 1);
@@ -224,16 +224,18 @@ void main() {
       await nextLaunch.load(directory.path);
 
       expect(nextLaunch.loadError, isNull);
-      expect(nextLaunch.state.setupCompleted, isFalse);
+      expect(nextLaunch.state.setupCompleted, isTrue);
       expect(nextLaunch.state.acceptedVersion, accepted.acceptedVersion);
       expect(nextLaunch.state.acceptedAt, accepted.acceptedAt);
       expect(nextLaunch.state.acceptedLanguage, accepted.acceptedLanguage);
       expect(nextLaunch.state.needsAgreement(), isFalse);
-      expect(nextLaunch.blocksAutomaticTasks, isTrue);
+      expect(nextLaunch.blocksAutomaticTasks, isFalse);
       expect(await database.readAsBytes(), previousBytes);
-      expect(jsonDecode(await record.readAsString()), accepted.toJson());
-    });
-  }
+      expect(jsonDecode(await record.readAsString()), {
+        ...accepted.toJson(),
+        'setupCompleted': true,
+      });
+    });  }
 
   test('a busy usage database blocks setup and permits a safe retry', () async {
     final firstLaunch = OnboardingStore();
