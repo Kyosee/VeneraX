@@ -168,9 +168,11 @@ class DomainDatabase {
 
   static Future<void> _upgradeInBackground(String dbPath) async {
     try {
-      await DatabaseGateway.instance.isolateOp(
-        dbPath,
-        (db) async => upgradeFile(db),
+      _logUpgradeWarning(
+        await DatabaseGateway.instance.isolateOp(
+          dbPath,
+          (db) async => upgradeFile(db),
+        ),
       );
     } catch (error, stackTrace) {
       // The open that follows runs the same pipeline and owns any recovery.
@@ -181,18 +183,29 @@ class DomainDatabase {
   /// Upgrades a file that is not open anywhere yet, such as an imported one.
   static Future<void> _upgradeDetached(String path) async {
     try {
-      await Isolate.run(() {
-        final db = openRawDatabase(path);
-        try {
-          db.execute('PRAGMA foreign_keys = ON');
-          upgradeFile(db);
-          db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
-        } finally {
-          db.dispose();
-        }
-      });
+      _logUpgradeWarning(
+        await Isolate.run(() {
+          final db = openRawDatabase(path);
+          try {
+            db.execute('PRAGMA foreign_keys = ON');
+            final warning = upgradeFile(db);
+            db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+            return warning;
+          } finally {
+            db.dispose();
+          }
+        }),
+      );
     } catch (error, stackTrace) {
       Log.warning('Domain database', 'Upgrade failed: $error\n$stackTrace');
+    }
+  }
+
+  /// Logs on the calling isolate: a log written on the upgrade's own isolate
+  /// is lost with it.
+  static void _logUpgradeWarning(String? warning) {
+    if (warning != null) {
+      Log.warning('Domain database', warning);
     }
   }
 
@@ -258,13 +271,14 @@ class DomainDatabase {
 
   /// Runs the open-time schema pipeline and compacts the file, so the open
   /// that follows is cheap. Meant for a background isolate: converting an
-  /// older large library takes seconds on a phone.
-  static void upgradeFile(CommonDatabase db) {
-    createSchema(db);
+  /// older large library takes seconds on a phone. Returns a warning to log.
+  static String? upgradeFile(CommonDatabase db) {
+    final warning = createSchema(db);
     // Dropped row-per-chapter tables leave most of the file as free pages.
     if ((db.select('PRAGMA freelist_count;').single[0] as int) > 0) {
       db.execute('VACUUM;');
     }
+    return warning;
   }
 
   CommonDatabase _openDatabase(String dbPath) {
@@ -272,7 +286,7 @@ class DomainDatabase {
       final database = DatabaseGateway.instance.openManaged(dbPath);
       try {
         configure(database);
-        createSchema(database);
+        _logUpgradeWarning(createSchema(database));
         return database;
       } catch (_) {
         // The handle is registered by now — release it before the recovery
@@ -349,14 +363,17 @@ class DomainDatabase {
     db.execute('PRAGMA journal_mode = WAL');
   }
 
-  static void createSchema(CommonDatabase db) {
+  /// Returns a warning for a cache conversion that failed without failing the
+  /// open.
+  static String? createSchema(CommonDatabase db) {
     db.execute(_schemaSql);
-    migrateSchema(db);
+    final warning = migrateSchema(db);
     seedStaticData(db);
     db.execute('PRAGMA user_version = $schemaVersion');
+    return warning;
   }
 
-  static void migrateSchema(CommonDatabase db) {
+  static String? migrateSchema(CommonDatabase db) {
     void addColumnIfMissing(String table, String column, String definition) {
       final columns = db.select('PRAGMA table_info("$table");');
       if (!columns.any((element) => element['name'] == column)) {
@@ -380,8 +397,9 @@ class DomainDatabase {
       'CREATE INDEX IF NOT EXISTS idx_comics_normalized_title '
       'ON comics(normalized_title);',
     );
-    _foldLegacyChapterRows(db);
+    final warning = _foldLegacyChapterRows(db);
     _dropRetiredTables(db);
+    return warning;
   }
 
   /// Chapter lists used to take one row per chapter in two tables, repeating
@@ -390,13 +408,13 @@ class DomainDatabase {
   ///
   /// A legacy list replaces a compact one: with both present, only an older
   /// app version sharing this data can have written the legacy rows since.
-  static void _foldLegacyChapterRows(CommonDatabase db) {
+  static String? _foldLegacyChapterRows(CommonDatabase db) {
     bool hasTable(String name) => db.select(
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?;",
       [name],
     ).isNotEmpty;
     if (!hasTable('chapter_sources') || !hasTable('chapters')) {
-      return;
+      return null;
     }
     // The lists are a cache the app refills; a file this cannot read must not
     // fail the open, which would set the whole database aside.
@@ -479,8 +497,9 @@ class DomainDatabase {
         insert.dispose();
       }
     } catch (error) {
-      Log.warning('Domain database', 'Chapter list conversion failed: $error');
+      return 'Chapter list conversion failed: $error';
     }
+    return null;
   }
 
   /// Populates [normalized_title] for rows written before the column existed,

@@ -1013,6 +1013,49 @@ void main() {
       }
     });
 
+    test('a conversion that fails is reported, not fatal', () async {
+      final legacy = await seededLegacyFile();
+      legacy.execute('''
+        CREATE TABLE chapter_sources (
+          chapter_source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chapter_id TEXT NOT NULL,
+          comic_source_id INTEGER NOT NULL,
+          source_chapter_id TEXT,
+          source_chapter_index INTEGER,
+          source_title TEXT
+        );
+        ''');
+      // Unreadable as a chapter: no index.
+      legacy.execute(
+        "UPDATE chapters SET chapter_index = 'x' WHERE source_chapter_id = 'c1';",
+      );
+      legacy.execute(
+        '''
+        INSERT INTO chapter_sources (
+          chapter_id, comic_source_id, source_chapter_id, source_chapter_index,
+          source_title
+        ) VALUES ('remote:source_a:abc:chapter:1', ?, 'c1', 1, 'Ch 1');
+        ''',
+        [comicSourceId],
+      );
+
+      final warning = DomainDatabase.upgradeFile(legacy);
+      expect(warning, contains('Chapter list conversion failed'));
+      expect(
+        legacy.select('PRAGMA user_version;').single[0],
+        DomainDatabase.schemaVersion,
+      );
+      expect(
+        legacy
+            .select("SELECT name FROM sqlite_master WHERE type = 'table';")
+            .map((row) => row['name'])
+            .toSet()
+            .intersection({'chapters', 'chapter_sources'}),
+        isEmpty,
+      );
+      legacy.dispose();
+    });
+
     test('the store stays closed while an upgrade runs', () async {
       final legacy = await seededLegacyFile();
       legacy.execute('PRAGMA user_version = 4;');
