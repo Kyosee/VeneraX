@@ -450,18 +450,36 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Widget buildRight() => Navigator(
-    key: ValueKey('$currentPage:$_destinationVersion'),
-    onGenerateRoute: (settings) => PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          _SettingsDetailPage(
-            pageIndex: currentPage,
-            focusTitle: _focusTitle,
-            fallbackTitle: _focusFallback,
-          ),
-      transitionDuration: Duration.zero,
-    ),
-  );
+  // A fresh key per destination still restarts the pane's stack on a category
+  // switch, while letting back reach the pages pushed into it.
+  var _rightNavigator = GlobalKey<NavigatorState>();
+  var _rightDestination = '';
+
+  Widget buildRight() {
+    final destination = '$currentPage:$_destinationVersion';
+    if (destination != _rightDestination) {
+      _rightDestination = destination;
+      _rightNavigator = GlobalKey<NavigatorState>();
+    }
+    return NavigatorPopHandler(
+      // Esc steps back one page. Android's back gesture is left as it was:
+      // nested navigators there risk a double pop (#101).
+      enabled: App.isDesktop,
+      onPopWithResult: (_) => _rightNavigator.currentState?.maybePop(),
+      child: Navigator(
+        key: _rightNavigator,
+        onGenerateRoute: (settings) => PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              _SettingsDetailPage(
+                pageIndex: currentPage,
+                focusTitle: _focusTitle,
+                fallbackTitle: _focusFallback,
+              ),
+          transitionDuration: Duration.zero,
+        ),
+      ),
+    );
+  }
 }
 
 class _SettingsDetailPage extends StatelessWidget {

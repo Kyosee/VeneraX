@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:venera/foundation/context.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/components/pattern_lock.dart';
 import 'package:venera/utils/app_lock.dart';
 import 'package:venera/utils/translations.dart';
@@ -46,7 +46,8 @@ class _AuthPageState extends State<AuthPage> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
+        // Desktop Esc reaches here too; it must neither unlock nor quit.
+        if (!didPop && !App.isDesktop) {
           SystemNavigator.pop();
         }
       },

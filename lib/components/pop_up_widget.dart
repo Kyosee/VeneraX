@@ -5,6 +5,8 @@ class PopUpWidget<T> extends PopupRoute<T> {
 
   final Widget widget;
 
+  final _navigator = GlobalKey<NavigatorState>();
+
   @override
   Color? get barrierColor => Colors.black54;
 
@@ -42,9 +44,15 @@ class PopUpWidget<T> extends PopupRoute<T> {
         width: showPopUp ? 500 : double.infinity,
         height: showPopUp ? height : double.infinity,
         child: ClipRect(
-          child: Navigator(
-            onGenerateRoute: (settings) =>
-                MaterialPageRoute(builder: (context) => widget),
+          // Desktop Esc closes inner pages before the dialog itself.
+          child: NavigatorPopHandler(
+            enabled: App.isDesktop,
+            onPopWithResult: (_) => _navigator.currentState?.maybePop(),
+            child: Navigator(
+              key: _navigator,
+              onGenerateRoute: (settings) =>
+                  MaterialPageRoute(builder: (context) => widget),
+            ),
           ),
         ),
       ),

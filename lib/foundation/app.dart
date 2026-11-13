@@ -104,11 +104,13 @@ class _App {
     rootNavigatorKey.currentState?.maybePop();
   }
 
+  /// Desktop Esc and mouse back. [NavigatorState.maybePop] lets a page's
+  /// PopScope or nested navigator step back one level instead of closing it.
   void pop() {
     if (rootNavigatorKey.currentState?.canPop() ?? false) {
-      rootNavigatorKey.currentState?.pop();
+      rootNavigatorKey.currentState?.maybePop();
     } else if (mainNavigatorKey?.currentState?.canPop() ?? false) {
-      mainNavigatorKey?.currentState?.pop();
+      mainNavigatorKey?.currentState?.maybePop();
     }
   }
 

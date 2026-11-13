@@ -153,6 +153,82 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'desktop back leaves nested settings pages one level at a time',
+    (tester) async {
+      tester.view.physicalSize = const Size(1100, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: App.rootNavigatorKey,
+          home: const Scaffold(body: Text('home')),
+        ),
+      );
+      App.rootNavigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+      );
+      await tester.pumpAndSettle();
+      final about = find.byKey(const ValueKey('settings-category-7'));
+      await tester.ensureVisible(about);
+      await tester.pumpAndSettle();
+      await tester.tap(about);
+      await tester.pumpAndSettle();
+      await openSection(tester, 'App logs');
+      expect(find.byType(LogsPage), findsOneWidget);
+
+      App.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(LogsPage), findsNothing);
+      expect(find.byType(SettingsPage), findsOneWidget);
+
+      App.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.text('home'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'desktop back closes pages inside a pop-up before the pop-up',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: App.rootNavigatorKey,
+          home: const Scaffold(body: Text('home')),
+        ),
+      );
+      showPopUpWidget(
+        App.rootContext,
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => context.to(
+              () => const Scaffold(body: Text('inner page')),
+            ),
+            child: const Text('open inner'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open inner'));
+      await tester.pumpAndSettle();
+      expect(find.text('inner page'), findsOneWidget);
+
+      App.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('inner page'), findsNothing);
+      expect(find.text('open inner'), findsOneWidget);
+
+      App.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('open inner'), findsNothing);
+      expect(App.rootNavigatorKey.currentState!.canPop(), isFalse);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
   testWidgets('nested model pages share the settings pane and header surface', (
     tester,
   ) async {
