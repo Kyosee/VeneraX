@@ -135,7 +135,6 @@ class OnboardingStore {
       'data/venera.db': [
         'comics',
         'favorites',
-        'history_events',
         'local_library_items',
       ],
       'local_favorite.db': <String>[],

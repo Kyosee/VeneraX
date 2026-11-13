@@ -35,9 +35,19 @@ void main() {
         remote_match_candidate_id INTEGER PRIMARY KEY
       );
       CREATE TABLE comic_titles (comic_title_id INTEGER PRIMARY KEY);
+      CREATE TABLE history_events (
+        history_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comic_id TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        FOREIGN KEY (comic_id) REFERENCES comics(comic_id) ON DELETE CASCADE
+      );
       ''');
     legacyDb.execute(
       "INSERT INTO comics (comic_id, title) VALUES ('local:a', 'Kept Title');",
+    );
+    legacyDb.execute(
+      "INSERT INTO history_events (comic_id, occurred_at) "
+      "VALUES ('local:a', 1), ('local:a', 1), ('local:a', 2);",
     );
     legacyDb.dispose();
     final domain = DomainDatabase();
@@ -56,6 +66,7 @@ void main() {
           'reader_sessions',
           'remote_match_candidates',
           'comic_titles',
+          'history_events',
         }),
         isEmpty,
       );
@@ -110,12 +121,12 @@ void main() {
           'pages',
           'chapter_sources',
           'tags',
-          'history_events',
           'favorites',
         }),
       );
       expect(
         tables.intersection({
+          'history_events',
           'comic_titles',
           'import_batches',
           'page_sources',
@@ -245,7 +256,6 @@ void main() {
         folderName: 'default',
         timestamp: 11,
       );
-      domain.markRead(comicId: comicId, occurredAt: 12);
 
       expect(comicId, 'remote:source_a:abc');
       expect(
@@ -263,12 +273,6 @@ void main() {
       expect(
         domain.db
             .select('SELECT COUNT(*) AS count FROM favorites;')
-            .single['count'],
-        1,
-      );
-      expect(
-        domain.db
-            .select('SELECT COUNT(*) AS count FROM history_events;')
             .single['count'],
         1,
       );

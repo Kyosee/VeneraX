@@ -273,10 +273,13 @@ class DomainDatabase {
     }
   }
 
-  /// Drops tables that were provisioned ahead of features that never shipped.
+  /// Drops tables that were provisioned ahead of features that never shipped,
+  /// or that were only ever written to.
   /// Children are removed before their parents so foreign keys stay satisfied.
   static void _dropRetiredTables(CommonDatabase db) {
     const retiredTables = [
+      // Append-only read log: one row per page turn, read by nothing.
+      'history_events',
       'reader_tabs',
       'reader_sessions',
       'page_order_items',
@@ -1021,7 +1024,7 @@ class DomainDatabase {
   }
 
   /// Removes a source comic and all of its dependent rows (work links, local
-  /// library item, chapters, history events, favorites — via FK cascade).
+  /// library item, chapters, favorites — via FK cascade).
   ///
   /// Older versions reused local comic ids, so a stale mirror could attach the
   /// old comic's work link — and therefore its title/cover — to the next comic
@@ -1089,30 +1092,6 @@ class DomainDatabase {
         folderName,
         sortOrder,
         timestamp ?? DateTime.now().millisecondsSinceEpoch,
-      ],
-    );
-  }
-
-  void markRead({
-    required String comicId,
-    String? chapterId,
-    String? pageId,
-    int? occurredAt,
-  }) {
-    db.execute(
-      '''
-      INSERT INTO history_events (
-        comic_id,
-        chapter_id,
-        page_id,
-        occurred_at
-      ) VALUES (?, ?, ?, ?);
-      ''',
-      [
-        comicId,
-        chapterId,
-        pageId,
-        occurredAt ?? DateTime.now().millisecondsSinceEpoch,
       ],
     );
   }
@@ -1473,18 +1452,6 @@ CREATE TABLE IF NOT EXISTS tags (
   created_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS history_events (
-  history_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  comic_id TEXT NOT NULL,
-  chapter_id TEXT,
-  page_id TEXT,
-  event_type TEXT NOT NULL DEFAULT 'read',
-  occurred_at INTEGER NOT NULL,
-  FOREIGN KEY (comic_id) REFERENCES comics(comic_id) ON DELETE CASCADE,
-  FOREIGN KEY (chapter_id) REFERENCES chapters(chapter_id) ON DELETE SET NULL,
-  FOREIGN KEY (page_id) REFERENCES pages(page_id) ON DELETE SET NULL
-);
-
 CREATE TABLE IF NOT EXISTS favorites (
   favorite_id INTEGER PRIMARY KEY AUTOINCREMENT,
   comic_id TEXT NOT NULL,
@@ -1505,6 +1472,4 @@ CREATE INDEX IF NOT EXISTS idx_chapters_comic_id
   ON chapters(comic_id, chapter_index);
 CREATE INDEX IF NOT EXISTS idx_pages_chapter_id
   ON pages(chapter_id, page_index);
-CREATE INDEX IF NOT EXISTS idx_history_events_comic_time
-  ON history_events(comic_id, occurred_at);
 ''';

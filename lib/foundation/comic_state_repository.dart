@@ -531,13 +531,6 @@ class ComicStateRepository {
   }
 
   void _mirrorCommonState(ComicIdentity identity, String comicId) {
-    final history = _findHistory(identity.sourceComicId, identity.type);
-    if (history != null) {
-      _db.markRead(
-        comicId: comicId,
-        occurredAt: history.time.millisecondsSinceEpoch,
-      );
-    }
     for (final folder in _findFavoriteFolders(
       identity.sourceComicId,
       identity.type,
