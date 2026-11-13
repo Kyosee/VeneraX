@@ -370,6 +370,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
           var timeB = historyB?.time ?? DateTime.fromMillisecondsSinceEpoch(0);
           return timeB.compareTo(timeA);
         case LocalSortType.defaultSort:
+        case LocalSortType.sizeAsc:
+        case LocalSortType.sizeDesc:
           return 0;
       }
     });

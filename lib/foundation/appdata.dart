@@ -488,6 +488,7 @@ class Settings with ChangeNotifier {
     'requireDisclaimerConsent': false,
     'disclaimerConsented': false,
     'onClickFavorite': 'viewDetail', // viewDetail, read
+    'onClickLocalComic': 'viewDetail', // viewDetail, read
     'enableDnsOverrides': false,
     'dnsOverrides': {},
     // Off by default: logging every successful request costs a disk write per

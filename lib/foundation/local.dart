@@ -1289,10 +1289,11 @@ class LocalManager with ChangeNotifier {
   }
 
   void batchDeleteComics(
-    List<LocalComic> comics, [
+    List<LocalComic> comics, {
     bool removeFileOnDisk = true,
-    bool removeFavoriteAndHistory = true,
-  ]) {
+    bool removeFavorites = true,
+    bool removeHistory = true,
+  }) {
     if (comics.isEmpty) {
       return;
     }
@@ -1327,8 +1328,10 @@ class LocalManager with ChangeNotifier {
       }
     }
 
-    if (removeFavoriteAndHistory) {
+    if (removeFavorites) {
       LocalFavoritesManager().batchDeleteComicsInAllFolders(comicIDs);
+    }
+    if (removeHistory) {
       HistoryManager().batchDeleteHistories(comicIDs);
     }
 
@@ -1392,6 +1395,41 @@ class LocalManager with ChangeNotifier {
   }
 }
 
+/// Measures files asynchronously so sorting a large library stays responsive.
+Future<List<LocalComic>> sortLocalComicsBySize(
+  List<LocalComic> comics, {
+  bool descending = false,
+}) async {
+  final sizes = <String, int>{};
+  for (final path in comics.map((c) => c.baseDir).toSet()) {
+    var size = 0;
+    try {
+      await for (final entry in Directory(path).list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entry is! File) continue;
+        try {
+          size += await entry.length();
+        } on FileSystemException {
+          // A download or deletion may change files during the scan.
+        }
+      }
+    } on FileSystemException {
+      // Missing or inaccessible files contribute no measurable bytes.
+    }
+    sizes[path] = size;
+  }
+  return List<LocalComic>.of(comics)..sort((a, b) {
+    final bySize = (sizes[a.baseDir] ?? 0).compareTo(sizes[b.baseDir] ?? 0);
+    if (bySize != 0) return descending ? -bySize : bySize;
+    final byTitle = a.title.compareTo(b.title);
+    if (byTitle != 0) return byTitle;
+    final byType = a.comicType.value.compareTo(b.comicType.value);
+    return byType != 0 ? byType : a.id.compareTo(b.id);
+  });
+}
+
 enum LocalSortType {
   defaultSort("default"),
   name("name"),
@@ -1399,11 +1437,15 @@ enum LocalSortType {
   timeDesc("time_desc"),
   timeAsc("time_asc"),
   author("author"),
-  lastRead("last_read");
+  lastRead("last_read"),
+  sizeAsc("size_asc"),
+  sizeDesc("size_desc");
 
   final String value;
 
   const LocalSortType(this.value);
+
+  bool get isSize => this == sizeAsc || this == sizeDesc;
 
   static LocalSortType fromString(String value) {
     for (var type in values) {

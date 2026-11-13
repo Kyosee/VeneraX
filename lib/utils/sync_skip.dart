@@ -245,6 +245,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "minimizeToTray",
       "autoCleanHistoryDays",
       "clearReadingProgressOnSingleHistoryDelete",
+      "onClickLocalComic",
     ],
   ),
 ];

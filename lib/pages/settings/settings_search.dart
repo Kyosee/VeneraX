@@ -237,6 +237,7 @@ class _SettingsSearchEntry {
     }
     if (category == 9) {
       return switch (title) {
+        'Click local comic' ||
         'Download Threads' ||
         'Parallel Downloads' ||
         'Download on WiFi Only' => 'Downloads',
@@ -526,6 +527,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
 
   // --- 9: Downloads & storage ---
+  _SettingsSearchEntry(
+    "Click local comic",
+    9,
+    keywords: ["local", "read", "detail", "open"],
+  ),
   _SettingsSearchEntry("Storage Path for local comics", 9, keywords: ["path"]),
   _SettingsSearchEntry("Set New Storage Path", 9, keywords: ["path"]),
   _SettingsSearchEntry("Cache Size", 9, keywords: ["cache"]),

@@ -107,6 +107,14 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
             common: true,
             icon: Icons.download_outlined,
             children: [
+              SelectSetting(
+                title: "Click local comic".tl,
+                settingKey: "onClickLocalComic",
+                optionTranslation: {
+                  "viewDetail": "View Detail".tl,
+                  "read": "Read".tl,
+                },
+              ),
               _SliderSetting(
                 title: "Download Threads".tl,
                 description:
