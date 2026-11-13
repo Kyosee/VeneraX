@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
@@ -116,7 +117,10 @@ void main() {
     await open(tester, 900);
     final searchField = find.byType(TextField).first;
     expect(tester.getTopLeft(searchField).dy, greaterThanOrEqualTo(48));
-    await tester.tap(find.byKey(const ValueKey('settings-category-7')));
+    final about = find.byKey(const ValueKey('settings-category-7'));
+    await tester.ensureVisible(about);
+    await tester.pumpAndSettle();
+    await tester.tap(about);
     await tester.pumpAndSettle();
     await openSection(tester, 'Diagnostics');
     await openSection(tester, 'Open Log');
@@ -126,16 +130,13 @@ void main() {
     expect(MediaQuery.paddingOf(tester.element(logs)).top, 0);
     expect(MediaQuery.paddingOf(tester.element(logs)).bottom, 24);
     expect(tester.getSize(header).height, 52);
-    expect(
-      tester.getTopLeft(header).dy,
-      tester.getBottomLeft(searchField).dy + 12,
-    );
-    final searchSurface = find
-        .ancestor(of: searchField, matching: find.byType(Material))
+    expect(tester.getTopLeft(header).dy, 48);
+    final detailSurface = find
+        .ancestor(of: logs, matching: find.byType(Material))
         .first;
     final scaffold = find.descendant(of: logs, matching: find.byType(Scaffold));
     expect(
-      tester.widget<Material>(searchSurface).color,
+      tester.widget<Material>(detailSurface).color,
       tester.widget<Scaffold>(scaffold).backgroundColor ??
           Theme.of(tester.element(scaffold)).scaffoldBackgroundColor,
     );
@@ -148,7 +149,7 @@ void main() {
         .first;
     expect(
       headerBackground.color,
-      tester.widget<Material>(searchSurface).color,
+      tester.widget<Material>(detailSurface).color,
     );
     expect(tester.takeException(), isNull);
   });
@@ -162,11 +163,8 @@ void main() {
     await openSection(tester, 'Translation models');
     final models = find.byType(TranslationModelsPage);
     expect(models, findsOneWidget);
-    final searchSurface = find
-        .ancestor(
-          of: find.byType(TextField).first,
-          matching: find.byType(Material),
-        )
+    final detailSurface = find
+        .ancestor(of: models, matching: find.byType(Material))
         .first;
     final header = find.descendant(
       of: models,
@@ -178,7 +176,7 @@ void main() {
     );
     expect(
       tester.widget<Material>(headerSurface.first).color,
-      tester.widget<Material>(searchSurface).color,
+      tester.widget<Material>(detailSurface).color,
     );
     expect(tester.takeException(), isNull);
   });
@@ -186,7 +184,7 @@ void main() {
   for (final width in [800.0, 950.0, 1100.0]) {
     for (final brightness in Brightness.values) {
       testWidgets(
-        'settings search matches the detail surface at $width $brightness',
+        'settings search is visible below the sidebar title at $width $brightness',
         (tester) async {
           if (width == 950) {
             tester.view.padding = const FakeViewPadding(left: 24, right: 24);
@@ -204,26 +202,69 @@ void main() {
           await tester.tap(find.byKey(const ValueKey('settings-category-4')));
           await tester.pumpAndSettle();
           final searchField = find.byType(TextField).first;
+          expect(find.byType(TextField), findsOneWidget);
           final searchSurface = find
               .ancestor(of: searchField, matching: find.byType(Material))
               .first;
-          final title = find.descendant(
-            of: find.byType(ExploreSettings),
-            matching: find.text('Browsing & filters'),
-          );
-          expect(title, findsOneWidget);
-          final detailSurface = find
-              .ancestor(of: title, matching: find.byType(Material))
-              .first;
+          final field = tester.widget<TextField>(searchField);
           expect(
-            tester.widget<Material>(searchSurface).color,
-            tester.widget<Material>(detailSurface).color,
+            tester.getRect(searchField).right,
+            lessThanOrEqualTo(
+              tester.getRect(find.byType(VerticalDivider).first).left,
+            ),
+          );
+          expect(
+            tester.getRect(searchField).top,
+            greaterThan(tester.getRect(find.text('Settings')).bottom),
+          );
+          expect(field.focusNode!.hasFocus, isFalse);
+          expect(field.decoration!.filled, isTrue);
+          expect(
+            field.decoration!.fillColor,
+            isNot(tester.widget<Material>(searchSurface).color),
+          );
+          expect(
+            (field.decoration!.enabledBorder ?? field.decoration!.border)!
+                .borderSide
+                .style,
+            BorderStyle.solid,
           );
           expect(tester.takeException(), isNull);
         },
       );
     }
   }
+
+  testWidgets('sidebar search keeps shortcuts and result navigation', (
+    tester,
+  ) async {
+    await open(tester, 1100);
+    final searchField = find.byType(TextField).first;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(searchField).focusNode!.hasFocus, isTrue);
+
+    await tester.enterText(searchField, 'Language');
+    await tester.pumpAndSettle();
+    final result = find.byKey(const ValueKey('settings-result-Language'));
+    expect(result, findsOneWidget);
+    expect(
+      tester.getRect(result).left,
+      greaterThan(tester.getRect(searchField).right),
+    );
+    await tester.tap(result);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+    expect(find.text('Language').hitTestable(), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('settings-search-highlight')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'desktop child pages stay beside the category sidebar',

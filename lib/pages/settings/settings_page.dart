@@ -210,20 +210,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           color: background,
                           child: SafeArea(
                             bottom: false,
-                            child: Column(
-                              children: [
-                                buildSearchField(),
-                                Expanded(
-                                  child: _searchQuery.trim().isEmpty
-                                      ? buildRight()
-                                      : _buildSettingsSearchResults(
-                                          context,
-                                          _searchQuery,
-                                          _openSettingsResult,
-                                        ),
-                                ),
-                              ],
-                            ),
+                            child: _searchQuery.trim().isEmpty
+                                ? buildRight()
+                                : _buildSettingsSearchResults(
+                                    context,
+                                    _searchQuery,
+                                    _openSettingsResult,
+                                  ),
                           ),
                         ),
                       );
@@ -238,10 +231,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget buildSearchField() => Padding(
     padding: EdgeInsets.fromLTRB(
-      enableTwoViews ? 32 : 20,
-      enableTwoViews ? 12 : 4,
-      enableTwoViews ? 32 : 20,
-      enableTwoViews ? 12 : 0,
+      enableTwoViews ? 12 : 20,
+      4,
+      enableTwoViews ? 12 : 20,
+      0,
     ),
     child: TextField(
       controller: _searchController,
@@ -252,9 +245,7 @@ class _SettingsPageState extends State<SettingsPage> {
         hintText: 'Search settings'.tl,
         prefixIcon: const Icon(Icons.search, size: 20),
         filled: true,
-        fillColor: enableTwoViews
-            ? colors.surfaceContainerLow
-            : colors.surfaceContainerHighest,
+        fillColor: colors.surfaceContainerHighest,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
@@ -262,7 +253,9 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
+          borderSide: enableTwoViews
+              ? BorderSide(color: colors.outlineVariant)
+              : BorderSide.none,
         ),
         suffixIcon: _searchQuery.isEmpty
             ? null
@@ -312,7 +305,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
-          if (!enableTwoViews) buildSearchField(),
+          buildSearchField(),
           Expanded(
             child: !enableTwoViews && _searchQuery.trim().isNotEmpty
                 ? _buildSettingsSearchResults(
