@@ -16,6 +16,43 @@ FavoriteItem favorite(String id, int type) => FavoriteItem(
 
 void main() {
   group('UniformRandomComicPicker', () {
+    test('batch draws are distinct and do not mutate round exclusions', () {
+      final picker = UniformRandomComicPicker(random: Random(4));
+      final candidates = List.generate(5, (i) => favorite('$i', 1));
+      final excluded = {randomComicIdentity(candidates.first)};
+
+      final result = picker.pickMany(candidates, count: 3, excluded: excluded);
+
+      expect(result, hasLength(3));
+      expect(result.map(randomComicIdentity).toSet(), hasLength(3));
+      expect(result, isNot(contains(candidates.first)));
+      expect(excluded, {randomComicIdentity(candidates.first)});
+    });
+
+    test('batch stops at the end of the round without repeating comics', () {
+      final picker = UniformRandomComicPicker(random: Random(4));
+      final first = favorite('a', 1);
+      final second = favorite('b', 1);
+
+      expect(
+        picker.pickMany(
+          [first, first, second],
+          count: 3,
+          excluded: {randomComicIdentity(first)},
+        ),
+        [second],
+      );
+      expect(picker.pickMany(const [], count: 3), isEmpty);
+      expect(picker.pickMany([first], count: 0), isEmpty);
+    });
+
+    test('batch can contain equal ids from different sources', () {
+      final picker = UniformRandomComicPicker(random: Random(4));
+      final candidates = [favorite('same', 1), favorite('same', 2)];
+
+      expect(picker.pickMany(candidates, count: 3), unorderedEquals(candidates));
+    });
+
     test('returns null for an empty selection', () {
       final picker = UniformRandomComicPicker(random: Random(1));
 

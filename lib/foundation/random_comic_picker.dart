@@ -20,6 +20,25 @@ abstract interface class RandomComicPicker {
   });
 }
 
+extension RandomComicBatchPicker on RandomComicPicker {
+  /// Deals up to [count] distinct comics without crossing the current round.
+  List<FavoriteItem> pickMany(
+    List<FavoriteItem> candidates, {
+    required int count,
+    Set<RandomComicIdentity> excluded = const {},
+  }) {
+    final remainingExclusions = {...excluded};
+    final result = <FavoriteItem>[];
+    for (var i = 0; i < count; i++) {
+      final comic = pick(candidates, excluded: remainingExclusions);
+      if (comic == null) break;
+      result.add(comic);
+      remainingExclusions.add(randomComicIdentity(comic));
+    }
+    return result;
+  }
+}
+
 /// Gives every eligible comic the same chance of being selected.
 class UniformRandomComicPicker implements RandomComicPicker {
   UniformRandomComicPicker({Random? random}) : _random = random ?? Random();
