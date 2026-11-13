@@ -902,6 +902,27 @@ class HistoryManager with ChangeNotifier {
     return res.map((element) => History.fromRow(element)).toList();
   }
 
+  /// Every comic with reading state or reading time on this device, including
+  /// ones cleared from the history list.
+  List<ComicID> recordedComics() {
+    if (!isInitialized || _isCorrupted) return const [];
+    try {
+      return _db
+          .select('''
+            select id, type from history
+            union
+            select id, type from reading_statistics;
+          ''')
+          .map(
+            (row) => ComicID(ComicType(row['type'] as int), row['id'] as String),
+          )
+          .toList();
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+      return const [];
+    }
+  }
+
   List<History> getAll() {
     if (!isInitialized || _isCorrupted) return [];
     try {

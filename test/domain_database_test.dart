@@ -412,6 +412,148 @@ void main() {
     }
   });
 
+  test('sync snapshot keeps what is used and what it links to', () async {
+    final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final snapshotDir = Directory.systemTemp.createTempSync('venera_domain_db_');
+    final domain = DomainDatabase();
+
+    try {
+      await domain.init(tempDir.path);
+      final sourceA = SourcePlatformResolver.fromSourceKey('source_a');
+      final sourceB = SourcePlatformResolver.fromSourceKey('source_b');
+      String add(SourcePlatformRef platform, String id, String title) {
+        final comicId = domain.ensureComicSource(
+          platform: platform,
+          sourceComicId: id,
+          title: title,
+          timestamp: 1,
+        );
+        domain.replaceSourceChapters(
+          platform: platform,
+          sourceComicId: id,
+          chapters: [
+            DomainComicChapterInfo(
+              chapterId: '$comicId:chapter:1',
+              title: '$title 1',
+              chapterIndex: 1,
+              sourceChapterId: '$id-1',
+              sourceChapterIndex: 1,
+            ),
+          ],
+        );
+        return comicId;
+      }
+
+      final kept = add(sourceA, 'kept', 'Kept Title');
+      // Same title elsewhere: an automatic suggestion attached to [kept].
+      final suggested = add(sourceB, 'kept-b', 'Kept Title');
+      // Linked by hand, though neither is used.
+      final linkedA = add(sourceA, 'm1', 'Manual One');
+      final linkedB = add(sourceB, 'm2', 'Manual Two');
+      domain.linkSourceComics(
+        sourcePlatform: sourceA,
+        sourceComicId: 'm1',
+        targetPlatform: sourceB,
+        targetSourceComicId: 'm2',
+        timestamp: 2,
+      );
+      // A suggestion the user turned down must survive too.
+      final rejectedA = add(sourceA, 'r1', 'Rejected Title');
+      final rejectedB = add(sourceB, 'r2', 'Rejected Title');
+      final suggestion = domain
+          .getRelatedSources(rejectedB)
+          .firstWhere((link) => link.status == 'candidate');
+      domain.rejectWorkSource(
+        workId: suggestion.workId,
+        comicId: suggestion.comicId,
+      );
+      // Only ever browsed past, alone or suggested to each other.
+      final browsed = add(sourceA, 'browsed', 'Browsed Only');
+      final browsedPairA = add(sourceA, 'p1', 'Browsed Pair');
+      final browsedPairB = add(sourceB, 'p2', 'Browsed Pair');
+
+      final sourcePath = DomainDatabase.databasePathFor(tempDir.path);
+      final snapshotPath = DomainDatabase.databasePathFor(snapshotDir.path);
+      File(snapshotPath).parent.createSync(recursive: true);
+      DomainDatabase.writeSyncSnapshot(
+        sourcePath: sourcePath,
+        targetPath: snapshotPath,
+        keptComicIds: [kept, 'remote:source_c:never-mirrored'],
+      );
+
+      expect(
+        domain.db.select('SELECT COUNT(*) AS c FROM comics;').single['c'],
+        9,
+        reason: 'the live database is left as it was',
+      );
+      expect(File('$snapshotPath-wal').existsSync(), isFalse);
+
+      final copy = DomainDatabase();
+      await copy.init(snapshotDir.path);
+      try {
+        final db = copy.db;
+        expect(
+          db
+              .select('SELECT comic_id FROM comics ORDER BY comic_id;')
+              .map((row) => row['comic_id']),
+          unorderedEquals([
+            kept,
+            suggested,
+            linkedA,
+            linkedB,
+            rejectedA,
+            rejectedB,
+          ]),
+        );
+        for (final gone in [browsed, browsedPairA, browsedPairB]) {
+          expect(copy.getComicBaseInfo(gone), isNull);
+        }
+        expect(
+          db
+              .select('SELECT COUNT(*) AS c FROM comic_source_chapters;')
+              .single['c'],
+          6,
+        );
+        expect(
+          copy
+              .getSourceChapters(platform: sourceA, sourceComicId: 'kept')
+              .map((c) => c.title),
+          ['Kept Title 1'],
+        );
+        expect(
+          db.select('''
+            SELECT COUNT(*) AS c FROM works
+            WHERE work_id NOT IN (SELECT work_id FROM work_sources);
+          ''').single['c'],
+          0,
+        );
+        expect(
+          copy
+              .getRelatedSources(linkedA)
+              .where((link) => link.status == 'accepted')
+              .map((link) => link.comicId),
+          unorderedEquals([linkedA, linkedB]),
+        );
+        expect(
+          db.select(
+            "SELECT COUNT(*) AS c FROM work_sources WHERE link_status = 'rejected';",
+          ).single['c'],
+          1,
+        );
+        expect(
+          copy.getRelatedSources(kept).map((link) => link.comicId),
+          contains(suggested),
+        );
+      } finally {
+        copy.close();
+      }
+    } finally {
+      domain.close();
+      tempDir.deleteSync(recursive: true);
+      snapshotDir.deleteSync(recursive: true);
+    }
+  });
+
   test('a restored file gets its platforms written again', () async {
     final tempDir = Directory.systemTemp.createTempSync('venera_domain_db_');
     final otherDir = Directory.systemTemp.createTempSync('venera_domain_db_');

@@ -103,6 +103,28 @@ void main() {
     directory.deleteSync(recursive: true);
   });
 
+  test('recorded comics include cleared rows and reading time alone', () {
+    manager.addHistory(_history(id: 'listed'));
+    manager.addHistory(_history(id: 'hidden'));
+    manager.hide('hidden', ComicType.local);
+    manager.recordReadingDuration(
+      id: 'timed',
+      type: ComicType.local,
+      title: 'Timed',
+      subtitle: '',
+      cover: '',
+      startedAt: _readAt,
+      duration: const Duration(minutes: 5),
+    );
+
+    expect(manager.getAll().map((h) => h.id), ['listed']);
+    expect(manager.recordedComics().map((c) => c.id).toSet(), {
+      'listed',
+      'hidden',
+      'timed',
+    });
+  });
+
   test('late maintenance cannot recreate deleted reading progress', () {
     final history = _history();
     manager.addHistory(history);

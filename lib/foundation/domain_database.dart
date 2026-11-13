@@ -196,6 +196,66 @@ class DomainDatabase {
     }
   }
 
+  /// Copies the database at [sourcePath] to [targetPath] keeping only
+  /// [keptComicIds], every comic sharing a work with one of them, and every
+  /// work that holds a user's link decision. Comics merely browsed past are
+  /// this device's cache and stay out of backups, where they were most of the
+  /// payload. Runs on the export isolate; [sourcePath] may be open elsewhere.
+  static void writeSyncSnapshot({
+    required String sourcePath,
+    required String targetPath,
+    required Iterable<String> keptComicIds,
+  }) {
+    final target = File(targetPath);
+    if (target.existsSync()) {
+      target.deleteSync();
+    }
+    final source = openRawDatabase(sourcePath);
+    try {
+      source.execute('VACUUM INTO ?;', [targetPath]);
+    } finally {
+      source.dispose();
+    }
+    final db = openRawDatabase(targetPath);
+    try {
+      db.execute('PRAGMA journal_mode = DELETE;');
+      db.execute('PRAGMA foreign_keys = ON;');
+      db.execute('CREATE TEMP TABLE kept (comic_id TEXT PRIMARY KEY);');
+      db.execute('BEGIN TRANSACTION;');
+      final insert = db.prepare('INSERT OR IGNORE INTO kept VALUES (?);');
+      try {
+        for (final comicId in keptComicIds) {
+          insert.execute([comicId]);
+        }
+      } finally {
+        insert.dispose();
+      }
+      db.execute('''
+        INSERT OR IGNORE INTO kept
+        SELECT comic_id FROM work_sources
+        WHERE work_id IN (
+          SELECT work_id FROM work_sources
+          WHERE comic_id IN (SELECT comic_id FROM kept)
+            OR link_status = 'rejected'
+            OR (link_status = 'accepted' AND work_id != 'work:' || comic_id)
+        );
+        ''');
+      // Cascades to each comic's links, chapter list and mirror rows.
+      db.execute(
+        'DELETE FROM comics WHERE comic_id NOT IN (SELECT comic_id FROM kept);',
+      );
+      db.execute(
+        'DELETE FROM works '
+        'WHERE work_id NOT IN (SELECT work_id FROM work_sources);',
+      );
+      db.execute('COMMIT;');
+      db.execute('DROP TABLE kept;');
+      db.execute('VACUUM;');
+    } finally {
+      db.dispose();
+    }
+  }
+
   /// Runs the open-time schema pipeline and compacts the file, so the open
   /// that follows is cheap. Meant for a background isolate: converting an
   /// older large library takes seconds on a phone.
