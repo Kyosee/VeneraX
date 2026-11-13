@@ -50,7 +50,6 @@ const _sections = <int, List<String>>{
     'Browsing pages',
     'Content filters',
   ],
-  7: ['Diagnostics'],
   8: ['Advanced translation settings', 'Help & cleanup'],
   9: ['Storage locations'],
 };
@@ -349,7 +348,7 @@ void main() {
     );
   }
 
-  for (final (category, title) in [(7, 'Diagnostics'), (1, 'E-ink screen')]) {
+  for (final (category, title) in [(1, 'E-ink screen')]) {
     testWidgets(
       'wide $title entry fills its entire final row',
       (tester) async {

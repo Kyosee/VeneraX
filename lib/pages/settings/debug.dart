@@ -31,13 +31,6 @@ class DebugPageState extends State<DebugPage> {
             ComicSourceManager().reload();
           },
         ).toSliver(),
-        _CallbackSetting(
-          title: "Open Log".tl,
-          callback: () {
-            context.to(() => const LogsPage());
-          },
-          actionTitle: 'Open'.tl,
-        ).toSliver(),
         _SwitchSetting(
           title: "Ignore Certificate Errors".tl,
           settingKey: "ignoreBadCertificate",

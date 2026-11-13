@@ -208,12 +208,12 @@ class _SettingsSearchEntry {
       };
     }
     if (category == 5) return 'Connection';
-    if (category == 6) return 'Diagnostics';
+    if (category == 6) return 'Debug';
     if (category == 7) {
       return switch (title) {
         'Check for updates' ||
         'Check for updates on startup' => 'Version and updates',
-        'Debug' => 'Diagnostics',
+        'App logs' => 'Diagnostics & debugging',
         _ => 'Help',
       };
     }
@@ -268,6 +268,7 @@ class _SettingsSearchEntry {
       'Connection',
       'Version and updates',
       'Help',
+      'Diagnostics & debugging',
       'Translation preferences',
       'Translation services',
       'Models & languages',
@@ -629,10 +630,14 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
   _SettingsSearchEntry("Repository", 7, keywords: ["github", "source"]),
   _SettingsSearchEntry("User Agreement & Disclaimer", 7),
+  _SettingsSearchEntry(
+    "App logs",
+    7,
+    keywords: ["log", "logs", "crash", "error", "diagnostics"],
+  ),
 
   // --- 6: Debug ---
   _SettingsSearchEntry("Reload Configs", 6),
-  _SettingsSearchEntry("Open Log", 6, keywords: ["log", "logs"]),
   _SettingsSearchEntry(
     "Ignore Certificate Errors",
     6,

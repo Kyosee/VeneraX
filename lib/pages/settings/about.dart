@@ -35,48 +35,44 @@ class _AboutSettingsState extends State<AboutSettings> {
       description: 'Version information, help and troubleshooting',
       section: section,
       onOpenSection: _openSection,
-      intro: section == 'Diagnostics'
-          ? null
-          : Row(
+      intro: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Image(
+              width: 64,
+              height: 64,
+              image: AssetImage(LauncherIconService.current.inAppLogoAsset),
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Image(
-                    width: 64,
-                    height: 64,
-                    image: AssetImage(
-                      LauncherIconService.current.inAppLogoAsset,
-                    ),
-                    filterQuality: FilterQuality.medium,
+                Text(
+                  'VeneraX · ${App.version}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'VeneraX · ${App.version}',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original."
-                            .tl,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 6),
+                Text(
+                  "VeneraX is a free and open-source, multi-platform comic reader forked from Venera and maintained with enhancements over the original."
+                      .tl,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
       sections: [
         _SettingsSection(
           title: 'Version and updates',
@@ -129,17 +125,18 @@ class _AboutSettingsState extends State<AboutSettings> {
           ],
         ),
         _SettingsSection(
-          title: 'Diagnostics',
-          subtitle: 'Logs and advanced troubleshooting tools',
-          icon: Icons.bug_report_outlined,
+          title: 'Diagnostics & debugging',
+          common: true,
           children: [
             _SettingsLink(
-              title: 'Open Log',
+              title: 'App logs',
+              subtitle: 'Search, filter and share runtime logs',
               icon: Icons.receipt_long_outlined,
               onTap: () => context.to(() => const LogsPage()),
             ),
             _SettingsLink(
               title: 'Debug',
+              subtitle: 'Advanced tools for troubleshooting',
               icon: Icons.code,
               onTap: () => context.to(() => const DebugPage()),
             ),

@@ -122,8 +122,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(about);
     await tester.pumpAndSettle();
-    await openSection(tester, 'Diagnostics');
-    await openSection(tester, 'Open Log');
+    await openSection(tester, 'App logs');
 
     final logs = find.byType(LogsPage);
     final header = find.descendant(of: logs, matching: find.byType(Appbar));

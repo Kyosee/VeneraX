@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ffi' show Abi;
 
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
@@ -9,12 +11,14 @@ class LogItem {
   final LogLevel level;
   final String title;
   final String content;
-  final DateTime time = DateTime.now();
+  final DateTime time;
 
+  /// Also the on-disk format; [Log.parse] reads it back.
   @override
   toString() => "${level.name} $title $time \n$content\n\n";
 
-  LogItem(this.level, this.title, this.content);
+  LogItem(this.level, this.title, this.content, [DateTime? time])
+    : time = time ?? DateTime.now();
 }
 
 enum LogLevel { error, warning, info }
@@ -58,19 +62,38 @@ class Log {
     debugPrint('\x1B[31m$text\x1B[0m');
   }
 
+  /// Bumped on every change to [logs], so an open logs page can follow along.
+  static final changes = ValueNotifier<int>(0);
+
   static IOSink? _file;
+
+  static const _fileName = "logs.txt";
+
+  static const _previousFileName = "logs.previous.txt";
+
+  static Directory _directory() => App.isAndroid
+      ? Directory(App.externalStoragePath!)
+      : Directory(App.dataPath);
+
+  static void _openFile() {
+    var dir = _directory();
+    var file = dir.joinFile(_fileName);
+    // Opening for write truncates, and after a crash the last run's file is
+    // the only record of what went wrong. Keep one generation of it.
+    try {
+      if (file.existsSync()) {
+        file.renameSync(dir.joinFile(_previousFileName).path);
+      }
+    } catch (e) {
+      debugPrint('Failed to keep previous logs: $e');
+    }
+    _file = file.openWrite();
+  }
 
   static void addLog(LogLevel level, String title, String content) {
     if (isMuted) return;
     if (_file == null && App.isInitialized) {
-      Directory dir;
-      if (App.isAndroid) {
-        dir = Directory(App.externalStoragePath!);
-      } else {
-        dir = Directory(App.dataPath);
-      }
-      var file = dir.joinFile("logs.txt");
-      _file = file.openWrite();
+      _openFile();
     }
 
     if (!ignoreLimitation && content.length > maxLogLength) {
@@ -103,6 +126,7 @@ class Log {
         _logs.removeAt(0);
       }
     }
+    changes.value++;
   }
 
   static info(String title, String content) {
@@ -175,14 +199,90 @@ class Log {
   static void clear() {
     flush();
     _logs.clear();
+    changes.value++;
+  }
+
+  /// How much of the previous run's file is read. The end is what explains a
+  /// crash, and a run with every request logged can leave megabytes behind.
+  static const _previousTailBytes = 1 << 20;
+
+  /// Entries the previous run left on disk, oldest first. Empty when there is
+  /// no such file.
+  static Future<List<LogItem>> loadPreviousSession() async {
+    if (!App.isInitialized) return const [];
+    var file = _directory().joinFile(_previousFileName);
+    if (!await file.exists()) return const [];
+    var raf = await file.open();
+    Uint8List bytes;
+    try {
+      var length = await raf.length();
+      var start = length > _previousTailBytes ? length - _previousTailBytes : 0;
+      await raf.setPosition(start);
+      bytes = await raf.read(length - start);
+    } finally {
+      await raf.close();
+    }
+    return compute(_parseBytes, bytes);
+  }
+
+  static List<LogItem> _parseBytes(Uint8List bytes) =>
+      parse(utf8.decode(bytes, allowMalformed: true));
+
+  static final _header = RegExp(
+    r'^(error|warning|info) (.*) (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) $',
+    multiLine: true,
+  );
+
+  /// Reads text written by [LogItem.toString] back into entries. Text before
+  /// the first header, such as an entry cut in half by a tail read, is dropped.
+  static List<LogItem> parse(String text) {
+    var matches = _header.allMatches(text).toList();
+    var items = <LogItem>[];
+    for (var i = 0; i < matches.length; i++) {
+      var match = matches[i];
+      var end = i + 1 < matches.length ? matches[i + 1].start : text.length;
+      var start = match.end < end ? match.end + 1 : end;
+      var content = text.substring(start, end);
+      var trimmed = content.length;
+      while (trimmed > 0 && content.codeUnitAt(trimmed - 1) == 0x0A) {
+        trimmed--;
+      }
+      items.add(
+        LogItem(
+          LogLevel.values.byName(match[1]!),
+          match[2]!,
+          content.substring(0, trimmed),
+          DateTime.tryParse(match[3]!),
+        ),
+      );
+    }
+    return items;
+  }
+
+  /// Plain text for saving or sharing, led by what a bug report needs.
+  static String exportText(Iterable<LogItem> items, {String title = "Logs"}) {
+    var buffer = StringBuffer()
+      ..writeln(title)
+      ..writeln("App version: ${App.version}")
+      ..writeln(
+        "Platform: ${Platform.operatingSystem} "
+        "${Platform.operatingSystemVersion} (${Abi.current()})",
+      )
+      ..writeln("Exported at: ${DateTime.now()}")
+      ..writeln();
+    for (var item in items) {
+      buffer.write(item);
+    }
+    return buffer.toString();
+  }
+
+  static String exportFileName([DateTime? time]) {
+    var t = time ?? DateTime.now();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return "logs-${t.year}${two(t.month)}${two(t.day)}"
+        "-${two(t.hour)}${two(t.minute)}${two(t.second)}.txt";
   }
 
   @override
-  String toString() {
-    var res = "Logs\n\n";
-    for (var log in _logs) {
-      res += log.toString();
-    }
-    return res;
-  }
+  String toString() => exportText(_logs);
 }

@@ -75,6 +75,7 @@ part 'cache_directory_settings.dart';
 part 'about.dart';
 part 'network.dart';
 part 'debug.dart';
+part 'logs_page.dart';
 part 'settings_search.dart';
 part 'settings_scope.dart';
 part 'settings_focus.dart';
