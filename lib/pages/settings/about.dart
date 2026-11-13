@@ -130,7 +130,7 @@ class _AboutSettingsState extends State<AboutSettings> {
           children: [
             _SettingsLink(
               title: 'App logs',
-              subtitle: 'Search, filter and share runtime logs',
+              subtitle: 'Search, filter and export runtime logs',
               icon: Icons.receipt_long_outlined,
               onTap: () => context.to(() => const LogsPage()),
             ),

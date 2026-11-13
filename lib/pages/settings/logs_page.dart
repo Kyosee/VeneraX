@@ -164,15 +164,6 @@ class _LogsPageState extends State<LogsPage> {
     saveFile(data: _exportBytes(), filename: Log.exportFileName());
   }
 
-  void _share() {
-    Log.flush();
-    Share.shareFile(
-      data: _exportBytes(),
-      filename: Log.exportFileName(),
-      mime: 'text/plain',
-    );
-  }
-
   void _setVerboseNetwork(bool enable) {
     appdata.settings['verboseNetworkLog'] = enable;
     Log.syncVerboseNetwork(enable);
@@ -230,12 +221,6 @@ class _LogsPageState extends State<LogsPage> {
       text: 'Copy shown logs'.tl,
       onClick: _copyShown,
     ),
-    if (App.isMobile)
-      MenuEntry(
-        icon: Icons.save_alt_outlined,
-        text: 'Export'.tl,
-        onClick: _export,
-      ),
     if (_live) ...[
       MenuEntry(
         icon: Icons.history,
@@ -275,18 +260,11 @@ class _LogsPageState extends State<LogsPage> {
       appBar: Appbar(
         title: Text(_title.tl),
         actions: [
-          if (App.isMobile)
-            IconButton(
-              tooltip: 'Share'.tl,
-              icon: const Icon(Icons.share_outlined),
-              onPressed: _share,
-            )
-          else
-            IconButton(
-              tooltip: 'Export'.tl,
-              icon: const Icon(Icons.save_alt_outlined),
-              onPressed: _export,
-            ),
+          IconButton(
+            tooltip: 'Export'.tl,
+            icon: const Icon(Icons.save_alt_outlined),
+            onPressed: _export,
+          ),
           MenuButton(entries: _menuEntries()),
         ],
       ),
