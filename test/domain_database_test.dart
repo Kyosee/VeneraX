@@ -818,6 +818,81 @@ void main() {
       }
     });
 
+    test('upgradeFile converts and compacts an older file', () async {
+      final legacy = await seededLegacyFile();
+      legacy.execute('''
+        CREATE TABLE chapter_sources (
+          chapter_source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chapter_id TEXT NOT NULL,
+          comic_source_id INTEGER NOT NULL,
+          source_chapter_id TEXT,
+          source_chapter_index INTEGER,
+          source_title TEXT
+        );
+        CREATE TABLE padding (data BLOB);
+        ''');
+      legacy.execute(
+        '''
+        INSERT INTO chapter_sources (
+          chapter_id, comic_source_id, source_chapter_id, source_chapter_index,
+          source_title
+        ) VALUES ('remote:source_a:abc:chapter:1', ?, 'c1', 1, 'Ch 1');
+        ''',
+        [comicSourceId],
+      );
+      // Pages the dropped tables leave behind.
+      legacy.execute(
+        'INSERT INTO padding SELECT randomblob(4000) FROM chapters, '
+        '(SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5);',
+      );
+      legacy.execute('DROP TABLE padding;');
+      expect(
+        legacy.select('PRAGMA freelist_count;').single[0],
+        greaterThan(0),
+      );
+      DomainDatabase.upgradeFile(legacy);
+      expect(legacy.select('PRAGMA freelist_count;').single[0], 0);
+      expect(
+        legacy.select('PRAGMA user_version;').single[0],
+        DomainDatabase.schemaVersion,
+      );
+      legacy.dispose();
+
+      final domain = await reopen();
+      try {
+        expect(
+          domain
+              .getSourceChapters(platform: platform, sourceComicId: 'abc')
+              .map((c) => c.title),
+          ['Ch 1'],
+        );
+      } finally {
+        domain.close();
+      }
+    });
+
+    test('the store stays closed while an upgrade runs', () async {
+      final legacy = await seededLegacyFile();
+      legacy.execute('PRAGMA user_version = 4;');
+      legacy.dispose();
+
+      final domain = DomainDatabase();
+      final opening = domain.init(tempDir.path);
+      // A lazy opener must not race the upgrade for the file.
+      domain.initSync(tempDir.path);
+      expect(domain.isInitialized, isFalse);
+      await opening;
+      try {
+        expect(domain.isInitialized, isTrue);
+        expect(
+          domain.db.select('PRAGMA user_version;').single[0],
+          DomainDatabase.schemaVersion,
+        );
+      } finally {
+        domain.close();
+      }
+    });
+
     test('convert even without the later group columns', () async {
       final legacy = await seededLegacyFile();
       legacy.execute('''

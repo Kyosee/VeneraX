@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/utils/io.dart';
@@ -113,18 +115,96 @@ class DomainDatabase {
   static String databasePathFor(String appDataPath) =>
       p.join(appDataPath, dataDirectoryName, databaseFileName);
 
+  /// Set while [init] upgrades the file on a background isolate; the file must
+  /// not be opened meanwhile.
+  Future<void>? _upgrading;
+
   Future<void> init(String appDataPath) async {
+    if (_db != null) {
+      return;
+    }
+    final dbPath = databasePathFor(appDataPath);
+    final version = _storedSchemaVersion(dbPath);
+    if (version != null && version < schemaVersion) {
+      final upgrading = _upgrading ??= _upgradeInBackground(dbPath);
+      try {
+        await upgrading;
+      } finally {
+        _upgrading = null;
+      }
+    }
     initSync(appDataPath);
   }
 
   void initSync(String appDataPath) {
-    if (_db != null) {
+    if (_db != null || _upgrading != null) {
       return;
     }
     final dbPath = databasePathFor(appDataPath);
     Directory(p.dirname(dbPath)).createSync(recursive: true);
     _dbPath = dbPath;
     _db = _openDatabase(dbPath);
+  }
+
+  /// The schema version a file was last opened with, read from its header.
+  /// Only decides whether to upgrade ahead of the open, which re-runs the same
+  /// pipeline anyway, so a stale or unreadable header is harmless.
+  static int? _storedSchemaVersion(String path) {
+    try {
+      final file = File(path).openSync();
+      try {
+        final header = file.readSync(64);
+        if (header.length < 64) {
+          return null;
+        }
+        return ByteData.sublistView(header).getInt32(60);
+      } finally {
+        file.closeSync();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _upgradeInBackground(String dbPath) async {
+    try {
+      await DatabaseGateway.instance.isolateOp(
+        dbPath,
+        (db) async => upgradeFile(db),
+      );
+    } catch (error, stackTrace) {
+      // The open that follows runs the same pipeline and owns any recovery.
+      Log.warning('Domain database', 'Upgrade failed: $error\n$stackTrace');
+    }
+  }
+
+  /// Upgrades a file that is not open anywhere yet, such as an imported one.
+  static Future<void> _upgradeDetached(String path) async {
+    try {
+      await Isolate.run(() {
+        final db = openRawDatabase(path);
+        try {
+          db.execute('PRAGMA foreign_keys = ON');
+          upgradeFile(db);
+          db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+        } finally {
+          db.dispose();
+        }
+      });
+    } catch (error, stackTrace) {
+      Log.warning('Domain database', 'Upgrade failed: $error\n$stackTrace');
+    }
+  }
+
+  /// Runs the open-time schema pipeline and compacts the file, so the open
+  /// that follows is cheap. Meant for a background isolate: converting an
+  /// older large library takes seconds on a phone.
+  static void upgradeFile(CommonDatabase db) {
+    createSchema(db);
+    // Dropped row-per-chapter tables leave most of the file as free pages.
+    if ((db.select('PRAGMA freelist_count;').single[0] as int) > 0) {
+      db.execute('VACUUM;');
+    }
   }
 
   CommonDatabase _openDatabase(String dbPath) {
@@ -168,6 +248,9 @@ class DomainDatabase {
     if (_db == null || dbPath == null) {
       throw StateError('DomainDatabase is not initialized; cannot restore');
     }
+    // A file from an older version needs the costly conversion; it is not
+    // shared yet, so do it off the UI isolate before the swap.
+    await _upgradeDetached(sourcePath);
     DatabaseGateway.instance.closeManaged(dbPath);
     _db = null;
     _ensuredPlatforms.clear();
@@ -335,7 +418,9 @@ class DomainDatabase {
         rows.dispose();
         insert.dispose();
       }
-    } catch (_) {}
+    } catch (error) {
+      Log.warning('Domain database', 'Chapter list conversion failed: $error');
+    }
   }
 
   /// Populates [normalized_title] for rows written before the column existed,
