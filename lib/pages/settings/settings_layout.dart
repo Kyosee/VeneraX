@@ -58,7 +58,6 @@ class _SettingsPageView extends StatelessWidget {
     final detail = selected != null && !selected.common ? selected : null;
     final colors = context.colorScheme;
     final wide = width >= 700;
-    final spacious = width >= 1180;
     final theme = Theme.of(context);
     final titleStyle = theme.textTheme.bodyMedium?.copyWith(fontSize: 14);
     final body = SmoothCustomScrollView(
@@ -102,7 +101,7 @@ class _SettingsPageView extends StatelessWidget {
                     if (detail != null)
                       _SettingsGroup(children: detail.children)
                     else
-                      _overview(spacious),
+                      _overview(),
                     SizedBox(height: MediaQuery.paddingOf(context).bottom),
                   ],
                 ),
@@ -154,37 +153,30 @@ class _SettingsPageView extends StatelessWidget {
     );
   }
 
-  Widget _overview(bool spacious) {
-    final groups = <Widget>[
-      for (final item in sections.where((item) => item.common))
-        _SettingsGroup(
-          title: item.title == 'Reading mode' ? null : item.title,
-          children: item.children,
-        ),
-      if (sections.any((item) => !item.common))
-        LayoutBuilder(
-          builder: (context, constraints) => _SettingsGroup(
-            title: 'More settings',
-            columns: constraints.maxWidth >= 620 ? 2 : 1,
-            children: [
-              for (final item in sections.where((item) => !item.common))
-                _SettingsLink(
-                  title: item.title,
-                  subtitle: item.subtitle,
-                  icon: item.icon,
-                  onTap: () => onOpenSection(item.title),
-                ),
-            ],
-          ),
-        ),
-    ];
-    if (!spacious || groups.length < 2) return Column(children: groups);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _overview() {
+    return Column(
       children: [
-        Expanded(flex: 6, child: groups.first),
-        const SizedBox(width: 24),
-        Expanded(flex: 5, child: Column(children: groups.skip(1).toList())),
+        for (final item in sections.where((item) => item.common))
+          _SettingsGroup(
+            title: item.title == 'Reading mode' ? null : item.title,
+            children: item.children,
+          ),
+        if (sections.any((item) => !item.common))
+          LayoutBuilder(
+            builder: (context, constraints) => _SettingsGroup(
+              title: 'More settings',
+              columns: constraints.maxWidth >= 620 ? 2 : 1,
+              children: [
+                for (final item in sections.where((item) => !item.common))
+                  _SettingsLink(
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    icon: item.icon,
+                    onTap: () => onOpenSection(item.title),
+                  ),
+              ],
+            ),
+          ),
       ],
     );
   }
