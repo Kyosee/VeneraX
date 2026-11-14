@@ -66,6 +66,7 @@ foreach ($target in $targets) {
         -OnnxSource (Join-Path $sources 'onnxruntime') `
         -EigenSource (Join-Path $sources 'eigen') `
         -WebViewSource (Join-Path $sources 'inappwebview')
+    if ($LASTEXITCODE -ne 0) { throw "HarmonyOS build failed for $($target.Platform)." }
     if (-not (Test-Path -LiteralPath $builtHap) -or (Get-Item -LiteralPath $builtHap).Length -eq 0) {
         throw "Missing HarmonyOS package for $($target.Platform)."
     }
