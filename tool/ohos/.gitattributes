@@ -1,0 +1,2 @@
+# Patches are applied with strict whitespace validation on Windows too.
+*.patch text eol=lf
