@@ -78,12 +78,18 @@ def main():
         (data / 'appdata.json').write_text(json.dumps({
             'settings': {
                 'language': 'en-US', 'initialPage': '0',
-                'requireDisclaimerConsent': False, 'disclaimerConsented': True,
                 'checkUpdateOnStart': False, 'proxy': 'direct',
                 'comicSourceListUrl': '', 'comicSourceLibraries': [],
                 'homeSections': [{'id': 'comicSource', 'visible': True}],
             },
             'searchHistory': [],
+        }))
+        # This synthetic user completed setup; the smoke test verifies WebView.
+        (data / 'onboarding.json').write_text(json.dumps({
+            'setupCompleted': True,
+            'acceptedVersion': 1,
+            'acceptedAt': '2026-11-14T00:00:00Z',
+            'acceptedLanguage': 'en-US',
         }))
         runtime = root / 'runtime'
         runtime.mkdir(mode=0o700)

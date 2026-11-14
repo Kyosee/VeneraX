@@ -48,7 +48,8 @@ if (Get-ChildItem -LiteralPath $OutputDirectory -Filter '*.hap') {
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $nativeLibraries = @(
     'libapp.so', 'libflutter.so', 'libc++_shared.so', 'libflutter_7zip.so',
-    'liblodepng_flutter.so', 'libonnxruntime.so', 'libpdfium.so',
+    # PDF rendering is provided by HarmonyOS PDF Kit.
+    'liblodepng_flutter.so', 'libonnxruntime.so', 'libinappwebview.so',
     'libqjs.so', 'librhttp.so', 'libsqlite3.so', 'libzip_flutter.so'
 )
 $targets = @(
