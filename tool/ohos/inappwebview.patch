@@ -1,3 +1,14 @@
+diff --git a/ohos/build-profile.json5 b/ohos/build-profile.json5
+--- a/ohos/build-profile.json5
++++ b/ohos/build-profile.json5
+@@ -18,6 +18,7 @@
+   "buildOption": {
+     "externalNativeOptions": {
+       "path": "./src/main/cpp/CMakeLists.txt",
++      "abiFilters": ["arm64-v8a", "x86_64"],
+       "arguments": "",
+       "cppFlags": "",
+     }
 diff --git a/lib/src/in_app_webview/in_app_webview_controller.dart b/lib/src/in_app_webview/in_app_webview_controller.dart
 index dca1af17..a5b04657 100644
 --- a/lib/src/in_app_webview/in_app_webview_controller.dart
