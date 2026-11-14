@@ -91,6 +91,11 @@ def main():
             'acceptedAt': '2026-11-14T00:00:00Z',
             'acceptedLanguage': 'en-US',
         }))
+        # Match startup placement to the fixed click coordinates below.
+        (data / 'window_placement').write_text(json.dumps({
+            'width': 1000.0, 'height': 800.0,
+            'x': 30.0, 'y': 30.0, 'isMaximized': False,
+        }))
         runtime = root / 'runtime'
         runtime.mkdir(mode=0o700)
         env = dict(os.environ, XDG_DATA_HOME=str(root / 'data'),
