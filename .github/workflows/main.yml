@@ -18,6 +18,7 @@ on:
           - windows
           - macos
           - linux
+          - harmonyos
       appimage_run_id:
         description: "Existing build run to test AppImages without rebuilding (platform: linux)"
         type: string
@@ -354,6 +355,34 @@ jobs:
           name: deb_arm64_build
           path: build/linux/x64/release/debian # This is a bug related to flutter_to_debian, but it's not a big deal.
 
+  Build_HarmonyOS:
+    # Register a one-job runner with this label and the isolated OH toolchain.
+    runs-on: [venerax-harmonyos]
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'harmonyos' }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build HarmonyOS release packages
+        shell: powershell
+        run: |
+          & .github/scripts/build-harmonyos.ps1 `
+            -Checkout $env:VENERAX_OHOS_CHECKOUT `
+            -SourceRepository $env:GITHUB_WORKSPACE `
+            -Commit $env:GITHUB_SHA `
+            -FlutterSdk $env:FLUTTER_OHOS_SDK `
+            -DevEcoStudio $env:DEVECO_STUDIO `
+            -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'result')
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harmonyos_build
+          path: result/*.hap
+          if-no-files-found: error
+
   Test_AppImage:
     needs: [Build_Linux, Build_Linux_ARM64]
     if: ${{ !cancelled() && ((inputs.platform == 'linux' && inputs.appimage_run_id != '') || (needs.Build_Linux.result == 'success' && needs.Build_Linux_ARM64.result == 'success')) }}
@@ -394,7 +423,7 @@ jobs:
 
   Release:
     runs-on: ubuntu-22.04
-    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64, Test_AppImage]
+    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64, Build_HarmonyOS, Test_AppImage]
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     outputs:
       prerelease: ${{ steps.release_meta.outputs.prerelease }}
@@ -436,6 +465,10 @@ jobs:
         with:
           name: appimage_arm64_build
           path: outputs
+      - uses: actions/download-artifact@v8
+        with:
+          name: harmonyos_build
+          path: outputs
 
       - name: Validate release inputs
         id: release_meta
@@ -467,6 +500,7 @@ jobs:
           files=(
             outputs/*.ipa outputs/*.dmg outputs/*.apk outputs/*.zip
             outputs/*.exe outputs/*.deb outputs/*.zst outputs/*.AppImage
+            outputs/*.hap
           )
           test "${#files[@]}" -gt 0 || { echo "No release assets found"; exit 1; }
           cp -- "${files[@]}" release-assets/
@@ -491,6 +525,8 @@ jobs:
           require_asset "release-assets/VeneraX-${version}-aarch64.AppImage"
           require_asset "release-assets/VeneraX-${version}-windows.zip"
           require_asset "release-assets/VeneraX-${version}-windows-installer.exe"
+          require_asset "release-assets/VeneraX-${app_version}-harmonyos-arm64-unsigned.hap"
+          require_asset "release-assets/VeneraX-${app_version}-harmonyos-x64-emulator-unsigned.hap"
           while IFS= read -r asset; do
             test -s "$asset" || { echo "Empty release asset: $asset"; exit 1; }
           done < <(find release-assets -maxdepth 1 -type f -print)

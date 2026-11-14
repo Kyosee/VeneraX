@@ -1,0 +1,5 @@
+# Additional runner labels used by this repository.
+self-hosted-runner:
+  labels:
+    - xcode-27
+    - venerax-harmonyos

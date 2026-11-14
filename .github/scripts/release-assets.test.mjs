@@ -26,6 +26,8 @@ const packages = [
   'VeneraX-9.8.7-654-x86_64.pkg.tar.zst',
   'VeneraX-9.8.7-x86_64.AppImage',
   'VeneraX-9.8.7-aarch64.AppImage',
+  'VeneraX-9.8.7+654-harmonyos-arm64-unsigned.hap',
+  'VeneraX-9.8.7+654-harmonyos-x64-emulator-unsigned.hap',
 ];
 
 function validate(t, { missing, empty } = {}) {
