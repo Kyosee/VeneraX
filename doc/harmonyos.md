@@ -2,7 +2,7 @@
 
 中文 | [English](harmonyos.en.md)
 
-本手册用于在 **Windows x64** 上从源码构建和验证 VeneraX 鸿蒙版。只想安装已发布的测试包，请看 [预览版安装说明](harmonyos-testing.md)；本页只记录 VeneraX 自身的鸿蒙构建、签名、探针和设备验证。
+本手册用于在 **Windows x64** 上从源码构建和验证 VeneraX 鸿蒙版。只想安装已发布的包，请看 [安装与签名说明](harmonyos-testing.md)；本页只记录 VeneraX 自身的鸿蒙构建、签名、探针和设备验证。
 
 当前为实验性适配：完整应用可构建为 x64 和 ARM64 HAP，运行记录来自官方 x64 手机模拟器。ARM64 真机签名安装与运行、持久目录授权、认证成功及原生 PDF 渲染仍需设备验证。本页保留既有验证记录，文档更新不代表重新完成了运行测试。
 
@@ -11,6 +11,7 @@
 - [环境与版本](#环境与版本)
 - [快速开始：x64 模拟器](#快速开始x64-模拟器)
 - [构建阶段与参数](#构建阶段与参数)
+- [正式发布构建](#正式发布构建)
 - [ARM64 构建、签名与安装](#arm64-构建签名与安装)
 - [探针与功能验证](#探针与功能验证)
 - [常见问题](#常见问题)
@@ -122,7 +123,7 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 
 已验证的官方 x64 模拟器允许安装该未签名包；普通真机需要签名。检查安装输出和实际主界面，再核对设置页版本与 `bm dump`，不要只凭安装命令退出码判断成功。
 
-源码构建版本来自当前 `pubspec.yaml`：OH SDK 会在构建时更新 OHOS 应用版本配置。不要把 `ohos/AppScope/app.json5` 的初始占位值或旧预览版的版本号当成本次产物版本。debug 构建也不应套用预览版 release 包的 `debug: false` 验收值。
+源码构建版本来自当前 `pubspec.yaml`：OH SDK 会在构建时更新 OHOS 应用版本配置。不要把 `ohos/AppScope/app.json5` 的初始占位值或旧版本号当成本次产物版本。debug 构建也不应套用 release 包的 `debug: false` 验收值。
 
 按自己修改的功能验证启动、阅读、下载、数据保存等流程；设备上的已有数据应先备份。若要验证 x64 release，可重新构建并重复安装检查：
 
@@ -164,6 +165,20 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | `-EigenSource` | 自动准备 | Eigen 固定提交的干净 checkout |
 
 `-TargetPlatform` 选择最终 HAP 的 ABI；当前主脚本调用 rhttp 和 ONNX 构建时，仍各自构建 `x86_64`、`arm64-v8a` 两种库。切换到探针入口同样不会跳过这些原生构建阶段。
+
+## 正式发布构建
+
+`Build ALL` 的 `Build_HarmonyOS` 使用带 `venerax-harmonyos` 标签的 Windows 临时 runner。注册时使用 `--ephemeral --no-default-labels --labels venerax-harmonyos`，每次只接收一个任务；在该 runner 进程中设置：
+
+| 环境变量 | 内容 |
+|---|---|
+| `VENERAX_OHOS_CHECKOUT` | 已初始化的独立 Flutter OH 项目目录 |
+| `FLUTTER_OHOS_SDK` | 本手册指定的 Flutter OH SDK 目录 |
+| `DEVECO_STUDIO` | DevEco Studio 安装目录 |
+
+先手动运行 `Build ALL`，选择 `platform=harmonyos` 验证构建。正式打版本标签前重新注册并启动一次性 runner；标签触发的全平台发布会等待鸿蒙产物。
+
+流水线将独立目录快进至本次提交，遇到已跟踪文件的本地修改或无法快进时停止。它复用 `tool/build_ohos.ps1` 构建两种架构，并检查 HAP 内的版本、release 模式、ABI 和原生库，再上传带架构和 `unsigned` 标识的包。runner 完成任务后自动注销，真机签名按下节处理。
 
 ## ARM64 构建、签名与安装
 

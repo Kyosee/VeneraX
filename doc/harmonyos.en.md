@@ -2,7 +2,7 @@
 
 [中文](harmonyos.md) | English
 
-This guide builds and validates the VeneraX HarmonyOS port from source on **Windows x64**. To install a published test package, use the [developer preview installation guide](harmonyos-testing.en.md). This page covers VeneraX's own HarmonyOS build, signing, probes and device validation.
+This guide builds and validates the VeneraX HarmonyOS port from source on **Windows x64**. To install a published package, use the [installation and signing guide](harmonyos-testing.en.md). This page covers VeneraX's own HarmonyOS build, signing, probes and device validation.
 
 This is an experimental adaptation. The complete app can be built as x64 and ARM64 HAPs, while runtime records come from the official x64 phone emulator. ARM64 phone signing, installation and runtime, persistent directory authorization, successful authentication and native PDF rendering still need device validation. The records below are historical validation; editing this guide does not rerun them.
 
@@ -11,6 +11,7 @@ This is an experimental adaptation. The complete app can be built as x64 and ARM
 - [Environment and versions](#environment-and-versions)
 - [Quick start: x64 emulator](#quick-start-x64-emulator)
 - [Build stages and parameters](#build-stages-and-parameters)
+- [Release builds](#release-builds)
 - [ARM64 build, signing and installation](#arm64-build-signing-and-installation)
 - [Probes and functional validation](#probes-and-functional-validation)
 - [Troubleshooting](#troubleshooting)
@@ -122,7 +123,7 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 
 The tested official x64 emulator accepts this unsigned package; ordinary phones need signing. Check the install output and the actual main screen, then inspect the Settings version and `bm dump`; an install exit code alone is insufficient.
 
-The source-build version comes from the current `pubspec.yaml`; the OH SDK updates the OHOS app version during the build. Do not treat the initial placeholder in `ohos/AppScope/app.json5` or a previous preview version as the current artifact version. A debug build also should not be judged by the preview release package's `debug: false` value.
+The source-build version comes from the current `pubspec.yaml`; the OH SDK updates the OHOS app version during the build. Do not treat the initial placeholder in `ohos/AppScope/app.json5` or a previous version as the current artifact version. A debug build also should not be judged by a release package's `debug: false` value.
 
 Back up existing device data before exercising the features you changed. To validate an x64 release, rebuild and repeat the installation checks:
 
@@ -164,6 +165,20 @@ These parameters belong to [build_ohos.ps1](../tool/build_ohos.ps1).
 | `-EigenSource` | automatic | Clean Eigen checkout at the fixed revision |
 
 `-TargetPlatform` selects the final HAP ABI. The rhttp and ONNX build scripts still compile both `x86_64` and `arm64-v8a` libraries on every run, including probe builds.
+
+## Release builds
+
+The `Build_HarmonyOS` job in `Build ALL` uses a temporary Windows runner with the `venerax-harmonyos` label. Register it with `--ephemeral --no-default-labels --labels venerax-harmonyos` so it accepts one job, and set these variables in its process:
+
+| Environment variable | Value |
+|---|---|
+| `VENERAX_OHOS_CHECKOUT` | Initialized, isolated Flutter OH project directory |
+| `FLUTTER_OHOS_SDK` | Flutter OH SDK directory specified in this guide |
+| `DEVECO_STUDIO` | DevEco Studio installation directory |
+
+First dispatch `Build ALL` with `platform=harmonyos` to validate the build. Register and start another one-job runner before pushing the release tag; the tag-triggered release waits for the HarmonyOS packages.
+
+The workflow fast-forwards the isolated checkout to the requested commit, stopping if tracked files have local changes or a fast-forward is impossible. It reuses `tool/build_ohos.ps1` for both architectures, checks the packaged version, release mode, ABI and native libraries, and uploads packages with explicit architecture and `unsigned` names. The runner unregisters after its job. Phone signing is covered below.
 
 ## ARM64 build, signing and installation
 

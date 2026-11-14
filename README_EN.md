@@ -26,7 +26,7 @@ VeneraX is a free, open-source comic reader for multiple platforms, maintained a
 
 Choose a package for your operating system and processor architecture, and read the installation notes for that release.
 
-HarmonyOS is a developer preview: [test package installation](doc/harmonyos-testing.en.md) · [source builds and adaptation](doc/harmonyos.en.md).
+HarmonyOS ships with the [v3.0.0 stable release](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.0): [installation and signing](doc/harmonyos-testing.en.md) · [source builds and adaptation](doc/harmonyos.en.md).
 
 <details>
 <summary><b>Linux AppImage installation</b></summary>
@@ -106,11 +106,11 @@ Setup steps and interactions for each feature are documented in the **[guide](do
 
 ### First Launch and Upgrade Notice
 
-The current development version shows onboarding once only for a fresh installation with no local application data: first read the agreement in a selectable language, then choose the interface language and review basic permissions, and finally choose whether to import a backup or configure WebDAV. Optional setup can be skipped. Users with existing data receive a one-time notice for this agreement version after upgrading and do not repeat new-user onboarding.
+The app shows onboarding once only for a fresh installation with no local application data: first read the agreement in a selectable language, then choose the interface language and review basic permissions, and finally choose whether to import a backup or configure WebDAV. Optional setup can be skipped. Users with existing data receive a one-time notice for this agreement version after upgrading and do not repeat new-user onboarding.
 
 The accepted agreement version, acceptance time, and reading language are stored on this device. Routine app updates do not repeat the prompt. Material agreement changes show a summary and the full new text for renewed acceptance. Importing a backup or restoring from WebDAV cannot accept the agreement on this device. Declining or leaving it unconfirmed does not delete existing data; when app lock is enabled, unlock comes first. Maintainers changing material terms must update the agreement version, date, change summary, and all supported translations together.
 
-System permissions, WebDAV, translation and any other data processing that legally requires separate consent are chosen or authorized separately. Accepting the agreement does not replace those authorizations. This flow is a current development change; release notes determine its availability in a published version.
+System permissions, WebDAV, translation and any other data processing that legally requires separate consent are chosen or authorized separately. Accepting the agreement does not replace those authorizations.
 
 On desktop, step three shows “Features and access” without inactive permission controls. It explains network and system restrictions, in-app task progress, and file selection during import and export; protected folders may still require system confirmation. Android and HarmonyOS retain the supported notification permission action.
 

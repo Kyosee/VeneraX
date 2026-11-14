@@ -1,10 +1,10 @@
-# VeneraX HarmonyOS developer preview
+# VeneraX HarmonyOS installation and signing
 
 [中文](harmonyos-testing.md) | English
 
-This page covers **`harmonyos-2.3.12-test.1` / app version `2.3.12+257`**. It does not describe later source builds or stable releases for other platforms.
+This page covers **`v3.0.0` / app version `3.0.0+258`**. HarmonyOS ships in the same stable Release as the other platforms.
 
-**This is an unsigned developer preview. The x64 package has been installed and launched on an emulator; the ARM64 phone package needs your own signing, and signed phone installation and runtime remain unverified.**
+**The Release provides unsigned HAP files. ARM64 phone installation requires your own signing, and signed phone installation and runtime remain unverified; the x64 package is for the official emulator.**
 
 ## Contents
 
@@ -16,16 +16,16 @@ This page covers **`harmonyos-2.3.12-test.1` / app version `2.3.12+257`**. It do
 
 ## Download and architecture
 
-Open [this preview release](https://github.com/Kyosee/VeneraX/releases/tag/harmonyos-2.3.12-test.1) and select the matching HAP from its assets. Both packages contain the complete app built in release mode.
+Open the [v3.0.0 stable release](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.0) and select the matching HAP from its assets. Both packages contain the complete app built in release mode.
 
 | File | Target and verification status |
 |---|---|
-| `VeneraX-2.3.12+257-harmonyos-x64-emulator-test.1-unsigned.hap` | Official x86_64 emulator on Windows; installed and launched on the HarmonyOS 7 / API 26 emulator |
-| `VeneraX-2.3.12+257-harmonyos-arm64-test.1-unsigned.hap` | ARM64 phone testing; requires your own signing, with phone installation and runtime unverified |
+| `VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap` | Official x86_64 emulator on Windows |
+| `VeneraX-3.0.0+258-harmonyos-arm64-unsigned.hap` | ARM64 phones; requires your own signing, with phone installation and runtime unverified |
 
 The phone model shown by an emulator does not determine its CPU architecture. An ARM64 HAP cannot be installed on the tested x86_64 emulator; changing its appearance does not fix an architecture mismatch.
 
-Back up before testing. Updating an existing installation requires compatible signing; do not immediately uninstall it to bypass an error, because that can lose data. For source builds, see the [HarmonyOS development guide](harmonyos.en.md).
+Back up before installing. Updating an existing installation requires compatible signing; do not immediately uninstall it to bypass an error, because that can lose data. For source builds, see the [HarmonyOS development guide](harmonyos.en.md).
 
 ## Install on an x64 emulator
 
@@ -42,22 +42,22 @@ Replace `REPLACE_WITH_DEVICE_ADDRESS` below with an address from that list and s
 
 ```powershell
 $device = 'REPLACE_WITH_DEVICE_ADDRESS'
-$previewHap = 'D:/Downloads/VeneraX-2.3.12+257-harmonyos-x64-emulator-test.1-unsigned.hap'
+$releaseHap = 'D:/Downloads/VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap'
 & $hdc -t $device shell uname -m
 ```
 
 The architecture should be `x86_64`. After checking it, install and launch:
 
 ```powershell
-& $hdc -t $device install $previewHap
+& $hdc -t $device install $releaseHap
 & $hdc -t $device shell aa start -a EntryAbility -b com.github.kyosee.venera
 & $hdc -t $device shell bm dump -n com.github.kyosee.venera
 ```
 
 ### 2. Check the installation
 
-- The VeneraX main screen should open, with version `2.3.12` in Settings.
-- For this exact preview package, `bm dump` should show `versionName: 2.3.12`, `versionCode: 257` and `debug: false`.
+- The VeneraX main screen should open, with version `3.0.0` in Settings.
+- For this exact release package, `bm dump` should show `versionName: 3.0.0`, `versionCode: 258` and `debug: false`.
 - Check both the install command output and the actual app. An exit code alone is insufficient.
 
 | Symptom | What to check |
@@ -90,16 +90,16 @@ Keep certificates, private keys, passwords, profiles and local signing configura
 
 ## Verification and limits
 
-The following records belong to this preview. Updating the documentation does not constitute another device test.
+The following distinguishes device checks recorded during the port's development from release-build checks. Earlier device checks do not establish coverage of every OS version, phone or website.
 
 | Scope | Recorded result |
 |---|---|
 | Core local workflows | The official HarmonyOS 7 / API 26 x64 emulator passed backup restore, source/network access, online and offline reading, downloads, history/favorites, six reading modes, WebDAV round trips, system saves and comic archive re-import |
-| Network and WebView | Local checks cover cookies, proxies, certificate rejection and storage isolation; this preview fixes manually reconstructed navigation referrers, while individual website logins still need testing |
-| Native and release builds | x64 release installed and launched; ARM64 release compiled and its packaged version was inspected, while signed phone installation and runtime remain unverified |
+| Network and WebView | Development checks covered cookies, proxies, certificate rejection and storage isolation, including a fix for manually reconstructed navigation referrers; individual website logins still need testing |
+| Release-build checks | The release workflow builds ARM64 and x64 release packages separately and checks their versions, architectures and native libraries; signed phone installation and runtime remain unverified |
 | Pending device checks | PDF import/rendering, successful PIN/biometric authentication, persistent directory authorization, real QR recognition, site-specific login and online translation |
 | Known emulator limits | The x64 emulator does not support PDF Kit; its directory picker lacks a completion action; the emulator host has exited unexpectedly without evidence attributing that to VeneraX |
 
 ## Report a problem
 
-Include the package filename, device architecture, OS/API version, minimal reproduction steps and redacted errors. Say whether you used this preview or built from source. Do not attach accounts, cookies, tokens, source configurations, real backups or signing material.
+Include the package filename, device architecture, OS/API version, minimal reproduction steps and redacted errors. Say whether you used this release package or built from source. Do not attach accounts, cookies, tokens, source configurations, real backups or signing material.
