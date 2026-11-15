@@ -4,6 +4,63 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v3.0.0](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.0) - 2026-11-15
+
+### Added
+- Added a HarmonyOS version with two packages: ARM64 for phones and x64 for the emulator. The packages are unsigned, so you need to sign them yourself before installing (#296).
+- Added Recent reading, Following, New updates and Local comics widgets for Android, HarmonyOS (service cards), iOS and macOS; whether they work on Apple platforms depends on how the app is signed and sideloaded (#338).
+- Long-press the app icon to jump to Favorites, Following, History or Search on Android, iOS and HarmonyOS; on Android and iOS, open the app once after updating for the shortcuts to appear (#346).
+- Added an optional adaptive reading mode that tells vertical-scroll comics from paged comics by their images and picks a suitable reading mode (#333).
+- Added a first-use guide that helps new users set up language, permissions, backup restore and WebDAV; existing users skip it.
+- Added a "Clear reading progress when deleting a single history entry" option; when enabled, deleting one history entry also clears its reading progress, while reading time statistics are kept (#341).
+
+### Changed
+- Redesigned reading statistics with recent, monthly, all-time and custom date ranges, a reading calendar and trends, and total reading time per comic (#332, #342).
+- Random picks now offer Single draw and Choose from three, with no duplicate comics in the same round.
+- Local comics can now open to details or start reading on tap, sort by file size, and let you choose separately whether deleting removes the comic files, favorites and history (#321).
+- The favorites dialog now lets you add to or remove from several folders in a row without closing after each change (#345).
+- The Auto Language Filters switch is replaced by choosing which comic sources the search language filter applies to, so sources that do not support the filter are not affected.
+- Importing comics now shows the current step, a progress bar and the comic being processed; if the import fails partway, comics already copied are still added to the library (#347).
+- Downloads now continue past individual unavailable pages, and you can retry the missing pages or keep what was downloaded.
+- Turning back from the first page of a chapter now goes to the previous chapter's comments page first, then its last page (#343).
+- The chapter comments page now supports the tap-to-turn areas.
+- Redesigned the update dialog for clearer release notes and download progress.
+- The Windows update window now uses the app's colors and shows installation progress.
+- The log page now supports search, filtering by level and tag, export, and keeps the previous run's logs to help troubleshoot problems.
+- Covers stay cached longer (90 days after they were last viewed), and pull-to-refresh on a comic's details page updates its cover (#332).
+- Translation model downloads can resume after an interruption when the server allows it, and failed downloads can be retried (#335).
+- Improved the settings layout: the sidebar search box stays visible, groups use a single column on wide screens, and history settings moved to Browsing & filters.
+- On desktop, Esc and the mouse Back button now go back one level at a time instead of jumping to the home page.
+- Improved browsing performance in large libraries, with less lag when opening lists and switching pages.
+- Backups leave out unnecessary content, so they take less space while keeping all personal data.
+- Updated the user agreement and disclaimer.
+
+### Fixed
+- Fixed tapping Previous chapter in continuous reading changing the title but still showing the current chapter (#340).
+- Fixed page turns and the saved reading position getting out of sync in right-to-left continuous reading.
+- Fixed duplicated, misplaced or briefly unsplit images when turning pages quickly with wide page splitting or two images in landscape (#337).
+- Fixed quick repeated right swipes, or a right swipe during the page-turn animation, accidentally going back in right-to-left reading (#344).
+- Fixed downloads getting stuck after request or cache errors.
+- Fixed duplicated chapters in local comics after downloading more chapters.
+- Fixed missing or duplicated chapters and pages after exporting and re-importing comic archives and CBZ files.
+- Fixed comic archive import and export paths when using an external directory on Android.
+- Fixed incorrect task states after a PDF export failed or was canceled.
+- Fixed favorite tags containing commas or quotes being split or altered.
+- Fixed cleared reading progress being written back by refreshes and similar actions.
+- Fixed history entries for local comics read on another device having no cover and failing to open (#348).
+- Fixed updates already read on another device being marked as new again (#336).
+- Fixed saving WebDAV settings running the initial sync twice (#335).
+- Fixed the app lock not staying locked when device authentication is unavailable.
+- Fixed Esc closing the app lock screen on desktop.
+- Fixed titles and covers being squeezed and cut off in Brief mode on phones; the action button next to the title has been removed (#331).
+
+### Removed
+- No features were removed in this release.
+
+**HarmonyOS installation and signing**: https://github.com/Kyosee/VeneraX/blob/v3.0.0/doc/harmonyos-testing.en.md
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v2.3.12...v3.0.0
+
 ## [v2.3.12](https://github.com/Kyosee/VeneraX/releases/tag/v2.3.12) - 2026-11-08
 
 ### Added
