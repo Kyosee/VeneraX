@@ -187,8 +187,9 @@ class OnboardingStore {
       'comic_source',
       'data/venera.db',
     ]) {
-      if (await FileSystemEntity.type(FilePath.join(dataPath, name)) !=
-          FileSystemEntityType.notFound) {
+      // FileSystemEntity.type can report notFound under OHOS IOOverrides.
+      final path = FilePath.join(dataPath, name);
+      if (await File(path).exists() || await Directory(path).exists()) {
         return true;
       }
     }

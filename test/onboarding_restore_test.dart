@@ -141,7 +141,7 @@ void main() {
     expect(await record.readAsString(), acceptedBefore);
     await OnboardingStore.instance.load(directory.path);
     expect(OnboardingStore.instance.state.acceptedLanguage, 'en-US');
-    expect(OnboardingStore.instance.state.setupCompleted, isFalse);
+    expect(OnboardingStore.instance.state.setupCompleted, isTrue);
     expect(OnboardingStore.instance.state.acceptedVersion, isNot(999));
   });
 

@@ -131,6 +131,37 @@ void main() {
     });
   }
 
+  for (final marker in ['appdata.json', 'comic_source']) {
+    test('existing $marker survives unavailable file type lookup', () async {
+      final path = '${directory.path}/$marker';
+      if (marker == 'comic_source') {
+        await Directory(path).create();
+      } else {
+        await File(path).writeAsString('{"searchHistory":["kept search"]}');
+      }
+      final store = OnboardingStore();
+
+      await IOOverrides.runZoned(
+        () => store.load(directory.path),
+        fseGetType: (_, _) async => FileSystemEntityType.notFound,
+      );
+
+      expect(store.loadError, isNull);
+      expect(store.state.setupCompleted, isTrue);
+      expect(store.state.acceptedVersion, 0);
+      expect(store.state.needsAgreement(), isTrue);
+      expect(store.blocksAutomaticTasks, isTrue);
+      if (marker == 'comic_source') {
+        expect(await Directory(path).exists(), isTrue);
+      } else {
+        expect(
+          await File(path).readAsString(),
+          '{"searchHistory":["kept search"]}',
+        );
+      }
+    });
+  }
+
   test(
     'unfinished setup stays new after initialization creates app data',
     () async {
