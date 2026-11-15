@@ -196,6 +196,105 @@ void main() {
         reason: "a timestamped read outranks an undated legacy flag");
   });
 
+  test('a read survives a later flag for the same update (imported read)', () {
+    // Device A found 2026-11-14 and the user read it there (stamp 300). This
+    // device had not received that yet, checked from its old baseline and
+    // flagged the same update at 400. Its newer stamp must not undo the read.
+    final local = _folderDb();
+    _insert(local, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 1,
+        lastCheckTime: 400,
+        flagUpdateTime: 400);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 0,
+        lastCheckTime: 200,
+        flagUpdateTime: 300);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 0);
+    expect(row["flag_update_time"], 300);
+    expect(row["last_check_time"], 400);
+    expect(row["last_update_time"], "2026-11-14");
+  });
+
+  test('a read survives a later flag for the same update (local read)', () {
+    final local = _folderDb();
+    _insert(local, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 0,
+        lastCheckTime: 200,
+        flagUpdateTime: 300);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 1,
+        lastCheckTime: 400,
+        flagUpdateTime: 400);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 0);
+    expect(row["flag_update_time"], 300);
+    expect(row["last_check_time"], 400);
+  });
+
+  test('a flag for a newer update still wins over an older read', () {
+    final local = _folderDb();
+    _insert(local, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 0,
+        lastCheckTime: 200,
+        flagUpdateTime: 300);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        updateTime: "2026-11-15",
+        hasNewUpdate: 1,
+        lastCheckTime: 400,
+        flagUpdateTime: 400);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 1);
+    expect(row["flag_update_time"], 400);
+    expect(row["last_update_time"], "2026-11-15");
+  });
+
+  test('same update flagged on both sides keeps the newest stamp', () {
+    final local = _folderDb();
+    _insert(local, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 1,
+        lastCheckTime: 400,
+        flagUpdateTime: 400);
+    final snapshot = LocalFavoritesManager.snapshotUpdateInfoOf(local);
+
+    final imported = _folderDb();
+    _insert(imported, "c1",
+        updateTime: "2026-11-14",
+        hasNewUpdate: 1,
+        lastCheckTime: 200,
+        flagUpdateTime: 200);
+
+    LocalFavoritesManager.mergeUpdateInfoInto(imported, snapshot);
+
+    final row = _row(imported, "c1");
+    expect(row["has_new_update"], 1);
+    expect(row["flag_update_time"], 400);
+  });
+
   test('both sides undated falls back to the #106 sticky OR', () {
     // Neither side carries a flag timestamp: preserve the original #106
     // guarantee that an unread mark from either side is never lost.

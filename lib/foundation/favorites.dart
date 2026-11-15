@@ -2159,6 +2159,11 @@ class LocalFavoritesManager with ChangeNotifier {
   ///   from an older build and thus older in time. When NEITHER side has a
   ///   timestamp (both legacy), it falls back to the sticky OR that #106
   ///   introduced, so an unread mark is still never silently lost.
+  ///   Exception: when both sides are dated and hold the same
+  ///   `last_update_time`, a read on either side wins regardless of order. A
+  ///   check raises the flag only when its baseline differs, so a flag for an
+  ///   update the other device already read comes from a device that checked
+  ///   before receiving that read; its newer timestamp must not resurrect it.
   /// - `last_update_time` / `last_check_time` follow the freshest check: they
   ///   are restored from the snapshot only when its check is at least as
   ///   recent as the imported row's. Restoring a stale baseline would make
@@ -2184,47 +2189,45 @@ class LocalFavoritesManager with ChangeNotifier {
         }
         _ensureUpdateColumns(db, table);
         // SQLite evaluates every RHS against the pre-update row, so the
-        // `flag_update_time` / `last_check_time` read inside these CASEs sees
-        // the imported value even though the same statement also reassigns it.
-        // `?l*` = snapshot (this device); bare columns = imported (backup).
+        // columns read inside these CASEs see the imported values even though
+        // the same statement also reassigns them.
+        // ?1 flag time, ?2 flag, ?3 update time, ?4 check time (0 if none),
+        // ?5 check time: snapshot (this device); bare columns = imported.
+        const sameUpdate =
+            '?1 is not null and flag_update_time is not null '
+            'and ?3 is not null and ?3 == last_update_time';
         var statement = db.prepare("""
           update "$table" set
             has_new_update = case
-              when ? is not null and flag_update_time is not null
-                then case when ? >= flag_update_time
-                  then ? else coalesce(has_new_update, 0) end
-              when ? is not null then ?
+              when $sameUpdate then coalesce(has_new_update, 0) & ?2
+              when ?1 is not null and flag_update_time is not null
+                then case when ?1 >= flag_update_time
+                  then ?2 else coalesce(has_new_update, 0) end
+              when ?1 is not null then ?2
               when flag_update_time is not null then coalesce(has_new_update, 0)
-              else (coalesce(has_new_update, 0) | ?) end,
+              else (coalesce(has_new_update, 0) | ?2) end,
             flag_update_time = case
-              when ? is not null and (flag_update_time is null or ? >= flag_update_time)
-                then ?
+              when $sameUpdate and ?2 != coalesce(has_new_update, 0)
+                then case when ?2 == 0 then ?1 else flag_update_time end
+              when ?1 is not null and (flag_update_time is null or ?1 >= flag_update_time)
+                then ?1
               else flag_update_time end,
             last_update_time = case
-              when ? >= coalesce(last_check_time, 0) and ? is not null then ?
+              when ?4 >= coalesce(last_check_time, 0) and ?3 is not null then ?3
               else last_update_time end,
             last_check_time = case
-              when ? >= coalesce(last_check_time, 0) and ? is not null then ?
+              when ?4 >= coalesce(last_check_time, 0) and ?5 is not null then ?5
               else last_check_time end
-          where id == ? and type == ?;
+          where id == ?6 and type == ?7;
         """);
         try {
           for (var row in entry.value) {
-            var checkTime = row.lastCheckTime ?? 0;
-            var flagTime = row.flagUpdateTime;
-            var flag = row.hasNewUpdate ? 1 : 0;
             statement.execute([
-              // has_new_update
-              flagTime, // both-dated guard
-              flagTime, flag, // local newer -> local flag
-              flagTime, flag, // only local dated -> local flag
-              flag, // neither dated -> OR
-              // flag_update_time
-              flagTime, flagTime, flagTime,
-              // last_update_time
-              checkTime, row.lastUpdateTime, row.lastUpdateTime,
-              // last_check_time
-              checkTime, row.lastCheckTime, row.lastCheckTime,
+              row.flagUpdateTime,
+              row.hasNewUpdate ? 1 : 0,
+              row.lastUpdateTime,
+              row.lastCheckTime ?? 0,
+              row.lastCheckTime,
               row.id,
               row.type,
             ]);
