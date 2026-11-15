@@ -20,8 +20,8 @@ Open the [v3.0.0 stable release](https://github.com/Kyosee/VeneraX/releases/tag/
 
 | File | Target and verification status |
 |---|---|
-| `VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap` | Official x86_64 emulator on Windows |
-| `VeneraX-3.0.0+258-harmonyos-arm64-unsigned.hap` | ARM64 phones; requires your own signing, with phone installation and runtime unverified |
+| `VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap` | Only for the official x86_64 emulator on Windows; it does not install on phones, tablets or PCs |
+| `VeneraX-3.0.0+258-harmonyos-arm64-unsigned.hap` | Phones, tablets and PCs (all ARM64); requires your own signing, with device installation and runtime unverified |
 
 The phone model shown by an emulator does not determine its CPU architecture. An ARM64 HAP cannot be installed on the tested x86_64 emulator; changing its appearance does not fix an architecture mismatch.
 

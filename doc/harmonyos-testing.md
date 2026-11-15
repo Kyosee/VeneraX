@@ -22,8 +22,8 @@
 
 | 文件 | 目标与验证状态 |
 |---|---|
-| `VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap` | Windows 上的官方 x86_64 模拟器 |
-| `VeneraX-3.0.0+258-harmonyos-arm64-unsigned.hap` | ARM64 真机；需自行签名，真机安装与运行尚未验证 |
+| `VeneraX-3.0.0+258-harmonyos-x64-emulator-unsigned.hap` | 仅用于 Windows 上的官方 x86_64 模拟器，手机、平板、电脑装不上 |
+| `VeneraX-3.0.0+258-harmonyos-arm64-unsigned.hap` | 手机、平板、电脑（均为 ARM64）；需自行签名，真机安装与运行尚未验证 |
 
 模拟器显示的手机型号不代表 CPU 架构。ARM64 包不能安装到这里验证过的 x86_64 模拟器；更换外观型号不能解决架构不匹配。
 

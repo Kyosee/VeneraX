@@ -525,8 +525,8 @@ jobs:
           require_asset "release-assets/VeneraX-${version}-aarch64.AppImage"
           require_asset "release-assets/VeneraX-${version}-windows.zip"
           require_asset "release-assets/VeneraX-${version}-windows-installer.exe"
-          require_asset "release-assets/VeneraX-${app_version}-harmonyos-arm64-unsigned.hap"
-          require_asset "release-assets/VeneraX-${app_version}-harmonyos-x64-emulator-unsigned.hap"
+          require_asset "release-assets/VeneraX-${app_version}-harmonyos-unsigned.hap"
+          require_asset "release-assets/VeneraX-${app_version}-harmonyos-emulator-x64-unsigned.hap"
           while IFS= read -r asset; do
             test -s "$asset" || { echo "Empty release asset: $asset"; exit 1; }
           done < <(find release-assets -maxdepth 1 -type f -print)
