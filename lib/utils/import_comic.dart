@@ -16,11 +16,60 @@ import 'local_comic_scanner.dart';
 import 'pdf_import.dart';
 import 'venera_comics.dart';
 
+/// Where a running comic import is, for the import dialog and the background
+/// notification (issue #347).
+class ImportComicProgress {
+  const ImportComicProgress(
+    this.message, {
+    required this.done,
+    required this.total,
+    this.current,
+  });
+
+  /// Localized phase with its count, e.g. "Scanning folders 3/90".
+  final String message;
+  final int done;
+  final int total;
+
+  /// The comic, folder or file being worked on.
+  final String? current;
+
+  double? get value => total <= 0 ? null : (done / total).clamp(0.0, 1.0);
+}
+
 class ImportComic {
   final String? selectedFolder;
   final bool copyToLocal;
+  final void Function(ImportComicProgress progress)? onProgress;
 
-  const ImportComic({this.selectedFolder, this.copyToLocal = true});
+  const ImportComic({
+    this.selectedFolder,
+    this.copyToLocal = true,
+    this.onProgress,
+  });
+
+  static const _scanningPhase = 'Scanning folders @done/@total';
+  static const _copyingPhase = 'Copying to local storage @done/@total';
+  static const _addingPhase = 'Adding to library @done/@total';
+  static const _importingPhase = 'Importing @done/@total';
+
+  void _report(
+    String phase,
+    int done,
+    int total, {
+    String? current,
+    LoadingDialogController? dialog,
+  }) {
+    final progress = ImportComicProgress(
+      phase.tlParams({'done': done, 'total': total}),
+      done: done,
+      total: total,
+      current: current,
+    );
+    onProgress?.call(progress);
+    dialog?.setMessage(progress.message);
+    dialog?.setProgress(progress.value);
+  }
 
   Future<bool> cbz() async {
     var file = await selectFile(ext: ['cbz', 'zip', '7z', 'cb7']);
@@ -118,9 +167,16 @@ class ImportComic {
     Map<String?, List<LocalComic>> imported = {};
     var controller = showLoadingDialog(App.rootContext, allowCancel: false);
     var comics = <LocalComic>[];
-    for (var file in files) {
+    for (var i = 0; i < files.length; i++) {
+      _report(
+        _importingPhase,
+        i,
+        files.length,
+        current: files[i].name,
+        dialog: controller,
+      );
       try {
-        comics.addAll(await CBZ.importAll(file));
+        comics.addAll(await CBZ.importAll(files[i]));
       } catch (e, s) {
         Log.error("Import Comic", e.toString(), s);
       }
@@ -146,9 +202,16 @@ class ImportComic {
     }
     var controller = showLoadingDialog(App.rootContext, allowCancel: false);
     var total = 0;
-    for (var file in files) {
+    for (var i = 0; i < files.length; i++) {
+      _report(
+        _importingPhase,
+        i,
+        files.length,
+        current: files[i].name,
+        dialog: controller,
+      );
       try {
-        total += await importVeneraComics(file);
+        total += await importVeneraComics(files[i]);
       } catch (e, s) {
         Log.error("Import Comic", e.toString(), s);
       }
@@ -176,6 +239,9 @@ class ImportComic {
     try {
       var db = openRawDatabase(dbFile.path);
 
+      var scanned = 0;
+      var total = 0;
+
       Future<List<LocalComic>> validateComics(List<sql.Row> comics) async {
         List<LocalComic> imported = [];
         for (var comic in comics) {
@@ -187,6 +253,13 @@ class ImportComic {
           String titleJP =
               comic['TITLE_JPN'] == null ? "" : comic['TITLE_JPN'] as String;
           String title = titleJP == "" ? comic['TITLE'] as String : titleJP;
+          _report(
+            _scanningPhase,
+            scanned++,
+            total,
+            current: title,
+            dialog: controller,
+          );
           int timeStamp = comic['TIME'] as int;
           DateTime downloadTime = timeStamp != 0
               ? DateTime.fromMillisecondsSinceEpoch(timeStamp)
@@ -223,19 +296,26 @@ class ImportComic {
             ORDER BY  LB.TIME DESC;
           """).map((r) => r['LABEL'] as String).toList());
 
-      for (var tag in tags) {
-        if (cancelled) {
-          break;
-        }
-        var folderName = tag == '' ? '(EhViewer)Default'.tl : '(EhViewer)$tag';
-        var comicList = db.select("""
-              SELECT * 
+      // Query every label up front so the scan knows its total.
+      final comicLists = <String, List<sql.Row>>{
+        for (var tag in tags)
+          tag: db.select("""
+              SELECT *
               FROM DOWNLOAD_DIRNAME DN
               LEFT JOIN DOWNLOADS DL
               ON DL.GID = DN.GID
               WHERE DL.LABEL ${tag == '' ? 'IS NULL' : '= \'$tag\''} AND DL.STATE = 3
               ORDER BY DL.TIME DESC
-            """).toList();
+            """).toList(),
+      };
+      total = comicLists.values.fold(0, (sum, list) => sum + list.length);
+
+      for (var tag in tags) {
+        if (cancelled) {
+          break;
+        }
+        var folderName = tag == '' ? '(EhViewer)Default'.tl : '(EhViewer)$tag';
+        var comicList = comicLists[tag]!;
 
         var validComics = await validateComics(comicList);
         imported[folderName] = validComics;
@@ -271,6 +351,7 @@ class ImportComic {
     Map<String?, List<LocalComic>> imported = {selectedFolder: []};
     try {
       if (single) {
+        _report(_scanningPhase, 0, 1, current: path.name);
         var result = await _checkSingleComic(path);
         if (result != null) {
           imported[selectedFolder]!.add(result);
@@ -279,12 +360,15 @@ class ImportComic {
           return false;
         }
       } else {
-        await for (var entry in path.list()) {
-          if (entry is Directory) {
-            var result = await _checkSingleComic(entry);
-            if (result != null) {
-              imported[selectedFolder]!.add(result);
-            }
+        // List first so the scan can report how far it has got.
+        final folders = (await path.list().toList())
+            .whereType<Directory>()
+            .toList();
+        for (var i = 0; i < folders.length; i++) {
+          _report(_scanningPhase, i, folders.length, current: folders[i].name);
+          var result = await _checkSingleComic(folders[i]);
+          if (result != null) {
+            imported[selectedFolder]!.add(result);
           }
         }
       }
@@ -349,20 +433,29 @@ class ImportComic {
         controller.close();
         return false;
       }
-      await for (var entry in localDir.list()) {
+      final folders = (await localDir.list().toList())
+          .whereType<Directory>()
+          .toList();
+      for (var i = 0; i < folders.length; i++) {
         if (cancelled) {
           break;
         }
-        if (entry is Directory) {
-          var stat = await entry.stat();
-          var result = await _checkSingleComic(
-            entry,
-            createTime: stat.modified,
-            useRelativePath: true,
-          );
-          if (result != null) {
-            imported[null]!.add(result);
-          }
+        final entry = folders[i];
+        _report(
+          _scanningPhase,
+          i,
+          folders.length,
+          current: entry.name,
+          dialog: controller,
+        );
+        var stat = await entry.stat();
+        var result = await _checkSingleComic(
+          entry,
+          createTime: stat.modified,
+          useRelativePath: true,
+        );
+        if (result != null) {
+          imported[null]!.add(result);
         }
       }
       if (!cancelled && imported[null]!.isEmpty) {
@@ -425,6 +518,11 @@ class ImportComic {
       Map<String?, List<LocalComic>> comics) async {
     var destPath = LocalManager().path;
     Map<String?, List<LocalComic>> result = {};
+    final total = comics.values
+        .expand((list) => list)
+        .where((c) => !c.directory.startsWith(destPath))
+        .length;
+    var copied = 0;
     for (var favoriteFolder in comics.keys) {
       result[favoriteFolder] = comics[favoriteFolder]!
           .where((c) => c.directory.startsWith(destPath))
@@ -432,20 +530,17 @@ class ImportComic {
       comics[favoriteFolder]!
           .removeWhere((c) => c.directory.startsWith(destPath));
 
-      if (comics[favoriteFolder]!.isEmpty) {
-        continue;
-      }
-
-      try {
-        // copy the comics to the local directory
-        var pathMap = await compute<Map<String, dynamic>, Map<String, String>>(
-            _copyDirectories, {
-          'toBeCopied':
-              comics[favoriteFolder]!.map((e) => e.directory).toList(),
-          'destination': destPath,
-        });
-        //Construct a new object since LocalComic.directory is a final String
-        for (var c in comics[favoriteFolder]!) {
+      // One comic per isolate run, so progress can be reported between them.
+      for (var c in comics[favoriteFolder]!) {
+        _report(_copyingPhase, copied, total, current: c.title);
+        try {
+          var pathMap =
+              await compute<Map<String, dynamic>, Map<String, String>>(
+                  _copyDirectories, {
+            'toBeCopied': [c.directory],
+            'destination': destPath,
+          });
+          //Construct a new object since LocalComic.directory is a final String
           result[favoriteFolder]!.add(LocalComic(
             id: c.id,
             title: c.title,
@@ -459,11 +554,12 @@ class ImportComic {
             createdAt: c.createdAt,
             description: c.description,
           ));
+          copied++;
+        } catch (e, s) {
+          App.rootContext.showMessage(message: "Failed to copy comics".tl);
+          Log.error("Import Comic", e.toString(), s);
+          return result;
         }
-      } catch (e, s) {
-        App.rootContext.showMessage(message: "Failed to copy comics".tl);
-        Log.error("Import Comic", e.toString(), s);
-        return result;
       }
     }
     return result;
@@ -476,8 +572,15 @@ class ImportComic {
         importedComics = await _copyComicsToLocalDir(importedComics);
       }
       int importedCount = 0;
+      final total = importedComics.values.fold(
+        0,
+        (sum, list) => sum + list.length,
+      );
       for (var folder in importedComics.keys) {
         for (var comic in importedComics[folder]!) {
+          _report(_addingPhase, importedCount, total, current: comic.title);
+          // Let the dialog repaint between comics; each add is synchronous.
+          await Future<void>.delayed(Duration.zero);
           var id = LocalManager().findValidId(ComicType.local);
           LocalManager().add(comic, id);
           importedCount++;

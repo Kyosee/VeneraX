@@ -1192,10 +1192,48 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
 
   bool cancelled = false;
 
+  ImportComicProgress? progress;
+
   @override
   void dispose() {
     loading = false;
     super.dispose();
+  }
+
+  void _onProgress(ImportComicProgress value) {
+    BackgroundKeepAlive.instance.update(
+      BackgroundKeepAlive.tagComicImport,
+      formatTaskStatus(title: value.message, detail: value.current),
+    );
+    if (mounted) setState(() => progress = value);
+  }
+
+  Widget _buildProgress() {
+    final current = progress;
+    if (current == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(current.message, style: ts.s16),
+        const SizedBox(height: 12),
+        LinearProgressIndicator(
+          value: current.value,
+          backgroundColor: context.colorScheme.surfaceContainer,
+        ),
+        if (current.current != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            current.current!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: ts.s14.withColor(context.colorScheme.outline),
+          ),
+        ],
+      ],
+    ).paddingHorizontal(16);
   }
 
   @override
@@ -1217,11 +1255,7 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
       dismissible: !loading,
       title: "Import Comics".tl,
       content: loading
-          ? SizedBox(
-              width: 600,
-              height: height,
-              child: const Center(child: CircularProgressIndicator()),
-            )
+          ? SizedBox(width: 600, height: height, child: _buildProgress())
           : RadioGroup<int>(
               groupValue: type,
               onChanged: (value) {
@@ -1314,16 +1348,18 @@ class _ImportComicsWidgetState extends State<ImportComicsWidget> {
 
     setState(() {
       loading = true;
+      progress = null;
     });
     // Keep the process alive across backgrounding while a comic import runs
     // (Android only; no-op elsewhere). Started here, on the foreground tap, so
     // the foreground service isn't subject to background-start restrictions.
     // Empty status => the native service shows its localized default body under
-    // the localized "Importing comics" title; this flow has no per-item progress.
+    // the localized "Importing comics" title until the import reports progress.
     BackgroundKeepAlive.instance.update(BackgroundKeepAlive.tagComicImport, '');
     var importer = ImportComic(
       selectedFolder: selectedFolder,
       copyToLocal: copyToLocalFolder,
+      onProgress: _onProgress,
     );
     bool result;
     try {
