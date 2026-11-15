@@ -276,12 +276,9 @@ class _AgreementPanelState extends State<AgreementPanel> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (widget.isUpdate) ...[
+                          if (widget.isUpdate && widget.previousVersion > 0) ...[
                             Text(
-                              (widget.previousVersion > 0
-                                      ? 'Please review the updated agreement'
-                                      : 'A one-time notice after updating')
-                                  .tl,
+                              'Please review the updated agreement'.tl,
                               style: TextStyle(
                                 color: colors.primary,
                                 fontSize: 11,
