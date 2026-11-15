@@ -701,13 +701,18 @@ class LocalManager with ChangeNotifier {
   List<LocalComic> _getComicsSortedByLastRead() {
     var allComics = _db.select('SELECT * FROM comics;');
     var comics = allComics.map((row) => LocalComic.fromRow(row)).toList();
-    comics.sort((a, b) {
-      var historyA = HistoryManager().find(a.id, a.comicType);
-      var historyB = HistoryManager().find(b.id, b.comicType);
-      var timeA = historyA?.time ?? DateTime.fromMillisecondsSinceEpoch(0);
-      var timeB = historyB?.time ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return timeB.compareTo(timeA);
-    });
+    // One lookup per comic: a local history lookup also checks records synced
+    // from other devices, too costly to repeat inside the comparator.
+    final readAt = <LocalComic, int>{
+      for (final comic in comics)
+        comic:
+            HistoryManager()
+                .find(comic.id, comic.comicType)
+                ?.time
+                .millisecondsSinceEpoch ??
+            0,
+    };
+    comics.sort((a, b) => readAt[b]!.compareTo(readAt[a]!));
     return comics;
   }
 
@@ -720,6 +725,20 @@ class LocalManager with ChangeNotifier {
       return null;
     }
     return LocalComic.fromRow(res.first);
+  }
+
+  /// Local ids are assigned per device ([findValidId]), so history synced from
+  /// another device names that device's id. The title is what both copies
+  /// share: pair [id] with the comic here that carries [title], but only when
+  /// [id] is not in use here and exactly one comic matches (issue #348).
+  LocalComic? findSyncedCopy(String id, String title) {
+    if (!isInitialized || title.isEmpty) return null;
+    if (find(id, ComicType.local) != null) return null;
+    final res = _db.select(
+      'SELECT * FROM comics WHERE comic_type = ? AND title = ? LIMIT 2;',
+      [ComicType.local.value, title],
+    );
+    return res.length == 1 ? LocalComic.fromRow(res.first) : null;
   }
 
   @override

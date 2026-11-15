@@ -167,6 +167,15 @@ class ComicStateRepository {
       sourceComicId,
       identity.type,
     );
+    if (localComic == null && identity.type == ComicType.local) {
+      // A local id from another device (synced history) stands for this
+      // device's copy of the same comic (issue #348).
+      final copy = _findSyncedLocalCopy(
+        sourceComicId,
+        history?.title ?? favorite?.title ?? '',
+      );
+      if (copy != null) return load(sourceKey, copy.id);
+    }
 
     return ComicState(
       identity: identity,
@@ -585,6 +594,17 @@ class ComicStateRepository {
     }
     try {
       return _local.find(sourceComicId, type);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  LocalComic? _findSyncedLocalCopy(String sourceComicId, String title) {
+    if (_localManager == null && !App.isInitialized) {
+      return null;
+    }
+    try {
+      return _local.findSyncedCopy(sourceComicId, title);
     } catch (_) {
       return null;
     }

@@ -11,6 +11,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/image_provider/image_favorites_provider.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/source_platform.dart';
@@ -593,6 +594,7 @@ class HistoryManager with ChangeNotifier {
   }
 
   void _cacheAddedHistory(History newItem) {
+    if (newItem.type == ComicType.local) _localIdsByTitle = null;
     if (_cachedHistoryIds == null) {
       updateCache();
     } else {
@@ -606,6 +608,7 @@ class HistoryManager with ChangeNotifier {
 
   void _clearCache() {
     _cachedHistoryIds = null;
+    _localIdsByTitle = null;
     cachedHistories.clear();
   }
 
@@ -837,6 +840,7 @@ class HistoryManager with ChangeNotifier {
 
   void updateCache() {
     if (!isInitialized || _isCorrupted) return;
+    _localIdsByTitle = null;
     try {
       _cachedHistoryIds = {};
       var res = _db.select("""
@@ -862,6 +866,63 @@ class HistoryManager with ChangeNotifier {
 
   History? find(String id, ComicType type) {
     if (!isInitialized || _isCorrupted) return null;
+    final own = _findRecord(id, type);
+    if (type != ComicType.local) return own;
+    return _preferSyncedLocalRecord(id, own);
+  }
+
+  /// Local comic ids are per device, so reading a local comic on another
+  /// device leaves its record under that device's id. Once
+  /// [LocalManager.findSyncedCopy] pairs such a record with this comic, the
+  /// newer of the two carries the reading state; writes go back to that
+  /// record, so both devices share it (issue #348).
+  History? _preferSyncedLocalRecord(String id, History? own) {
+    final idsByTitle = _localRecordIdsByTitle();
+    if (idsByTitle.isEmpty || !LocalManager().isInitialized) return own;
+    final LocalComic? comic;
+    try {
+      comic = LocalManager().find(id, ComicType.local);
+    } catch (_) {
+      return own;
+    }
+    if (comic == null) return own;
+    var best = own;
+    for (final otherId in idsByTitle[comic.title] ?? const <String>[]) {
+      if (otherId == id) continue;
+      if (LocalManager().findSyncedCopy(otherId, comic.title)?.id != id) {
+        continue;
+      }
+      final other = _findRecord(otherId, ComicType.local);
+      if (other != null && (best == null || other.time.isAfter(best.time))) {
+        best = other;
+      }
+    }
+    return best;
+  }
+
+  Map<String, List<String>>? _localIdsByTitle;
+
+  Map<String, List<String>> _localRecordIdsByTitle() {
+    final cached = _localIdsByTitle;
+    if (cached != null) return cached;
+    final result = <String, List<String>>{};
+    try {
+      final rows = _db.select(
+        'select id, title from history where type == ?;',
+        [ComicType.local.value],
+      );
+      for (final row in rows) {
+        final title = row['title'];
+        if (title is! String || title.isEmpty) continue;
+        (result[title] ??= []).add(row['id'] as String);
+      }
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+    }
+    return _localIdsByTitle = result;
+  }
+
+  History? _findRecord(String id, ComicType type) {
     if (_cachedHistoryIds == null) {
       updateCache();
     }

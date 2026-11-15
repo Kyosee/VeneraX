@@ -24,7 +24,11 @@ class HistoryImageProvider
     // A local cover is relative to the comic directory and may sit inside a
     // chapter folder (`ch1/01.jpg`), so the type decides, not the slash.
     if (history.type == ComicType.local || !url.contains('/')) {
-      var localComic = LocalManager().find(history.id, history.type);
+      var localComic =
+          LocalManager().find(history.id, history.type) ??
+          (history.type == ComicType.local
+              ? LocalManager().findSyncedCopy(history.id, history.title)
+              : null);
       if (localComic != null) {
         // Delegate to the local provider so a missing/renamed cover file falls
         // back to scanning the comic directory (issue #38) instead of throwing

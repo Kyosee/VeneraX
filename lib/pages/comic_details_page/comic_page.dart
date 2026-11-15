@@ -178,6 +178,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   final ComicStateRepository _comicStateRepository =
       const ComicStateRepository();
 
+  /// The comic id this page works with. A local id synced from another device
+  /// resolves to this device's copy of the comic (issue #348).
+  late final String _id = _resolveComicId();
+
+  String _resolveComicId() {
+    if (widget.sourceKey != 'local') return widget.id;
+    final state = _comicStateRepository.load(widget.sourceKey, widget.id);
+    return state.localComic?.id ?? widget.id;
+  }
+
   List<DomainComicSourceLink> _relatedSourceLinks = const [];
   bool _relatedSourcesLoaded = false;
 
@@ -188,7 +198,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   void _onHistoryChanged() {
     if (!mounted) return;
-    history = _comicStateRepository.load(widget.sourceKey, widget.id).history;
+    history = _comicStateRepository.load(widget.sourceKey, _id).history;
     update();
   }
 
@@ -198,7 +208,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       cover: widget.cover,
       title: widget.title,
       sourceKey: widget.sourceKey,
-      cid: widget.id,
+      cid: _id,
       heroID: widget.heroID,
     );
   }
@@ -206,7 +216,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   Widget buildError() {
     final isDownloaded = LocalManager().isDownloaded(
-      widget.id,
+      _id,
       ComicType.fromKey(widget.sourceKey),
     );
 
@@ -220,7 +230,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           child: Text("Read".tl),
           onPressed: () {
             final localComic = _comicStateRepository
-                .load(widget.sourceKey, widget.id)
+                .load(widget.sourceKey, _id)
                 .localComic;
             if (localComic == null) {
               context.showMessage(message: "Local comic not found".tl);
@@ -240,7 +250,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         final tempComic = Comic(
           widget.title ?? '',
           widget.cover ?? '',
-          widget.id,
+          _id,
           null,
           null,
           '',
@@ -276,9 +286,9 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       relatedLinks: relatedLinks,
       comic: widget.title != null || widget.cover != null
           ? Comic(
-              widget.title ?? widget.id,
+              widget.title ?? _id,
               widget.cover ?? '',
-              widget.id,
+              _id,
               null,
               null,
               '',
@@ -325,7 +335,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
   }
 
-  ComicCollection? get _collection => ComicCollectionStore.find(widget.id);
+  ComicCollection? get _collection => ComicCollectionStore.find(_id);
 
   void _toggleCollectionDetailMode() {
     final collection = _collection;
@@ -536,7 +546,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   @override
   Future<Res<ComicDetails>> loadData() async {
-    var state = _comicStateRepository.load(widget.sourceKey, widget.id);
+    var state = _comicStateRepository.load(widget.sourceKey, _id);
     var localComic = state.localComic;
 
     // Local-first: if the comic is already in the local library (whether a
@@ -576,7 +586,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     scheduleMicrotask(() => _refreshNetworkDetails(comicSource));
     // Cached details from an earlier visit render the chapter list (and group
     // tabs) instantly; the background fetch above refreshes them.
-    final cached = ComicDetailsCache().find(widget.sourceKey, widget.id);
+    final cached = ComicDetailsCache().find(widget.sourceKey, _id);
     if (cached != null) {
       return Res(cached);
     }
@@ -599,7 +609,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       'tags': tagsMap,
       'chapters': localComic.chapters?.toJson(),
       'sourceKey': widget.sourceKey,
-      'comicId': widget.id,
+      'comicId': _id,
       'thumbnails': null,
       'recommend': null,
       'isFavorite': state.isLocalFavorite,
@@ -634,7 +644,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     if (!mounted) return;
     final localComic =
         _localComic ??
-        _comicStateRepository.load(widget.sourceKey, widget.id).localComic;
+        _comicStateRepository.load(widget.sourceKey, _id).localComic;
     final bool success;
     if (widget.sourceKey == 'local' ||
         localComic?.comicType == ComicType.local) {
@@ -714,7 +724,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
         await LocalComicImageProvider(current).evict();
         LocalManager().replaceLocalComic(refreshed);
-        final state = _comicStateRepository.load(widget.sourceKey, widget.id);
+        final state = _comicStateRepository.load(widget.sourceKey, _id);
         if (!mounted || generation != _detailsRefreshGeneration) return false;
         setState(() {
           _localComic = refreshed;
@@ -741,13 +751,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     String lastError = 'Load failed';
     while (retryCount < 3) {
       try {
-        final res = await source.loadComicInfo!(widget.id);
+        final res = await source.loadComicInfo!(_id);
         if (!mounted || generation != _detailsRefreshGeneration) return false;
         if (res.success) {
           if (refreshCover) {
             final provider = comicDetailCoverProvider(
               sourceKey: widget.sourceKey,
-              id: widget.id,
+              id: _id,
               cover: res.data.cover.isNotEmpty ? res.data.cover : _coverUrl,
               localComic: _localComic,
             );
@@ -762,7 +772,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             data = res.data;
             if (refreshCover) _coverRefreshVersion++;
           });
-          ComicDetailsCache().update(widget.sourceKey, widget.id, res.data);
+          ComicDetailsCache().update(widget.sourceKey, _id, res.data);
           await onDataLoaded();
           return true;
         }
@@ -787,14 +797,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   ComicDetails _fallbackDetails(ComicState state) {
     return ComicDetails.fromJson({
-      'title': state.title ?? widget.title ?? widget.id,
+      'title': state.title ?? widget.title ?? _id,
       'subtitle': null,
       'cover': state.cover ?? widget.cover ?? '',
       'description': null,
       'tags': <String, List<String>>{},
       'chapters': null,
       'sourceKey': widget.sourceKey,
-      'comicId': widget.id,
+      'comicId': _id,
       'thumbnails': null,
       'recommend': null,
       'isFavorite': state.isLocalFavorite,

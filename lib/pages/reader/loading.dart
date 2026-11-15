@@ -66,7 +66,9 @@ class _ReaderWithLoadingState
       return Res(
         ReaderProps(
           type: state.identity.type,
-          cid: widget.id,
+          // A local id synced from another device resolves to this device's
+          // copy, whose id differs (issue #348).
+          cid: localComic.id,
           name: localComic.title,
           chapters: localComic.chapters,
           history:
