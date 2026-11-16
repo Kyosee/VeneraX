@@ -130,7 +130,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         await importAppData(
           File(selection.path),
           userRestore: true,
-          restoreWebdavConfig: false,
+          restoreDeviceSettings: true,
           onProgress: progress,
         );
       }

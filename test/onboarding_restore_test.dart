@@ -79,6 +79,10 @@ void main() {
     App.cachePath = (await Directory('${directory.path}/cache').create()).path;
     App.isBackgroundTask = true;
     appdata.settings['webdav'] = <String>[];
+    appdata.settings['followUpdatesFolders'] = <String>[];
+    appdata.settings['followUpdatesAllFolders'] = false;
+    appdata.settings['imageTranslationPerformancePreset'] = 'balanced';
+    appdata.settings['imageTranslationLlmConcurrency'] = 2;
     appdata.implicitData.clear();
     await OnboardingStore.instance.load(directory.path);
     await OnboardingStore.instance.accept('en-US');
@@ -114,6 +118,10 @@ void main() {
         ],
         'disclaimerConsented': true,
         'dataVersion': 4,
+        'followUpdatesFolders': ['Reading'],
+        'followUpdatesAllFolders': false,
+        'imageTranslationPerformancePreset': 'custom',
+        'imageTranslationLlmConcurrency': 3,
       },
       'searchHistory': ['restored search'],
     });
@@ -124,19 +132,26 @@ void main() {
     return file;
   }
 
-  test('setup import keeps credentials and acceptance device-local', () async {
+  test('setup import fills in device settings, acceptance stays local', () async {
     final record = File('${directory.path}/onboarding.json');
     final acceptedBefore = await record.readAsString();
     final file = await backup();
     appdata.implicitData['webdavSetupRestorePending'] = true;
 
     await DataSync().applyBackup(
-      () => importAppData(file, userRestore: true, restoreWebdavConfig: false),
+      () => importAppData(file, userRestore: true, restoreDeviceSettings: true),
     );
     await appdata.saveData(false);
 
     expect(appdata.searchHistory, ['restored search']);
-    expect(appdata.settings['webdav'], isEmpty);
+    expect(appdata.settings['webdav'], [
+      'https://example.invalid/backups',
+      'reader',
+      'fixture-password',
+    ]);
+    expect(appdata.settings['followUpdatesFolders'], ['Reading']);
+    expect(appdata.settings['imageTranslationPerformancePreset'], 'custom');
+    expect(appdata.settings['imageTranslationLlmConcurrency'], 3);
     expect(DataSync().initialRestoreDeferred, isTrue);
     expect(await record.readAsString(), acceptedBefore);
     await OnboardingStore.instance.load(directory.path);
@@ -145,22 +160,34 @@ void main() {
     expect(OnboardingStore.instance.state.acceptedVersion, isNot(999));
   });
 
-  test(
-    'normal imports retain the existing credential restore behavior',
-    () async {
-      final file = await backup();
-      await DataSync().applyBackup(
-        () => importAppData(file, userRestore: true),
-      );
-      await appdata.saveData(false);
+  test('sync imports leave device settings alone', () async {
+    final file = await backup();
+    await DataSync().applyBackup(() => importAppData(file, userRestore: true));
+    await appdata.saveData(false);
 
-      expect(appdata.settings['webdav'], [
-        'https://example.invalid/backups',
-        'reader',
-        'fixture-password',
-      ]);
-    },
-  );
+    expect(appdata.settings['webdav'], isEmpty);
+    expect(appdata.settings['followUpdatesFolders'], isEmpty);
+    expect(appdata.settings['imageTranslationPerformancePreset'], 'balanced');
+  });
+
+  test('a picked backup keeps the settings this device already set', () async {
+    final file = await backup();
+    const own = ['https://example.invalid/own', 'me', 'own-password'];
+    appdata.settings['webdav'] = List<String>.of(own);
+    appdata.settings['followUpdatesAllFolders'] = true;
+    appdata.settings['imageTranslationPerformancePreset'] = 'saver';
+
+    await DataSync().applyBackup(
+      () => importAppData(file, userRestore: true, restoreDeviceSettings: true),
+    );
+    await appdata.saveData(false);
+
+    expect(appdata.settings['webdav'], own);
+    expect(appdata.settings['followUpdatesAllFolders'], isTrue);
+    expect(appdata.settings['followUpdatesFolders'], isEmpty);
+    expect(appdata.settings['imageTranslationPerformancePreset'], 'saver');
+    expect(appdata.settings['imageTranslationLlmConcurrency'], 2);
+  });
 
   test(
     'immediate and deferred WebDAV restores align versions without publishing',

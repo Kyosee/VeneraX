@@ -206,6 +206,7 @@ class ImportTaskManager with ChangeNotifier {
             onProgress: onProgress,
             shouldCancel: shouldCancel,
             userRestore: true,
+            restoreDeviceSettings: true,
           ),
         );
         task.translationsOnly = outcome.translationsOnly;

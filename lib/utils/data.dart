@@ -13,11 +13,14 @@ import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/ohos_follow_scheduler.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -555,30 +558,68 @@ bool _isWebdavConfigComplete(dynamic config) {
   return config.cast<String>().every((e) => e.trim().isNotEmpty);
 }
 
-/// Restores the WebDAV configuration from an imported backup, but only when the
-/// current device has no usable configuration.
-///
-/// WebDAV credentials are device-specific and therefore excluded from
-/// [Appdata.syncData], so a normal import never touches them. We make a
-/// deliberate exception here: if this device is unconfigured — or only
-/// partially configured (any of url/user/password blank) — and the backup
-/// carries a complete configuration, adopt it. A device that already has a
-/// complete configuration keeps its own.
-Future<void> _restoreWebdavConfigIfAbsent(Map<String, dynamic> data) async {
-  if (_isWebdavConfigComplete(appdata.settings['webdav'])) {
-    return;
+const _translationPerformanceKeys = [
+  TranslationPerformanceConfig.settingKey,
+  'imageTranslationPreBatchPages',
+  'imageTranslationOcrWorkers',
+  'imageTranslationImageConcurrency',
+  'imageTranslationLlmConcurrency',
+];
+
+/// Adopts the device-local settings a picked backup carries — WebDAV account,
+/// followed folders, translation performance — wherever this device has not
+/// set its own. [Appdata.syncData] skips these keys and sync backups never
+/// hold them; only a full export does.
+Future<void> _restoreDeviceSettingsIfAbsent(Map<String, dynamic> data) async {
+  final settings = data['settings'];
+  if (settings is! Map) return;
+  var changed = false;
+
+  final webdav = settings['webdav'];
+  if (!_isWebdavConfigComplete(appdata.settings['webdav']) &&
+      _isWebdavConfigComplete(webdav)) {
+    // Verbatim: the password is not trimmed.
+    appdata.settings['webdav'] = (webdav as List).cast<String>().toList();
+    changed = true;
   }
-  var settings = data['settings'];
-  if (settings is! Map) {
-    return;
+
+  var followRestored = false;
+  if (!FollowUpdateScope.isConfigured) {
+    final all = settings[FollowUpdateScope.allFoldersKey] == true;
+    final raw = settings[FollowUpdateScope.foldersKey];
+    var folders = raw is List ? raw.whereType<String>().toList() : <String>[];
+    final legacy = settings[FollowUpdateScope.legacyFolderKey];
+    if (!all && folders.isEmpty && legacy is String && legacy.isNotEmpty) {
+      folders = [legacy];
+    }
+    if (all || folders.isNotEmpty) {
+      appdata.settings[FollowUpdateScope.allFoldersKey] = all;
+      appdata.settings[FollowUpdateScope.foldersKey] = folders;
+      followRestored = changed = true;
+    }
   }
-  var incoming = settings['webdav'];
-  if (!_isWebdavConfigComplete(incoming)) {
-    return;
+
+  // Only the default preset counts as unset: its values come from the preset.
+  final preset = settings[TranslationPerformanceConfig.settingKey];
+  if (TranslationPerformanceConfig.current ==
+          TranslationPerformancePreset.balanced &&
+      preset is String &&
+      TranslationPerformanceConfig.fromSetting(preset) !=
+          TranslationPerformancePreset.balanced) {
+    for (final key in _translationPerformanceKeys) {
+      if (settings.containsKey(key)) appdata.settings[key] = settings[key];
+    }
+    changed = true;
   }
-  // Preserve values verbatim (e.g. don't trim the password).
-  appdata.settings['webdav'] = (incoming as List).cast<String>().toList();
-  await appdata.saveData(false);
+
+  if (changed) await appdata.saveData(false);
+  if (followRestored) {
+    // As the follow-updates settings dialog does for newly followed folders.
+    for (final folder in FollowUpdateScope.folders()) {
+      LocalFavoritesManager().prepareTableForFollowUpdates(folder, false);
+    }
+    unawaited(OhosFollowScheduler.sync());
+  }
 }
 
 /// Serializes concurrent [importAppData] runs. A WebDAV download-apply and a
@@ -606,8 +647,9 @@ class ImportOutcome {
 /// marks an import the user asked for (not a background sync): its translations
 /// outrank deletions recorded on this device. A file from [exportTranslations]
 /// is recognized and only merged, whatever the flags.
-/// [restoreWebdavConfig] is false during setup: importing local data must not
-/// silently connect this device to a server from the backup.
+/// [restoreDeviceSettings] is for a file the user picked: the WebDAV account,
+/// followed folders and translation performance it carries fill in whatever
+/// this device has not set. Sync keeps those per device.
 Future<ImportOutcome> importAppData(
   File file, {
   bool checkVersion = false,
@@ -616,7 +658,7 @@ Future<ImportOutcome> importAppData(
   bool restoreLocalComics = true,
   bool mergeTranslations = true,
   bool userRestore = false,
-  bool restoreWebdavConfig = true,
+  bool restoreDeviceSettings = false,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -633,7 +675,7 @@ Future<ImportOutcome> importAppData(
       restoreLocalComics: restoreLocalComics,
       mergeTranslations: mergeTranslations,
       userRestore: userRestore,
-      restoreWebdavConfig: restoreWebdavConfig,
+      restoreDeviceSettings: restoreDeviceSettings,
     );
   } finally {
     _importInProgress = null;
@@ -719,7 +761,7 @@ Future<ImportOutcome> _importAppDataLocked(
   bool restoreLocalComics = true,
   bool mergeTranslations = true,
   bool userRestore = false,
-  bool restoreWebdavConfig = true,
+  bool restoreDeviceSettings = false,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -799,8 +841,8 @@ Future<ImportOutcome> _importAppDataLocked(
       // Refresh collection-backed pages immediately after a WebDAV restore;
       // collection settings, including detail display modes, live in appdata.
       ComicCollectionStore.notifyChanged();
-      if (restoreWebdavConfig && data is Map<String, dynamic>) {
-        await _restoreWebdavConfigIfAbsent(data);
+      if (restoreDeviceSettings && data is Map<String, dynamic>) {
+        await _restoreDeviceSettingsIfAbsent(data);
       }
       // Which library each source installs and updates from rides along in the
       // settings. Fold a legacy single-URL library in first so the ids those
