@@ -6,6 +6,10 @@ import { StartupTheme } from '../bridge/StartupTheme';
 
 let storage = LocalStorage.getShared()
 const EVENT_BACK_PRESS = 'EVENT_BACK_PRESS'
+// The system start window drew the icon at its own 512 px, whatever the
+// screen density; the launcher rounds icon corners by about a fifth.
+const STARTUP_ICON_PX = 512
+const STARTUP_ICON_CORNER = 0.2
 
 @Component
 struct StartupSplash {
@@ -25,13 +29,19 @@ struct StartupSplash {
     this.visible = false;
   }
 
+  private iconSize(): number {
+    return this.getUIContext().px2vp(STARTUP_ICON_PX);
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.icon !== undefined) {
         Image(this.icon)
-          .width(96)
-          .height(96)
+          .width(this.iconSize())
+          .height(this.iconSize())
           .objectFit(ImageFit.Contain)
+          .borderRadius(this.iconSize() * STARTUP_ICON_CORNER)
+          .clip(true)
       }
     }
     .width('100%')
