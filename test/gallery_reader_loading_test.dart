@@ -614,6 +614,48 @@ void main() {
         await closeGallery(tester, duplicate.history);
         images[1] = secondImage;
       }
+
+      // Local spreads further ahead are grouped from their file headers,
+      // before any of them decodes.
+      final original = List.of(images);
+      final png = (await tester.runAsync(() async {
+        final data = await wide.toByteData(format: ui.ImageByteFormat.png);
+        return data!.buffer.asUint8List();
+      }))!;
+      for (var i = 0; i < images.length; i++) {
+        final file = File('${temp.path}/header-$i.png')..writeAsBytesSync(png);
+        images[i] = 'file://${file.path}';
+      }
+      final headers = await openGallery(
+        tester,
+        ReaderMode.galleryLeftToRight,
+        2,
+        'off',
+      );
+      try {
+        appdata.settings['preloadImageCount'] = 4;
+        for (
+          var i = 0;
+          i < 100 && headers.reader.maxPage < images.length;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 250));
+        }
+        expect(
+          headers.reader.maxPage,
+          images.length,
+          reason: 'Each spread must stand alone before any of them decodes',
+        );
+        expect(headers.decodes.any((decode) => decode.completed), isFalse);
+        expect(headers.reader.pageImageRange, (0, 1));
+        expect(tester.takeException(), isNull);
+      } finally {
+        await closeGallery(tester, headers.history);
+        images.setAll(0, original);
+      }
     },
     timeout: const Timeout(Duration(seconds: 45)),
   );

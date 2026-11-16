@@ -975,7 +975,11 @@ abstract mixin class _ImagePerPageHandler {
     _syncLayoutChapter();
     if (index < 0 || index >= (images?.length ?? 0)) return false;
     _imageSizes[index] = size;
-    if (size.width <= size.height || !_wideImages.add(index)) return false;
+    if (size.width <= size.height) {
+      // A size read from the file header that its decode contradicts.
+      return _wideImages.remove(index) && _layoutUsesWideImages;
+    }
+    if (!_wideImages.add(index)) return false;
     return _layoutUsesWideImages;
   }
 
