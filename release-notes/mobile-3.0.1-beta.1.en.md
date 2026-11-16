@@ -21,6 +21,6 @@
 ### Removed
 - No features were removed in this release.
 
-**HarmonyOS installation**: For phones and tablets, choose the ARM64 package ending in `harmonyos-unsigned.hap`; `harmonyos-emulator-x64-unsigned.hap` is for x64 emulators only. Both HAPs are unsigned and require your own signature for a physical device; ARM64 device installation and runtime validation are not claimed for this preview.
+**HarmonyOS installation**: For phones and tablets, choose the ARM64 package ending in `harmonyos-unsigned.hap`; `harmonyos-emulator-x64-unsigned.hap` is for x64 emulators only. Both HAPs are unsigned and require your own signature for a physical device; ARM64 device installation and runtime validation are not claimed for this preview. HarmonyOS displays the native version as `3.0.1.1`, which corresponds to this `3.0.1-beta.1` preview.
 
 **Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v3.0.0...mobile-3.0.1-beta.1

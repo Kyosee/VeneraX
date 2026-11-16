@@ -21,6 +21,6 @@
 ### 移除
 - 本版本未移除功能。
 
-**鸿蒙安装说明**：手机、平板选择文件名含 `harmonyos-unsigned.hap` 的 ARM64 包；`harmonyos-emulator-x64-unsigned.hap` 仅供 x64 模拟器。HAP 均未签名，真机需自行签名；本次不宣称已完成 ARM64 真机安装与运行验证。
+**鸿蒙安装说明**：手机、平板选择文件名含 `harmonyos-unsigned.hap` 的 ARM64 包；`harmonyos-emulator-x64-unsigned.hap` 仅供 x64 模拟器。HAP 均未签名，真机需自行签名；本次不宣称已完成 ARM64 真机安装与运行验证。鸿蒙系统内显示的版本为 `3.0.1.1`，对应本次 `3.0.1-beta.1` 预览版。
 
 **完整更新日志**: https://github.com/Kyosee/VeneraX/compare/v3.0.0...mobile-3.0.1-beta.1

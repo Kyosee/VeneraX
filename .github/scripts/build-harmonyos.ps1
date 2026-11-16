@@ -40,6 +40,10 @@ $appVersion = $versionLine.Matches[0].Groups[1].Value
 if ($appVersion -notmatch '^([^+]+)\+(\d+)$') { throw "Invalid application version: $appVersion" }
 $versionName = $Matches[1]
 $versionCode = [int]$Matches[2]
+# Match Flutter OH's validatedBuildNameForPlatform for native versionName.
+$ohosVersionParts = @(($versionName -replace '[^\d.]', '') -split '\.' | Where-Object { $_ -ne '' })
+while ($ohosVersionParts.Count -lt 3) { $ohosVersionParts += '0' }
+$ohosVersionName = $ohosVersionParts -join '.'
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 if (Get-ChildItem -LiteralPath $OutputDirectory -Filter '*.hap') {
@@ -80,8 +84,8 @@ foreach ($target in $targets) {
         $reader = [IO.StreamReader]::new($manifestEntry.Open())
         try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
         $app = $manifest.app
-        if ($app.versionName -ne $versionName -or $app.versionCode -ne $versionCode) {
-            throw "Packaged version does not match $appVersion."
+        if ($app.versionName -ne $ohosVersionName -or $app.versionCode -ne $versionCode) {
+            throw "Packaged version does not match $appVersion (expected $ohosVersionName/$versionCode)."
         }
         if ($app.bundleName -ne 'com.github.kyosee.venera' -or
             $app.debug -ne $false -or $app.buildMode -ne 'release') {
