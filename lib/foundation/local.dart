@@ -737,6 +737,12 @@ class LocalManager with ChangeNotifier {
     return res.map((row) => LocalComic.fromRow(row)).toList();
   }
 
+  /// Every comic in the library, without reading the rest of its row.
+  List<ComicID> allComicIds() => [
+    for (final row in _db.select('SELECT id, comic_type FROM comics;'))
+      ComicID(ComicType(row['comic_type'] as int), row['id'] as String),
+  ];
+
   List<LocalComic> getComicsByStatus(LocalComicStatus status, LocalSortType sortType) {
     return getComics(sortType).where((c) => c.status == status).toList();
   }

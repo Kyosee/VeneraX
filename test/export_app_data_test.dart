@@ -1,0 +1,128 @@
+import 'dart:io';
+
+import 'package:archive/archive.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_state_repository.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/js_engine.dart';
+import 'package:venera/foundation/local.dart';
+import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/utils/data.dart';
+import 'package:venera/utils/translations.dart';
+
+History _record(String id, String title) => History.fromMap({
+  'type': ComicType.local.value,
+  'time': DateTime(2026, 11, 15).millisecondsSinceEpoch,
+  'title': title,
+  'subtitle': '',
+  'cover': '',
+  'ep': 1,
+  'page': 3,
+  'id': id,
+  'readEpisode': const <String>[],
+  'max_page': null,
+});
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory root;
+
+  setUpAll(() async {
+    root = Directory.systemTemp.createTempSync('venera-export-');
+    App.dataPath = root.path;
+    App.cachePath = '${root.path}/cache';
+    Directory(App.cachePath).createSync();
+    final comics = Directory('${root.path}/comics')..createSync();
+    File('${root.path}/local_path').writeAsStringSync(comics.path);
+    await AppTranslation.init();
+    await appdata.init();
+    SingleInstanceCookieJar('${root.path}/cookie.db');
+    await JsEngine().init();
+    await ComicSourceManager().init();
+    await HistoryManager().init();
+    await LocalFavoritesManager().init();
+    await App.readLater.init();
+    await LocalManager().init();
+    await App.domain.init(App.dataPath);
+  });
+
+  tearDownAll(() {
+    HistoryManager().close();
+    LocalFavoritesManager().close();
+    App.readLater.close();
+    LocalManager().close();
+    App.domain.close();
+    SingleInstanceCookieJar.instance?.dispose();
+    SingleInstanceCookieJar.instance = null;
+    JsEngine().dispose();
+    root.deleteSync(recursive: true);
+  });
+
+  test('backups carry unsaved writes and only the comics kept here', () async {
+    final repository = ComicStateRepository(domain: App.domain);
+    final library = LocalComic(
+      id: 'library',
+      title: 'Library comic',
+      subtitle: '',
+      tags: const [],
+      directory: '${root.path}/comics/library',
+      chapters: null,
+      cover: 'cover.jpg',
+      comicType: ComicType.local,
+      downloadedChapters: const [],
+      createdAt: DateTime(2026, 11),
+    );
+    await LocalManager().add(library, library.id);
+    LocalFavoritesManager().createFolder('Keep');
+    LocalFavoritesManager().addComic(
+      'Keep',
+      FavoriteItem(
+        id: 'favorite',
+        name: 'Favorite comic',
+        coverPath: '',
+        author: '',
+        type: ComicType.local,
+        tags: const [],
+      ),
+    );
+    HistoryManager().addHistory(_record('kept', 'Kept comic'));
+    for (final id in ['library', 'favorite', 'kept', 'browsed']) {
+      repository.mirrorComic(_record(id, '$id comic'));
+    }
+    expect(File('${root.path}/history.db-wal').lengthSync(), greaterThan(0));
+
+    final backup = await exportAppData();
+    final archive = ZipDecoder().decodeBytes(backup.readAsBytesSync());
+    Database open(String name) {
+      final file = File('${root.path}/unzipped/$name')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(archive.findFile(name)!.content);
+      final db = sqlite3.open(file.path);
+      addTearDown(db.dispose);
+      return db;
+    }
+
+    // Still only in the WAL file unless checkpointed before zipping.
+    final history = open('history.db');
+    expect(
+      history.select('select page from history where id = ?', ['kept']),
+      [
+        {'page': 3},
+      ],
+    );
+    final domain = open('data/venera.db');
+    final comics = {
+      for (final row in domain.select('select comic_id from comics'))
+        row['comic_id'] as String,
+    };
+    String domainId(String id) => repository.identityFor('local', id).comicId;
+    expect(comics, containsAll(['library', 'favorite', 'kept'].map(domainId)));
+    expect(comics, isNot(contains(domainId('browsed'))));
+  });
+}

@@ -1007,6 +1007,13 @@ class LocalFavoritesManager with ChangeNotifier {
 
   List<FavoriteItem> getAllComics() => getComicsIn(folderNames);
 
+  /// Every favorited comic, without reading the rest of its row.
+  List<ComicID> allComicIds() => [
+    for (final folder in folderNames)
+      for (final row in _db.select('select id, type from "$folder";'))
+        ComicID(ComicType(row['type'] as int), row['id'] as String),
+  ];
+
   /// Comics of [folders], each listed once.
   List<FavoriteItem> getComicsIn(List<String> folders) {
     var res = <FavoriteItem>{};

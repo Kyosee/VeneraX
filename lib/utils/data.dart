@@ -306,33 +306,7 @@ Future<File> exportAppData({
   // zip step reads the database files directly — neither may overlap a
   // close→swap→reopen restore window.
   await DatabaseGateway.instance.guardedRead(() async {
-  try {
-    if (App.domain.isInitialized) {
-      App.domain.db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
-    }
-  } catch (e, s) {
-    Log.warning('Export Data', 'Failed to checkpoint domain database: $e\n$s');
-  }
-  for (final dbName in [
-    'history.db',
-    'local_favorite.db',
-    'local.db',
-    'read_later.db',
-    // Finished per-page translation text (durable, user-cleared). Riding the
-    // backup lets another device render a page without re-paying OCR + LLM.
-    'image_translation.db',
-    // Without a checkpoint, logins living in cookie.db's WAL sidecar were
-    // silently missing from every backup.
-    'cookie.db',
-  ]) {
-    try {
-      final db = openRawDatabase(FilePath.join(App.dataPath, dbName));
-      db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
-      db.dispose();
-    } catch (e, s) {
-      Log.warning('Export Data', 'Failed to checkpoint $dbName: $e\n$s');
-    }
-  }
+  final checkpointDomain = App.domain.isInitialized;
   // Serialize the learned legacy-int -> source-key registry so orphan data
   // (sources that may not be installed on the importing device) can still be
   // resolved after migration. Built in the main isolate; the zip write below
@@ -353,14 +327,46 @@ Future<File> exportAppData({
   var keptComicIds = coreDataStoresReady ? _keptDomainComicIds() : null;
   var domainSnapshot = FilePath.join(App.cachePath, 'domain_$time.db');
   String? snapshotError;
+  var checkpointWarnings = <String>[];
   try {
-  snapshotError = await Isolate.run(() {
+  // Uploads follow every few page turns; checkpoints fsync, so they stay off
+  // the UI thread (#352).
+  (snapshotError, checkpointWarnings) = await Isolate.run(() {
     String? error;
+    var warnings = <String>[];
+    var domainFile = DomainDatabase.databasePathFor(dataPath);
+    for (final path in [
+      if (checkpointDomain) domainFile,
+      for (final dbName in [
+        'history.db',
+        'local_favorite.db',
+        'local.db',
+        'read_later.db',
+        // Finished per-page translation text (durable, user-cleared). Riding
+        // the backup lets another device render a page without re-paying
+        // OCR + LLM.
+        'image_translation.db',
+        // Without a checkpoint, logins living in cookie.db's WAL sidecar were
+        // silently missing from every backup.
+        'cookie.db',
+      ])
+        FilePath.join(dataPath, dbName),
+    ]) {
+      if (!File(path).existsSync()) continue;
+      try {
+        final db = openRawDatabase(path);
+        db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+        db.dispose();
+      } catch (e, s) {
+        warnings.add(
+          'Failed to checkpoint ${File(path).name}: $e\n$s',
+        );
+      }
+    }
     var zipFile = ZipFile.open(cacheFilePath);
     var coverDirName = ComicCollectionStore.coverDirName;
     var historyFile = FilePath.join(dataPath, "history.db");
     var localFavoriteFile = FilePath.join(dataPath, "local_favorite.db");
-    var domainFile = DomainDatabase.databasePathFor(dataPath);
     var appdataFile = FilePath.join(dataPath, appdataName);
     var cookies = FilePath.join(dataPath, "cookie.db");
     // Every entry is existence-guarded: a single missing file used to abort the
@@ -433,10 +439,13 @@ Future<File> exportAppData({
       }
     }
     zipFile.close();
-    return error;
+    return (error, warnings);
   });
   } finally {
     await File(domainSnapshot).deleteIgnoreError();
+  }
+  for (final warning in checkpointWarnings) {
+    Log.warning('Export Data', warning);
   }
   if (snapshotError != null) {
     Log.warning('Export Data', 'Packed the whole domain database: $snapshotError');
@@ -447,19 +456,19 @@ Future<File> exportAppData({
 
 /// Domain comics a backup carries: every comic kept, read or timed here.
 /// The rest of the domain database is this device's browsing cache.
+/// Runs on the UI thread before each upload, so it reads ids only.
 Set<String> _keptDomainComicIds() {
   const repository = ComicStateRepository();
   String domainId(String sourceKey, String comicId) =>
       repository.identityFor(sourceKey, comicId).comicId;
+  final comics = <ComicID>{
+    ...HistoryManager().recordedComics(),
+    ...LocalFavoritesManager().allComicIds(),
+    ...LocalManager().allComicIds(),
+    for (final comic in App.readLater.getAll()) ComicID(comic.type, comic.id),
+  };
   return {
-    for (final comic in HistoryManager().recordedComics())
-      domainId(comic.type.sourceKey, comic.id),
-    for (final comic in LocalFavoritesManager().getAllComics())
-      domainId(comic.sourceKey, comic.id),
-    for (final comic in LocalManager().getComics(LocalSortType.name))
-      domainId(comic.sourceKey, comic.id),
-    for (final comic in App.readLater.getAll())
-      domainId(comic.sourceKey, comic.id),
+    for (final comic in comics) domainId(comic.type.sourceKey, comic.id),
     for (final collection in ComicCollectionStore.all())
       for (final member in collection.members)
         domainId(member.sourceKey, member.comicId),
