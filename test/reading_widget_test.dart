@@ -433,4 +433,65 @@ void main() {
       expect(latest(ReadingWidgetKind.following)['items'], hasLength(2));
     },
   );
+
+  // Refreshes started by changes run unawaited; wait for their writes.
+  Future<void> published(int count) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (snapshots.length < count) {
+      if (DateTime.now().isAfter(deadline)) fail('Cards were not published');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+
+  test('changes while the app is in front publish once it leaves', () async {
+    final publisher = service([history('one')]);
+    publisher.onDataChanged();
+    publisher.onDataChanged();
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    expect(snapshots, isEmpty);
+
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.inactive);
+    await published(4);
+    expect(latest()['items'], hasLength(1));
+    snapshots.clear();
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.hidden);
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.paused);
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.resumed);
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.inactive);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(snapshots, isEmpty);
+  });
+
+  test('changes while the app is away publish shortly after', () async {
+    final publisher = service([history('one')]);
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.paused);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(snapshots, isEmpty);
+    publisher.onDataChanged();
+    await published(4);
+    expect(latest()['items'], hasLength(1));
+  });
+
+  test('locking is published at once while the app is in front', () async {
+    final publisher = service([history('secret')]);
+    publisher.onDataChanged();
+    appdata.settings['authorizationRequired'] = true;
+    publisher.onDataChanged();
+    await published(4);
+    expect(
+      snapshots.every((snapshot) => (snapshot['items'] as List).isEmpty),
+      isTrue,
+    );
+    snapshots.clear();
+    publisher.onDataChanged();
+    publisher.didChangeAppLifecycleState(ui.AppLifecycleState.paused);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(snapshots, isEmpty);
+
+    appdata.settings['authorizationRequired'] = false;
+    publisher.onDataChanged();
+    await published(4);
+    expect(latest()['items'], hasLength(1));
+  });
 }

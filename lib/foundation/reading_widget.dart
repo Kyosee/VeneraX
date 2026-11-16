@@ -124,6 +124,15 @@ class ReadingWidgetService with WidgetsBindingObserver {
   int _revision = 0;
   bool _started = false;
 
+  /// The app is in front, so the home screen and its cards are out of sight.
+  bool _foreground = true;
+
+  /// Data changed since the cards were last published.
+  bool _stale = false;
+
+  /// The lock state the cards last showed; null before the first publish.
+  bool? _publishedLocked;
+
   void start() {
     if (_started ||
         App.isBackgroundTask ||
@@ -131,38 +140,50 @@ class ReadingWidgetService with WidgetsBindingObserver {
       return;
     }
     _started = true;
-    HistoryManager().addListener(_schedule);
-    App.local.addListener(_schedule);
-    App.favorites.addListener(_schedule);
-    ComicSourceManager().addListener(_schedule);
-    appdata.settings.addListener(_schedule);
-    appdata.addListener(_schedule);
-    DataSync().addListener(_schedule);
-    FollowUpdateTaskManager.instance.addListener(_schedule);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _foreground = state == null || state == AppLifecycleState.resumed;
+    HistoryManager().addListener(onDataChanged);
+    App.local.addListener(onDataChanged);
+    App.favorites.addListener(onDataChanged);
+    ComicSourceManager().addListener(onDataChanged);
+    appdata.settings.addListener(onDataChanged);
+    appdata.addListener(onDataChanged);
+    DataSync().addListener(onDataChanged);
+    FollowUpdateTaskManager.instance.addListener(onDataChanged);
     WidgetsBinding.instance.addObserver(this);
-    _schedule();
+    onDataChanged();
   }
 
-  void _schedule() {
+  /// While the app is in front a change only marks the cards out of date;
+  /// they are published once the app leaves the screen. A refresh after every
+  /// page turn, upload and settings save held the UI thread (#352, #355).
+  /// Locking or unlocking is published at once.
+  @visibleForTesting
+  void onDataChanged() {
+    final locked = appdata.settings['authorizationRequired'] == true;
+    if (locked ? _publishedLocked != true : _publishedLocked == true) {
+      _timer?.cancel();
+      unawaited(refresh());
+      return;
+    }
+    // Locked cards show nothing that could change.
+    if (locked) return;
+    _stale = true;
+    if (_foreground) return;
     ++_revision;
     _timer?.cancel();
-    if (appdata.settings['authorizationRequired'] == true) {
-      unawaited(refresh());
-    } else {
-      _timer = Timer(
-        const Duration(milliseconds: 500),
-        () => unawaited(refresh()),
-      );
-    }
+    _timer = Timer(
+      const Duration(milliseconds: 500),
+      () => unawaited(refresh()),
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
     _timer?.cancel();
-    if (state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.inactive) {
-      unawaited(refresh());
-    }
+    if (_foreground || !_stale) return;
+    unawaited(refresh());
   }
 
   Future<void> refresh({
@@ -172,6 +193,8 @@ class ReadingWidgetService with WidgetsBindingObserver {
     final revision = ++_revision;
     try {
       final locked = appdata.settings['authorizationRequired'] == true;
+      _publishedLocked = locked;
+      if (ReadingWidgetKind.values.every(kinds.contains)) _stale = false;
       // Started first: the folder check runs while the other kinds publish.
       final localCheck = locked || !kinds.contains(ReadingWidgetKind.local)
           ? null
@@ -315,6 +338,7 @@ class ReadingWidgetService with WidgetsBindingObserver {
     } on MissingPluginException {
       // Desktop and older platform hosts have no home-screen widget bridge.
     } catch (_) {
+      _stale = true;
       Log.warning('Reading widget', 'Unable to update reading widgets.');
     }
   }
