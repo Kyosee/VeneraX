@@ -213,43 +213,28 @@ void main() {
     },
   );
 
-  testWidgets('following and updates headers open their respective lists', (
+  testWidgets('following and updates headers share one follow page', (
     tester,
   ) async {
     final mainNavigatorKey = await _pumpMainPage(tester);
 
-    expect(
-      await handleReadingWidgetLink(
-        Uri.parse('venerax://reading-widget/following'),
-      ),
-      isTrue,
-    );
-    await tester.pumpAndSettle();
+    for (final kind in ['following', 'updates', 'following']) {
+      expect(
+        await handleReadingWidgetLink(
+          Uri.parse('venerax://reading-widget/$kind'),
+        ),
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(FollowUpdatesPage), findsOneWidget);
+      expect(find.text('No updates found'), findsOneWidget);
+      expect(find.byType(TabBarView), findsOneWidget);
+    }
 
-    expect(
-      tester.widget<FollowUpdatesPage>(find.byType(FollowUpdatesPage)).showAll,
-      isTrue,
-    );
-    expect(find.text('No comics'), findsOneWidget);
-    expect(find.byType(TabBarView), findsNothing);
-
+    // Repeated taps never stacked copies: one Back reaches the main page.
     mainNavigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(
-      await handleReadingWidgetLink(
-        Uri.parse('venerax://reading-widget/updates'),
-      ),
-      isTrue,
-    );
-    await tester.pumpAndSettle();
-
-    expect(
-      tester.widget<FollowUpdatesPage>(find.byType(FollowUpdatesPage)).showAll,
-      isFalse,
-    );
-    expect(find.text('No updates found'), findsOneWidget);
-    expect(find.byType(TabBarView), findsOneWidget);
-    expect(mainNavigatorKey.currentState!.canPop(), isTrue);
+    expect(mainNavigatorKey.currentState!.canPop(), isFalse);
     expect(App.rootNavigatorKey.currentState!.canPop(), isFalse);
   });
 

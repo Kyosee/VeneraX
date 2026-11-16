@@ -26,6 +26,20 @@ Future<GlobalKey<NavigatorState>> _pumpMainPage(WidgetTester tester) async {
   return mainNavigatorKey;
 }
 
+class _EntryA extends StatelessWidget {
+  const _EntryA();
+
+  @override
+  Widget build(BuildContext context) => const Text('entry-a');
+}
+
+class _EntryB extends StatelessWidget {
+  const _EntryB();
+
+  @override
+  Widget build(BuildContext context) => const Text('entry-b');
+}
+
 void _pushRoot(String label) {
   App.rootNavigatorKey.currentState!.push(
     MaterialPageRoute<void>(builder: (_) => Scaffold(body: Text(label))),
@@ -124,6 +138,34 @@ void main() {
     mainNavigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(mainNavigatorKey.currentState!.canPop(), isFalse);
+  });
+
+  testWidgets('entry pages sit right above the main page, one copy each', (
+    tester,
+  ) async {
+    final mainNavigatorKey = await _pumpMainPage(tester);
+    final navigator = mainNavigatorKey.currentState!;
+
+    showEntryPage(navigator, const _EntryA());
+    await tester.pumpAndSettle();
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('details')),
+    );
+    await tester.pumpAndSettle();
+    // The open copy comes back and what was opened from it closes.
+    showEntryPage(navigator, const _EntryA());
+    await tester.pumpAndSettle();
+    expect(find.text('details'), findsNothing);
+    expect(find.text('entry-a'), findsOneWidget);
+
+    // Another entry page replaces it instead of stacking on top.
+    showEntryPage(navigator, const _EntryB());
+    await tester.pumpAndSettle();
+    expect(find.text('entry-b'), findsOneWidget);
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('main-home'), findsOneWidget);
+    expect(navigator.canPop(), isFalse);
   });
 
   testWidgets('the favorites shortcut switches to the favorites tab', (

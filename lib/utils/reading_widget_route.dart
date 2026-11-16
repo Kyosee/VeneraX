@@ -100,11 +100,12 @@ Future<bool> handleReadingWidgetLink(Uri uri) async {
       message: 'This comic is no longer available'.tl,
     );
   }
-  navigator.context.to(
-    () => switch (target.kind) {
+  showEntryPage(
+    navigator,
+    switch (target.kind) {
       ReadingWidgetKind.history => const HistoryPage(),
       ReadingWidgetKind.local => const LocalComicsPage(),
-      ReadingWidgetKind.following => const FollowUpdatesPage(showAll: true),
+      ReadingWidgetKind.following ||
       ReadingWidgetKind.updates => const FollowUpdatesPage(),
     },
   );

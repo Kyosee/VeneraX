@@ -58,14 +58,18 @@ Widget? _pageFor(String event) => switch (event) {
       _ => null,
     };
 
-/// The route currently on top of [navigator], without changing the stack.
-Route<dynamic>? _topRoute(NavigatorState navigator) {
-  Route<dynamic>? top;
+/// Shows [page] right above the main page, going back to it when it is
+/// already open and closing whatever sits on top. Notifications, launcher
+/// shortcuts and home screen cards used to push another copy on every tap, so
+/// Back had to leave each one (#349).
+void showEntryPage(NavigatorState navigator, Widget page) {
+  final name = page.runtimeType.toString();
+  var open = false;
   navigator.popUntil((route) {
-    top = route;
-    return true;
+    open = route is AppPageRoute && route.label == name;
+    return open || route.isFirst;
   });
-  return top;
+  if (!open) navigator.context.to(() => page);
 }
 
 /// Opens a notification or launcher-shortcut route in the main navigator.
@@ -83,10 +87,7 @@ Future<void> openNotificationRoute(String event) async {
         ?.updatePage(MainPage.favoritesIndex);
     return;
   }
-  // A repeated tap must not stack a second copy of the open page.
-  final top = _topRoute(navigator);
-  if (top is AppPageRoute && top.label == page.runtimeType.toString()) return;
-  navigator.context.to(() => page);
+  showEntryPage(navigator, page);
 }
 
 /// Handle taps on background-task notifications and launcher shortcuts.
