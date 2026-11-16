@@ -106,6 +106,40 @@ void main() {
     expect(LocalManager().getComics(LocalSortType.lastRead).first.id, '201');
   });
 
+  test('comic settings made on another device apply to this copy', () async {
+    const key = 'readerScreenPicNumberForLandscape';
+    final settings = appdata.settings;
+    final entries = settings['comicSpecificSettings'] as Map;
+    await LocalManager().add(_comic('206', 'Set elsewhere', root), '206');
+    HistoryManager().addHistory(
+      _record('106', 'Set elsewhere', DateTime(2026, 11, 10)),
+    );
+    settings.setEnabledComicSpecificSettings('106', 'local', true);
+    settings.setReaderSetting('106', 'local', key, 2);
+    expect(settings.isComicSpecificSettingsEnabled('206', 'local'), isFalse);
+
+    expect(HistoryManager().syncedLocalIds('206'), ['106']);
+    settings.shareSyncedComicSettings('206', 'local', ['106']);
+    expect(settings.isComicSpecificSettingsEnabled('206', 'local'), isTrue);
+    expect(settings.getReaderSetting('206', 'local', key), 2);
+    // Edits go to the entry the other device reads.
+    settings.setReaderSetting('206', 'local', key, 1);
+    expect(entries['106@local'][key], 1);
+    expect(entries.containsKey('206@local'), isFalse);
+    settings.resetComicReaderSettings('206@local');
+    expect(entries.containsKey('106@local'), isFalse);
+
+    // Settings this copy enabled itself stay its own.
+    settings.setEnabledComicSpecificSettings('107', 'local', true);
+    settings.setReaderSetting('107', 'local', key, 2);
+    settings.setEnabledComicSpecificSettings('207', 'local', true);
+    settings.shareSyncedComicSettings('207', 'local', ['107']);
+    expect(settings.getReaderSetting('207', 'local', key), isNot(2));
+    entries
+      ..remove('107@local')
+      ..remove('207@local');
+  });
+
   test('ambiguous titles and ids in use here are never paired', () async {
     await LocalManager().add(_comic('202', 'Same title', root), '202');
     await LocalManager().add(_comic('203', 'Same title', root), '203');

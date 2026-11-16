@@ -650,18 +650,54 @@ class Settings with ChangeNotifier {
     setReaderSetting(comicId, sourceKey, "enabled", enabled);
   }
 
+  /// Comic settings entries this device reads and writes in place of its own,
+  /// by "comicId@sourceKey".
+  final _sharedComicSettings = <String, String>{};
+
+  String _comicSettingsKey(String comicId, String sourceKey) {
+    final key = "$comicId@$sourceKey";
+    return _sharedComicSettings[key] ?? key;
+  }
+
+  /// Local comic ids differ per device, so settings made for a local comic on
+  /// another device sit under that device's id. Unless this copy has its own
+  /// enabled, use the enabled entry of one of [syncedIds], so that both
+  /// devices edit the same settings (issue #353).
+  void shareSyncedComicSettings(
+    String comicId,
+    String sourceKey,
+    Iterable<String> syncedIds,
+  ) {
+    final key = "$comicId@$sourceKey";
+    _sharedComicSettings.remove(key);
+    final entries = _data['comicSpecificSettings'] as Map;
+    bool enabled(String entry) => entries[entry]?['enabled'] == true;
+    if (enabled(key)) return;
+    for (final id in syncedIds) {
+      if (enabled("$id@$sourceKey")) {
+        _sharedComicSettings[key] = "$id@$sourceKey";
+        return;
+      }
+    }
+  }
+
   bool isComicSpecificSettingsEnabled(String? comicId, String? sourceKey) {
     if (comicId == null || sourceKey == null) {
       return false;
     }
-    return _data['comicSpecificSettings']["$comicId@$sourceKey"]?["enabled"] ==
+    return _data['comicSpecificSettings'][_comicSettingsKey(
+          comicId,
+          sourceKey,
+        )]?["enabled"] ==
         true;
   }
 
   dynamic getReaderSetting(String comicId, String sourceKey, String key) {
     if (isComicSpecificSettingsEnabled(comicId, sourceKey)) {
-      var comicValue =
-          _data['comicSpecificSettings']["$comicId@$sourceKey"]?[key];
+      var comicValue = _data['comicSpecificSettings'][_comicSettingsKey(
+        comicId,
+        sourceKey,
+      )]?[key];
       if (comicValue != null) {
         return comicValue;
       }
@@ -676,7 +712,7 @@ class Settings with ChangeNotifier {
     dynamic value,
   ) {
     (_data['comicSpecificSettings'] as Map<String, dynamic>).putIfAbsent(
-      "$comicId@$sourceKey",
+      _comicSettingsKey(comicId, sourceKey),
       () => <String, dynamic>{},
     )[key] = value;
     notifyListeners();
@@ -699,17 +735,26 @@ class Settings with ChangeNotifier {
     }
   }
 
+  /// [key] is "comicId@sourceKey".
   void resetComicReaderSettings(String key) {
-    (_data['comicSpecificSettings'] as Map).remove(key);
+    (_data['comicSpecificSettings'] as Map).remove(
+      _sharedComicSettings[key] ?? key,
+    );
     notifyListeners();
   }
 
   bool hasComicReaderSetting(String comicId, String sourceKey, String key) =>
       isComicSpecificSettingsEnabled(comicId, sourceKey) &&
-      _data['comicSpecificSettings']['$comicId@$sourceKey']?[key] != null;
+      _data['comicSpecificSettings'][_comicSettingsKey(
+            comicId,
+            sourceKey,
+          )]?[key] !=
+          null;
 
   void resetComicReaderSetting(String comicId, String sourceKey, String key) {
-    (_data['comicSpecificSettings']['$comicId@$sourceKey'] as Map?)?.remove(key);
+    (_data['comicSpecificSettings'][_comicSettingsKey(comicId, sourceKey)]
+            as Map?)
+        ?.remove(key);
     notifyListeners();
   }
 

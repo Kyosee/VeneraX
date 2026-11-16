@@ -329,6 +329,13 @@ class _ReaderState extends State<Reader>
 
   @override
   void initState() {
+    if (type == ComicType.local) {
+      appdata.settings.shareSyncedComicSettings(
+        cid,
+        type.sourceKey,
+        HistoryManager().syncedLocalIds(cid),
+      );
+    }
     WidgetsBinding.instance.addObserver(this);
     _appIsForeground =
         WidgetsBinding.instance.lifecycleState == null ||

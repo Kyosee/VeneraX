@@ -877,27 +877,35 @@ class HistoryManager with ChangeNotifier {
   /// newer of the two carries the reading state; writes go back to that
   /// record, so both devices share it (issue #348).
   History? _preferSyncedLocalRecord(String id, History? own) {
-    final idsByTitle = _localRecordIdsByTitle();
-    if (idsByTitle.isEmpty || !LocalManager().isInitialized) return own;
-    final LocalComic? comic;
-    try {
-      comic = LocalManager().find(id, ComicType.local);
-    } catch (_) {
-      return own;
-    }
-    if (comic == null) return own;
     var best = own;
-    for (final otherId in idsByTitle[comic.title] ?? const <String>[]) {
-      if (otherId == id) continue;
-      if (LocalManager().findSyncedCopy(otherId, comic.title)?.id != id) {
-        continue;
-      }
+    for (final otherId in syncedLocalIds(id)) {
       final other = _findRecord(otherId, ComicType.local);
       if (other != null && (best == null || other.time.isAfter(best.time))) {
         best = other;
       }
     }
     return best;
+  }
+
+  /// Ids other devices recorded this device's local comic [id] under, from
+  /// the synced records [LocalManager.findSyncedCopy] pairs with it.
+  List<String> syncedLocalIds(String id) {
+    if (!isInitialized || _isCorrupted) return const [];
+    final idsByTitle = _localRecordIdsByTitle();
+    if (idsByTitle.isEmpty || !LocalManager().isInitialized) return const [];
+    final LocalComic? comic;
+    try {
+      comic = LocalManager().find(id, ComicType.local);
+    } catch (_) {
+      return const [];
+    }
+    if (comic == null) return const [];
+    return [
+      for (final otherId in idsByTitle[comic.title] ?? const <String>[])
+        if (otherId != id &&
+            LocalManager().findSyncedCopy(otherId, comic.title)?.id == id)
+          otherId,
+    ];
   }
 
   Map<String, List<String>>? _localIdsByTitle;
