@@ -15,10 +15,12 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/home_page.dart';
 import 'package:venera/pages/local_comics_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/settings/settings_page.dart';
@@ -406,6 +408,59 @@ void main() {
     expect(favorites.find(comic.id, comic.comicType), isEmpty);
     expect(history.find(comic.id, comic.comicType)!.page, 8);
     expect(File('${comic.baseDir}/page.bin').existsSync(), isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('home preview follows the library order', (tester) async {
+    final sections = appdata.settings['homeSections'];
+    appdata.settings['homeSections'] = [
+      for (final section in kHomeSections)
+        {'id': section.id, 'visible': section.id == 'local'},
+    ];
+    addTearDown(() => appdata.settings['homeSections'] = sections);
+    Future<void> sortBy(LocalSortType sort) async {
+      await tester.runAsync(() async {
+        local.sortType = sort;
+        await appdata.writeImplicitData();
+      });
+      await tester.pump();
+    }
+
+    List<String> shown() => [
+      for (final tile in tester.widgetList<SimpleComicTile>(
+        find.byType(SimpleComicTile),
+      ))
+        tile.comic.id,
+    ];
+
+    await open(tester, const Scaffold(body: HomePage()));
+    await sortBy(LocalSortType.name);
+    expect(shown(), ['large', 'missing', 'small']);
+    await sortBy(LocalSortType.nameDesc);
+    expect(shown(), ['small', 'missing', 'large']);
+
+    await sortBy(LocalSortType.sizeDesc);
+    await waitFor(tester, () => shown().join(',') == 'large,small,missing');
+
+    await sortBy(LocalSortType.lastRead);
+    final now = DateTime.now();
+    for (final (id, minutes) in [('small', 2), ('large', 1)]) {
+      history.addHistory(
+        History.fromModel(model: local.find(id, ComicType.local)!, ep: 1, page: 1)
+          ..time = now.subtract(Duration(minutes: minutes)),
+      );
+    }
+    await tester.pump();
+    expect(shown(), ['large', 'small', 'missing']);
+    history.addHistory(
+      history.find('small', ComicType.local)!..time = now,
+    );
+    await tester.pump();
+    expect(shown(), ['small', 'large', 'missing']);
+    for (final id in ['small', 'large']) {
+      history.remove(id, ComicType.local);
+    }
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

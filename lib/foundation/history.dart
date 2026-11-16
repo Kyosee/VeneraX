@@ -963,6 +963,28 @@ class HistoryManager with ChangeNotifier {
     return res.map((element) => History.fromRow(element)).toList();
   }
 
+  /// Changes whenever local comics may change order by last read: a record
+  /// added or removed, another one becoming the newest, or any but the newest
+  /// retimed. Reading on in the newest one leaves it as it is.
+  String? localReadOrderKey() {
+    if (!isInitialized || _isCorrupted) return null;
+    try {
+      final row = _db.select(
+        '''
+        select count(*) as n, sum(time) - max(time) as rest,
+          (select id from history where type == ?1
+            order by time desc limit 1) as newest
+        from history where type == ?1;
+        ''',
+        [ComicType.local.value],
+      ).first;
+      return '${row['n']}:${row['rest']}:${row['newest']}';
+    } on SqliteException catch (e) {
+      _handleCorruption(e);
+      return null;
+    }
+  }
+
   /// Every comic with reading state or reading time on this device, including
   /// ones cleared from the history list.
   List<ComicID> recordedComics() {

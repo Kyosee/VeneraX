@@ -692,6 +692,19 @@ class LocalManager with ChangeNotifier {
     notifyListeners();
   }
 
+  /// The library's order, shared by its page and the home preview (#351).
+  /// Kept on this device only.
+  LocalSortType get sortType => LocalSortType.fromString(
+    appdata.implicitData['local_sort']?.toString() ?? 'default',
+  );
+
+  set sortType(LocalSortType value) {
+    if (value == sortType) return;
+    appdata.implicitData['local_sort'] = value.value;
+    unawaited(appdata.writeImplicitData());
+    notifyListeners();
+  }
+
   List<LocalComic> getComics(LocalSortType sortType) {
     if (sortType == LocalSortType.lastRead) {
       return _getComicsSortedByLastRead();

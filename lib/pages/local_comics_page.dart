@@ -97,8 +97,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
 
   @override
   void initState() {
-    var sort = appdata.implicitData["local_sort"] ?? "default";
-    sortType = LocalSortType.fromString(sort);
+    sortType = LocalManager().sortType;
     comics = _collectComics();
     LocalManager().addListener(update);
     _tabController = TabController(length: 4, vsync: this);
@@ -191,10 +190,9 @@ class _LocalComicsPageState extends State<LocalComicsPage>
               FilledButton(
                 onPressed: () {
                   sortType = selectedSort;
-                  appdata.implicitData["local_sort"] = sortType.value;
-                  appdata.writeImplicitData();
                   Navigator.pop(context);
-                  update();
+                  // Notifies this page and the home preview.
+                  LocalManager().sortType = selectedSort;
                 },
                 child: Text("Confirm".tl),
               ),

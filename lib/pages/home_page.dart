@@ -1000,27 +1000,84 @@ class _Local extends StatefulWidget {
 }
 
 class _LocalState extends State<_Local> {
-  late List<LocalComic> local;
+  static const _previewCount = 20;
+
+  List<LocalComic> local = const [];
   late int count;
 
+  /// Local reading records when a "last read" preview was built.
+  String? _readOrder;
+
+  bool _sizing = false;
+  bool _sizeAgain = false;
+
+  /// Follows the order picked on the local comics page (#351).
+  void _load() {
+    final sort = LocalManager().sortType;
+    count = LocalManager().count;
+    if (sort.isSize) {
+      if (local.isEmpty) local = LocalManager().getRecent();
+      unawaited(_sortBySize());
+      return;
+    }
+    if (sort == LocalSortType.lastRead) {
+      _readOrder = HistoryManager().localReadOrderKey();
+    }
+    local = sort == LocalSortType.defaultSort
+        ? LocalManager().getRecent()
+        : LocalManager().getComics(sort).take(_previewCount).toList();
+  }
+
   void onLocalComicsChange() {
-    setState(() {
-      local = LocalManager().getRecent();
-      count = LocalManager().count;
-    });
+    setState(_load);
+  }
+
+  /// Page turns in the comic already in front leave the order alone.
+  void _onHistoryChange() {
+    if (LocalManager().sortType != LocalSortType.lastRead) return;
+    if (HistoryManager().localReadOrderKey() == _readOrder) return;
+    setState(_load);
+  }
+
+  /// Sizes come from the folders, so the previous order stays until a scan
+  /// finishes; changes during a scan rerun it once.
+  Future<void> _sortBySize() async {
+    if (_sizing) {
+      _sizeAgain = true;
+      return;
+    }
+    _sizing = true;
+    try {
+      do {
+        _sizeAgain = false;
+        final sort = LocalManager().sortType;
+        if (!sort.isSize) return;
+        final sorted = await sortLocalComicsBySize(
+          LocalManager().getComics(LocalSortType.defaultSort),
+          descending: sort == LocalSortType.sizeDesc,
+        );
+        if (!mounted) return;
+        if (!_sizeAgain && LocalManager().sortType == sort) {
+          setState(() => local = sorted.take(_previewCount).toList());
+        }
+      } while (_sizeAgain);
+    } finally {
+      _sizing = false;
+    }
   }
 
   @override
   void initState() {
-    local = LocalManager().getRecent();
-    count = LocalManager().count;
+    _load();
     LocalManager().addListener(onLocalComicsChange);
+    HistoryManager().addListener(_onHistoryChange);
     super.initState();
   }
 
   @override
   void dispose() {
     LocalManager().removeListener(onLocalComicsChange);
+    HistoryManager().removeListener(_onHistoryChange);
     super.dispose();
   }
 
