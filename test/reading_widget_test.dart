@@ -29,6 +29,16 @@ History history(String id, {int type = 0}) => History.fromMap({
   'readEpisode': <String>[],
 });
 
+final class _RecordDirectories extends IOOverrides {
+  final paths = <String>[];
+
+  @override
+  Directory createDirectory(String path) {
+    paths.add(path);
+    return super.createDirectory(path);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
@@ -243,6 +253,50 @@ void main() {
       expect(File(path).existsSync(), isTrue);
     },
   );
+
+  test('local cards leave out comics whose folders hold no pages', () async {
+    LocalComic comic(String id) => LocalComic(
+      id: id,
+      title: id,
+      subtitle: '',
+      tags: [],
+      directory: '${directory.path}${Platform.pathSeparator}$id',
+      chapters: null,
+      cover: '',
+      comicType: ComicType.local,
+      downloadedChapters: [],
+      createdAt: DateTime(2026),
+    );
+    final root = directory.path;
+    Directory('$root/pages').createSync();
+    File('$root/pages/1.png').writeAsBytesSync([1]);
+    Directory('$root/chapter/1').createSync(recursive: true);
+    File('$root/chapter/1/1.png').writeAsBytesSync([1]);
+    Directory('$root/empty/1').createSync(recursive: true);
+    final ids = ['pages', 'chapter', 'empty', 'missing'];
+    final opened = _RecordDirectories();
+    await IOOverrides.runWithIOOverrides(
+      () => ReadingWidgetService(
+        recent: () => [],
+        following: () => [],
+        local: () => [for (final id in ids) comic(id)],
+        visible: (_) => true,
+        coverBytes: (_) async => Uint8List(0),
+      ).refresh(),
+      opened,
+    );
+    expect(
+      (latest(ReadingWidgetKind.local)['items'] as List).map(
+        (item) => item['id'],
+      ),
+      ['pages', 'chapter'],
+    );
+    // The folders are read on a background isolate, never on this one.
+    expect(
+      opened.paths.where((path) => ids.any((id) => path.endsWith(id))),
+      isEmpty,
+    );
+  });
 
   test('malformed or unrelated links never become widget navigation', () {
     for (final link in [

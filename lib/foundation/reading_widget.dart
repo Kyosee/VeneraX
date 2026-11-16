@@ -172,6 +172,10 @@ class ReadingWidgetService with WidgetsBindingObserver {
     final revision = ++_revision;
     try {
       final locked = appdata.settings['authorizationRequired'] == true;
+      // Started first: the folder check runs while the other kinds publish.
+      final localCheck = locked || !kinds.contains(ReadingWidgetKind.local)
+          ? null
+          : (_readableLocal(revision)..ignore());
       if (!locked) _restoreCovers();
       final followed =
           locked ||
@@ -192,14 +196,7 @@ class ReadingWidgetService with WidgetsBindingObserver {
             ReadingWidgetKind.updates: followed
                 .where((item) => item.hasNewUpdate == true)
                 .toList(),
-            ReadingWidgetKind.local:
-                locked || !kinds.contains(ReadingWidgetKind.local)
-                ? []
-                : _local()
-                      .where(
-                        (item) => item.status != LocalComicStatus.notDownloaded,
-                      )
-                      .toList(),
+            ReadingWidgetKind.local: const [],
           }.map(
             (kind, comics) =>
                 MapEntry(kind, comics.where(_visible).take(6).toList()),
@@ -217,6 +214,11 @@ class ReadingWidgetService with WidgetsBindingObserver {
             });
       final snapshots = <ReadingWidgetKind, Map<String, Object>>{};
       for (final kind in kinds) {
+        if (kind == ReadingWidgetKind.local && localCheck != null) {
+          final local = await localCheck;
+          if (local == null || revision != _revision) return;
+          collections[kind] = local.where(_visible).take(6).toList();
+        }
         final comics = collections[kind]!;
         final snapshot = <String, Object>{
           'kind': kind.name,
@@ -314,6 +316,30 @@ class ReadingWidgetService with WidgetsBindingObserver {
       // Desktop and older platform hosts have no home-screen widget bridge.
     } catch (_) {
       Log.warning('Reading widget', 'Unable to update reading widgets.');
+    }
+  }
+
+  Future<List<LocalComic>>? _localCheck;
+
+  /// Local comics whose folders still hold pages, or null once a newer refresh
+  /// took over. One check at a time: refreshes come in bursts (resume,
+  /// follow-update progress) and every check lists each folder.
+  Future<List<LocalComic>?> _readableLocal(int revision) async {
+    while (_localCheck != null) {
+      await _localCheck!.then((_) {}, onError: (_) {});
+      if (revision != _revision) return null;
+    }
+    final comics = _local();
+    final check = _localCheck = loadLocalComicStatuses(comics).then(
+      (statuses) => [
+        for (var i = 0; i < comics.length; i++)
+          if (statuses[i] != LocalComicStatus.notDownloaded) comics[i],
+      ],
+    );
+    try {
+      return await check;
+    } finally {
+      if (identical(_localCheck, check)) _localCheck = null;
     }
   }
 

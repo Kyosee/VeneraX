@@ -131,23 +131,15 @@ class LocalComic with HistoryMixin implements Comic {
     return times;
   }
 
+  /// Reads the folder on the calling isolate; use [loadLocalComicStatuses]
+  /// for more than one comic.
   LocalComicStatus get status {
     if (LocalManager().isDownloading(id, comicType)) {
       return LocalComicStatus.downloading;
     }
-    final dir = Directory(baseDir);
-    if (!dir.existsSync()) return LocalComicStatus.notDownloaded;
-    try {
-      final contents = dir.listSync();
-      if (contents.isEmpty) return LocalComicStatus.notDownloaded;
-      final hasContent = contents.any((e) =>
-          e is File || (e is Directory && e.listSync().isNotEmpty));
-      return hasContent
-          ? LocalComicStatus.downloaded
-          : LocalComicStatus.notDownloaded;
-    } catch (_) {
-      return LocalComicStatus.notDownloaded;
-    }
+    return _folderHasPages(baseDir)
+        ? LocalComicStatus.downloaded
+        : LocalComicStatus.notDownloaded;
   }
 
   @override
@@ -237,6 +229,57 @@ class LocalComic with HistoryMixin implements Comic {
 
   @override
   double? get stars => null;
+}
+
+/// Whether [path] holds a page: a file, or a folder that is not empty.
+bool _folderHasPages(String path) {
+  try {
+    final dir = Directory(path);
+    if (!dir.existsSync()) return false;
+    return dir.listSync().any(
+      (e) => e is File || (e is Directory && e.listSync().isNotEmpty),
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+List<bool> _foldersWithPages(List<String> paths) =>
+    overrideIO(() => [for (final path in paths) _folderHasPages(path)]);
+
+// Kept apart so the isolate closure captures nothing but [paths].
+Future<List<bool>> _checkFoldersInBackground(List<String> paths) =>
+    Isolate.run(() => _foldersWithPages(paths));
+
+/// [LocalComic.status] of each of [comics], with the folders read on a
+/// background isolate. A folder picked on Android is listed through the
+/// system document provider, a slow query per folder; run on the UI thread
+/// for a whole list, it froze the app (#349).
+Future<List<LocalComicStatus>> loadLocalComicStatuses(
+  List<LocalComic> comics,
+) async {
+  final statuses = List.filled(comics.length, LocalComicStatus.notDownloaded);
+  final indexes = <int>[];
+  final paths = <String>[];
+  for (var i = 0; i < comics.length; i++) {
+    final comic = comics[i];
+    if (LocalManager().isDownloading(comic.id, comic.comicType)) {
+      statuses[i] = LocalComicStatus.downloading;
+    } else {
+      indexes.add(i);
+      paths.add(comic.baseDir);
+    }
+  }
+  if (paths.isEmpty) return statuses;
+  try {
+    final found = await _checkFoldersInBackground(paths);
+    for (var j = 0; j < indexes.length; j++) {
+      if (found[j]) statuses[indexes[j]] = LocalComicStatus.downloaded;
+    }
+  } catch (e) {
+    Log.warning('Local Comics', 'Unable to check comic folders: $e');
+  }
+  return statuses;
 }
 
 /// Keeps flat local-comic history attached to chapter IDs after a rescan.

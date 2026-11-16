@@ -80,9 +80,13 @@ Future<bool> handleReadingWidgetLink(Uri uri) async {
     };
     // A stale card must not reopen an item that was hidden, removed or blocked.
     if (comic != null && isReadingWidgetHistoryVisible(comic)) {
-      if (local != null && local.status != LocalComicStatus.notDownloaded) {
-        local.read();
-        return true;
+      if (local != null) {
+        final status = (await loadLocalComicStatuses([local])).single;
+        if (tap != _latestReadingWidgetTap) return true;
+        if (status != LocalComicStatus.notDownloaded) {
+          local.read();
+          return true;
+        }
       }
       if (target.kind != ReadingWidgetKind.local &&
           type.comicSource?.loadComicInfo != null) {
