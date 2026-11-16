@@ -32,18 +32,18 @@ class RandomComicDrawStage extends StatelessWidget {
     final gold = dark ? const Color(0xFFEAC98B) : const Color(0xFF8B632E);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final single = drawCount == 1;
-        final cardWidth = single
-            ? 176.0
+        const deckWidth = 176.0;
+        const deckHeight = deckWidth * 1.46;
+        final cardWidth = drawCount == 1
+            ? deckWidth
             : ((constraints.maxWidth - 36) / 3).clamp(44.0, 152.0);
         final cardHeight = cardWidth * 1.46;
-        final height = math.max(238.0, cardHeight + 82);
         return ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: ColoredBox(
             color: dark ? const Color(0xFF111D31) : const Color(0xFFF0F4FA),
             child: SizedBox(
-              height: height,
+              height: deckHeight + 82,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -55,7 +55,7 @@ class RandomComicDrawStage extends StatelessWidget {
                     ),
                   ),
                   if (comics.isEmpty)
-                    _buildDeck(context, cardWidth, cardHeight)
+                    _buildDeck(context, deckWidth, deckHeight)
                   else
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

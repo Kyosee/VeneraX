@@ -519,30 +519,58 @@ void main() {
       expect(await result.future, isIn(comics));
     });
 
-    _drawTest(
-      'drawing keeps dialog and stage sizes stable, including the last partial hand',
-      (tester) async {
-        seed(List.generate(5, (index) => _comic('$index')));
-        appdata.implicitData['random_comic_quick_reveal'] = true;
-        await _open(tester);
-        final dialog = tester.getRect(find.byType(Dialog));
-        final singleStage = tester.getSize(find.byType(RandomComicDrawStage));
-        await _draw(tester);
-        expect(tester.getRect(find.byType(Dialog)), dialog);
-        expect(tester.getSize(find.byType(RandomComicDrawStage)), singleStage);
-        await _tap(tester, 'draw-mode-three');
-        await tester.pumpAndSettle();
-        final threeStage = tester.getSize(find.byType(RandomComicDrawStage));
-        await _draw(tester);
-        expect(_key('draw-card-2'), findsOneWidget);
-        expect(tester.getRect(find.byType(Dialog)), dialog);
-        expect(tester.getSize(find.byType(RandomComicDrawStage)), threeStage);
-        await _draw(tester);
-        expect(_key('draw-card-1'), findsNothing);
-        expect(tester.getRect(find.byType(Dialog)), dialog);
-        expect(tester.getSize(find.byType(RandomComicDrawStage)), threeStage);
-      },
-    );
+    for (final screenSize in [
+      const Size(320, 640),
+      const Size(800, 1280),
+      const Size(1280, 800),
+    ]) {
+      _drawTest(
+        'switching draw modes keeps the stage and deck stable at $screenSize',
+        (tester) async {
+          tester.view.physicalSize = screenSize;
+          seed(List.generate(5, (index) => _comic('$index')));
+          appdata.implicitData['random_comic_quick_reveal'] = true;
+          await _open(tester);
+          final dialogSurface = find
+              .descendant(
+                of: find.byType(Dialog),
+                matching: find.byType(Material),
+              )
+              .first;
+          final stage = find.byType(RandomComicDrawStage);
+          final deckCard = find.descendant(
+            of: stage,
+            matching: find.byType(InkWell),
+          );
+          final dialog = tester.getRect(dialogSurface);
+          final stageSize = tester.getSize(stage);
+          final deckSize = tester.getSize(deckCard);
+          for (final mode in ['draw-mode-three', 'draw-mode-single']) {
+            await _tap(tester, mode);
+            await tester.pumpAndSettle();
+            expect(tester.getRect(dialogSurface), dialog);
+            expect(tester.getSize(stage), stageSize);
+            expect(tester.getSize(deckCard), deckSize);
+          }
+          await _draw(tester);
+          expect(tester.getRect(dialogSurface), dialog);
+          expect(tester.getSize(stage), stageSize);
+          await _tap(tester, 'draw-mode-three');
+          await tester.pumpAndSettle();
+          expect(tester.getSize(stage), stageSize);
+          expect(tester.getSize(deckCard), deckSize);
+          await _draw(tester);
+          expect(_key('draw-card-2'), findsOneWidget);
+          expect(tester.getRect(dialogSurface), dialog);
+          expect(tester.getSize(stage), stageSize);
+          await _draw(tester);
+          expect(_key('draw-card-1'), findsNothing);
+          expect(tester.getRect(dialogSurface), dialog);
+          expect(tester.getSize(stage), stageSize);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
 
     _drawTest(
       'closing during loading or drawing leaves no asynchronous error',
