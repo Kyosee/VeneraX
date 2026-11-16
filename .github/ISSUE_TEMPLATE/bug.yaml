@@ -70,6 +70,7 @@ body:
       options:
         - Android
         - iOS
+        - HarmonyOS
         - Windows
         - macOS
         - linux
