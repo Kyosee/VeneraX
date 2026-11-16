@@ -29,6 +29,9 @@ void main() {
     settingsDirectory.deleteSync(recursive: true);
   });
 
+  // Tabs picked in one test must not decide where the next one opens.
+  setUp(() => appdata.implicitData['reading_statistics_range'] = null);
+
   ReadingStatisticsSummary summary({
     bool withData = true,
     List<ComicReadingStatistics>? comics,
@@ -157,6 +160,17 @@ void main() {
     await tester.ensureVisible(target);
     await tester.pumpAndSettle();
     await tester.tap(target);
+    await tester.pumpAndSettle();
+  }
+
+  // A picked tab is written to disk; finish that real write inside the test.
+  Future<void> pickTab(WidgetTester tester, Finder tab) async {
+    await tester.ensureVisible(tab);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(tab);
+      await appdata.writeImplicitData();
+    });
     await tester.pumpAndSettle();
   }
 
@@ -667,7 +681,7 @@ void main() {
       await tester.pumpWidget(wrap(storePage(store, now)));
       await tester.pump();
       expect(metric(tester, 'reading-period-total'), '5 min');
-      await tester.tap(find.text('By Month'));
+      await pickTab(tester, find.text('By Month'));
       await tester.pumpAndSettle();
       expect(find.text('January 2026'), findsOneWidget);
       expect(
@@ -723,7 +737,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(CustomScrollView), const Offset(0, 500));
       await tester.pumpAndSettle();
-      await tapVisible(tester, find.text('Last 7 Days').last);
+      await pickTab(tester, find.text('Last 7 Days').last);
       expect(find.byKey(const Key('reading-comic-1-current')), findsOneWidget);
       expect(find.byKey(const Key('reading-comic-1-december')), findsNothing);
       expect(tester.takeException(), isNull);
@@ -895,7 +909,7 @@ void main() {
       final now = DateTime(2026, 11, 9);
       record(store, 'leap-day', DateTime(2024, 2, 29), 29);
       await tester.pumpWidget(wrap(storePage(store, now)));
-      await tester.tap(find.text('By Month'));
+      await pickTab(tester, find.text('By Month'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('reading-pick-month')));
       await tester.pumpAndSettle();
@@ -972,7 +986,7 @@ void main() {
       record(store, 'today', now, 9);
       record(store, 'future', DateTime(2026, 11, 10), 60);
       await tester.pumpWidget(wrap(storePage(store, now)));
-      await tester.tap(find.text('All Time'));
+      await pickTab(tester, find.text('All Time'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('reading-pick-range')), findsNothing);
       expect(find.byKey(const Key('reading-pick-month')), findsNothing);
@@ -1009,7 +1023,7 @@ void main() {
       expect(find.byType(BottomSheet), findsNothing);
       expect(metric(tester, 'reading-period-total'), '31 min');
       expect(metric(tester, 'reading-active-days'), '1 / 31');
-      await tapVisible(tester, find.text('All Time'));
+      await pickTab(tester, find.text('All Time'));
       await tapVisible(tester, find.byKey(const Key('reading-bar-20261101')));
       expect(find.text('November 2026'), findsOneWidget);
       expect(metric(tester, 'reading-period-total'), '20 min');
@@ -1062,7 +1076,7 @@ void main() {
             .hasAction(SemanticsAction.tap),
         isTrue,
       );
-      await tester.tap(find.text('By Month'));
+      await pickTab(tester, find.text('By Month'));
       await tester.pumpAndSettle();
       for (final day in [20261108, 20261109]) {
         expect(
@@ -1107,7 +1121,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await tester.tap(find.text('By Month'));
+      await pickTab(tester, find.text('By Month'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tapVisible(tester, find.byKey(const Key('reading-day-20261109')));
@@ -1120,7 +1134,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
-      await tapVisible(tester, find.text('Last 7 Days'));
+      await pickTab(tester, find.text('Last 7 Days'));
       await enterRange(tester, DateTime(2026, 11, 8), now);
       expect(metric(tester, 'reading-period-total'), '1 h 9 min');
       expect(metric(tester, 'reading-active-days'), '1 / 2');
@@ -1172,6 +1186,30 @@ void main() {
       (appdata.toJson()['settings'] as Map)['reading_statistics_sort'],
       'name_asc',
     );
+  });
+
+  testWidgets('reopens on the tab picked last, not a month opened from a bar', (
+    tester,
+  ) async {
+    useNarrowViewport(tester);
+    final store = createStore();
+    final now = DateTime(2026, 11, 9);
+    record(store, 'first', DateTime(2026, 10, 31), 31);
+    await tester.pumpWidget(wrap(storePage(store, now)));
+    expect(find.byKey(const Key('reading-pick-range')), findsOneWidget);
+
+    await pickTab(tester, find.text('All Time'));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const Key('reading-bar-20261031')));
+    expect(find.text('October 2026'), findsOneWidget);
+    expect(appdata.implicitData['reading_statistics_range'], 'allTime');
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(wrap(storePage(store, now)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('reading-pick-range')), findsNothing);
+    expect(find.byKey(const Key('reading-pick-month')), findsNothing);
+    expect(metric(tester, 'reading-period-total'), '31 min');
   });
 
   testWidgets(

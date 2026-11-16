@@ -15,6 +15,7 @@ import 'package:venera/utils/translations.dart';
 import 'reading_statistics_date_picker.dart';
 
 const _sortKey = 'reading_statistics_sort';
+const _rangeKey = 'reading_statistics_range';
 
 enum _ReadingRange { recent, month, allTime }
 
@@ -83,6 +84,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   void initState() {
     super.initState();
     _month = _currentMonth;
+    _range =
+        _ReadingRange.values.asNameMap()[appdata.implicitData[_rangeKey]] ??
+        _ReadingRange.recent;
     final syncedValue = appdata.settings[_sortKey];
     final storedValue = syncedValue ?? appdata.implicitData[_sortKey];
     sortType = storedValue == null
@@ -388,7 +392,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 1.5),
                 child: TextButton(
-                  onPressed: () => setState(() => _range = range),
+                  onPressed: () => _selectRange(range),
                   style: TextButton.styleFrom(
                     backgroundColor: range == _range
                         ? context.colorScheme.surface
@@ -731,6 +735,15 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         ],
       ),
     );
+  }
+
+  /// Only a picked tab is remembered, on this device; opening a month from
+  /// the chart is not.
+  void _selectRange(_ReadingRange range) {
+    setState(() => _range = range);
+    if (appdata.implicitData[_rangeKey] == range.name) return;
+    appdata.implicitData[_rangeKey] = range.name;
+    unawaited(appdata.writeImplicitData());
   }
 
   void _applySort(ReadingStatisticsSortType value) {
