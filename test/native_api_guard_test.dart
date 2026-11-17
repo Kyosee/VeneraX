@@ -28,13 +28,12 @@ void main() {
         'use extractZip() from utils/archive.dart instead of '
         'ZipFile.openAndExtract (double-free, aborts the process)',
       ),
-      // lodepng_flutter: the convenience wrappers free the native buffer and
-      // then return a typed-data view over the freed memory.
+      // Keep the reader on the zero-copy pointer/finalizer path. The owned
+      // fork fixes the old freed-memory wrappers by returning copied bytes.
       _Rule(
         RegExp(r'lodepng\.(decodePng|encodePng)\('),
         'use decodePngToPointer/encodePngToPointer with '
-        'ByteBuffer.finalizer instead (wrappers return a view over '
-        'freed memory)',
+        'ByteBuffer.finalizer to retain zero-copy PNG buffers',
       ),
       // Every SQLite connection must come from the gateway: long-lived
       // handles via DatabaseGateway.openManaged (registered, so restores can
