@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -60,10 +61,16 @@ ComicSource _source() => ComicSource(
 );
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  const memoryChannel = MethodChannel('flutter_memory_info');
   late Directory temp;
 
   setUpAll(() async {
+    // Widget tests do not register the native memory plugin on Unix hosts.
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      memoryChannel,
+      (call) async => call.method == 'getFreePhysicalMemorySize' ? 4 << 30 : null,
+    );
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     temp = Directory.systemTemp.createTempSync('reader-rtl-');
     App.dataPath = temp.path;
@@ -84,6 +91,7 @@ void main() {
     HistoryManager().close();
     LocalManager().close();
     JsEngine().dispose();
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(memoryChannel, null);
     debugDefaultTargetPlatformOverride = null;
     temp.deleteSync(recursive: true);
   });
