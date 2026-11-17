@@ -28,16 +28,11 @@ dependencies:
   url_launcher: ^6.3.2
   path: ^1.9.0
   photo_view:
-    git:
-      url: https://github.com/venera-app/photo_view
-      ref: a1255d1b5945aad4b7323303ec2ecdf0c90ffc4c
+    path: packages/photo_view
   mime: ^2.0.0
   share_plus: ^12.0.1
   scrollable_positioned_list:
-    git:
-      url: https://github.com/venera-app/flutter.widgets
-      ref: 09e756b1f1b04e6298318d99ec20a787fb360f59
-      path: packages/scrollable_positioned_list
+    path: packages/scrollable_positioned_list
   flutter_reorderable_grid_view: ^5.7.0
   uuid: ^4.6.0
   desktop_webview_window:
@@ -62,9 +57,7 @@ dependencies:
   flutter_rust_bridge: 2.11.1
   rhttp: ^0.15.1
   webdav_client:
-    git:
-      url: https://github.com/venera-app/webdav_client
-      ref: 2f669c98fb81cff1c64fee93466a1475c77e4273
+    path: packages/webdav_client
   battery_plus: ^7.1.1
   # Pinned to 7.0.0: 7.1.x references NWPath.isUltraConstrained, an iOS/macOS 26
   # SDK symbol guarded only at runtime, so it fails to compile on the Xcode 16.4
@@ -116,6 +109,7 @@ dev_dependencies:
   flutter_to_debian:
     git:
       url: https://github.com/venera-app/flutter_to_debian.git
+      ref: 3777c91b6b1cc0b7c03357c67ca216d4313c3db5
   flutter_launcher_icons: ^0.14.4
 
 flutter_launcher_icons:

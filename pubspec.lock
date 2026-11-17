@@ -552,7 +552,7 @@ packages:
     dependency: "direct dev"
     description:
       path: "."
-      ref: HEAD
+      ref: "3777c91b6b1cc0b7c03357c67ca216d4313c3db5"
       resolved-ref: "3777c91b6b1cc0b7c03357c67ca216d4313c3db5"
       url: "https://github.com/venera-app/flutter_to_debian.git"
     source: git
@@ -958,11 +958,9 @@ packages:
   photo_view:
     dependency: "direct main"
     description:
-      path: "."
-      ref: a1255d1b5945aad4b7323303ec2ecdf0c90ffc4c
-      resolved-ref: a1255d1b5945aad4b7323303ec2ecdf0c90ffc4c
-      url: "https://github.com/venera-app/photo_view"
-    source: git
+      path: "packages/photo_view"
+      relative: true
+    source: path
     version: "0.14.0"
   platform:
     dependency: transitive
@@ -1088,10 +1086,8 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/scrollable_positioned_list"
-      ref: "09e756b1f1b04e6298318d99ec20a787fb360f59"
-      resolved-ref: "09e756b1f1b04e6298318d99ec20a787fb360f59"
-      url: "https://github.com/venera-app/flutter.widgets"
-    source: git
+      relative: true
+    source: path
     version: "0.3.8+1"
   share_plus:
     dependency: "direct main"
@@ -1349,11 +1345,9 @@ packages:
   webdav_client:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "2f669c98fb81cff1c64fee93466a1475c77e4273"
-      resolved-ref: "2f669c98fb81cff1c64fee93466a1475c77e4273"
-      url: "https://github.com/venera-app/webdav_client"
-    source: git
+      path: "packages/webdav_client"
+      relative: true
+    source: path
     version: "1.2.2"
   win32:
     dependency: transitive
