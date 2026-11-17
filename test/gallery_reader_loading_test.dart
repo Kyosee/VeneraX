@@ -20,6 +20,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/pages/reader/rotation_transition.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/data_sync.dart';
 
@@ -337,6 +338,11 @@ void main() {
           for (final size in [const Size(600, 900), const Size(900, 600)]) {
             tester.view.physicalSize = size;
             await tester.pump();
+            final rotationFade = find.descendant(
+              of: find.byType(ReaderRotationTransition),
+              matching: find.byType(FadeTransition),
+            );
+            expect(rotationFade, findsOneWidget);
             final (int start, int end) = opened.reader.pageImageRange;
             expect(start, lessThanOrEqualTo(first));
             expect(end, greaterThan(first));
@@ -361,6 +367,8 @@ void main() {
               );
             }
             expect(tester.takeException(), isNull);
+            await tester.pump(const Duration(milliseconds: 200));
+            expect(rotationFade, findsNothing);
           }
           expect(last, greaterThan(first));
         } finally {

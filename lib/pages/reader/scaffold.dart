@@ -225,7 +225,13 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             },
             child: AbsorbPointer(
               absorbing: context.reader.isPageAnimating,
-              child: widget.child,
+              child: ReaderRotationTransition(
+                backgroundColor: context.reader.readerBackgroundColor,
+                enabled:
+                    appdata.settings['einkFullRefresh'] != true &&
+                    appdata.settings['einkRipplePageTurn'] != true,
+                child: widget.child,
+              ),
             ),
           ),
         ),
