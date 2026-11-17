@@ -3,6 +3,14 @@ import UIKit
 import UniformTypeIdentifiers
 import Foundation // 添加此行
 
+@objc class VeneraFlutterViewController: FlutterViewController {
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    // Preserve the old frame's proportions until Flutter renders the new size.
+    view.layer.contentsGravity = .resizeAspect
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate, FlutterImplicitEngineDelegate {
   var flutterResult: FlutterResult?

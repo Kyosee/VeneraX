@@ -36,6 +36,13 @@ import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterFragmentActivity() {
+    private val rotationTransition = FlutterRotationTransition(this) { flutterEngine?.renderer }
+
+    override fun onDestroy() {
+        rotationTransition.dispose()
+        super.onDestroy()
+    }
+
     var volumeListen = VolumeListen()
     var listening = false
 
@@ -59,6 +66,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.decorView.post { rotationTransition.attach() }
         // Crossfade fullscreen rotation instead of stretching the old reader frame.
         window.attributes = window.attributes.apply {
             rotationAnimation = WindowManager.LayoutParams.ROTATION_ANIMATION_CROSSFADE

@@ -64,7 +64,12 @@ struct Index {
 
   build() {
     Column() {
-      FlutterPage({ viewId: this.viewId, splashScreenView: startupSplash })
+      FlutterPage({
+        viewId: this.viewId,
+        splashScreenView: startupSplash,
+        // Keep the previous surface frame proportional during window resizing.
+        xComponentRenderFit: RenderFit.RESIZE_CONTAIN
+      })
     }
   }
 
