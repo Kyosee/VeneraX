@@ -21,6 +21,27 @@ import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/utils/data_sync.dart';
+
+class _ReaderSync extends ChangeNotifier implements DataSync {
+  @override
+  WebdavSyncMode syncMode = WebdavSyncMode.realtime;
+  final flushedPages = <int>[];
+
+  @override
+  Future<void> settlePendingChanges() async {
+    flushedPages.add(HistoryManager().getAll().single.page);
+  }
+
+  @override
+  void requestAutoUpload() {}
+
+  @override
+  void onDataChanged() {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _ControlledImage extends ImageStreamCompleter {
   bool completed = false;
@@ -293,9 +314,107 @@ void main() {
     return keepDuplicates ? shown : shown.toSet();
   }
 
+  Future<void> checkRotation(WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final mode in [
+      ReaderMode.galleryLeftToRight,
+      ReaderMode.galleryRightToLeft,
+      ReaderMode.galleryTopToBottom,
+    ]) {
+      for (final perScreen in [1, 2]) {
+        tester.view.physicalSize = const Size(900, 600);
+        final opened = await openGallery(tester, mode, perScreen, 'off');
+        try {
+          for (final decode in opened.decodes) {
+            decode.show(single);
+          }
+          await tester.pump();
+          await tester.pump();
+          opened.reader.toNextPage();
+          await tester.pump();
+          final (int first, int last) = opened.reader.pageImageRange;
+          for (final size in [const Size(600, 900), const Size(900, 600)]) {
+            tester.view.physicalSize = size;
+            await tester.pump();
+            final (int start, int end) = opened.reader.pageImageRange;
+            expect(start, lessThanOrEqualTo(first));
+            expect(end, greaterThan(first));
+            expect(visibleImages(tester), contains(first));
+            for (final element in find.byType(ComicImage).evaluate()) {
+              final box = element.renderObject as RenderBox;
+              if (!box.attached || !box.hasSize) continue;
+              final transform = box.getTransformTo(null);
+              final origin = MatrixUtils.transformPoint(transform, Offset.zero);
+              final x = MatrixUtils.transformPoint(
+                transform,
+                const Offset(1, 0),
+              );
+              final y = MatrixUtils.transformPoint(
+                transform,
+                const Offset(0, 1),
+              );
+              expect(
+                (x - origin).distance,
+                closeTo((y - origin).distance, 0.001),
+                reason: 'Rotation must never apply a non-uniform image scale',
+              );
+            }
+            expect(tester.takeException(), isNull);
+          }
+          expect(last, greaterThan(first));
+        } finally {
+          await closeGallery(tester, opened.history);
+        }
+      }
+    }
+  }
+
   testWidgets(
     'gallery loading keeps complete spreads and split halves in order',
     (tester) async {
+      await checkRotation(tester);
+      final previousSync = DataSync.instance;
+      final readerSync = _ReaderSync();
+      DataSync.instance = readerSync;
+      for (final mode in [WebdavSyncMode.realtime, WebdavSyncMode.dataSaver]) {
+        readerSync.syncMode = mode;
+        readerSync.flushedPages.clear();
+        final progress = await openGallery(
+          tester,
+          ReaderMode.galleryLeftToRight,
+          1,
+          'off',
+        );
+        progress.decodes[0].show(single);
+        progress.decodes[1].show(single);
+        await tester.pump();
+        await tester.pump();
+        progress.reader.toNextPage();
+        await tester.pump();
+        expect(progress.history.page, 2);
+        await tester.pumpWidget(const SizedBox());
+        // Observe the reader's own save before the test helper writes history.
+        for (var i = 0; i < 300; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 25));
+          if (HistoryManager().getAll().single.page == 2 &&
+              (mode != WebdavSyncMode.realtime ||
+                  readerSync.flushedPages.isNotEmpty)) {
+            break;
+          }
+        }
+        expect(HistoryManager().getAll().single.page, 2);
+        expect(
+          readerSync.flushedPages,
+          mode == WebdavSyncMode.realtime ? [2] : isEmpty,
+        );
+        await closeGallery(tester, progress.history);
+      }
+      DataSync.instance = previousSync;
+      readerSync.dispose();
       tester.view.physicalSize = const Size(900, 600);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);

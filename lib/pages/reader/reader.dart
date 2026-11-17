@@ -465,13 +465,10 @@ class _ReaderState extends State<Reader>
   @override
   void dispose() {
     _stopReadingTimer();
+    _notifyReadingStatisticsChanged();
     App.rootRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
-    if (_updateHistoryTimer != null && history != null) {
-      _updateHistoryTimer!.cancel();
-      _updateHistoryTimer = null;
-      unawaited(HistoryManager().addHistoryAsync(history!));
-    }
+    unawaited(_flushReadingProgress());
     _disposeAutoPageTurning();
     _einkRefresher.dispose();
     focusNode.dispose();
@@ -479,9 +476,6 @@ class _ReaderState extends State<Reader>
     ImageTranslationService.instance.clearQueue();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     stopVolumeEvent();
-    Future.microtask(() {
-      DataSync().onDataChanged();
-    });
     PaintingBinding.instance.imageCache.maximumSizeBytes = 100 << 20;
     disposeReaderWindow();
     super.dispose();
@@ -495,6 +489,9 @@ class _ReaderState extends State<Reader>
     } else {
       _stopReadingTimer();
       _notifyReadingStatisticsChanged();
+    }
+    if (state == AppLifecycleState.paused) {
+      unawaited(_flushReadingProgress(sync: App.isAndroid));
     }
     // Inactive is still on screen: an unfocused desktop window, or a phone
     // with the notification shade pulled down.
@@ -699,6 +696,23 @@ class _ReaderState extends State<Reader>
   /// Prevent multiple history updates in a short time.
   /// `HistoryManager().addHistoryAsync` is a high-cost operation because it creates a new isolate.
   Timer? _updateHistoryTimer;
+  Future<void>? _historyWrite;
+
+  Future<void> _flushReadingProgress({bool sync = true}) async {
+    if (_updateHistoryTimer != null && history != null) {
+      _updateHistoryTimer!.cancel();
+      _updateHistoryTimer = null;
+      _historyWrite = HistoryManager().addHistoryAsync(history!);
+    }
+    try {
+      await _historyWrite;
+      if (sync && DataSync().syncMode == WebdavSyncMode.realtime) {
+        await DataSync().settlePendingChanges();
+      }
+    } catch (e, s) {
+      Log.error('Reader', 'Failed to save reading progress: $e', s);
+    }
+  }
 
   void updateHistory() {
     if (history != null) {
@@ -728,7 +742,7 @@ class _ReaderState extends State<Reader>
       history!.time = DateTime.now();
       _updateHistoryTimer?.cancel();
       _updateHistoryTimer = Timer(const Duration(seconds: 1), () {
-        HistoryManager().addHistoryAsync(history!);
+        _historyWrite = HistoryManager().addHistoryAsync(history!);
         _updateHistoryTimer = null;
       });
     }

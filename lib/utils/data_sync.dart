@@ -227,30 +227,26 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       );
 
   Future<void> setSyncMode(WebdavSyncMode mode, {bool settle = true}) {
+    _pendingAutoUpload?.cancel();
+    _pendingAutoUpload = null;
+    _pendingSettleTimer?.cancel();
+    _pendingSettleTimer = null;
     appdata.implicitData[_syncModeKey] = mode.name;
     // Keep the legacy boolean coherent: QR config payloads and downgraded
     // installs still read it.
     appdata.implicitData['webdavAutoSync'] = mode != WebdavSyncMode.manual;
     final saved = appdata.writeImplicitData();
-    if (mode != WebdavSyncMode.dataSaver) {
-      _pendingSettleTimer?.cancel();
-      _pendingSettleTimer = null;
-    }
     // Entering an automatic tier with an open account settles it now — this
     // also covers dataSaver→realtime, where no timer would ever fire again.
     if (settle) {
       settlePendingChanges();
-    } else {
-      // Saving a connection starts one explicit initial sync instead.
-      _pendingAutoUpload?.cancel();
-      _pendingAutoUpload = null;
     }
     notifyListeners();
     return saved;
   }
 
   /// True when local changes exist that no successful upload has covered yet.
-  /// Maintained by the dataSaver/manual tiers (realtime uploads immediately);
+  /// Maintained by every tier, including batched realtime uploads;
   /// drives the home sync button's badge and every settle decision. Persisted
   /// so a killed process still owes — and pays — its account on next launch.
   bool get hasPendingChanges =>
@@ -258,7 +254,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
   void _markPendingChanges() {
     _pendingChangesEpoch++;
-    if (syncMode == WebdavSyncMode.dataSaver) {
+    if (syncMode != WebdavSyncMode.manual) {
       _armPendingSettleTimer();
     }
     if (hasPendingChanges) return; // already persisted; skip the IO churn
@@ -271,7 +267,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     // ??= — the clock runs from the FIRST unsynced change. Later changes must
     // not extend it, or continuous reading would defer the settle forever and
     // void the "at most N minutes stale" guarantee.
-    _pendingSettleTimer ??= Timer(_dataSaverMaxPendingAge, () {
+    if (App.isBackgroundTask || syncMode == WebdavSyncMode.manual) return;
+    final maxAge = syncMode == WebdavSyncMode.realtime
+        ? const Duration(seconds: 30)
+        : _dataSaverMaxPendingAge;
+    _pendingSettleTimer ??= Timer(maxAge, () {
       _pendingSettleTimer = null;
       settlePendingChanges();
     });
@@ -317,7 +317,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Uploads the pending account if one is open. The data-saver settle
+  /// Uploads the pending account if one is open. Automatic settle
   /// points all funnel here: background/screen-off (Android), resume,
   /// startup, the [_dataSaverMaxPendingAge] cap, desktop window close and
   /// the post-catch-up-download hook. No-op when clean, unconfigured, in
@@ -336,7 +336,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     // Failed, or superseded by changes that landed mid-upload: re-arm so a
     // quiet session still retries within the staleness bound instead of
     // waiting for the next change or lifecycle event.
-    if (hasPendingChanges && syncMode == WebdavSyncMode.dataSaver) {
+    if (hasPendingChanges && syncMode != WebdavSyncMode.manual) {
       _armPendingSettleTimer();
     }
   }
@@ -358,20 +358,22 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       }
       return;
     }
+    _markPendingChanges();
     switch (syncMode) {
       case WebdavSyncMode.realtime:
         _pendingAutoUpload?.cancel();
-        _pendingAutoUpload = Timer(const Duration(seconds: 2), () {
+        // Allow short reading pauses without publishing a whole backup.
+        // The independent 30s timer bounds continuous changes.
+        _pendingAutoUpload = Timer(const Duration(seconds: 15), () {
           _pendingAutoUpload = null;
-          if (_isApplyingBackup) return;
-          uploadData();
+          settlePendingChanges();
         });
       case WebdavSyncMode.dataSaver:
       case WebdavSyncMode.manual:
         // Deferred tiers keep an account instead of a network round-trip:
         // dataSaver settles it at the session boundaries, manual only via
         // the sync button (the flag still drives its badge).
-        _markPendingChanges();
+        break;
     }
   }
 
@@ -392,12 +394,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       _pendingAutoUpload?.cancel();
       _pendingAutoUpload = null;
     }
-    // Data-saver keeps its account open for the whole session, and desktop
+    // Automatic tiers can have pending data at exit, and desktop
     // has no `paused` lifecycle moment — the window close IS its settle
     // point. Manual mode is deliberately absent: the user opted out of every
     // automatic upload.
     var hasOpenAccount =
-        syncMode == WebdavSyncMode.dataSaver && hasPendingChanges;
+        syncMode != WebdavSyncMode.manual && hasPendingChanges;
     if (hasPendingDebounce || hasOpenAccount) {
       // Flush the pending change before exit. Deliberately NOT forced: if this
       // device is behind the server, uploading would overwrite newer remote
@@ -677,6 +679,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
     _pendingAutoUpload?.cancel();
     _pendingAutoUpload = null;
+    _pendingSettleTimer?.cancel();
+    _pendingSettleTimer = null;
     if (_haveWaitingTask) return const Res(true);
     // Waits for image sync too: exportAppData snapshots local.db while image
     // sync may be importing packs into it. Image sync yields between comics
@@ -945,6 +949,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       }
     } finally {
       _isUploading = false;
+      if (hasPendingChanges) _armPendingSettleTimer();
       _maybeStopSyncKeepAlive();
       notifyListeners();
     }

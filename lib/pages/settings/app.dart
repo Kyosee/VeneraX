@@ -912,7 +912,7 @@ class _WebdavSyncOptionsState extends State<_WebdavSyncOptions> {
   };
 
   String _syncModeDescription(WebdavSyncMode mode) => switch (mode) {
-    WebdavSyncMode.realtime => "Upload shortly after every change".tl,
+    WebdavSyncMode.realtime => "Upload after 15 seconds idle, or within 30 seconds while reading".tl,
     WebdavSyncMode.dataSaver =>
       App.isOhos
           ? "Batch changes; upload on app resume or every 30 minutes while the app is active".tl
