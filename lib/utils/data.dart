@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -762,6 +762,31 @@ Map<dynamic, dynamic> mergeTranslationPrefs(
   };
 }
 
+/// Compare source scripts and persisted accounts before restarting every source.
+@visibleForTesting
+Future<bool> comicSourceFilesEqual(Directory incoming, Directory live) async {
+  if (!await live.exists()) return false;
+  Future<Map<String, File>> files(Directory directory) async => {
+    await for (final file in directory.list(followLinks: false))
+      if (file is File &&
+          (file.name.endsWith('.js') || file.name.endsWith('.data')))
+        file.name: file,
+  };
+  final newFiles = await files(incoming);
+  final oldFiles = await files(live);
+  if (newFiles.length != oldFiles.length) return false;
+  for (final entry in newFiles.entries) {
+    final old = oldFiles[entry.key];
+    if (old == null || await old.length() != await entry.value.length()) {
+      return false;
+    }
+    if (!listEquals(await old.readAsBytes(), await entry.value.readAsBytes())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 Future<ImportOutcome> _importAppDataLocked(
   File file, {
   bool checkVersion = false,
@@ -988,34 +1013,37 @@ Future<ImportOutcome> _importAppDataLocked(
         Log.warning('Import Data', 'Failed to import collection covers: $e\n$s');
       }
     }
-    var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
-    if (Directory(comicSourceDir).existsSync()) {
+    final incomingSources = Directory(FilePath.join(cacheDirPath, 'comic_source'));
+    final liveDir = Directory(FilePath.join(App.dataPath, 'comic_source'));
+    final sources = ComicSourceManager();
+    if (await incomingSources.exists() &&
+        (sources.isEmpty ||
+            !await comicSourceFilesEqual(incomingSources, liveDir))) {
       report(ImportPhase.reloading);
       // Stage-then-swap. The old delete-then-copy order meant a copy failure
       // midway (disk full, locked file) permanently wiped EVERY installed
       // source together with its login/config .data. Copy into a sibling
       // staging dir first; only after all copies succeed, swap it in.
-      final liveDir = Directory(FilePath.join(App.dataPath, "comic_source"));
       final stagingDir = Directory(
         FilePath.join(App.dataPath, "comic_source.staging"),
       );
-      stagingDir.deleteIfExistsSync(recursive: true);
-      stagingDir.createSync();
-      for (var file in Directory(comicSourceDir).listSync()) {
+      if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
+      await stagingDir.create();
+      await for (var file in incomingSources.list(followLinks: false)) {
         if (file is File) {
           if (file.name.endsWith(".js") || file.name.endsWith(".data")) {
             await file.copy(FilePath.join(stagingDir.path, file.name));
           }
         }
       }
-      liveDir.deleteIfExistsSync(recursive: true);
-      stagingDir.renameSync(liveDir.path);
-      await ComicSourceManager().reload();
+      if (await liveDir.exists()) await liveDir.delete(recursive: true);
+      await stagingDir.rename(liveDir.path);
+      await sources.reload();
     } else {
-      // A backup carrying settings but no scripts still brings the restored
-      // source arrangement; without this it would only take effect at the next
-      // restart, since nothing else re-sorts the registered sources.
-      ComicSourceManager().reapplySourceOrder();
+      // Native sources capture settings even when scripts/accounts did not change.
+      sources.refreshWebdavLibrarySources();
+      sources.refreshCollectionSources();
+      sources.reapplySourceOrder();
     }
     return const ImportOutcome();
   } finally {

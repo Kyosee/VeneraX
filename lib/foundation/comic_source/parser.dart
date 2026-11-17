@@ -221,8 +221,10 @@ class ComicSourceParser {
     if (!App.isBackgroundTask && _checkExists("init")) {
       unawaited(
         Future.delayed(const Duration(milliseconds: 50), () async {
+          // A reload may have replaced this source before its delayed init.
+          if (!identical(ComicSource.find(source.key), source)) return;
           try {
-            final result = JsEngine().runCode("ComicSource.sources.$_key.init()");
+            final result = JsEngine().runCode("ComicSource.sources.${source.key}.init()");
             if (result is Future) {
               await result;
             }

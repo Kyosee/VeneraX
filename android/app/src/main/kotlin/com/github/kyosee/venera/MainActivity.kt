@@ -14,6 +14,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
@@ -58,6 +59,10 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Crossfade fullscreen rotation instead of stretching the old reader frame.
+        window.attributes = window.attributes.apply {
+            rotationAnimation = WindowManager.LayoutParams.ROTATION_ANIMATION_CROSSFADE
+        }
 
         if (intent?.action == Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
