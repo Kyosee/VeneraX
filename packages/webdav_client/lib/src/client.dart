@@ -76,7 +76,7 @@ class Client {
     path = fixSlashes(path);
     var resp = await this
         .c
-        .wdPropfind(this, path, true, fileXmlStr, cancelToken: cancelToken);
+        .wdPropfind(this, path, false, fileXmlStr, cancelToken: cancelToken);
 
     String str = resp.data;
     return WebdavXml.toFiles(path, str, skipSelf: false).first;
@@ -139,7 +139,8 @@ class Client {
   /// If you rename the folder, some webdav services require a '/' at the end of the path.
   Future<void> rename(String oldPath, String newPath, bool overwrite,
       [CancelToken? cancelToken]) {
-    return this.c.wdCopyMove(this, oldPath, newPath, false, overwrite);
+    return this.c.wdCopyMove(this, oldPath, newPath, false, overwrite,
+        cancelToken: cancelToken);
   }
 
   /// Copy a file / folder from A to B
@@ -147,7 +148,8 @@ class Client {
   /// Some webdav services have been tested and found to delete the original contents of the B folder!!!
   Future<void> copy(String oldPath, String newPath, bool overwrite,
       [CancelToken? cancelToken]) {
-    return this.c.wdCopyMove(this, oldPath, newPath, true, overwrite);
+    return this.c.wdCopyMove(this, oldPath, newPath, true, overwrite,
+        cancelToken: cancelToken);
   }
 
   /// Read the bytes of a file
