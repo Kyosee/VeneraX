@@ -132,6 +132,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        FollowUpdatesScheduler.registerUi(this, flutterEngine)
         GeneratedPluginRegistrant.registerWith(flutterEngine)
         ReadingWidgets.register(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(

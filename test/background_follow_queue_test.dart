@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_follow_queue.dart';
-import 'package:venera/foundation/ohos_follow_scheduler.dart';
+import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/utils/data_sync.dart';
 
 void main() {
@@ -131,21 +132,23 @@ void main() {
   );
 
   test(
-    'standard platforms never invoke the HarmonyOS scheduling channel',
+    'desktop platforms never invoke the mobile scheduling channel',
     () async {
       var calls = 0;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(OhosFollowScheduler.channel, (
+          .setMockMethodCallHandler(FollowUpdatesScheduler.channel, (
             MethodCall call,
           ) async {
             calls++;
             return null;
           });
-      await OhosFollowScheduler.acquireUiData();
-      await OhosFollowScheduler.sync();
+      await FollowUpdatesScheduler.acquireUiData();
+      await FollowUpdatesScheduler.sync();
       expect(calls, 0);
+      debugDefaultTargetPlatformOverride = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(OhosFollowScheduler.channel, null);
+          .setMockMethodCallHandler(FollowUpdatesScheduler.channel, null);
     },
   );
 }

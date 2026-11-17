@@ -218,7 +218,7 @@ class ComicSourceParser {
 
     await source.loadData();
 
-    if (_checkExists("init")) {
+    if (!App.isBackgroundTask && _checkExists("init")) {
       unawaited(
         Future.delayed(const Duration(milliseconds: 50), () async {
           try {

@@ -213,6 +213,20 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
             if (args != null && args is! List) {
               throw "Args must be a list";
             }
+            if (App.isBackgroundTask) {
+              // A short-lived worker must not leave child isolates behind.
+              return Future.sync(() {
+                final callable = runCode(func);
+                if (callable is! JSInvokable) {
+                  throw "The provided code does not evaluate to a function.";
+                }
+                try {
+                  return callable.invoke(args ?? []);
+                } finally {
+                  callable.free();
+                }
+              });
+            }
             return JSPool().execute(func, args ?? []);
         }
       }

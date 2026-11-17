@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
+import 'package:venera/foundation/background_follow_queue.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
@@ -148,13 +149,35 @@ class FollowUpdateTaskManager with ChangeNotifier {
   /// Ids whose [_run] loop is currently executing, so resume/cancel can tell a
   /// restored-but-not-yet-running task apart from an actively running one.
   final _runningIds = <String>{};
+  final _systemScheduledIds = <String>{};
+  bool get hasPendingWork => _runningIds.isNotEmpty || currentTasks.isNotEmpty;
+  bool isExecuting(String id) => _runningIds.contains(id);
+  Future<void> waitForIdle() async {
+    if (_runningIds.isEmpty) return;
+    final done = Completer<void>();
+    void changed() {
+      if (_runningIds.isEmpty && !done.isCompleted) done.complete();
+    }
+
+    addListener(changed);
+    try {
+      await done.future;
+    } finally {
+      removeListener(changed);
+    }
+  }
+
   void Function(FollowUpdateTask task)? onTaskFinished;
 
   /// Starts a check over [folders]. Only one check runs at a time: follow-update
   /// scope is a single user-level setting now, so a second request while one is
   /// running joins the running task instead of starting an overlapping one that
   /// would write the same rows (see the cancel race in #4).
-  FollowUpdateTask? startCheck(List<String> folders, {required bool manual}) {
+  FollowUpdateTask? startCheck(
+    List<String> folders, {
+    required bool manual,
+    BackgroundFollowQueue? backgroundQueue,
+  }) {
     if (folders.isEmpty) {
       return null;
     }
@@ -162,6 +185,8 @@ class FollowUpdateTaskManager with ChangeNotifier {
     if (existing != null) {
       return existing;
     }
+    // A cancelled task may still be draining its in-flight requests.
+    if (_runningIds.isNotEmpty) return null;
 
     var task = FollowUpdateTask(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -174,10 +199,14 @@ class FollowUpdateTaskManager with ChangeNotifier {
       0,
       (sum, source) => sum + source.total,
     );
+    if (!manual && task.total == 0) return null;
+    if (backgroundQueue != null) _systemScheduledIds.add(task.id);
     currentTasks.insert(0, task);
     _saveActiveTasks();
     notifyListeners();
-    unawaited(_run(task, ignoreCheckTime: manual));
+    unawaited(
+      _run(task, ignoreCheckTime: manual, backgroundQueue: backgroundQueue),
+    );
     return task;
   }
 
@@ -218,6 +247,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
     FollowUpdateTask task, {
     required bool ignoreCheckTime,
     bool resume = false,
+    BackgroundFollowQueue? backgroundQueue,
   }) async {
     if (_runningIds.contains(task.id)) {
       return;
@@ -234,6 +264,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
         task.folders,
         ignoreCheckTime,
         shouldCancel: () => _canceledIds.contains(task.id),
+        backgroundQueue: backgroundQueue,
         // Only on resume: skip comics whose last check is at or after this
         // task's creation time (i.e. already processed before the app was
         // killed), so it continues from the breakpoint. On a fresh run nothing
@@ -286,7 +317,9 @@ class FollowUpdateTaskManager with ChangeNotifier {
       _progressNotifyTimer?.cancel();
       _progressNotifyTimer = null;
       _finalize(task);
-      if (task.status == FollowUpdateTaskStatus.completed && task.updated > 0) {
+      if (backgroundQueue == null &&
+          task.status == FollowUpdateTaskStatus.completed &&
+          task.updated > 0) {
         unawaited(
           BackgroundKeepAlive.instance.completeFollowUpdate(
             formatTaskStatus(
@@ -325,6 +358,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
     _canceledIds.remove(task.id);
     _runningIds.remove(task.id);
     _moveToHistory(task);
+    _systemScheduledIds.remove(task.id);
   }
 
   /// Moves a terminal task out of [currentTasks] into history and clears its
@@ -341,7 +375,8 @@ class FollowUpdateTaskManager with ChangeNotifier {
     }
     _saveActiveTasks();
     _saveHistory();
-    if (currentTasks.where((t) => t.isRunning).isEmpty) {
+    if (!_systemScheduledIds.contains(task.id) &&
+        currentTasks.where((t) => t.isRunning).isEmpty) {
       BackgroundKeepAlive.instance.remove(BackgroundKeepAlive.tagFollowUpdate);
     }
   }
@@ -370,6 +405,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
   }
 
   void _refreshKeepAlive(FollowUpdateTask task) {
+    if (_systemScheduledIds.contains(task.id)) return;
     var detail = task.total == 0
         ? '${task.checked}'
         : '${task.checked}/${task.total}';

@@ -11,7 +11,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
-import 'package:venera/foundation/ohos_follow_scheduler.dart';
+import 'package:venera/foundation/follow_updates_scheduler.dart';
+import 'package:venera/foundation/background_follow_queue.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
 import '../foundation/global_state.dart';
@@ -317,7 +318,7 @@ class FollowUpdatesPage extends StatefulWidget {
       allFolders: applied.allFolders,
       folders: applied.folders,
     );
-    await OhosFollowScheduler.sync();
+    await FollowUpdatesScheduler.sync();
     final next = FollowUpdateScope.folders();
     for (final folder in previous.difference(next.toSet())) {
       FollowUpdateTaskManager.instance.cancelForFolder(folder);
@@ -329,8 +330,18 @@ class FollowUpdatesPage extends StatefulWidget {
     if (next.any((folder) => !previous.contains(folder))) {
       unawaited(maybePromptBatteryOptimization());
       FollowUpdatesService._cancelChecking?.call();
-      FollowUpdateTaskManager.instance.startCheck(next, manual: true);
-      if (context.mounted) context.showMessage(message: 'Task started'.tl);
+      if (!FollowUpdateTaskManager.instance.currentTasks.any(
+        (task) => task.isRunning,
+      )) {
+        await FollowUpdateTaskManager.instance.waitForIdle();
+      }
+      final task = FollowUpdateTaskManager.instance.startCheck(
+        FollowUpdateScope.folders(),
+        manual: true,
+      );
+      if (task != null && context.mounted) {
+        context.showMessage(message: 'Task started'.tl);
+      }
     }
   }
 
@@ -940,8 +951,18 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     }
     unawaited(maybePromptBatteryOptimization());
     FollowUpdatesService._cancelChecking?.call();
-    FollowUpdateTaskManager.instance.startCheck(scope, manual: true);
-    context.showMessage(message: "Task started".tl);
+    if (!FollowUpdateTaskManager.instance.currentTasks.any(
+      (task) => task.isRunning,
+    )) {
+      await FollowUpdateTaskManager.instance.waitForIdle();
+    }
+    final task = FollowUpdateTaskManager.instance.startCheck(
+      folders,
+      manual: true,
+    );
+    if (task != null && mounted) {
+      context.showMessage(message: "Task started".tl);
+    }
   }
 
   void updateComics() {
@@ -967,9 +988,65 @@ abstract class FollowUpdatesService {
 
   static Timer? _checkerTimer;
   static AppLifecycleListener? _lifecycle;
+  static bool _systemCheck = false;
+  static bool _scheduledActive = false;
 
-  static void _check() async {
+  static Future<void> _checkScheduled() async {
+    if (_scheduledActive ||
+        _isChecking ||
+        !LocalFavoritesManager().isInitialized ||
+        FollowUpdateTaskManager.instance.hasPendingWork ||
+        DataSync().isDownloading ||
+        DataSync().isApplyingBackup) {
+      return;
+    }
+    _scheduledActive = true;
+    _systemCheck = true;
+    final deadline = Timer(const Duration(seconds: 90), _stopScheduled);
+    try {
+      final queue = BackgroundFollowQueue(
+        '${App.dataPath}/android_follow_queue.json',
+      );
+      queue.reconcile({
+        for (final folder in FollowUpdateScope.folders())
+          for (final comic in LocalFavoritesManager().getComicsWithUpdatesInfo(
+            folder,
+          ))
+            comic.identityKey: comic.updateTime,
+      });
+      await _check(backgroundQueue: queue);
+      deadline.cancel();
+      _systemCheck = false;
+      final pending = queue.pending;
+      if (pending.isNotEmpty) {
+        final sent = await FollowUpdatesScheduler.channel.invokeMethod<bool>(
+          'notify',
+          {
+            'status':
+                '${"Follow Updates".tl} · ${"@c updates".tlParams({'c': pending.length})}',
+          },
+        );
+        if (sent == true) queue.acknowledge(pending);
+      }
+    } finally {
+      deadline.cancel();
+      _systemCheck = false;
+      _scheduledActive = false;
+    }
+  }
+
+  static void _stopScheduled() {
+    if (_systemCheck) _cancelChecking?.call();
+  }
+
+  static Future<void> _check({BackgroundFollowQueue? backgroundQueue}) async {
     if (_isChecking) {
+      return;
+    }
+    if (!FollowUpdateScope.isPastFixedTime(
+      FollowUpdateScope.fixedTime,
+      DateTime.now(),
+    )) {
       return;
     }
     // A degraded session (favorites init failed) must not start a check: every
@@ -1008,9 +1085,13 @@ abstract class FollowUpdatesService {
       if (scope.isEmpty) {
         return;
       }
+      if (_systemCheck && FollowUpdateTaskManager.instance.hasPendingWork) {
+        return;
+      }
       var task = FollowUpdateTaskManager.instance.startCheck(
         scope,
         manual: false,
+        backgroundQueue: backgroundQueue,
       );
       if (task == null) {
         return;
@@ -1025,19 +1106,21 @@ abstract class FollowUpdatesService {
       _cancelChecking = () {
         _cancelRequested = true;
         FollowUpdateTaskManager.instance.cancel(task.id);
-        completeChecking();
       };
       void onTaskChanged() {
-        if (_cancelRequested || !task.isRunning) {
+        if (!FollowUpdateTaskManager.instance.isExecuting(task.id) &&
+            !task.isRunning) {
           completeChecking();
         }
       }
 
       FollowUpdateTaskManager.instance.addListener(onTaskChanged);
+      onTaskChanged();
       await completer.future.whenComplete(() {
         FollowUpdateTaskManager.instance.removeListener(onTaskChanged);
       });
     } finally {
+      if (backgroundQueue != null) _systemCheck = false;
       _cancelChecking = null;
       _cancelRequested = false;
       _isChecking = false;
@@ -1048,16 +1131,21 @@ abstract class FollowUpdatesService {
   static void initChecker() {
     if (_isInitialized) return;
     _isInitialized = true;
-    unawaited(OhosFollowScheduler.sync());
-    if (App.isOhos) {
-      _lifecycle ??= AppLifecycleListener(onResume: () {
-        unawaited(OhosFollowScheduler.sync());
-        if (FollowUpdateScope.checkOnStart && FollowUpdateScope.isPastFixedTime(
-          FollowUpdateScope.fixedTime, DateTime.now(),
-        )) {
-          _check();
-        }
-      });
+    FollowUpdatesScheduler.listen(check: _checkScheduled, stop: _stopScheduled);
+    unawaited(FollowUpdatesScheduler.sync());
+    if (App.isOhos || App.isAndroid) {
+      _lifecycle ??= AppLifecycleListener(
+        onResume: () {
+          unawaited(FollowUpdatesScheduler.sync());
+          if (FollowUpdateScope.checkOnStart &&
+              FollowUpdateScope.isPastFixedTime(
+                FollowUpdateScope.fixedTime,
+                DateTime.now(),
+              )) {
+            _check();
+          }
+        },
+      );
     }
     FollowUpdateTaskManager.instance.onTaskFinished = (_) {
       updateFollowUpdatesUI();
@@ -1071,7 +1159,7 @@ abstract class FollowUpdatesService {
     }
     DataSync().addListener(() {
       updateFollowUpdatesUI();
-      unawaited(OhosFollowScheduler.sync());
+      unawaited(FollowUpdatesScheduler.sync());
     });
     // Polling this often is cheap: the per-comic interval decides what actually
     // gets fetched, so a tick with nothing due starts no task at all.
@@ -1232,9 +1320,16 @@ class _FollowUpdateSettingsDialogState
           ],
         ),
         const SizedBox(height: 8),
+        if (App.isAndroid)
+          Text(
+            "Android schedules background checks while the app is closed. Battery and network restrictions may delay checks. After force-stopping the app, open it again to resume checks."
+                .tl,
+            style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
+          ),
         if (App.isOhos)
           Text(
-            "HarmonyOS schedules background checks when resources allow. Checks may be delayed and continue in later runs. Opening the app can check sooner.".tl,
+            "HarmonyOS schedules background checks when resources allow. Checks may be delayed and continue in later runs. Opening the app can check sooner."
+                .tl,
             style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
           ),
       ],

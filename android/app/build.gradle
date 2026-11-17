@@ -70,6 +70,10 @@ android {
         jvmTarget = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+
     signingConfigs {
         debug {
             storeFile releaseStoreFile
@@ -151,4 +155,7 @@ dependencies {
     implementation 'androidx.documentfile:documentfile:1.0.1'
     // 提供 NotificationCompat 与 ContextCompat.startForegroundService，供后台下载前台服务使用。
     implementation 'androidx.core:core-ktx:1.13.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'org.mockito:mockito-core:5.20.0'
 }

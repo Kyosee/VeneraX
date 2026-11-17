@@ -238,6 +238,7 @@ class ComicSourceManager with ChangeNotifier, Init {
       _applyOrder();
       return;
     }
+    final backgroundSources = <ComicSource>[];
     await for (var entity in Directory(path).list()) {
       if (entity is File && entity.path.endsWith(".js")) {
         try {
@@ -245,7 +246,10 @@ class ComicSourceManager with ChangeNotifier, Init {
             await entity.readAsString(),
             entity.absolute.path,
           );
-          _addParsedSource(source, entity.name);
+          final added = _addParsedSource(source, entity.name);
+          if (added && App.isBackgroundTask) {
+            backgroundSources.add(source);
+          }
         } catch (e, s) {
           if (e is ComicSourceParseException && e.isRecoverable) {
             _logRecoverableParseWarning(entity.name, e);
@@ -258,6 +262,21 @@ class ComicSourceManager with ChangeNotifier, Init {
     // Directory listing order is filesystem-defined, so the arrangement has to
     // be re-applied after the scan on every startup and reload.
     _applyOrder();
+    // Register all sources before init; slow sources share one timeout window.
+    await Future.wait(
+      backgroundSources.map((source) async {
+        try {
+          final initialized = JsEngine().runCode(
+            'ComicSource.sources.${source.key}.init()',
+          );
+          if (initialized is Future) {
+            await initialized.timeout(const Duration(seconds: 20));
+          }
+        } catch (e, s) {
+          Log.error('ComicSource', e, s);
+        }
+      }),
+    );
   }
 
   Future reload() async {

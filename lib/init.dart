@@ -16,7 +16,7 @@ import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/onboarding.dart';
-import 'package:venera/foundation/ohos_follow_scheduler.dart';
+import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/network/app_dio_io.dart';
@@ -51,7 +51,7 @@ extension _FutureInit<T> on Future<T> {
 Future<void> init({bool interactive = true}) async {
   await App.init().wait();
   // Never load shared state before the background extension has released it.
-  await OhosFollowScheduler.acquireUiData();
+  await FollowUpdatesScheduler.acquireUiData();
   if (interactive) await OnboardingStore.instance.load(App.dataPath);
   await LauncherIconService.initialize().wait();
   if (App.isAndroid || App.isOhos || App.isIOS || App.isMacOS) {

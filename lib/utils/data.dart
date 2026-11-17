@@ -20,7 +20,7 @@ import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/local.dart';
-import 'package:venera/foundation/ohos_follow_scheduler.dart';
+import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -627,7 +627,7 @@ Future<void> _restoreDeviceSettingsIfAbsent(Map<String, dynamic> data) async {
     for (final folder in FollowUpdateScope.folders()) {
       LocalFavoritesManager().prepareTableForFollowUpdates(folder, false);
     }
-    unawaited(OhosFollowScheduler.sync());
+    unawaited(FollowUpdatesScheduler.sync());
   }
 }
 

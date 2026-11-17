@@ -17,7 +17,7 @@ import 'components/window_frame.dart';
 import 'foundation/app.dart';
 import 'foundation/appdata.dart';
 import 'foundation/launcher_icon.dart';
-import 'foundation/ohos_follow_worker.dart';
+import 'foundation/follow_updates_worker.dart';
 import 'foundation/download_keepalive.dart';
 import 'foundation/shortcuts.dart';
 import 'foundation/tray.dart';
@@ -25,7 +25,7 @@ import 'headless.dart';
 import 'init.dart';
 
 @pragma('vm:entry-point')
-void followUpdatesBackgroundMain(List<String> args) => runOhosFollowWorker(args);
+void followUpdatesBackgroundMain(List<String> args) => runFollowUpdatesWorker(args);
 
 void main(List<String> args) {
   if (args.contains('--headless')) {

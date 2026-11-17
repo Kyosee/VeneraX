@@ -17,6 +17,7 @@ class Channel<T> {
   var isClosed = false;
 
   Future<void> push(T item) async {
+    if (isClosed) return;
     if (currentSize >= size) {
       _releaseCompleter ??= Completer();
       return _releaseCompleter!.future.then((_) {
@@ -51,8 +52,11 @@ class Channel<T> {
   }
 
   void close() {
+    if (isClosed) return;
     isClosed = true;
     _pushCompleter?.complete();
+    _pushCompleter = null;
     _releaseCompleter?.complete();
+    _releaseCompleter = null;
   }
 }

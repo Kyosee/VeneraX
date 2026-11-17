@@ -153,6 +153,18 @@ class BackgroundKeepAlive {
 
   // OHOS uses an ordinary notification, without a data-transfer grant.
   Future<void> completeFollowUpdate(String status) async {
+    if (App.isAndroid) {
+      try {
+        await const MethodChannel(
+          'venera/follow_scheduler',
+        ).invokeMethod<bool>('notify', {'status': status});
+      } on PlatformException {
+        // Notification denial must not fail the completed check.
+      } on MissingPluginException {
+        // Older native hosts do not expose scheduled checks.
+      }
+      return;
+    }
     if (!App.isOhos) return;
     _statuses.remove(tagFollowUpdate);
     _progresses.remove(tagFollowUpdate);

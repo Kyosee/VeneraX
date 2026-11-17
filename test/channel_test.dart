@@ -112,4 +112,29 @@ void main() {
     var item4 = await channel.pop();
     expect(item4, null);
   });
+
+  test(
+    'closing a full channel releases producers and permits safe draining',
+    () async {
+      final channel = Channel<int>(1);
+      await channel.push(1);
+      final waiting = channel.push(2);
+      channel.close();
+      channel.close();
+      await waiting;
+      expect(await channel.pop(), 1);
+      expect(await channel.pop(), isNull);
+      await channel.push(3);
+      expect(await channel.pop(), isNull);
+    },
+  );
+
+  test('closing an empty channel releases all consumers once', () async {
+    final channel = Channel<int>(1);
+    final first = channel.pop();
+    final second = channel.pop();
+    channel.close();
+    channel.close();
+    expect(await Future.wait([first, second]), [null, null]);
+  });
 }

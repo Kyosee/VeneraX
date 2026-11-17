@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/scheduler.dart';
+import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/background_follow_queue.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
@@ -31,12 +33,17 @@ class _FollowUpdateDbGate {
   Future<void> _yieldToUi() async {
     try {
       final scheduler = SchedulerBinding.instance;
-      if (scheduler.hasScheduledFrame ||
-          scheduler.schedulerPhase != SchedulerPhase.idle) {
+      if (!App.isBackgroundTask &&
+          scheduler.framesEnabled &&
+          (scheduler.hasScheduledFrame ||
+              scheduler.schedulerPhase != SchedulerPhase.idle)) {
         // A frame is being produced (the user is interacting); land the write
         // right after it completes so it gets the largest possible slice of
         // the inter-frame budget instead of competing with build/paint.
-        await scheduler.endOfFrame;
+        await scheduler.endOfFrame.timeout(
+          const Duration(milliseconds: 100),
+          onTimeout: () {},
+        );
         return;
       }
     } catch (_) {
@@ -64,6 +71,7 @@ Future<ComicUpdateResult> updateComic(
   FavoriteItemWithUpdateInfo c,
   List<String> folders, {
   bool Function()? shouldCancel,
+  Duration? requestTimeout,
 }) async {
   int retries = 3;
   while (true) {
@@ -77,7 +85,13 @@ Future<ComicUpdateResult> updateComic(
       if (comicSource == null) {
         return ComicUpdateResult(false, "Comic source not found");
       }
-      var newInfo = (await comicSource.loadComicInfo!(c.id)).data;
+      final request = comicSource.loadComicInfo!(c.id);
+      // Automatic checks cannot hold an OS job indefinitely on a stalled source.
+      var newInfo =
+          (await (requestTimeout == null
+                  ? request
+                  : request.timeout(requestTimeout)))
+              .data;
       // The fetch may have taken seconds; if the user cancelled meanwhile, drop
       // the result without touching the DB.
       if (shouldCancel?.call() ?? false) {
@@ -116,7 +130,9 @@ Future<ComicUpdateResult> updateComic(
       var updateTime = newInfo.findUpdateTime();
       var updated = updateTime != null && updateTime != c.updateTime;
 
+      var committed = false;
       await _dbWriteGate.run(() {
+        if (shouldCancel?.call() ?? false) return;
         const ComicStateRepository().mirrorComicDetails(newInfo);
         for (var folder in folders) {
           // mirrorComicDetails above already mirrored strictly more data than
@@ -133,8 +149,12 @@ Future<ComicUpdateResult> updateComic(
             LocalFavoritesManager().updateCheckTime(folder, c.id, c.type);
           }
         }
+        committed = true;
       });
-      return ComicUpdateResult(updated, null);
+      return ComicUpdateResult(committed && updated, null);
+    } on TimeoutException catch (error) {
+      // The source may still be finishing; do not overlap it with a retry.
+      return ComicUpdateResult(false, error.toString());
     } catch (e, s) {
       retries--;
       if (retries == 0) {
@@ -224,6 +244,7 @@ void updateFoldersBase(
   bool ignoreCheckTime,
   bool Function()? shouldCancel, {
   DateTime? checkedSince,
+  BackgroundFollowQueue? backgroundQueue,
 }) async {
   // This runs unawaited; a throw here (folder deleted mid-flight, database
   // being swapped by a sync import) used to be an unhandled zone error that
@@ -281,12 +302,52 @@ void updateFoldersBase(
   stream.add(UpdateProgress(total, current, errors, updated));
 
   var channel = Channel<FollowUpdateEntry>(10);
+  Object? failure;
+  StackTrace? failureStack;
+  bool cancelled() => failure != null || (shouldCancel?.call() ?? false);
+  void closeChannel() {
+    if (!channel.isClosed) channel.close();
+  }
+
+  Future<void> guarded(Future<void> Function() work) async {
+    try {
+      await work();
+    } catch (error, stack) {
+      failure ??= error;
+      failureStack ??= stack;
+      closeChannel();
+    }
+  }
+
+  Iterable<FollowUpdateEntry> pendingEntries() sync* {
+    if (backgroundQueue == null) {
+      yield* comicsToUpdate;
+      return;
+    }
+    final remaining = {
+      for (final entry in comicsToUpdate) entry.comic.identityKey: entry,
+    };
+    final updateTimes = {
+      for (final entry in comicsToUpdate)
+        entry.comic.identityKey: entry.comic.updateTime,
+    };
+    while (remaining.isNotEmpty && !cancelled()) {
+      final batch = backgroundQueue.takeBatch(
+        remaining.keys.toSet(),
+        updateTimes,
+      );
+      if (batch.isEmpty) break;
+      for (final key in batch) {
+        yield remaining.remove(key)!;
+      }
+    }
+  }
 
   // Producer
-  () async {
+  final producer = guarded(() async {
     var c = 0;
-    for (var entry in comicsToUpdate) {
-      if (shouldCancel?.call() ?? false) {
+    for (var entry in pendingEntries()) {
+      if (cancelled()) {
         break;
       }
       await channel.push(entry);
@@ -299,32 +360,38 @@ void updateFoldersBase(
           delay = 10;
         }
         for (var i = 0; i < delay * 2; i++) {
-          if (shouldCancel?.call() ?? false) {
+          if (cancelled()) {
             break;
           }
           await Future.delayed(const Duration(milliseconds: 500));
         }
       }
     }
-    channel.close();
-  }();
+    closeChannel();
+  });
 
   // Consumers
-  var updateFutures = <Future>[];
+  var updateFutures = <Future<void>>[producer];
   for (var i = 0; i < 5; i++) {
-    var f = () async {
+    var f = guarded(() async {
       while (true) {
         var entry = await channel.pop();
         if (entry == null) {
           break;
         }
-        if (shouldCancel?.call() ?? false) {
+        if (cancelled()) {
+          closeChannel();
           break;
         }
         var result = await updateComic(
           entry.comic,
           entry.folders,
-          shouldCancel: shouldCancel,
+          shouldCancel: cancelled,
+          requestTimeout: ignoreCheckTime ? null : const Duration(seconds: 20),
+        );
+        backgroundQueue?.complete(
+          entry.comic.identityKey,
+          updated: result.updated,
         );
         current++;
         if (result.updated) {
@@ -345,17 +412,20 @@ void updateFoldersBase(
           ),
         );
       }
-    }();
+    });
     updateFutures.add(f);
   }
 
   await Future.wait(updateFutures);
 
-  if (updated > 0) {
-    LocalFavoritesManager().notifyChanges();
+  try {
+    if (failure != null) stream.addError(failure!, failureStack);
+    if (updated > 0) {
+      LocalFavoritesManager().notifyChanges();
+    }
+  } finally {
+    await stream.close();
   }
-
-  stream.close();
 }
 
 Stream<UpdateProgress> updateFolders(
@@ -363,6 +433,7 @@ Stream<UpdateProgress> updateFolders(
   bool ignoreCheckTime, {
   bool Function()? shouldCancel,
   DateTime? checkedSince,
+  BackgroundFollowQueue? backgroundQueue,
 }) {
   var stream = StreamController<UpdateProgress>();
   updateFoldersBase(
@@ -371,6 +442,7 @@ Stream<UpdateProgress> updateFolders(
     ignoreCheckTime,
     shouldCancel,
     checkedSince: checkedSince,
+    backgroundQueue: backgroundQueue,
   );
   return stream.stream;
 }
