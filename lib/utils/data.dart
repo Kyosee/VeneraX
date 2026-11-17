@@ -1036,8 +1036,9 @@ Future<ImportOutcome> _importAppDataLocked(
           }
         }
       }
-      if (await liveDir.exists()) await liveDir.delete(recursive: true);
-      await stagingDir.rename(liveDir.path);
+      // Keep the final swap synchronous so callbacks cannot write between it.
+      liveDir.deleteIfExistsSync(recursive: true);
+      stagingDir.renameSync(liveDir.path);
       await sources.reload();
     } else {
       // Native sources capture settings even when scripts/accounts did not change.
