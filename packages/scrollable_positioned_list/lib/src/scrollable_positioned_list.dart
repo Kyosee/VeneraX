@@ -285,15 +285,6 @@ class ScrollOffsetController {
   }
 
   _ScrollablePositionedListState? _scrollableListState;
-
-  void _attach(_ScrollablePositionedListState scrollableListState) {
-    assert(_scrollableListState == null);
-    _scrollableListState = scrollableListState;
-  }
-
-  void _detach() {
-    _scrollableListState = null;
-  }
 }
 
 class _ScrollablePositionedListState extends State<ScrollablePositionedList>
