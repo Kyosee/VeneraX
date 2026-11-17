@@ -199,7 +199,7 @@ packages:
       path: "packages/desktop_webview_window"
       ref: "7801fc582ecf5a7351632887891ecf309a7b2583"
       resolved-ref: "7801fc582ecf5a7351632887891ecf309a7b2583"
-      url: "https://github.com/venera-app/flutter_desktop_webview"
+      url: "https://github.com/Kyosee/flutter_desktop_webview"
     source: git
     version: "0.2.4"
   dio:
@@ -355,9 +355,9 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: b33344797f1d2469339e0e1b75f5f954f1da224c
-      resolved-ref: b33344797f1d2469339e0e1b75f5f954f1da224c
-      url: "https://github.com/venera-app/flutter_7zip"
+      ref: "26089e4977462bd3ad46142a807a20d0edb4207f"
+      resolved-ref: "26089e4977462bd3ad46142a807a20d0edb4207f"
+      url: "https://github.com/Kyosee/flutter_7zip"
     source: git
     version: "0.0.1"
   flutter_file_dialog:
@@ -374,7 +374,7 @@ packages:
       path: flutter_inappwebview
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "6.2.0-beta.3"
   flutter_inappwebview_android:
@@ -383,7 +383,7 @@ packages:
       path: flutter_inappwebview_android
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "1.2.0-beta.3"
   flutter_inappwebview_internal_annotations:
@@ -400,7 +400,7 @@ packages:
       path: flutter_inappwebview_ios
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "1.2.0-beta.3"
   flutter_inappwebview_macos:
@@ -409,7 +409,7 @@ packages:
       path: flutter_inappwebview_macos
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "1.2.0-beta.3"
   flutter_inappwebview_platform_interface:
@@ -418,7 +418,7 @@ packages:
       path: flutter_inappwebview_platform_interface
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "1.4.0-beta.3"
   flutter_inappwebview_web:
@@ -427,7 +427,7 @@ packages:
       path: flutter_inappwebview_web
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "1.2.0-beta.3"
   flutter_inappwebview_windows:
@@ -436,7 +436,7 @@ packages:
       path: flutter_inappwebview_windows
       ref: "3ef899b3db57c911b080979f1392253b835f98ab"
       resolved-ref: "3ef899b3db57c911b080979f1392253b835f98ab"
-      url: "https://github.com/venera-app/flutter_inappwebview"
+      url: "https://github.com/Kyosee/flutter_inappwebview"
     source: git
     version: "0.7.0-beta.3"
   flutter_launcher_icons:
@@ -491,7 +491,7 @@ packages:
       path: "."
       ref: "8feae95df7fb00455df129ad7a0dfec1d0e8d8e4"
       resolved-ref: "8feae95df7fb00455df129ad7a0dfec1d0e8d8e4"
-      url: "https://github.com/venera-app/flutter_qjs"
+      url: "https://github.com/Kyosee/flutter_qjs"
     source: git
     version: "0.3.7"
   flutter_reorderable_grid_view:
@@ -516,7 +516,7 @@ packages:
       path: "."
       ref: fe182cdf40e5fa6230f451bc1d643b860f610d13
       resolved-ref: fe182cdf40e5fa6230f451bc1d643b860f610d13
-      url: "https://github.com/venera-app/flutter_saf"
+      url: "https://github.com/Kyosee/flutter_saf"
     source: git
     version: "0.0.1"
   flutter_slidable:
@@ -554,7 +554,7 @@ packages:
       path: "."
       ref: "3777c91b6b1cc0b7c03357c67ca216d4313c3db5"
       resolved-ref: "3777c91b6b1cc0b7c03357c67ca216d4313c3db5"
-      url: "https://github.com/venera-app/flutter_to_debian.git"
+      url: "https://github.com/Kyosee/flutter_to_debian.git"
     source: git
     version: "2.0.2"
   flutter_web_plugins:
@@ -750,9 +750,9 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: ac7d05dde32e8d728102a9ff66e6b55f05d94ba1
-      resolved-ref: ac7d05dde32e8d728102a9ff66e6b55f05d94ba1
-      url: "https://github.com/venera-app/lodepng_flutter"
+      ref: c46484288a93d47cd0e6508e2cb7e5c87c167527
+      resolved-ref: c46484288a93d47cd0e6508e2cb7e5c87c167527
+      url: "https://github.com/Kyosee/lodepng_flutter"
     source: git
     version: "0.0.1"
   logging:

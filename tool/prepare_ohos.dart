@@ -176,8 +176,6 @@ void main(List<String> args) {
       "if (Platform.isAndroid || Platform.operatingSystem == 'ohos') {",
     ),
     for (final entry in {
-      'flutter_7zip': 'lib/flutter_7zip.dart',
-      'lodepng_flutter': 'lib/lodepng_flutter.dart',
       'zip_flutter': 'lib/src/zip_dart_base.dart',
     }.entries)
       entry.key: (
@@ -198,7 +196,10 @@ void main(List<String> args) {
     }
     // Config root URIs must remain absolute when used by native build tools.
     package['rootUri'] = source.toString();
-    if (patches.containsKey(name) || name == 'rhttp') {
+    if (patches.containsKey(name) ||
+        name == 'rhttp' ||
+        name == 'flutter_7zip' ||
+        name == 'lodepng_flutter') {
       nativeRoots[name] = Directory.fromUri(source).path.replaceAll('\\', '/');
     }
     final patch = patches[name];
@@ -213,7 +214,7 @@ void main(List<String> args) {
     file.writeAsStringSync(contents.replaceFirst(patch.$2, patch.$3));
     package['rootUri'] = destination.absolute.uri.toString();
   }
-  if (nativeRoots.length != patches.length + 1) {
+  if (nativeRoots.length != patches.length + 3) {
     throw StateError('Resolve the locked dependencies before preparing OHOS.');
   }
   _prepareWebview(root, generated, config, args.firstOrNull);

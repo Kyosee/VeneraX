@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check AppImage packaging
         run: |
+          python3 -m unittest discover -s debian -p 'test_*.py'
           python3 -m unittest discover -s linux/appimage -p 'test_*.py'
           bash -n linux/appimage/AppRun
           bash -n linux/appimage/smoke_test.sh
@@ -21,5 +22,20 @@ jobs:
           channel: "stable"
           flutter-version: '3.44.3'
           architecture: x64
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - uses: invertase/github-action-dart-analyzer@v3
+      - name: Check maintained packages and reader integration
+        run: >-
+          flutter test --no-pub
+          packages/photo_view/test
+          packages/scrollable_positioned_list/test
+          test/photo_view_lifecycle_test.dart
+          test/reader_rotation_transition_test.dart
+          test/continuous_reader_navigation_test.dart
+          test/continuous_reader_repivot_test.dart
+          test/continuous_reader_rtl_test.dart
+          test/webdav_client_protocol_test.dart
+          test/webdav_library_test.dart
+          test/webdav_linked_folder_test.dart
+          test/webdav_upload_test.dart
+          test/webdav_saf_upload_test.dart

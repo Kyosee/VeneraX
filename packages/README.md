@@ -23,6 +23,11 @@ Local PhotoView fixes retain resolved images when their stream is unchanged,
 release image handles on replacement/disposal, and calculate the zoom reset
 scale from the current viewport after rotation.
 
+Local WebDAV property reads use Depth 0, avoiding a directory listing when only
+metadata is needed. Copy and move forward cancellation to the network request.
+The list package removes obsolete null assertions and unused private methods;
+this is analyzer compatibility work, not a scrolling performance claim.
+
 ## Updating
 
 1. Review upstream changes against the revision listed above and retain local
@@ -33,13 +38,21 @@ scale from the current viewport after rotation.
    the Flutter OH preparation in its separate checkout when dependencies change.
 4. Commit source and lockfile changes together. Never edit Pub's shared cache.
 
-## Dependencies kept external
+## Owned forks kept external
+
+Every Git dependency in the application manifest resolves from Kyosee's forks.
+Native/federated source remains in separate repositories to retain platform
+build trees and history. Forking changes maintenance ownership; it does not by
+itself improve performance. Exact revisions remain in `pubspec.yaml` and
+`pubspec.lock`, including all federated WebView subpackages.
 
 | Dependencies | Maintenance decision |
 | --- | --- |
-| `flutter_qjs`, `flutter_7zip`, `lodepng_flutter` | Keep pinned native source dependencies and existing isolated OH loader adaptations; importing their native trees would add unrelated build ownership. |
-| `flutter_inappwebview` | Keep its pinned federated packages together; preserve the separate official OH implementation and local compatibility patches. |
-| `desktop_webview_window` | Keep pinned: its Windows build includes WebView2 loader binaries and WIL headers, and no application-specific change currently needs a source import. |
-| `flutter_saf` | Keep pinned: the selected revision's LICENSE contains a placeholder rather than a license grant. Resolve licensing before copying or redistributing a local fork. |
-| `flutter_to_debian` | Pin its already resolved revision; it is a packaging tool with no runtime customization needed. |
-| `flutter_onnxruntime` | Keep the existing owned fork and pinned revision. |
+| [`flutter_qjs`](https://github.com/Kyosee/flutter_qjs) | Forked at the existing revision. Preserve the isolated OH loader adaptation and native build inputs. No new runtime change. |
+| [`flutter_7zip`](https://github.com/Kyosee/flutter_7zip) | Close discovery/worker handles after extraction and on failure; release path memory on file errors, reject invalid worker counts, and avoid empty workers. Include an OH loader. Native extraction regressions run in the fork. |
+| [`lodepng_flutter`](https://github.com/Kyosee/lodepng_flutter) | Fix freed-memory views, decoded dimensions, native error handling and invalid RGBA input; include an OH loader. Preserve the reader's pointer/finalizer path. Native codec regressions run in the fork. |
+| [`flutter_inappwebview`](https://github.com/Kyosee/flutter_inappwebview) | Forked with all six federated platform/interface packages at the same revision. Preserve the separate official OH implementation and existing compatibility patches. |
+| [`desktop_webview_window`](https://github.com/Kyosee/flutter_desktop_webview) | Forked at the existing revision, retaining WebView2 loader binaries and WIL headers. No new runtime change. |
+| [`flutter_saf`](https://github.com/Kyosee/flutter_saf) | GitHub fork at the existing revision, preserving its original notices. The placeholder LICENSE is not an established license grant; this fork does not resolve that upstream ambiguity or relicense the code. No vendoring or behavior change. |
+| [`flutter_to_debian`](https://github.com/Kyosee/flutter_to_debian) | Forked at the existing revision. Linux packaging now runs the locked project dependency, propagates failures and restores templates on failure. |
+| [`flutter_onnxruntime`](https://github.com/Kyosee/flutter_onnxruntime) | Existing owned fork and pinned revision. No new change in this migration. |
