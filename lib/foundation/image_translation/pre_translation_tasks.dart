@@ -1352,8 +1352,12 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   void _saveActive() {
     appdata.implicitData[_activeKey] = currentTasks
-        .where((t) => t.isRunning || _backgroundPausedIds.contains(t.id))
-        .map((t) => t.toJson())
+        .where((t) => t.isRunning || t.status == PreTranslationTaskStatus.paused)
+        .map((t) => {
+              ...t.toJson(),
+              if (!t.isRunning && !_backgroundPausedIds.contains(t.id))
+                'keepPaused': true,
+            })
         .toList();
     appdata.writeImplicitData();
   }
@@ -1375,9 +1379,10 @@ class PreTranslationTaskManager with ChangeNotifier {
             var task = PreTranslationTask.fromJson(
               Map<String, dynamic>.from(e),
             );
-            // Anything persisted as active is coerced back to running so it can
-            // be resumed after a restart.
-            task.status = PreTranslationTaskStatus.running;
+            // Older paused snapshots were system interruptions and must resume.
+            task.status = e['keepPaused'] == true
+                ? PreTranslationTaskStatus.paused
+                : PreTranslationTaskStatus.running;
             task.finishedAt = null;
             return task;
           }),

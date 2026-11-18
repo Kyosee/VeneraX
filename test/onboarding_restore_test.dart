@@ -125,7 +125,11 @@ void main() {
       },
       'searchHistory': ['restored search'],
     });
-    entry('implicitData.json', foreignAcceptance);
+    entry('implicitData.json', {
+      ...foreignAcceptance,
+      'pre_translation_active_tasks': ['foreign task'],
+      'pre_translation_task_history': ['foreign history'],
+    });
     entry('onboarding.json', foreignAcceptance);
     final file = File('${directory.path}/fixture.venera');
     await file.writeAsBytes(ZipEncoder().encode(archive));
@@ -168,6 +172,14 @@ void main() {
     expect(appdata.settings['webdav'], isEmpty);
     expect(appdata.settings['followUpdatesFolders'], isEmpty);
     expect(appdata.settings['imageTranslationPerformancePreset'], 'balanced');
+  });
+
+  test('legacy sync keeps this device’s translation queue and history', () async {
+    final file = await backup();
+    appdata.implicitData['pre_translation_active_tasks'] = ['local task'];
+    await DataSync().applyBackup(() => importAppData(file));
+    expect(appdata.implicitData['pre_translation_active_tasks'], ['local task']);
+    expect(appdata.implicitData.containsKey('pre_translation_task_history'), isFalse);
   });
 
   test('a picked backup keeps the settings this device already set', () async {
