@@ -304,7 +304,7 @@ class _TasksPageState extends State<TasksPage>
         TaskListEntry(
           id: 'comic_download',
           title: _comicDownloadTitles(downloads),
-          category: 'Download Comics',
+          category: 'Downloads',
           status: _comicDownloadStatus(downloads),
           time: DateTime(0),
           builder: (_) => buildComicDownloadCard(),
