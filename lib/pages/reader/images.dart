@@ -228,7 +228,7 @@ class _ReaderImagesState extends State<_ReaderImages> {
   }
 }
 
-ImageProvider _createImageProviderFromKey(
+ReaderImageProvider _createImageProviderFromKey(
   String imageKey,
   BuildContext context,
   int page, {
@@ -285,6 +285,7 @@ ImageProvider _createImageProviderFromKey(
     legacyTranslationKey: legacyTranslationKey,
     translationConfig: translationConfig,
     translated: translated,
+    translationRevision: ImageTranslationService.instance.revisionOf(translationKey),
     comicTitle: reader.widget.name,
     comicCover: reader.widget.history.cover,
     chapterTitle:

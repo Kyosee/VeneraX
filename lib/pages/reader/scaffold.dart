@@ -480,6 +480,70 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return widgets;
   }
 
+  Future<void> _retranslateSelectedPage() async {
+    final reader = context.reader;
+    final eid = reader.eid;
+    final images = reader.images;
+    if (images == null) return;
+    final index = await selectImage();
+    if (!mounted ||
+        reader.eid != eid ||
+        !identical(reader.images, images) ||
+        index == null ||
+        index < 0 ||
+        index >= images.length) {
+      return;
+    }
+    final page = index + 1;
+    final provider = _createImageProviderFromKey(images[index], context, page);
+    final key = provider.translationKey;
+    final config = provider.translationConfig;
+    if (key == null || config == null) return;
+    final service = ImageTranslationService.instance;
+    if (service.statusOf(key, config.mode) == PageTranslationStatus.translating) {
+      context.showMessage(message: 'Translating'.tl);
+      return;
+    }
+    await showConfirmDialog(
+      context: context,
+      title: 'Re-translate this page'.tl,
+      content: 'Translate page @page again? A paid service may charge for this request.'
+          .tlParams({'page': page}),
+      onConfirm: () async {
+        try {
+          final bytes = await provider.loadOriginal();
+          if (!mounted) return;
+          final chapter = ImageTranslationService.chapterIdentity(
+            sourceKey: provider.sourceKey,
+            cid: provider.cid,
+            eid: eid,
+            config: config,
+            comicTitle: provider.comicTitle,
+            chapterTitle: provider.chapterTitle,
+            comicCover: provider.comicCover,
+          );
+          final replaced = await service.retranslatePage(
+            key,
+            '${provider.cid}@${provider.sourceKey}',
+            bytes,
+            config,
+            chapter: chapter,
+            legacyCacheKey: provider.legacyTranslationKey,
+          );
+          if (!mounted) return;
+          if (!replaced) {
+            context.showMessage(
+              message: 'No translatable text found on this page'.tl,
+            );
+          }
+        } catch (e, s) {
+          Log.error('Image Translation', 'Single-page translation failed: $e', s);
+          if (mounted) context.showMessage(message: 'Translation failed'.tl);
+        }
+      },
+    );
+  }
+
   void _retryTranslation(List<String> cacheKeys, InpaintMode mode) {
     final service = ImageTranslationService.instance;
     var error = service.errorOf(cacheKeys.first, mode);
@@ -725,6 +789,13 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   /// short: chapter download, desktop fullscreen and share.
   List<MenuEntry> buildMoreMenuEntries() {
     return [
+      if (!context.reader.showOriginalPages &&
+          _currentTranslationTargets() != null)
+        MenuEntry(
+          icon: Icons.g_translate_rounded,
+          text: 'Re-translate this page'.tl,
+          onClick: _retranslateSelectedPage,
+        ),
       if (canDownloadFromReader())
         MenuEntry(
           icon: Icons.download_outlined,
