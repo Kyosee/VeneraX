@@ -45,6 +45,32 @@ class DeltaGenerationTest(unittest.TestCase):
         (self.new / 'VeneraX-1.0.1.apk').write_bytes(b'b')
         self.assertEqual(self.generate()['deltas'], [])
 
+    def test_only_two_previous_versions_receive_direct_patches(self):
+        (self.new / 'VeneraX-1.0.3.apk').write_bytes(b'x' * 10000 + b'new')
+        previous = []
+        for version in ['1.0.2', '1.0.1', '1.0.0']:
+            directory = self.root / version
+            directory.mkdir()
+            (directory / f'VeneraX-{version}.apk').write_bytes(b'x' * 10000 + version.encode())
+            previous.append((version, directory))
+        manifest = deltas.generate(self.new, previous, self.out, '1.0.3')
+        self.assertEqual([entry['fromVersion'] for entry in manifest['deltas']], ['1.0.2', '1.0.1'])
+        self.assertTrue(all(entry['toVersion'] == '1.0.3' for entry in manifest['deltas']))
+
+    def test_release_policy_can_force_full_updates_per_platform(self):
+        (self.old / 'VeneraX-1.0.0.apk').write_bytes(b'a' * 10000)
+        (self.new / 'VeneraX-1.0.1.apk').write_bytes(b'a' * 9999 + b'b')
+        def generate(policy):
+            return deltas.generate(self.new, [('1.0.0', self.old)], self.out, '1.0.1', policy=policy)
+        self.assertEqual(generate({'android': 'full'})['deltas'], [])
+        self.assertEqual(len(generate({'windows': 'full'})['deltas']), 1)
+        self.assertEqual(len(list(self.out.glob('*.patch'))), 1)
+        self.assertEqual(generate({'android': 'full', 'windows': 'full'})['deltas'], [])
+        self.assertEqual(list(self.out.glob('*.patch')), [])
+        for policy in [[], {'android': 'delta'}, {'andriod': 'full'}, {'windows': 1}]:
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                generate(policy)
+
     def test_windows_file_manifest_reconstructs_exact_tree(self):
         old = {'venera.exe': b'old app', 'data/app.so': b'old AOT' * 1000,
                'flutter_windows.dll': b'engine' * 10000, 'removed.dll': b'obsolete'}
@@ -70,6 +96,14 @@ class DeltaGenerationTest(unittest.TestCase):
                 self.assertEqual(deltas.digest(data), item['sha256'])
                 result[name] = data
             self.assertEqual(result, new)
+        first = (self.out / entry['patchAsset']).read_bytes()
+        self.assertEqual(self.generate()['deltas'], [entry])
+        self.assertEqual((self.out / entry['patchAsset']).read_bytes(), first,
+                         'a rerun must reproduce identical patch bytes')
+        manifest = deltas.generate(self.new, [('1.0.0', self.old)], self.out,
+                                   '1.0.1', policy={'windows': 'full'})
+        self.assertEqual(manifest['deltas'], [])
+        self.assertEqual(list(self.out.glob('*.patch')), [])
 
     def test_unsafe_zip_paths_and_links_are_rejected(self):
         for name in ['../bad', 'C:/bad', 'a\\b', 'NUL', 'a.', '/root']:

@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 import re
 import tempfile
 import zipfile
+import zlib
 
 import bsdiff4
 
@@ -55,11 +56,20 @@ def verified_diff(old, new):
     return patch
 
 
+def write_entry(archive, name, data):
+    # Fixed metadata keeps a rerun byte-identical.
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, data, compresslevel=9)
+
+
 def windows_patch(old_path, new_path, output, old_version, new_version):
     old = zip_files(old_path)
     new = zip_files(new_path)
     records = []
-    with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    with zipfile.ZipFile(output, 'w') as archive:
         for index, (name, data) in enumerate(sorted(new.items())):
             record = dict(path=name, size=len(data), sha256=digest(data))
             previous = old.get(name)
@@ -71,21 +81,31 @@ def windows_patch(old_path, new_path, output, old_version, new_version):
                 if previous is not None:
                     patch = verified_diff(previous, data)
                     # Compare compressed payloads, since unchanged libraries often compress well.
-                    import zlib
                     if len(patch) < len(zlib.compress(data, 9)):
                         payload, mode = patch, 'bsdiff'
                         record['oldSha256'] = digest(previous)
                 record.update(mode=mode, payload=f'payload/{index}')
-                archive.writestr(record['payload'], payload)
+                write_entry(archive, record['payload'], payload)
             records.append(record)
-        archive.writestr('delta.json', json.dumps(dict(schema=1, fromVersion=old_version,
+        write_entry(archive, 'delta.json', json.dumps(dict(schema=1, fromVersion=old_version,
             toVersion=new_version, files=records), separators=(',', ':')))
 
 
-def generate(current, previous, output, version, min_saving=0.2):
+def validate_policy(policy):
+    if (not isinstance(policy, dict) or set(policy) - {'android', 'windows'}
+            or any(mode not in ('auto', 'full') for mode in policy.values())):
+        raise ValueError('Update policy must map android/windows to auto/full')
+    return policy
+
+
+def generate(current, previous, output, version, min_saving=0.2, policy=None):
+    policy = validate_policy({} if policy is None else policy)
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', version):
         raise ValueError('Invalid release version')
     output.mkdir(parents=True, exist_ok=True)
+    # A rerun with a full-only policy must not upload earlier delta outputs.
+    for patch in output.glob(f'VeneraX-*-to-{version}-*.patch'):
+        patch.unlink()
     records = []
     for old_version, old_dir in previous[:2]:
         if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', old_version):
@@ -94,6 +114,9 @@ def generate(current, previous, output, version, min_saving=0.2):
             continue
         for architecture in ['universal', 'arm64-v8a', 'armeabi-v7a', 'x86_64', 'windows-x64']:
             windows = architecture == 'windows-x64'
+            platform = 'windows' if windows else 'android'
+            if policy.get(platform, 'auto') == 'full':
+                continue
             suffix = '-windows.zip' if windows else ('.apk' if architecture == 'universal' else f'-{architecture}.apk')
             old = old_dir / f'VeneraX-{old_version}{suffix}'
             new = current / f'VeneraX-{version}{suffix}'
@@ -101,7 +124,6 @@ def generate(current, previous, output, version, min_saving=0.2):
                 continue
             if max(old.stat().st_size, new.stat().st_size) > MAX_FILE:
                 continue
-            platform = 'windows' if windows else 'android'
             arch = 'x64' if windows else architecture
             name = f'VeneraX-{old_version}-to-{version}-{platform}-{arch}.patch'
             with tempfile.TemporaryDirectory(prefix='venera-delta-') as temporary:
@@ -111,7 +133,7 @@ def generate(current, previous, output, version, min_saving=0.2):
                 else:
                     patch.write_bytes(verified_diff(old.read_bytes(), new.read_bytes()))
                 data = patch.read_bytes()
-                if len(data) >= new.stat().st_size * (1 - min_saving):
+                if len(data) > new.stat().st_size * (1 - min_saving):
                     print(f'Skipped {name}: savings below {min_saving:.0%}', flush=True)
                     continue
                 (output / name).write_bytes(data)
@@ -134,6 +156,8 @@ if __name__ == '__main__':
     parser.add_argument('--previous', action='append', default=[], help='VERSION=DIRECTORY (newest first)')
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--policy', type=Path, help='Optional per-platform auto/full release policy')
     args = parser.parse_args()
     generate(args.current, [(v, Path(d)) for v, d in (arg.split('=', 1) for arg in args.previous)],
-             args.output, args.version)
+             args.output, args.version,
+             policy=validate_policy(json.loads(args.policy.read_text(encoding='utf-8'))) if args.policy else None)

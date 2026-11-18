@@ -542,6 +542,23 @@ jobs:
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      # Optional: any failure or timeout still publishes the full packages.
+      - name: Generate incremental update packages
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+          BODY_FILE: ${{ steps.release_meta.outputs.body_file }}
+        run: |
+          python -m pip install --disable-pip-version-check bsdiff4==1.2.6
+          python tool/build_update_deltas.py
+
       - name: Create draft release and upload assets
         uses: softprops/action-gh-release@v3
         with:

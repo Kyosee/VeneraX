@@ -23,6 +23,17 @@ jobs:
           flutter-version: '3.44.3'
           architecture: x64
       - run: flutter pub get --enforce-lockfile
+      # System pip on ubuntu-latest refuses installs (PEP 668).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check incremental updates
+        run: |
+          python -m pip install --disable-pip-version-check bsdiff4==1.2.6
+          python -m unittest discover -s tool -p test_create_update_deltas.py
+          python -m unittest discover -s tool -p test_build_update_deltas.py
+          node --test .github/scripts/release-assets.test.mjs
+          flutter test --no-pub test/update_bsdiff_test.dart test/update_delta_test.dart test/app_update_download_test.dart test/app_update_dialog_test.dart test/windows_update_install_test.dart test/windows_updater_test.dart
       - uses: invertase/github-action-dart-analyzer@v3
       - name: Check maintained packages and reader integration
         run: >-
