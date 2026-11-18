@@ -4,13 +4,66 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/export_tasks.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/import_tasks.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
+import 'package:venera/network/download.dart';
+import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/tasks_page.dart';
+import 'package:venera/utils/io.dart' show bytesToReadableString;
 import 'package:venera/utils/translations.dart';
+
+class _FakeDownload extends DownloadTask {
+  _FakeDownload(this.title);
+
+  @override
+  final String title;
+
+  @override
+  double progress = 0.25;
+
+  @override
+  bool isError = false;
+
+  @override
+  bool isPaused = true;
+
+  @override
+  String message = 'Paused';
+
+  @override
+  int speed = 0;
+
+  @override
+  String? get cover => null;
+
+  @override
+  String get id => title;
+
+  @override
+  ComicType get comicType => ComicType.local;
+
+  void tick() => notifyListeners();
+
+  @override
+  void cancel() => LocalManager().downloadingTasks.remove(this);
+
+  @override
+  void pause() => isPaused = true;
+
+  @override
+  void resume() => isPaused = false;
+
+  @override
+  Map<String, dynamic> toJson() => {};
+
+  @override
+  LocalComic toLocalComic() => throw UnimplementedError();
+}
 
 void main() {
   late Directory temp;
@@ -30,6 +83,48 @@ void main() {
     FollowUpdateTaskManager.instance.historyTasks.clear();
     SourceMigrationTaskManager.instance.currentTasks.clear();
     SourceMigrationTaskManager.instance.historyTasks.clear();
+    LocalManager().downloadingTasks.clear();
+  });
+
+  testWidgets('the download queue shows as one task that opens the download '
+      'manager', (tester) async {
+    final first = _FakeDownload('First comic');
+    final second = _FakeDownload('Second comic');
+    LocalManager().downloadingTasks.addAll([first, second]);
+    await tester.pumpWidget(const MaterialApp(home: TasksPage()));
+    await tester.pump();
+    expect(find.text('Current (1)'), findsOneWidget);
+    expect(find.text('Download: First comic'), findsOneWidget);
+    expect(find.text('Paused · 2 tasks'), findsOneWidget);
+
+    // Progress arrives on the task's own notifier, not through the queue.
+    second
+      ..isPaused = false
+      ..message = '3/12'
+      ..speed = 2048
+      ..tick();
+    await tester.pump();
+    expect(find.text('Download: Second comic'), findsOneWidget);
+    expect(
+      find.text('3/12 · 2 tasks · ${bytesToReadableString(2048)}/s'),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.download), findsOneWidget);
+
+    await tester.tap(find.text('Download: Second comic'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(DownloadingPage), findsOneWidget);
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(DownloadingPage), findsNothing);
+
+    LocalManager().cancelAll();
+    await tester.pump();
+    expect(find.text('Current (0)'), findsOneWidget);
+    expect(find.text('No current tasks'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

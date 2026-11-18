@@ -132,6 +132,7 @@ mixin _TaskCardCommon on State<TasksPage> {
         'data_sync_upload' => Icons.cloud_upload,
         'data_sync_download' => Icons.cloud_download,
         'pre_translate' => Icons.translate,
+        'comic_download' => Icons.download,
         _ => Icons.task,
       };
     }
@@ -156,6 +157,7 @@ mixin _TaskCardCommon on State<TasksPage> {
       'data_sync_upload' => "WebDAV Upload".tl,
       'data_sync_download' => "WebDAV Download".tl,
       'pre_translate' => "Pre-translate: @title".tlParams(params),
+      'comic_download' => "Download: @title".tlParams(params),
       _ => taskType,
     };
   }

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'windows_updater_ui.dart';
-import 'windows_update_install.dart';
 
 Future<void> main(List<String> args) async {
   final config = _UpdaterConfig.parse(args);
@@ -50,12 +49,9 @@ Future<bool> _runUpdate(
     return false;
   }
 
-  // The switch creates a directory beside the app; C:\ allows that without
-  // allowing files, so probe exactly what is needed to avoid needless UAC.
-  if (!await _canWriteTo(appDir) ||
-      !await _canCreateDirectoryIn(appDir.absolute.parent)) {
+  if (!await _canWriteTo(appDir)) {
     if (config.elevated) {
-      throw StateError('No permission to replace app directory.');
+      throw StateError('No permission to write app directory.');
     }
     await _relaunchElevated(config, logger);
     return false;
@@ -68,30 +64,12 @@ Future<bool> _runUpdate(
   final workDir = Directory(
     _join(Directory.systemTemp.path, 'venera_update_$stamp'),
   );
-  try {
-    await _installPackage(config, logger, progress, appDir, workDir);
-  } finally {
-    // The package copy and extracted files would otherwise stay in %TEMP%.
-    try {
-      if (workDir.existsSync()) {
-        await retryTransient(() => workDir.delete(recursive: true));
-      }
-    } catch (e) {
-      logger.write('Temporary files retained at ${workDir.path}: $e');
-    }
-  }
-  return true;
-}
-
-Future<void> _installPackage(
-  _UpdaterConfig config,
-  _Logger logger,
-  WindowsUpdaterWindow progress,
-  Directory appDir,
-  Directory workDir,
-) async {
   final stagingDir = Directory(_join(workDir.path, 'staging'));
+  final backupDir = Directory(
+    _join(Directory.systemTemp.path, 'venera_backup_$stamp'),
+  );
   await stagingDir.create(recursive: true);
+  await backupDir.create(recursive: true);
 
   final zipFile = File(_join(workDir.path, 'update.zip'));
   if (config.packageFile != null) {
@@ -117,15 +95,37 @@ Future<void> _installPackage(
     throw StateError('Update package does not contain venera.exe.');
   }
 
-  // The old version is kept by moving it, so this step copies the new one.
-  progress.update(UpdateStage.installing);
-  logger.write('Preparing replacement beside the installed app.');
-  await replaceWindowsInstallation(
-    installed: appDir,
-    payload: payloadDir,
-    beforeActivate: () => progress.update(UpdateStage.installing),
-    log: logger.write,
+  progress.update(UpdateStage.backingUp);
+  logger.write('Backing up current app.');
+  await _copyDirectoryContents(
+    appDir,
+    backupDir,
+    progress,
+    UpdateStage.backingUp,
   );
+
+  try {
+    progress.update(UpdateStage.installing);
+    logger.write('Replacing app files.');
+    await _clearDirectory(appDir, preserveUninstaller: true);
+    await _copyDirectoryContents(
+      payloadDir,
+      appDir,
+      progress,
+      UpdateStage.installing,
+    );
+  } catch (e) {
+    progress.update(UpdateStage.rollingBack);
+    logger.write('Replace failed, rolling back: $e');
+    await _clearDirectory(appDir, preserveUninstaller: false);
+    await _copyDirectoryContents(
+      backupDir,
+      appDir,
+      progress,
+      UpdateStage.rollingBack,
+    );
+    rethrow;
+  }
 
   if (config.restart) {
     final appExe = config.appExe ?? _join(appDir.path, 'venera.exe');
@@ -140,6 +140,7 @@ Future<void> _installPackage(
       );
     }
   }
+  return true;
 }
 
 Future<void> _relaunchFromTemp(_UpdaterConfig config, _Logger logger) async {
@@ -156,7 +157,6 @@ Future<void> _relaunchFromTemp(_UpdaterConfig config, _Logger logger) async {
   await Process.start(
     copiedUpdater.path,
     config.toArgs(fromTemp: true),
-    workingDirectory: tempDir.path,
     mode: ProcessStartMode.detached,
   );
 }
@@ -296,6 +296,54 @@ Future<Directory?> _findPayloadDir(Directory stagingDir) async {
   return null;
 }
 
+Future<void> _copyDirectoryContents(
+  Directory source,
+  Directory target,
+  WindowsUpdaterWindow progress,
+  UpdateStage stage,
+) async {
+  await target.create(recursive: true);
+  final entries = await source.list(recursive: true).toList();
+  final total = entries.whereType<File>().length;
+  final prefixLength =
+      source.path.length +
+      (source.path.endsWith('/') || source.path.endsWith('\\') ? 0 : 1);
+  var completed = 0;
+  progress.update(stage, completed: completed, total: total, unit: 'files');
+  for (final entity in entries) {
+    final relativePath = entity.path.substring(prefixLength);
+    final newPath = _join(target.path, relativePath);
+    if (entity is Directory) {
+      await Directory(newPath).create(recursive: true);
+    } else if (entity is File) {
+      await File(newPath).parent.create(recursive: true);
+      await entity.copy(newPath);
+      progress.update(
+        stage,
+        completed: ++completed,
+        total: total,
+        unit: 'files',
+      );
+    }
+  }
+}
+
+Future<void> _clearDirectory(
+  Directory directory, {
+  required bool preserveUninstaller,
+}) async {
+  if (!directory.existsSync()) {
+    return;
+  }
+  await for (final entity in directory.list(recursive: false)) {
+    final name = _basename(entity.path).toLowerCase();
+    if (preserveUninstaller && name.startsWith('unins')) {
+      continue;
+    }
+    await entity.delete(recursive: true);
+  }
+}
+
 Future<bool> _canWriteTo(Directory directory) async {
   try {
     final probe = File(
@@ -305,16 +353,6 @@ Future<bool> _canWriteTo(Directory directory) async {
       ),
     );
     await probe.writeAsString('ok');
-    await probe.delete();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-Future<bool> _canCreateDirectoryIn(Directory directory) async {
-  try {
-    final probe = await directory.createTemp('.venera_update_probe_');
     await probe.delete();
     return true;
   } catch (_) {

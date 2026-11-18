@@ -13,15 +13,19 @@ import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/source_migration_tasks.dart';
 import 'package:venera/foundation/webdav_migration_tasks.dart';
 import 'package:venera/foundation/widget_utils.dart';
+import 'package:venera/network/download.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
 part 'tasks_page/task_card_common.dart';
+part 'tasks_page/comic_download_task_card.dart';
 part 'tasks_page/model_download_task_card.dart';
 part 'tasks_page/follow_update_task_card.dart';
 part 'tasks_page/pre_translation_task_card.dart';
@@ -49,6 +53,7 @@ class _TasksPageState extends State<TasksPage>
     with
         SingleTickerProviderStateMixin,
         _TaskCardCommon,
+        _ComicDownloadTaskCard,
         _ModelDownloadTaskCard,
         _FollowUpdateTaskCard,
         _PreTranslationTaskCard,
@@ -81,6 +86,11 @@ class _TasksPageState extends State<TasksPage>
   final modelStore = TranslationModelStore.instance;
   @override
   final preTranslationManager = PreTranslationTaskManager.instance;
+  @override
+  late final downloadQueue = _DownloadQueueListener();
+
+  /// Status and titles of the download entry as last built.
+  String? _downloadSignature;
 
   late TabController _tabController;
 
@@ -102,6 +112,8 @@ class _TasksPageState extends State<TasksPage>
     dataSyncManager.addListener(update);
     modelStore.addListener(update);
     preTranslationManager.addListener(update);
+    _downloadSignature = _downloadEntrySignature();
+    downloadQueue.addListener(_onDownloadsChanged);
   }
 
   @override
@@ -118,6 +130,7 @@ class _TasksPageState extends State<TasksPage>
     dataSyncManager.removeListener(update);
     modelStore.removeListener(update);
     preTranslationManager.removeListener(update);
+    downloadQueue.dispose();
     super.dispose();
   }
 
@@ -125,6 +138,21 @@ class _TasksPageState extends State<TasksPage>
     if (mounted) {
       setState(() {});
     }
+  }
+
+  String? _downloadEntrySignature() {
+    final tasks = LocalManager().downloadingTasks;
+    if (tasks.isEmpty) return null;
+    return '${_comicDownloadStatus(tasks)}\n${_comicDownloadTitles(tasks)}';
+  }
+
+  /// Per-image progress only redraws the card; the page rebuilds when what
+  /// the list filters and searches on changes.
+  void _onDownloadsChanged() {
+    final signature = _downloadEntrySignature();
+    if (signature == _downloadSignature) return;
+    _downloadSignature = signature;
+    update();
   }
 
   void _clearAllHistory() {
@@ -268,7 +296,19 @@ class _TasksPageState extends State<TasksPage>
   }
 
   List<TaskListEntry> _buildTaskEntries({required bool history}) {
+    final downloads = LocalManager().downloadingTasks;
     final entries = <TaskListEntry>[
+      // Finished downloads leave the queue for the local library, so the
+      // queue has no history entries.
+      if (!history && downloads.isNotEmpty)
+        TaskListEntry(
+          id: 'comic_download',
+          title: _comicDownloadTitles(downloads),
+          category: 'Download Comics',
+          status: _comicDownloadStatus(downloads),
+          time: DateTime(0),
+          builder: (_) => buildComicDownloadCard(),
+        ),
       for (final task
           in history
               ? dataSyncManager.historyTasks
