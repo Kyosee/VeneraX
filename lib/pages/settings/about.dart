@@ -326,9 +326,11 @@ Future<void> checkUpdateUi([
       if (delay) await Future.delayed(const Duration(seconds: 2));
       final release = value.release!;
       final changelog = await _fetchChangelog(value.config, release);
+      final androidPackage = App.isAndroid ? await _androidUpdatePackage() : null;
       final asset = App.isWindows
           ? _selectWindowsAsset(release.assets)
-          : (App.isAndroid ? _selectAndroidAsset(release.assets) : null);
+          : (App.isAndroid ? _selectAndroidAsset(release.assets, androidPackage?.abis) : null);
+      final delta = asset == null ? null : await _findUpdateDelta(release, asset, androidPackage);
       await showDialog<void>(
         context: App.rootContext,
         barrierColor: Theme.of(App.rootContext).brightness == Brightness.dark
@@ -340,6 +342,39 @@ Future<void> checkUpdateUi([
             latestVersion: release.version,
             changelog: changelog,
             restartsAfterInstall: App.isWindows,
+            downloadSize: asset?.size ?? 0,
+            deltaSize: delta?.delta.patchSize ?? 0,
+            prepareDeltaUpdate: delta == null
+                ? null
+                : (cancelToken, onProgress, onPreparing) async {
+                    final downloaded = await _downloadUpdateAsset(
+                      value.config, delta.asset,
+                      cancelToken: cancelToken, onProgress: onProgress,
+                    );
+                    try {
+                      onPreparing();
+                      final result = await prepareDeltaUpdate(
+                        delta: delta.delta,
+                        sourcePath: delta.sourcePath,
+                        patch: File(downloaded.path),
+                        workDirectory: downloaded.directory,
+                        fullSize: asset!.size,
+                        cancelToken: cancelToken,
+                      );
+                      return PreparedAppUpdate(
+                        install: () => _installDownloadedUpdate(
+                          release, asset, result.path,
+                          allowWindowsScript: false,
+                        ),
+                        discard: () => _discardUpdateAttempt(downloaded.directory),
+                      );
+                    } catch (e, s) {
+                      await _discardUpdateAttempt(downloaded.directory);
+                      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+                      Log.error('Incremental update', e.toString(), s);
+                      throw const DeltaUpdateException();
+                    }
+                  },
             onReleasePage: () async {
               var opened = false;
               try {
@@ -390,11 +425,12 @@ Future<void> checkUpdateUi([
 Future<void> _installDownloadedUpdate(
   _GitHubRelease release,
   _GitHubAsset asset,
-  String filePath,
-) async {
+  String filePath, {
+  bool allowWindowsScript = true,
+}) async {
   try {
     if (App.isWindows) {
-      await _updateWindows(release, asset, filePath);
+      await _updateWindows(release, asset, filePath, allowScript: allowWindowsScript);
     } else if (App.isAndroid) {
       await _updateAndroid(filePath);
     } else {
@@ -407,6 +443,99 @@ Future<void> _installDownloadedUpdate(
 }
 
 // --- Android ---
+
+Future<({String path, List<String> abis, bool split})?> _androidUpdatePackage() async {
+  try {
+    final data = await const MethodChannel('venera/method_channel')
+        .invokeMapMethod<String, dynamic>('getUpdatePackage');
+    if (data == null || data['path'] is! String || data['abis'] is! List) {
+      return null;
+    }
+    return (
+      path: data['path'] as String,
+      abis: (data['abis'] as List).whereType<String>().toList(),
+      split: data['split'] != false,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<({UpdateDelta delta, _GitHubAsset asset, String sourcePath})?> _findUpdateDelta(
+  _GitHubRelease release, _GitHubAsset full,
+  ({String path, List<String> abis, bool split})? androidPackage,
+) async {
+  try {
+    if (!App.isWindows && (androidPackage == null || androidPackage.split)) {
+      return null;
+    }
+    if (App.isWindows && !File(FilePath.join(
+      File(Platform.resolvedExecutable).parent.path, _windowsUpdaterExeName,
+    )).existsSync()) {
+      return null;
+    }
+    final manifests = release.assets.where((a) => a.name == 'update-manifest.json').toList();
+    if (manifests.length != 1 || manifests.single.size <= 0 ||
+        manifests.single.size > 256 * 1024) {
+      return null;
+    }
+    final asset = manifests.single;
+    // Only read assets from this release; the JSON never supplies arbitrary URLs.
+    final token = CancelToken();
+    final timeout = Timer(const Duration(seconds: 10), () => token.cancel());
+    late List<UpdateDelta> deltas;
+    try {
+      final metadata = await _downloadUpdateAsset(
+        _readGithubUpdateConfig(), asset,
+        cancelToken: token, onProgress: (_) {},
+      );
+      try {
+        final bytes = await File(metadata.path).readAsBytes();
+        if (bytes.length != asset.size || asset.digest == null ||
+            'sha256:${sha256.convert(bytes)}' != asset.digest) {
+          return null;
+        }
+        deltas = UpdateDelta.parse(jsonDecode(utf8.decode(bytes)), release.version);
+      } finally {
+        await _discardUpdateAttempt(metadata.directory);
+      }
+    } finally {
+      timeout.cancel();
+    }
+    final architecture = App.isWindows
+      ? (Abi.current() == Abi.windowsArm64 ? 'arm64' : 'x64')
+      : ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+          .where((abi) => full.name.endsWith('-$abi.apk')).firstOrNull ?? 'universal';
+    final candidates = deltas.where((d) => d.matchesTarget(
+      installedVersion: App.version,
+      targetPlatform: App.isWindows ? 'windows' : 'android',
+      targetArchitecture: architecture,
+      fullAssetName: full.name,
+      fullSize: full.size,
+      fullDigest: full.digest,
+    )).toList()
+      ..sort((a, b) => a.patchSize.compareTo(b.patchSize));
+    for (final delta in candidates) {
+      final patches = release.assets.where((a) => a.name == delta.patchAsset &&
+        a.size == delta.patchSize && a.digest == 'sha256:${delta.patchSha256}').toList();
+      if (patches.length != 1) continue;
+      if (App.isAndroid &&
+          await updateFileDigest(File(androidPackage!.path)) != delta.oldSha256) {
+        continue;
+      }
+      return (
+        delta: delta,
+        asset: patches.single,
+        sourcePath: App.isWindows
+            ? File(Platform.resolvedExecutable).parent.path
+            : androidPackage!.path,
+      );
+    }
+  } catch (e, s) {
+    Log.warning('Incremental update', 'Full package selected: $e\n$s');
+  }
+  return null;
+}
 
 Future<void> _updateAndroid(String filePath) async {
   var opened = await _installAndroidApk(filePath);
@@ -439,14 +568,15 @@ const _windowsUpdaterExeName = "venera_updater.exe";
 Future<void> _updateWindows(
   _GitHubRelease release,
   _GitHubAsset asset,
-  String filePath,
-) async {
+  String filePath, {
+  bool allowScript = true,
+}) async {
   if (asset.isExe) {
     await _runWindowsInstaller(filePath);
     return;
   }
   if (asset.isZip) {
-    await _runWindowsZipUpdater(filePath);
+    await _runWindowsZipUpdater(filePath, allowScript: allowScript);
     return;
   }
   await launchUrlString(release.htmlUrl);
@@ -462,6 +592,11 @@ Future<({String path, Directory directory})> _downloadUpdateAsset(
 }) async {
   var updatesDir = Directory(FilePath.join(App.cachePath, "updates"));
   if (!updatesDir.existsSync()) updatesDir.createSync(recursive: true);
+  try {
+    await removeStaleUpdateAttempts(updatesDir);
+  } catch (e, s) {
+    Log.error('Update cleanup', e.toString(), s);
+  }
   // A canceled attempt may still be closing its stream when a retry starts.
   final attemptDir = await updatesDir.createTemp('download-');
   final destination = File(FilePath.join(attemptDir.path, asset.name));
@@ -504,8 +639,7 @@ Future<bool> _verifyDigestIfNeeded(String filePath, String? digestText) async {
   if (!digest.toLowerCase().startsWith("sha256:")) return true;
   var expected = digest.substring("sha256:".length).trim().toLowerCase();
   if (expected.isEmpty) return true;
-  var bytes = await File(filePath).readAsBytes();
-  var actual = sha256.convert(bytes).toString().toLowerCase();
+  var actual = await updateFileDigest(File(filePath));
   return actual == expected;
 }
 // --- Windows Installer ---
@@ -521,13 +655,17 @@ Future<void> _runWindowsInstaller(String installerPath) async {
   );
 }
 
-Future<void> _runWindowsZipUpdater(String zipPath) async {
+Future<void> _runWindowsZipUpdater(String zipPath, {bool allowScript = true}) async {
   var exePath = Platform.resolvedExecutable;
   var installDir = File(exePath).parent.path;
 
   if (await _runWindowsUpdaterExecutable(zipPath: zipPath, installDir: installDir, exePath: exePath)) {
     return;
   }
+  if (!allowScript) {
+    throw StateError('Failed to start update installer'.tl);
+  }
+  App.rootContext.showMessage(message: "Failed to start updater, falling back to update script".tl);
 
   var scriptPath = FilePath.join(App.cachePath, "venera_windows_updater.ps1");
   await File(scriptPath).writeAsString(_buildWindowsZipUpdateScript());
@@ -572,7 +710,6 @@ Future<bool> _runWindowsUpdaterExecutable({
     exit(0);
   } catch (e, s) {
     Log.error("Windows Update", e.toString(), s);
-    App.rootContext.showMessage(message: "Failed to start updater, falling back to update script".tl);
     return false;
   }
 }
@@ -726,26 +863,9 @@ try { Start-Process -FilePath $ExePath } catch { Log "Failed to start app: $_" }
 }
 // --- Asset selection ---
 
-_GitHubAsset? _selectAndroidAsset(List<_GitHubAsset> assets) {
-  final apkAssets = assets.where((e) => e.isApk).toList();
-  if (apkAssets.isEmpty) return null;
-  _GitHubAsset? bestAsset;
-  var bestScore = 1 << 30;
-  for (var asset in apkAssets) {
-    var name = asset.lowerName;
-    var score = 100;
-    if (name.contains("universal")) score -= 80;
-    if (name.contains("arm64") || name.contains("armeabi") ||
-        name.contains("x86_64") || name.contains("x86")) {
-      score += 25;
-    }
-    if (name.contains("debug")) score += 100;
-    if (score < bestScore) {
-      bestScore = score;
-      bestAsset = asset;
-    }
-  }
-  return bestAsset;
+_GitHubAsset? _selectAndroidAsset(List<_GitHubAsset> assets, [List<String>? abis]) {
+  final name = selectAndroidUpdateAssetName(assets.map((a) => a.name).toList(), abis ?? []);
+  return assets.where((asset) => asset.name == name).firstOrNull;
 }
 
 _GitHubAsset? _selectWindowsAsset(List<_GitHubAsset> assets) {

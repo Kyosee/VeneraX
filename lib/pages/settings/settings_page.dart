@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:ffi' show Abi;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,8 @@ import 'package:venera/components/app_update_dialog.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/app_update.dart';
+import 'package:venera/foundation/update_delta.dart';
+import 'package:venera/foundation/update_manifest.dart';
 import 'package:venera/foundation/guide_document.dart';
 import 'package:venera/foundation/auto_page_turning.dart';
 import 'package:venera/foundation/battery_optimization.dart';

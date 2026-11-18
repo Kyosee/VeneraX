@@ -24,6 +24,9 @@ void main() {
     double textScale = 1,
     String? notes,
     PrepareAppUpdate? prepare,
+    PrepareDeltaAppUpdate? prepareDelta,
+    int downloadSize = 0,
+    int deltaSize = 0,
     Future<void> Function()? onRelease,
   }) async {
     appdata.settings['language'] = language;
@@ -50,6 +53,9 @@ void main() {
                   changelog: parseAppChangelog(notes ?? releaseNotes),
                   onReleasePage: onRelease ?? () async {},
                   prepareUpdate: prepare,
+                  prepareDeltaUpdate: prepareDelta,
+                  downloadSize: downloadSize,
+                  deltaSize: deltaSize,
                 ),
               ),
               child: const Text('open'),
@@ -248,4 +254,251 @@ void main() {
     expect(attempts, 2);
     expect(tester.takeException(), isNull);
   });
+
+  const fullBytes = 40 * 1024 * 1024;
+  const patchBytes = 6 * 1024 * 1024;
+  final fullPackage = find.byKey(const ValueKey('update-full-package'));
+
+  testWidgets('delta shows savings and prepares before explicit installation', (
+    tester,
+  ) async {
+    final completion = Completer<PreparedAppUpdate>();
+    late ValueChanged<double?> progress;
+    late VoidCallback preparing;
+    var installed = false;
+    await open(
+      tester,
+      downloadSize: fullBytes,
+      deltaSize: patchBytes,
+      prepare: (_, _) async => throw StateError('Unexpected full download'),
+      prepareDelta: (token, onProgress, onPreparing) {
+        progress = onProgress;
+        preparing = onPreparing;
+        return completion.future;
+      },
+    );
+    expect(find.text('下载大小：6.0 MiB'), findsOneWidget);
+    expect(find.text('增量更新可节省 34.0 MiB'), findsOneWidget);
+    await tester.tap(primary);
+    await tester.pump();
+    progress(.5);
+    await tester.pump();
+    expect(find.text('50%'), findsOneWidget);
+    expect(fullPackage, findsNothing);
+    preparing();
+    await tester.pump();
+    expect(find.text('正在准备更新'), findsOneWidget);
+    expect(find.text('取消更新'), findsOneWidget);
+    expect(find.text('50%'), findsNothing);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .value,
+      isNull,
+    );
+    completion.complete(
+      PreparedAppUpdate(
+        install: () async => installed = true,
+        discard: () async => fail('Installed delta must not be discarded'),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('更新包已准备好'), findsOneWidget);
+    expect(installed, isFalse);
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
+    expect(installed, isTrue);
+  });
+
+  testWidgets(
+    'failed delta waits for consent before downloading the full size',
+    (tester) async {
+      var fullDownloads = 0;
+      var discarded = false;
+      final full = Completer<PreparedAppUpdate>();
+      await open(
+        tester,
+        downloadSize: fullBytes,
+        deltaSize: patchBytes,
+        prepare: (_, _) {
+          fullDownloads++;
+          return full.future;
+        },
+        prepareDelta: (_, _, _) async => throw const DeltaUpdateException(),
+      );
+      await tester.tap(primary);
+      await tester.pumpAndSettle();
+      expect(fullDownloads, 0);
+      expect(find.text('增量更新暂不可用'), findsOneWidget);
+      expect(find.text('增量更新失败，当前版本未受影响。可下载完整安装包继续更新。'), findsOneWidget);
+      expect(find.text('下载大小：40.0 MiB'), findsOneWidget);
+      expect(find.text('下载完整安装包'), findsOneWidget);
+      expect(find.text('增量更新可节省 34.0 MiB'), findsNothing);
+      expect(find.text('安装更新'), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
+      expect(fullDownloads, 0);
+      await tester.tap(primary);
+      await tester.pump();
+      expect(fullDownloads, 1);
+      full.complete(
+        PreparedAppUpdate(
+          install: () async =>
+              fail('Full download still needs installation consent'),
+          discard: () async => discarded = true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('更新包已准备好'), findsOneWidget);
+      await tester.tap(secondary);
+      await tester.pumpAndSettle();
+      expect(discarded, isTrue);
+    },
+  );
+
+  testWidgets(
+    'choosing the full package changes size without starting a download',
+    (tester) async {
+      var fullDownloads = 0;
+      var deltaDownloads = 0;
+      await open(
+        tester,
+        downloadSize: fullBytes,
+        deltaSize: patchBytes,
+        prepare: (_, _) async {
+          fullDownloads++;
+          return PreparedAppUpdate(install: () async {}, discard: () async {});
+        },
+        prepareDelta: (_, _, _) async {
+          deltaDownloads++;
+          throw const DeltaUpdateException();
+        },
+      );
+      expect(find.text('改用完整安装包'), findsOneWidget);
+      await tester.tap(fullPackage);
+      await tester.pump();
+      expect(fullDownloads, 0);
+      expect(deltaDownloads, 0);
+      expect(find.text('下载大小：40.0 MiB'), findsOneWidget);
+      expect(find.text('增量更新可节省 34.0 MiB'), findsNothing);
+      expect(fullPackage, findsNothing);
+      await tester.tap(primary);
+      await tester.pump();
+      expect(fullDownloads, 1);
+      expect(deltaDownloads, 0);
+      await tester.tap(secondary);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('cancelled delta preparation cannot replace a later attempt', (
+    tester,
+  ) async {
+    final attempts = <Completer<PreparedAppUpdate>>[];
+    final tokens = <CancelToken>[];
+    final progresses = <ValueChanged<double?>>[];
+    final preparations = <VoidCallback>[];
+    var discarded = 0;
+    await open(
+      tester,
+      downloadSize: fullBytes,
+      deltaSize: patchBytes,
+      prepare: (_, _) async => throw StateError('Unexpected full download'),
+      prepareDelta: (token, progress, preparing) {
+        tokens.add(token);
+        progresses.add(progress);
+        preparations.add(preparing);
+        final completion = Completer<PreparedAppUpdate>();
+        attempts.add(completion);
+        return completion.future;
+      },
+    );
+    await tester.tap(primary);
+    await tester.pump();
+    preparations.first();
+    await tester.pump();
+    expect(find.text('正在准备更新'), findsOneWidget);
+    await tester.tap(secondary);
+    await tester.pump();
+    expect(tokens.first.isCancelled, isTrue);
+    await tester.tap(primary);
+    await tester.pump();
+    progresses.last(.25);
+    progresses.first(.99);
+    preparations.first();
+    attempts.first.complete(
+      PreparedAppUpdate(
+        install: () async => fail('Cancelled delta must not install'),
+        discard: () async => discarded++,
+      ),
+    );
+    await tester.pump();
+    expect(discarded, 1);
+    expect(find.text('25%'), findsOneWidget);
+    expect(find.text('正在准备更新'), findsNothing);
+    expect(find.text('更新包已准备好'), findsNothing);
+    preparations.last();
+    await tester.pump();
+    attempts.last.complete(
+      PreparedAppUpdate(
+        install: () async => fail('Dismissed delta must not install'),
+        discard: () async => discarded++,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('更新包已准备好'), findsOneWidget);
+    await tester.tap(secondary);
+    await tester.pumpAndSettle();
+    expect(discarded, 2);
+    expect(tokens.last.isCancelled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final language in ['zh-CN', 'zh-TW', 'en-US']) {
+    testWidgets('delta states fit narrow large-text layout in $language', (
+      tester,
+    ) async {
+      final completion = Completer<PreparedAppUpdate>();
+      late VoidCallback preparing;
+      var fullDownloads = 0;
+      await open(
+        tester,
+        language: language,
+        size: const Size(320, 640),
+        textScale: 1.6,
+        downloadSize: fullBytes,
+        deltaSize: patchBytes,
+        prepare: (_, _) async {
+          fullDownloads++;
+          return PreparedAppUpdate(install: () async {}, discard: () async {});
+        },
+        prepareDelta: (_, _, onPreparing) {
+          preparing = onPreparing;
+          return completion.future;
+        },
+      );
+      expect(tester.takeException(), isNull);
+      expect(fullPackage.hitTestable(), findsOneWidget);
+      expect(primary.hitTestable(), findsOneWidget);
+      await tester.tap(primary);
+      await tester.pump();
+      preparing();
+      await tester.pump();
+      expect(find.text('Preparing update'.tl), findsOneWidget);
+      expect(secondary.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      completion.completeError(const DeltaUpdateException());
+      await tester.pumpAndSettle();
+      expect(find.text('Download full package'.tl), findsOneWidget);
+      expect(
+        find.text('Download size: @size'.tlParams({'size': '40.0 MiB'})),
+        findsOneWidget,
+      );
+      expect(primary.hitTestable(), findsOneWidget);
+      expect(secondary.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(fullDownloads, 0);
+      await tester.tap(secondary);
+      await tester.pumpAndSettle();
+    });
+  }
 }

@@ -50,6 +50,36 @@ void main() {
     }
   }
 
+  test(
+    'stale update attempts are reclaimed without touching other files',
+    () async {
+      final updates = Directory('${directory.path}/updates')..createSync();
+      final old = Directory('${updates.path}/download-old')..createSync();
+      File(
+        '${old.path}/VeneraX-1.0.1-windows.zip',
+      ).writeAsStringSync('package');
+      final unrelated = Directory('${updates.path}/keep')..createSync();
+      final updater = File('${updates.path}/venera_updater.exe')
+        ..writeAsStringSync('updater');
+      final namedLikeAttempt = File('${updates.path}/download-file')
+        ..writeAsStringSync('not a directory');
+
+      await removeStaleUpdateAttempts(updates);
+      expect(old.existsSync(), isTrue, reason: 'a fresh attempt may be in use');
+
+      await removeStaleUpdateAttempts(
+        updates,
+        now: DateTime.now().add(const Duration(days: 2)),
+      );
+      expect(old.existsSync(), isFalse);
+      expect(unrelated.existsSync(), isTrue);
+      expect(updater.existsSync(), isTrue);
+      expect(namedLikeAttempt.existsSync(), isTrue);
+
+      await removeStaleUpdateAttempts(Directory('${directory.path}/missing'));
+    },
+  );
+
   test('writes complete package and reports progress', () async {
     final progress = <double?>[];
     await download(
@@ -72,6 +102,31 @@ void main() {
     expect(progress, isNotEmpty);
     expect(progress.every((value) => value == null), isTrue);
     expect(await file.length(), 2);
+  });
+
+  test('expected asset size overrides a misleading content length', () async {
+    await expectLater(
+      download(
+        ResponseBody.fromBytes(
+          [1, 2],
+          200,
+          headers: {
+            'content-length': ['2'],
+          },
+        ),
+        size: 4,
+      ),
+      throwsA(isA<HttpException>()),
+    );
+    expect(file.existsSync(), isFalse);
+  });
+
+  test('oversized responses are stopped and removed', () async {
+    await expectLater(
+      download(ResponseBody.fromBytes([1, 2, 3, 4], 200), size: 2),
+      throwsA(isA<HttpException>()),
+    );
+    expect(file.existsSync(), isFalse);
   });
 
   test(

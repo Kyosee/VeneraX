@@ -180,6 +180,15 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "getUpdatePackage" -> {
+                    // Store split installs cannot use a standalone APK delta.
+                    res.success(mapOf(
+                        "path" to applicationInfo.sourceDir,
+                        "split" to !applicationInfo.splitSourceDirs.isNullOrEmpty(),
+                        "abis" to android.os.Build.SUPPORTED_ABIS.toList(),
+                    ))
+                }
+
                 "installApk" -> {
                     val path = call.argument<String>("path")
                     if (path == null) {

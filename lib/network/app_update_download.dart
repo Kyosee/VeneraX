@@ -1,6 +1,31 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:path/path.dart' as p;
+
+/// A package handed to an installer outlives the app, so a later update
+/// reclaims attempts old enough that no installer can still be reading them.
+Future<void> removeStaleUpdateAttempts(
+  Directory updates, {
+  Duration maxAge = const Duration(days: 1),
+  DateTime? now,
+}) async {
+  if (!await updates.exists()) return;
+  final cutoff = (now ?? DateTime.now()).subtract(maxAge);
+  await for (final entry in updates.list(followLinks: false)) {
+    if (entry is! Directory ||
+        !p.basename(entry.path).startsWith('download-')) {
+      continue;
+    }
+    try {
+      if ((await entry.stat()).modified.isBefore(cutoff)) {
+        await entry.delete(recursive: true);
+      }
+    } on FileSystemException {
+      // A locked leftover is retried on the next update.
+    }
+  }
+}
 
 /// Streams an update to disk, closing and removing incomplete files on failure.
 Future<void> downloadAppUpdate({
@@ -31,12 +56,16 @@ Future<void> downloadAppUpdate({
     try {
       await for (final chunk in body.stream) {
         if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-        sink.add(chunk);
         received += chunk.length;
+        if (expectedSize > 0 && received > expectedSize) {
+          throw const HttpException('Update package exceeds expected size');
+        }
+        sink.add(chunk);
         onProgress(total > 0 ? received / total : null);
       }
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-      if (total > 0 && received != total) {
+      if ((total > 0 && received != total) ||
+          (expectedSize > 0 && received != expectedSize)) {
         throw const HttpException('Incomplete update package');
       }
     } finally {
