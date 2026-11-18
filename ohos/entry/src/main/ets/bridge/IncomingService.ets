@@ -11,7 +11,7 @@ const MAX_PENDING = 8;
 const MAX_TEXT_BYTES = 16 * 1024;
 const MAX_LINK_LENGTH = 4096;
 const NOTIFICATION_ROUTES: string[] = [
-  'downloading', 'tasks', 'follow_updates', 'favorites', 'history', 'search'
+  'downloading', 'local', 'tasks', 'follow_updates', 'favorites', 'history', 'search'
 ];
 
 class IncomingEvents implements StreamHandler {

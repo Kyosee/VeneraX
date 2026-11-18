@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/pages/auth_page.dart';
+import 'package:venera/pages/downloading_page.dart';
+import 'package:venera/pages/local_comics_page.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/tasks_page.dart';
 import 'package:venera/utils/handle_notification_route.dart';
@@ -55,6 +57,13 @@ void main() {
   tearDown(() {
     App.mainNavigatorKey = null;
     AuthPage.isActive = false;
+  });
+
+  test('download notifications open the queue, or the library once done', () {
+    // Route strings are shared with the Android and HarmonyOS notifications.
+    expect(pageForRoute('downloading'), isA<DownloadingPage>());
+    expect(pageForRoute('local'), isA<LocalComicsPage>());
+    expect(pageForRoute('unknown'), isNull);
   });
 
   testWidgets(

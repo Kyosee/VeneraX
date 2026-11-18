@@ -122,7 +122,8 @@ export class BackgroundService {
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
           const reconciled = await this.reconcile();
           if (this.disposed || !await notificationManager.isNotificationEnabled()) return false;
-          const agent = await this.notificationAgent(download, !download);
+          // A finished comic has left the queue, so open the local library.
+          const agent = download ? await this.routeAgent('local', 3) : await this.notificationAgent(false, true);
           if (this.disposed) return false;
           await notificationManager.publish({
             id: id,
@@ -209,14 +210,21 @@ export class BackgroundService {
   }
 
   private notificationAgent(download: boolean, followUpdates: boolean = false): Promise<WantAgent> {
+    return this.routeAgent(followUpdates ? 'follow_updates' : (download ? 'downloading' : 'tasks'),
+      followUpdates ? 2 : (download ? 0 : 1));
+  }
+
+  // One request code per route: agents differing only in parameters are the
+  // same agent, so UPDATE_PRESENT_FLAG would retarget the other notification.
+  private routeAgent(route: string, requestCode: number): Promise<WantAgent> {
     return wantAgent.getWantAgent({
       wants: [{
         bundleName: this.context.abilityInfo.bundleName,
         abilityName: 'EntryAbility',
-        parameters: { 'venera.notification.route': followUpdates ? 'follow_updates' : (download ? 'downloading' : 'tasks') }
+        parameters: { 'venera.notification.route': route }
       }],
       actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: followUpdates ? 2 : (download ? 0 : 1),
+      requestCode: requestCode,
       actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     });
   }

@@ -8,6 +8,7 @@ import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/history_page.dart';
+import 'package:venera/pages/local_comics_page.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/search_page.dart';
 import 'package:venera/pages/tasks_page.dart';
@@ -49,10 +50,13 @@ void revealMainNavigator(NavigatorState navigator) {
 
 const _favoritesRoute = 'favorites';
 
-Widget? _pageFor(String event) => switch (event) {
+@visibleForTesting
+Widget? pageForRoute(String event) => switch (event) {
       'follow_updates' => const FollowUpdatesPage(),
       'tasks' => const TasksPage(),
       'downloading' => const DownloadingPage(),
+      // The download-complete notification: the comic is in the library now.
+      'local' => const LocalComicsPage(),
       'history' => const HistoryPage(),
       'search' => const SearchPage(),
       _ => null,
@@ -74,7 +78,7 @@ void showEntryPage(NavigatorState navigator, Widget page) {
 
 /// Opens a notification or launcher-shortcut route in the main navigator.
 Future<void> openNotificationRoute(String event) async {
-  final page = _pageFor(event);
+  final page = pageForRoute(event);
   if (page == null && event != _favoritesRoute) return;
   final tap = ++_latestTap;
   final navigator = await waitForUnlockedMainNavigator();
