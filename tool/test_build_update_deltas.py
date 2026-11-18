@@ -123,6 +123,9 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         args = run.call_args_list[1].args[0]
         self.assertIn('*-windows.zip', args)
         self.assertNotIn('*.apk', args)
+        self.assertTrue(all(call.kwargs.get('encoding') == 'utf-8'
+                            for call in run.call_args_list),
+                        'release notes in the API output are UTF-8 on every OS')
         self.assertEqual(generate.call_args.args[1], [('1.0.1', self.root / 'previous/v1.0.1')])
 
     @patch.object(builder.subprocess, 'run')

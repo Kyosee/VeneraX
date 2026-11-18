@@ -64,7 +64,8 @@ def stale_delta_assets(pages, tag):
 
 
 def gh(*args, timeout):
-    return subprocess.run(['gh', *args], check=True, capture_output=True, text=True,
+    # Release notes are UTF-8; the locale codec (GBK on Chinese Windows) cannot decode them.
+    return subprocess.run(['gh', *args], check=True, capture_output=True, encoding='utf-8',
                           timeout=timeout)
 
 
