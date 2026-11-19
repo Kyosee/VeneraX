@@ -13,10 +13,12 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/download_keepalive.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -892,6 +894,20 @@ class LocalManager with ChangeNotifier {
       }
       return a.name.compareTo(b.name);
     });
+    // Native local comics use their own files as the complete chapter.
+    // Downloaded remote comics may be missing pages and must use source totals.
+    if (comic.comicType == ComicType.local) {
+      final chapterId = comic.hasChapters
+          ? (ep is int ? comic.chapters!.ids.elementAt(ep - 1) : ep as String)
+          : '0';
+      final store = TranslationStore();
+      if (store.recordChapterPageCount(
+            'local', comic.id, chapterId, files.length,
+          ) &&
+          store.hasTranslationsForComic('local', comic.id)) {
+        DataSync().onTranslationsChanged();
+      }
+    }
     return files.map((e) => "file://${e.path}").toList();
   }
 

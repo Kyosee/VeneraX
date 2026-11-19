@@ -44,6 +44,8 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   var _group = 0;
   var _manage = false;
   Map<String, int> _saved = {};
+  Map<String, int> _totals = {};
+  var _fetchingPageCounts = false;
   final _taskFor = <String, PreTranslationTask>{};
   final _chapterFor = <String, PreTranslationChapter>{};
   late BuildContext _contentContext;
@@ -86,6 +88,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
         : {};
     _loadStore();
     _loadTasks();
+    _restoreKnownPageCounts();
     if (_groups.isNotEmpty && widget.translatedView) {
       final first = _groups.indexWhere(
         (group) => group.$2.any((i) => _matches(i)),
@@ -107,6 +110,10 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   }
 
   void _loadStore() {
+    _totals = TranslationStore().chapterPageCounts(
+      widget.sourceKey,
+      widget.cid,
+    );
     final config = TranslationConfig.of(widget.cid, widget.sourceKey);
     _saved = {
       for (final chapter in TranslationStore().chaptersFor(
@@ -117,6 +124,103 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       ))
         chapter.identity.chapterId: chapter.pageCount,
     };
+  }
+
+  void _restoreKnownPageCounts() {
+    final store = TranslationStore();
+    var changed = false;
+    void remember(String eid, int total, int time) {
+      if (total <= 0 || _totals.containsKey(eid)) return;
+      changed =
+          store.recordChapterPageCount(
+            widget.sourceKey,
+            widget.cid,
+            eid,
+            total,
+            updatedAt: time,
+          ) ||
+          changed;
+    }
+
+    // Old translation tasks may have processed only a partial local download.
+    // Only download tasks retain a complete source page list.
+    for (final download in LocalManager().downloadingTasks) {
+      if (download is! ImagesDownloadTask ||
+          download.id != widget.cid ||
+          download.source.key != widget.sourceKey) {
+        continue;
+      }
+      for (final entry in download.chapterPageCounts.entries) {
+        // A restored list predates a newer page-count record from sync.
+        remember(entry.key, entry.value, 0);
+      }
+    }
+    if (changed) {
+      _totals = store.chapterPageCounts(widget.sourceKey, widget.cid);
+      if (store.hasTranslationsForComic(widget.sourceKey, widget.cid)) {
+        DataSync().onTranslationsChanged();
+      }
+    }
+  }
+
+  Future<void> _fetchPageCounts(List<int> indices) async {
+    if (_fetchingPageCounts || indices.isEmpty) return;
+    setState(() => _fetchingPageCounts = true);
+    var failures = 0;
+    for (final index in indices) {
+      if (!mounted) break;
+      final eid = widget.entries[index].$1;
+      try {
+        if (widget.comicType == ComicType.local) {
+          final pages = await LocalManager().getImages(
+            widget.cid,
+            widget.comicType,
+            eid == '0' ? 0 : eid,
+          );
+          if (pages.isEmpty) throw StateError('No pages');
+        } else {
+          final isCollection = ComicCollectionStore.isCollectionSourceKey(
+            widget.sourceKey,
+          );
+          final source = ComicSource.find(widget.sourceKey);
+          if (!isCollection && source?.loadComicPages == null) {
+            throw StateError('Missing source');
+          }
+          final ep = eid == '0' ? null : eid;
+          final result =
+              await (isCollection
+                      ? loadCollectionPages(widget.cid, ep, preferNetwork: true)
+                      : source!.loadComicPages!(widget.cid, ep))
+                  .timeout(const Duration(seconds: 30));
+          if (result.error || result.data.isEmpty) throw StateError('No pages');
+          final store = TranslationStore();
+          if (store.recordChapterPageCount(
+                widget.sourceKey,
+                widget.cid,
+                eid,
+                result.data.length,
+              ) &&
+              store.hasTranslationsForComic(widget.sourceKey, widget.cid)) {
+            DataSync().onTranslationsChanged();
+          }
+        }
+        if (!mounted) break;
+        setState(_loadStore);
+        if (!_totals.containsKey(eid)) failures++;
+      } catch (e, s) {
+        failures++;
+        Log.warning('Chapter page count', '$e\n$s');
+      }
+    }
+    if (!mounted) return;
+    setState(() => _fetchingPageCounts = false);
+    if (failures > 0) {
+      context.showMessage(
+        message: 'Could not fetch page counts for @count chapters'.tlParams({
+          'count': failures,
+        }),
+      );
+    }
   }
 
   void _loadTasks() {
@@ -155,25 +259,29 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     final stored = _saved[eid] ?? 0;
     final task = _taskFor[eid];
     final chapter = _chapterFor[eid];
+    final total = _totals[eid] ?? 0;
     if (task == null || chapter == null) {
       return _TranslationChapterRow(
         stored > 0
             ? _ChapterTranslationState.stored
             : _ChapterTranslationState.pending,
         stored,
-        0,
+        total,
         0,
         null,
         null,
       );
     }
     final active = _manager.currentTasks.contains(task);
+    final knownTotal = total;
     final activity = active ? _manager.activityOf(task.id) : null;
     final live = _manager.livePagesOf(widget.cid, widget.sourceKey, chapter);
     final failures = math.max(0, live.processed - live.done);
-    final complete = chapter.total > 0 && live.processed >= chapter.total;
+    final complete = knownTotal > 0 && live.processed >= knownTotal;
+    final taskComplete = chapter.total > 0 && live.processed >= chapter.total;
     final processing =
-        active && (!complete || (failures > 0 && activity?.chapterEid == eid));
+        active &&
+        (!taskComplete || (failures > 0 && activity?.chapterEid == eid));
     final state = processing
         ? chapter.paused || task.status == PreTranslationTaskStatus.paused
               ? _ChapterTranslationState.paused
@@ -195,11 +303,11 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     return _TranslationChapterRow(
       state,
       math.max(stored, live.done),
-      chapter.total,
+      knownTotal,
       failures,
-      chapter.total > 0
+      knownTotal > 0
           ? (math.max(stored, chapter.done + chapter.failed + uncommitted) /
-                    chapter.total)
+                    knownTotal)
                 .clamp(0.0, 1.0)
           : null,
       task,
@@ -321,7 +429,8 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       'failed': row.failed,
     };
     return switch (row.state) {
-      _ChapterTranslationState.pending => 'Pending translation'.tl,
+      _ChapterTranslationState.pending =>
+        '${'Pending translation'.tl}${row.total > 0 ? ' · ${'@count pages'.tlParams({'count': row.total})}' : ''}',
       _ChapterTranslationState.stored =>
         row.total > 0
             ? '@done/@total pages saved'.tlParams(counts)
@@ -331,8 +440,12 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       _ChapterTranslationState.complete =>
         'Complete · @done/@total pages'.tlParams(counts),
       _ChapterTranslationState.failed =>
-        '@done/@total translated · @failed failed'.tlParams(counts),
-      _ChapterTranslationState.queued => 'Queued'.tl,
+        (row.total > 0
+                ? '@done/@total translated · @failed failed'
+                : '@done pages saved · Total unknown · @failed failed')
+            .tlParams(counts),
+      _ChapterTranslationState.queued =>
+        '${'Queued'.tl}${row.total > 0 ? ' · ${'@count pages'.tlParams({'count': row.total})}' : ''}',
       _ =>
         '${(row.state == _ChapterTranslationState.paused ? 'Paused' : 'Translating').tl} · '
             '${row.total > 0 ? '@done/@total pages'.tlParams(counts) : '@count pages saved · Total unknown'.tlParams({'count': row.saved})}'
@@ -631,6 +744,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
           role: MenuEntryRole.quick,
           onClick: () => _showChapterDetails(index),
         ),
+        if (!_fetchingPageCounts)
+          MenuEntry(
+            icon: Icons.format_list_numbered,
+            text:
+                (row.total > 0 ? 'Refresh page count' : 'Fetch page count').tl,
+            group: MenuGroup.organize,
+            onClick: () => _fetchPageCounts([index]),
+          ),
         if (!_isChapterActive(index))
           MenuEntry(
             icon: Icons.refresh_rounded,
@@ -690,6 +811,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   );
 
   void _pageMenu(Offset offset) => showMenuX(_contentContext, offset, [
+    if (!_fetchingPageCounts)
+      MenuEntry(
+        icon: Icons.format_list_numbered,
+        text: 'Fill missing page counts'.tl,
+        onClick: () => _fetchPageCounts(
+          _visible.where((index) => _row(index).total <= 0).toList(),
+        ),
+      ),
     MenuEntry(
       icon: Icons.info_outline,
       text: 'Open comic details'.tl,

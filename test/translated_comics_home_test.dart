@@ -16,7 +16,10 @@ import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
+import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
+import 'package:venera/network/download.dart';
 import 'package:venera/pages/home_page.dart';
 import 'package:venera/pages/translated_comics_page.dart';
 import 'package:venera/pages/tasks_page.dart';
@@ -136,6 +139,7 @@ void main() {
   testWidgets('a chapter with a failed page shows its failure count', (
     tester,
   ) async {
+    TranslationStore().recordChapterPageCount('src', 'comic', 'ch1', 2);
     final task = PreTranslationTask(
       id: 'partial',
       cid: 'comic',
@@ -357,6 +361,7 @@ void main() {
         total: 10,
         done: 4,
       );
+      TranslationStore().recordChapterPageCount('src', 'comic', '9', 10);
       final tenth = PreTranslationChapter(eid: '10', title: 'Chapter 10');
       final task = PreTranslationTask(
         id: 'chapter-controls',
@@ -561,6 +566,174 @@ void main() {
     expect(find.text('Comic'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'source totals and partial download lists fill saved chapter counts',
+    (tester) async {
+      const sourceKey = 'page_count_test';
+      const comicId = 'page-count-book';
+      final requests = <String?>[];
+      final source = ComicSource(
+        'Page counts',
+        sourceKey,
+        null,
+        null,
+        null,
+        null,
+        const [],
+        null,
+        null,
+        null,
+        null,
+        (cid, eid) async {
+          requests.add(eid);
+          if (eid == 'bad') {
+            return const Res<List<String>>.error('Fixture failure');
+          }
+          return Res(List.generate(7, (index) => 'fixture-page-$index'));
+        },
+        null,
+        null,
+        '',
+        '',
+        '1',
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        false,
+        null,
+        null,
+      );
+      ComicSourceManager().add(source);
+      addTearDown(() => ComicSourceManager().remove(sourceKey));
+      for (final eid in ['loaded', 'cached', 'unknown', 'bad']) {
+        final identity = TranslationChapterIdentity(
+          scopePrefix: 'pageTranslation@2@auto>zh@$sourceKey@$comicId@$eid@',
+          sourceKey: sourceKey,
+          comicId: comicId,
+          chapterId: eid,
+          sourceLang: 'auto',
+          targetLang: 'zh',
+          comicTitle: 'Page counts',
+          chapterTitle: eid,
+        );
+        TranslationStore().put(
+          '${identity.scopePrefix}p1@',
+          [],
+          chapter: identity,
+        );
+      }
+      final download = ImagesDownloadTask.fromJson({
+        'type': 'ImagesDownloadTask',
+        'source': sourceKey,
+        'comicId': comicId,
+        'images': {
+          'cached': ['first', 'missing', 'third'],
+        },
+        'downloadedCount': 2,
+        'totalCount': 3,
+        'missingPages': {
+          'cached': [1],
+        },
+      })!;
+      LocalManager().downloadingTasks.add(download);
+      addTearDown(() => LocalManager().downloadingTasks.remove(download));
+      // A reader or download source request records the full list before images.
+      await source.loadComicPages!(comicId, 'loaded');
+      expect(
+        TranslationStore().chapterPageCounts(sourceKey, comicId)['loaded'],
+        7,
+      );
+      final partialTask = PreTranslationTask(
+        id: 'partial-local-page-count',
+        cid: comicId,
+        sourceKey: sourceKey,
+        comicType: ComicType.fromKey(sourceKey),
+        title: 'Page counts',
+        createdAt: DateTime(2026),
+        status: PreTranslationTaskStatus.paused,
+        chapters: [
+          PreTranslationChapter(
+            eid: 'loaded',
+            title: 'loaded',
+            total: 1,
+            done: 1,
+          ),
+          PreTranslationChapter(eid: 'bad', title: 'bad', total: 2, done: 1),
+        ],
+      );
+      final history = PreTranslationTaskManager.instance.currentTasks;
+      history.add(partialTask);
+      addTearDown(() => history.remove(partialTask));
+      requests.clear();
+      await tester.pumpWidget(const MaterialApp(home: TranslatedComicsPage()));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ComicTile, 'Page counts').first);
+      await tester.pumpAndSettle();
+      expect(requests, isEmpty);
+      expect(find.text('1/7 pages saved'), findsOneWidget);
+      expect(find.text('1/3 pages saved'), findsOneWidget);
+      expect(
+        find.textContaining('1 pages saved · Total unknown'),
+        findsNWidgets(2),
+      );
+      expect(
+        TranslationStore().chapterPageCounts(sourceKey, comicId)['bad'],
+        isNull,
+      );
+      expect(
+        TranslationStore()
+            .chaptersFor(sourceKey, comicId)
+            .every((chapter) => chapter.pageCount == 1),
+        isTrue,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('translation-menu-unknown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fetch page count'));
+      await tester.pumpAndSettle();
+      expect(requests, ['unknown']);
+      expect(find.text('1/7 pages saved'), findsNWidgets(2));
+      expect(
+        PreTranslationTaskManager.instance.currentTasks.where(
+          (task) => task.cid == comicId,
+        ),
+        [partialTask],
+      );
+
+      await tester.tap(
+        find.descendant(
+          of: find.widgetWithText(Appbar, 'Comic Translation'),
+          matching: find.byIcon(Icons.more_horiz),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fill missing page counts'));
+      await tester.pumpAndSettle();
+      expect(requests, ['unknown', 'bad']);
+      expect(
+        TranslationStore().chapterPageCounts(sourceKey, comicId)['bad'],
+        isNull,
+      );
+      expect(
+        find.textContaining('1 pages saved · Total unknown'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'workspace shares comic metadata and scopes management selection',

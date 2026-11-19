@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -8,12 +9,17 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/export_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
+import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/venera_comics.dart';
 
 final class _SafIO extends IOOverrides {
@@ -61,6 +67,8 @@ void main() {
     await JsEngine().init();
     await ComicSourceManager().init();
     await LocalManager().init();
+    await TranslationStore().init();
+    await AppTranslation.init();
     for (final color in [
       const ui.Color(0xff123456),
       const ui.Color(0xffabcdef),
@@ -84,6 +92,7 @@ void main() {
 
   tearDownAll(() async {
     await appdata.saveData(false);
+    TranslationStore().close();
     LocalManager().close();
     JsEngine().dispose();
     await root.delete(recursive: true);
@@ -100,6 +109,7 @@ void main() {
   Future<LocalComic> fixture({
     bool chapters = false,
     String? virtualDirectory,
+    ComicType comicType = ComicType.local,
   }) async {
     final id = 'export_${fixtureNumber++}';
     final directory = await Directory('${root.path}/$id').create();
@@ -122,7 +132,7 @@ void main() {
       directory: virtualDirectory ?? directory.path,
       chapters: chapters ? const ComicChapters({'chapter_1': '第一章'}) : null,
       cover: chapters ? 'chapter_1/1.png' : 'cover.png',
-      comicType: ComicType.local,
+      comicType: comicType,
       downloadedChapters: chapters ? const ['chapter_1'] : const [],
       createdAt: DateTime.utc(2026),
     );
@@ -130,6 +140,78 @@ void main() {
 
   Future<Archive> readArchive(File file) async =>
       ZipDecoder().decodeBytes(await file.readAsBytes(), verify: true);
+
+  String addTranslation(LocalComic comic, {String sourceKey = 'local'}) {
+    final chapter = TranslationChapterIdentity(
+      scopePrefix: 'pageTranslation@2@auto>zh@$sourceKey@${comic.id}@0@',
+      sourceKey: sourceKey,
+      comicId: comic.id,
+      chapterId: '0',
+      sourceLang: 'auto',
+      targetLang: 'zh',
+      comicTitle: comic.title,
+    );
+    final key = '${chapter.scopePrefix}p1@';
+    TranslationStore().put(key, [
+      TranslatedRegion(
+        rect: IntRect(0, 0, 2, 3),
+        text: 'Translated ${comic.id}',
+        backgroundColor: 0xFFFFFFFF,
+        textColor: 0xFF000000,
+      ),
+    ], chapter: chapter);
+    TranslationStore().recordChapterPageCount(sourceKey, comic.id, '0', 2);
+    return key;
+  }
+
+  Archive attachment(Archive archive) => ZipDecoder().decodeBytes(
+    archive.findFile('translations.venera')!.content,
+    verify: true,
+  );
+
+  Database attachedStore(Archive archive) {
+    final file = File('${cache.path}/attachment-${fixtureNumber++}.db');
+    file.writeAsBytesSync(
+      attachment(archive).findFile('image_translation.db')!.content,
+    );
+    final db = sqlite3.open(file.path);
+    addTearDown(db.dispose);
+    return db;
+  }
+
+  Future<void> useEmptyTranslationStore() async {
+    final previousPath = App.dataPath;
+    TranslationStore().close();
+    App.dataPath = (await Directory('${cache.path}/recipient').create()).path;
+    await TranslationStore().init();
+    addTearDown(() async {
+      TranslationStore().close();
+      App.dataPath = previousPath;
+      await TranslationStore().init();
+    });
+  }
+
+  Future<void> finishExport(ExportTask task) async {
+    final manager = ExportTaskManager.instance;
+    final finished = Completer<void>();
+    void changed() {
+      if (!task.isActive &&
+          !manager.currentTasks.contains(task) &&
+          !finished.isCompleted) {
+        finished.complete();
+      }
+    }
+
+    manager.addListener(changed);
+    try {
+      changed();
+      await finished.future.timeout(const Duration(seconds: 20));
+    } finally {
+      manager.removeListener(changed);
+    }
+    expect(task.status, ExportTaskStatus.completed, reason: task.error);
+    await appdata.saveData(false);
+  }
 
   Future<File> unsafeArchive({
     required String id,
@@ -230,6 +312,281 @@ void main() {
       );
     }
   }
+
+  test(
+    'untranslated selections do not attach unrelated translations',
+    () async {
+      final selected = await fixture();
+      final other = await fixture();
+      addTranslation(other);
+      expect(translationComicsForExport([selected]), isEmpty);
+
+      final archive = await readArchive(await exportVeneraComics([selected]));
+      expect(archive.findFile('translations.venera'), isNull);
+    },
+  );
+
+  test(
+    'translation export opt-out leaves the v1 comic and original images',
+    () async {
+      final comic = await fixture();
+      addTranslation(comic);
+      final file = await exportVeneraComics([
+        comic,
+      ], includeTranslations: false);
+      final archive = await readArchive(file);
+      expect(archive.findFile('translations.venera'), isNull);
+      expect((await readVeneraComicsManifest(file)).version, 1);
+      await expectRestoredPages(comic, file);
+    },
+  );
+
+  test(
+    'selection uses the stored source key after a source is uninstalled',
+    () async {
+      const sourceKey = 'uninstalled-export-fixture';
+      final comic = await fixture(comicType: ComicType.fromKey(sourceKey));
+      expect(comic.sourceKey, startsWith('Unknown:'));
+      final key = addTranslation(comic, sourceKey: sourceKey);
+      addTranslation(comic, sourceKey: 'another-source');
+      final other = await fixture(comicType: comic.comicType);
+      addTranslation(other, sourceKey: sourceKey);
+      final prefsKey = 'imageTranslationEnabledComics';
+      final previousPrefs = appdata.implicitData[prefsKey];
+      addTearDown(() {
+        if (previousPrefs == null) {
+          appdata.implicitData.remove(prefsKey);
+        } else {
+          appdata.implicitData[prefsKey] = previousPrefs;
+        }
+      });
+      appdata.implicitData[prefsKey] = {
+        '${comic.id}@$sourceKey': true,
+        '${comic.id}@another-source': true,
+        '${other.id}@$sourceKey': true,
+      };
+
+      expect(translationComicsForExport([comic]), [(sourceKey, comic.id)]);
+      final archive = await readArchive(await exportVeneraComics([comic]));
+      final db = attachedStore(archive);
+      expect(db.select('select cache_key from translated_page;'), [
+        {'cache_key': key},
+      ]);
+      expect(
+        db.select(
+          'select source_key, comic_id, total_pages from chapter_page_count;',
+        ),
+        [
+          {'source_key': sourceKey, 'comic_id': comic.id, 'total_pages': 2},
+        ],
+      );
+      final prefs = jsonDecode(
+        utf8.decode(
+          attachment(archive).findFile('image_translation_prefs.json')!.content,
+        ),
+      );
+      expect(prefs[prefsKey], {'${comic.id}@$sourceKey': true});
+    },
+  );
+
+  test(
+    'translation attachment round-trips totals and text without changing images',
+    () async {
+      final comic = await fixture();
+      final key = addTranslation(comic);
+      final file = await exportVeneraComics([comic]);
+      final archive = await readArchive(file);
+      expect((await readVeneraComicsManifest(file)).version, 1);
+      expect(archive.findFile('translations.venera'), isNotNull);
+      for (var page = 0; page < pages.length; page++) {
+        expect(
+          archive.findFile('comics/${comic.id}_0/${page + 1}.png')!.content,
+          pages[page],
+        );
+        expect(
+          await File('${comic.baseDir}/${page + 1}.png').readAsBytes(),
+          pages[page],
+        );
+      }
+
+      await useEmptyTranslationStore();
+      await expectRestoredPages(comic, file);
+      expect(
+        TranslationStore().get(key)!.single.text,
+        'Translated ${comic.id}',
+      );
+      expect(TranslationStore().chapterPageCounts('local', comic.id), {'0': 2});
+      expect(TranslationStore().count, 1);
+    },
+  );
+
+  test(
+    'metadata-only comic bundles can carry translations and total pages',
+    () async {
+      final comic = await fixture();
+      final key = addTranslation(comic);
+      final file = await exportVeneraComics([comic], includeImages: false);
+      final archive = await readArchive(file);
+      expect(
+        (await readVeneraComicsManifest(file)).comics.single.hasImages,
+        isFalse,
+      );
+      expect(archive.findFile('comics/${comic.id}_0/1.png'), isNull);
+      expect(archive.findFile('translations.venera'), isNotNull);
+
+      await useEmptyTranslationStore();
+      expect(await importVeneraComics(file), 1);
+      expect(
+        TranslationStore().get(key)!.single.text,
+        'Translated ${comic.id}',
+      );
+      expect(TranslationStore().chapterPageCounts('local', comic.id), {'0': 2});
+    },
+  );
+
+  test(
+    'image-pack import can explicitly ignore translation attachments',
+    () async {
+      final comic = await fixture();
+      addTranslation(comic);
+      final file = await exportVeneraComics([comic]);
+      await useEmptyTranslationStore();
+
+      expect(await importVeneraComics(file, importTranslations: false), 1);
+      expect(TranslationStore().count, 0);
+      expect(TranslationStore().chapterPageCounts('local', comic.id), isEmpty);
+      final restored = LocalManager().find(comic.id, ComicType.local)!;
+      expect(
+        await File('${restored.baseDir}/1.png').readAsBytes(),
+        pages.first,
+      );
+    },
+  );
+
+  test('old v1 bundles without translation attachments still import', () async {
+    final comic = await fixture();
+    final file = await exportVeneraComics([comic], includeTranslations: false);
+    final archive = await readArchive(file);
+    expect((await readVeneraComicsManifest(file)).version, 1);
+    expect(archive.findFile('translations.venera'), isNull);
+    await useEmptyTranslationStore();
+
+    expect(await importVeneraComics(file), 1);
+    expect(TranslationStore().count, 0);
+    expect(TranslationStore().chapterPageCounts('local', comic.id), isEmpty);
+    expect(
+      await LocalManager().getImages(comic.id, ComicType.local, 1),
+      hasLength(2),
+    );
+    expect(TranslationStore().chapterPageCounts('local', comic.id), {'0': 2});
+  });
+
+  test(
+    'a normal app backup cannot masquerade as a translation attachment',
+    () async {
+      final comic = await fixture();
+      final ordinaryBackup = Archive()
+        ..addFile(
+          ArchiveFile.string(
+            'appdata.json',
+            jsonEncode({
+              'settings': {'comicDisplayMode': 'unexpected-from-backup'},
+            }),
+          ),
+        );
+      final bytes = ZipEncoder().encode(ordinaryBackup);
+      final file = await exportVeneraComics(
+        [comic],
+        includeTranslations: false,
+        onPhase: (phase, _) {
+          if (phase != ExportPhase.packaging) return;
+          final staged = cache.listSync().whereType<Directory>().single;
+          File('${staged.path}/translations.venera').writeAsBytesSync(bytes);
+        },
+      );
+      final displayMode = appdata.settings['comicDisplayMode'];
+
+      await expectLater(importVeneraComics(file), throwsFormatException);
+      expect(appdata.settings['comicDisplayMode'], displayMode);
+    },
+  );
+
+  for (final merged in [false, true]) {
+    test(
+      'export task forwards translation choice when merged=$merged',
+      () async {
+        final comics = [await fixture(), await fixture()];
+        for (final comic in comics) {
+          await LocalManager().add(comic);
+          addTranslation(comic);
+        }
+        for (final includeTranslations in [false, true]) {
+          final destination = await Directory(
+            '${cache.path}/output-$includeTranslations',
+          ).create();
+          final task = ExportTaskManager.instance.startExport(
+            folderPath: destination.path,
+            format: ExportFormat.veneraComics,
+            comics: comics,
+            merged: merged,
+            includeTranslations: includeTranslations,
+          )!;
+          await finishExport(task);
+          expect(task.includeTranslations, includeTranslations);
+          final files = destination.listSync().whereType<File>().toList();
+          expect(files, hasLength(merged ? 1 : 2));
+          for (final file in files) {
+            final archive = await readArchive(file);
+            expect(
+              archive.findFile('translations.venera'),
+              includeTranslations ? isNotNull : isNull,
+            );
+            if (includeTranslations) {
+              final ids = (await readVeneraComicsManifest(
+                file,
+              )).comics.map((comic) => comic.id).toSet();
+              expect(
+                attachedStore(archive)
+                    .select('select comic_id from chapter_page_count;')
+                    .map((row) => row['comic_id'])
+                    .toSet(),
+                ids,
+              );
+            }
+          }
+        }
+      },
+    );
+  }
+
+  test(
+    'resuming a restored task preserves the disabled translation choice',
+    () async {
+      final comic = await fixture();
+      await LocalManager().add(comic);
+      addTranslation(comic);
+      final destination = await Directory('${cache.path}/resumed').create();
+      final task = ExportTask.fromJson(
+        ExportTask(
+          id: 'restored-translation-export',
+          folderPath: destination.path,
+          format: ExportFormat.veneraComics,
+          comics: [
+            ExportComicRef(id: comic.id, comicTypeValue: 0, title: comic.title),
+          ],
+          createdAt: DateTime.utc(2026),
+          includeTranslations: false,
+          merged: true,
+        ).toJson(),
+      );
+      ExportTaskManager.instance.currentTasks.add(task);
+      ExportTaskManager.instance.resume(task.id);
+      await finishExport(task);
+
+      final file = destination.listSync().whereType<File>().single;
+      expect((await readArchive(file)).findFile('translations.venera'), isNull);
+    },
+  );
 
   test('nested chapter cover and pages survive export and import', () async {
     final comic = await fixture(chapters: true);

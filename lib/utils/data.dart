@@ -326,6 +326,7 @@ Future<File> exportAppData({
   // in whole, as it always did.
   var keptComicIds = coreDataStoresReady ? _keptDomainComicIds() : null;
   var domainSnapshot = FilePath.join(App.cachePath, 'domain_$time.db');
+  var translationSnapshot = FilePath.join(App.cachePath, 'translations_$time.db');
   String? snapshotError;
   var checkpointWarnings = <String>[];
   try {
@@ -363,6 +364,14 @@ Future<File> exportAppData({
         );
       }
     }
+    var translationStoreFile = FilePath.join(dataPath, "image_translation.db");
+    final hasTranslations = includeTranslations && File(translationStoreFile).existsSync();
+    if (hasTranslations) {
+      TranslationStore.writeSyncSnapshot(
+        sourcePath: translationStoreFile,
+        targetPath: translationSnapshot,
+      );
+    }
     var zipFile = ZipFile.open(cacheFilePath);
     var coverDirName = ComicCollectionStore.coverDirName;
     var historyFile = FilePath.join(dataPath, "history.db");
@@ -387,9 +396,8 @@ Future<File> exportAppData({
         translationPrefsBytes,
       );
     }
-    var translationStoreFile = FilePath.join(dataPath, "image_translation.db");
-    if (includeTranslations && File(translationStoreFile).existsSync()) {
-      zipFile.addFile("image_translation.db", translationStoreFile);
+    if (hasTranslations) {
+      zipFile.addFile("image_translation.db", translationSnapshot);
     }
     if (File(domainFile).existsSync()) {
       var domainEntry = domainFile;
@@ -443,6 +451,7 @@ Future<File> exportAppData({
   });
   } finally {
     await File(domainSnapshot).deleteIgnoreError();
+    await File(translationSnapshot).deleteIgnoreError();
   }
   for (final warning in checkpointWarnings) {
     Log.warning('Export Data', warning);
@@ -479,12 +488,19 @@ Set<String> _keptDomainComicIds() {
 /// glossary, blocked terms). It lives in implicitData, which is NOT part of
 /// appdata.json, so it is serialized out explicitly to ride the backup. Import
 /// applies it back (see [_importTranslationPrefs]).
-Uint8List? _translationPrefsBytes() {
+Uint8List? _translationPrefsBytes({List<(String, String)>? comics}) {
+  final keys = comics?.map((comic) => '${comic.$2}@${comic.$1}').toSet();
   final prefs = <String, dynamic>{};
   for (final key in ImageTranslationService.syncedPrefKeys) {
     final value = appdata.implicitData[key];
     if (value is Map && value.isNotEmpty) {
-      prefs[key] = value;
+      final filtered = keys == null
+          ? value
+          : {
+              for (final entry in value.entries)
+                if (keys.contains(entry.key)) entry.key: entry.value,
+            };
+      if (filtered.isNotEmpty) prefs[key] = filtered;
     }
   }
   return prefs.isEmpty ? null : utf8.encode(jsonEncode(prefs));
@@ -497,9 +513,14 @@ const translationExportMarker = 'venera_translations.json';
 /// Packs every stored page translation and per-comic translation state into a
 /// `.venera` archive for another device's "Import App Data". Returns null when
 /// nothing is stored.
-Future<File?> exportTranslations() async {
+Future<File?> exportTranslations({List<(String, String)>? comics}) async {
   var store = TranslationStore();
-  var pages = store.count;
+  final selected = comics?.toSet();
+  var pages = selected == null
+      ? store.count
+      : store.comics
+          .where((comic) => selected.contains((comic.sourceKey, comic.comicId)))
+          .fold<int>(0, (sum, comic) => sum + comic.pageCount);
   if (pages == 0) return null;
   var stamp = DateTime.now().microsecondsSinceEpoch;
   var workDir = Directory(
@@ -509,12 +530,12 @@ Future<File?> exportTranslations() async {
   var output = File(FilePath.join(App.cachePath, 'translations_$stamp.venera'));
   try {
     var snapshot = FilePath.join(workDir.path, 'image_translation.db');
-    await store.exportSnapshot(snapshot);
+    await store.exportSnapshot(snapshot, comics: comics);
     await _zipTranslationExport(
       output.path,
       snapshot,
       utf8.encode(jsonEncode({'type': 'translations', 'version': 1, 'pages': pages})),
-      _translationPrefsBytes(),
+      _translationPrefsBytes(comics: comics),
     );
   } catch (_) {
     output.deleteIgnoreError();
@@ -668,6 +689,7 @@ Future<ImportOutcome> importAppData(
   bool mergeTranslations = true,
   bool userRestore = false,
   bool restoreDeviceSettings = false,
+  bool requireTranslationsOnly = false,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -685,6 +707,7 @@ Future<ImportOutcome> importAppData(
       mergeTranslations: mergeTranslations,
       userRestore: userRestore,
       restoreDeviceSettings: restoreDeviceSettings,
+      requireTranslationsOnly: requireTranslationsOnly,
     );
   } finally {
     _importInProgress = null;
@@ -796,6 +819,7 @@ Future<ImportOutcome> _importAppDataLocked(
   bool mergeTranslations = true,
   bool userRestore = false,
   bool restoreDeviceSettings = false,
+  bool requireTranslationsOnly = false,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -823,6 +847,9 @@ Future<ImportOutcome> _importAppDataLocked(
     );
     if (cacheDir.joinFile(translationExportMarker).existsSync()) {
       return await _importTranslationPackage(cacheDir, report);
+    }
+    if (requireTranslationsOnly) {
+      throw const FormatException('Expected a translation package');
     }
     var legacySourceTypeMap = _loadLegacySourceTypeMap(
       cacheDir,

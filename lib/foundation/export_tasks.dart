@@ -91,6 +91,7 @@ class ExportTask {
     required this.createdAt,
     Set<String>? doneKeys,
     this.merged = false,
+    this.includeTranslations = true,
     this.saveWithDialog = false,
     this.failedCount = 0,
     this.status = ExportTaskStatus.running,
@@ -110,6 +111,9 @@ class ExportTask {
   /// When true (only for the venera_comics format), all comics are written to
   /// a single combined .venera_comics file instead of one file per comic.
   final bool merged;
+
+  /// Includes stored translations only in the venera_comics format.
+  final bool includeTranslations;
 
   /// Save each output through the system picker instead of a directory path.
   final bool saveWithDialog;
@@ -154,6 +158,7 @@ class ExportTask {
         'comics': comics.map((e) => e.toJson()).toList(),
         'doneKeys': doneKeys.toList(),
         'merged': merged,
+        'includeTranslations': includeTranslations,
         'saveWithDialog': saveWithDialog,
         'failedCount': failedCount,
         // Persist active tasks as paused so they are not auto-run on restart.
@@ -174,6 +179,7 @@ class ExportTask {
             .toList(),
         doneKeys: (json['doneKeys'] as List? ?? []).map((e) => '$e').toSet(),
         merged: json['merged'] ?? false,
+        includeTranslations: json['includeTranslations'] ?? true,
         saveWithDialog: json['saveWithDialog'] ?? false,
         failedCount: json['failedCount'] ?? 0,
         status: ExportTaskStatus.values.firstWhere(
@@ -212,6 +218,7 @@ class ExportTaskManager with ChangeNotifier {
     required ExportFormat format,
     required List<LocalComic> comics,
     bool merged = false,
+    bool includeTranslations = true,
     bool saveWithDialog = false,
   }) {
     if (currentTasks.any((t) => t.isActive)) {
@@ -230,6 +237,7 @@ class ExportTaskManager with ChangeNotifier {
           .toList(),
       createdAt: DateTime.now(),
       merged: merged && format == ExportFormat.veneraComics,
+      includeTranslations: includeTranslations,
       saveWithDialog: saveWithDialog,
     );
     currentTasks.insert(0, task);
@@ -376,7 +384,12 @@ class ExportTaskManager with ChangeNotifier {
             task.phase = ExportPhase.processing;
             task.writeProgress = null;
             notifyListeners();
-            produced = await _buildToCache(comic, task.format, cacheDir.path);
+            produced = await _buildToCache(
+              comic,
+              task.format,
+              cacheDir.path,
+              includeTranslations: task.includeTranslations,
+            );
             if (task.saveWithDialog && _canceledIds.contains(task.id)) {
               task.status = ExportTaskStatus.canceled;
               await produced.deleteIgnoreError();
@@ -618,6 +631,7 @@ class ExportTaskManager with ChangeNotifier {
     }
     final produced = await exportVeneraComics(
       comics,
+      includeTranslations: task.includeTranslations,
       onProgress: (current, total) {
         // Reuse doneKeys to drive the progress bar during the build.
         task.doneKeys
@@ -729,8 +743,9 @@ class ExportTaskManager with ChangeNotifier {
   Future<File> _buildToCache(
     LocalComic comic,
     ExportFormat format,
-    String cacheDir,
-  ) async {
+    String cacheDir, {
+    required bool includeTranslations,
+  }) async {
     final outName = sanitizeFileName(comic.title, maxLength: 100) + format.ext;
     final outPath = FilePath.join(cacheDir, outName);
     switch (format) {
@@ -742,7 +757,10 @@ class ExportTaskManager with ChangeNotifier {
         return createEpubWithLocalComic(comic, outPath);
       case ExportFormat.veneraComics:
         // Produces its own cache file; the caller copies it to [outName].
-        return exportVeneraComics([comic]);
+        return exportVeneraComics(
+          [comic],
+          includeTranslations: includeTranslations,
+        );
     }
   }
 

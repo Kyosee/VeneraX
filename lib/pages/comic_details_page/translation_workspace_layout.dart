@@ -89,6 +89,10 @@ extension _TranslationWorkspaceLayout on _SelectPreTranslateChapterState {
                 _searchField(),
                 _filters(),
                 _editionBar(),
+                if (_fetchingPageCounts)
+                  LinearProgressIndicator(
+                    semanticsLabel: 'Fetching page counts'.tl,
+                  ),
                 Expanded(child: _chapterList()),
                 if (_picking) _footer(),
               ],

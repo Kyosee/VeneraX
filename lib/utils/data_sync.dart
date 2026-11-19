@@ -1505,7 +1505,11 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
       File? file;
       try {
-        file = await exportVeneraComics([comic], includeImages: true);
+        file = await exportVeneraComics(
+          [comic],
+          includeImages: true,
+          includeTranslations: false,
+        );
         // Streamed: image packs are whole comic archives (often hundreds of
         // MB) — buffering one in RAM via readAsBytes was an OOM in waiting.
         await BackgroundKeepAlive.instance.runTransfer(
@@ -1568,7 +1572,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             '/venera-comics/$fileName', localFile.path, onProgress: progress,
           ),
         );
-        await importVeneraComics(localFile);
+        await importVeneraComics(localFile, importTranslations: false);
         Log.info("Image Sync", "Downloaded: ${comic.title}");
       } catch (e, s) {
         failures++;

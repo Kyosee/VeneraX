@@ -386,10 +386,12 @@ Future<Res<ComicDetails>> loadCollectionInfo(String collectionId) async {
 /// A member that is local-only has no network side at all: it returns file paths
 /// regardless, which is why downloading such a chapter is refused rather than
 /// silently producing a broken chapter.
+/// [preferNetwork] obtains full source lists for totals, bypassing partial caches.
 Future<Res<List<String>>> loadCollectionPages(
   String collectionId,
   String? ep, {
   bool forDownload = false,
+  bool preferNetwork = false,
 }) async {
   final ref = decodeCollectionChapterId(ep);
   if (ref == null) {
@@ -418,7 +420,7 @@ Future<Res<List<String>>> loadCollectionPages(
   }
 
   // A network member whose chapter is already downloaded reads from disk.
-  if (!forDownload) {
+  if (!forDownload && !preferNetwork) {
     final local = LocalManager().find(ref.comicId, memberType);
     if (local != null &&
         (ref.chapterId.isEmpty ||

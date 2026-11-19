@@ -10,6 +10,7 @@ import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -50,6 +51,7 @@ void main() {
     await App.readLater.init();
     await LocalManager().init();
     await App.domain.init(App.dataPath);
+    await TranslationStore().init();
   });
 
   tearDownAll(() {
@@ -58,11 +60,53 @@ void main() {
     App.readLater.close();
     LocalManager().close();
     App.domain.close();
+    TranslationStore().close();
     SingleInstanceCookieJar.instance?.dispose();
     SingleInstanceCookieJar.instance = null;
     JsEngine().dispose();
     root.deleteSync(recursive: true);
   });
+
+  test(
+    'sync carries totals only for translated comics and respects skipping',
+    () async {
+      final store = TranslationStore();
+      const identity = TranslationChapterIdentity(
+        scopePrefix: 'pageTranslation@2@auto>zh@src@translated@chapter@',
+        sourceKey: 'src',
+        comicId: 'translated',
+        chapterId: 'chapter',
+        sourceLang: 'auto',
+        targetLang: 'zh',
+      );
+      store.put('${identity.scopePrefix}p1@', [], chapter: identity);
+      store.recordChapterPageCount('src', 'translated', 'chapter', 294);
+      store.recordChapterPageCount('src', 'untranslated', 'chapter', 500);
+      final included = await exportAppData();
+      final archive = ZipDecoder().decodeBytes(included.readAsBytesSync());
+      final dbFile = File('${root.path}/exported-translation.db')
+        ..writeAsBytesSync(archive.findFile('image_translation.db')!.content);
+      final db = sqlite3.open(dbFile.path);
+      try {
+        expect(
+          db.select('select comic_id, total_pages from chapter_page_count;'),
+          [
+            {'comic_id': 'translated', 'total_pages': 294},
+          ],
+        );
+        expect(db.select('select count(*) from translated_page;').first[0], 1);
+      } finally {
+        db.dispose();
+      }
+      final skipped = await exportAppData(includeTranslations: false);
+      final skippedArchive = ZipDecoder().decodeBytes(
+        skipped.readAsBytesSync(),
+      );
+      expect(skippedArchive.findFile('image_translation.db'), isNull);
+      expect(skippedArchive.findFile('image_translation_prefs.json'), isNull);
+      expect(store.chapterPageCounts('src', 'untranslated'), {'chapter': 500});
+    },
+  );
 
   test('backups carry unsaved writes and only the comics kept here', () async {
     final repository = ComicStateRepository(domain: App.domain);
@@ -110,12 +154,9 @@ void main() {
 
     // Still only in the WAL file unless checkpointed before zipping.
     final history = open('history.db');
-    expect(
-      history.select('select page from history where id = ?', ['kept']),
-      [
-        {'page': 3},
-      ],
-    );
+    expect(history.select('select page from history where id = ?', ['kept']), [
+      {'page': 3},
+    ]);
     final domain = open('data/venera.db');
     final comics = {
       for (final row in domain.select('select comic_id from comics'))

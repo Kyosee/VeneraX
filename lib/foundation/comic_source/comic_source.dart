@@ -15,6 +15,7 @@ import 'package:venera/foundation/comic_source/webdav_source.dart';
 import 'package:venera/foundation/webdav_library_store.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/source_platform.dart';
 import 'package:venera/pages/category_comics_page.dart';
@@ -689,7 +690,7 @@ class ComicSource {
     this.settings,
     this.loadComicInfo,
     this.loadComicThumbnail,
-    this.loadComicPages,
+    LoadComicPagesFunc? loadComicPages,
     this.getImageLoadingConfig,
     this.getThumbnailLoadingConfig,
     this.filePath,
@@ -711,7 +712,29 @@ class ComicSource {
     this.enableTagsTranslate,
     this.starRatingFunc,
     this.archiveDownloader,
-  );
+  ) : loadComicPages = loadComicPages == null
+           ? null
+           : ((id, ep) async {
+               final result = await loadComicPages(id, ep);
+               // A collection can return an incomplete downloaded member.
+               final localCollection =
+                   ComicCollectionStore.isCollectionSourceKey(key) &&
+                   !result.error &&
+                   result.data.any((page) => page.startsWith('file://'));
+               if (!result.error && !localCollection) {
+                 final store = TranslationStore();
+                 if (store.recordChapterPageCount(
+                       key,
+                       id,
+                       ep ?? '0',
+                       result.data.length,
+                     ) &&
+                     store.hasTranslationsForComic(key, id)) {
+                   DataSync().onTranslationsChanged();
+                 }
+               }
+               return result;
+             });
 }
 
 class AccountConfig {

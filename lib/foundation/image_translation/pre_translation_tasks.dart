@@ -1407,11 +1407,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     PreTranslationTask task,
     PreTranslationChapter chapter,
   ) async {
-    var downloaded = LocalManager().isDownloaded(
-      task.cid,
-      task.comicType,
-      chapter.eid == '0' ? 0 : null,
-    );
+    final local = LocalManager().find(task.cid, task.comicType);
+    final downloaded = local != null &&
+        (local.chapters == null || local.downloadedChapters.contains(chapter.eid));
     if (downloaded) {
       return await LocalManager().getImages(
         task.cid,

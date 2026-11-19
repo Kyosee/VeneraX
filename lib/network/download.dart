@@ -10,8 +10,10 @@ import 'package:venera/foundation/comic_collection_store.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/download_keepalive.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/utils/data_sync.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/images.dart';
@@ -248,6 +250,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// All images to download, key is chapter name
   Map<String, List<String>>? _images;
 
+  /// Complete source lists, including pages whose image download failed.
+  Map<String, int> get chapterPageCounts => {
+    for (final entry in _images?.entries ?? <MapEntry<String, List<String>>>[])
+      if (entry.value.isNotEmpty)
+        entry.key.isEmpty ? '0' : entry.key: entry.value.length,
+  };
+
   /// Downloaded image count
   int _downloadedCount = 0;
 
@@ -308,9 +317,19 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// reader can use them offline, but this path feeds the URLs straight to the
   /// HTTP client. Asking the collection for the download variant makes it skip
   /// that shortcut and return real network URLs.
-  Future<Res<List<String>>> _loadPagesForDownload(String? ep) {
+  Future<Res<List<String>>> _loadPagesForDownload(String? ep) async {
     if (ComicCollectionStore.isCollectionSourceKey(source.key)) {
-      return loadCollectionPages(comicId, ep, forDownload: true);
+      final result = await loadCollectionPages(comicId, ep, forDownload: true);
+      if (!result.error) {
+        final store = TranslationStore();
+        if (store.recordChapterPageCount(
+              source.key, comicId, ep ?? '0', result.data.length,
+            ) &&
+            store.hasTranslationsForComic(source.key, comicId)) {
+          DataSync().onTranslationsChanged();
+        }
+      }
+      return result;
     }
     return source.loadComicPages!(comicId, ep);
   }
@@ -895,6 +914,15 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       for (final entry in (json["missingPages"] as Map? ?? {}).entries)
         entry.key as String: List<int>.from(entry.value),
     };
+    for (final entry in images?.entries ?? <MapEntry<String, List<String>>>[]) {
+      TranslationStore().recordChapterPageCount(
+        json['source'] as String,
+        json['comicId'] as String,
+        entry.key.isEmpty ? '0' : entry.key,
+        entry.value.length,
+        updatedAt: 0,
+      );
+    }
 
     return ImagesDownloadTask(
       source: ComicSource.find(json["source"])!,

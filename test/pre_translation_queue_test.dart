@@ -120,6 +120,25 @@ void main() {
       ),
     );
     final config = TranslationConfig.of('book', sourceKey);
+    // Another downloaded chapter must not route every chapter to local files.
+    await LocalManager().add(
+      LocalComic(
+        id: 'book',
+        title: 'Book',
+        subtitle: '',
+        tags: const [],
+        directory: temp.path,
+        chapters: ComicChapters({
+          'downloaded-only': 'Downloaded',
+          'a': 'A',
+          'b': 'B',
+        }),
+        cover: 'page.png',
+        comicType: ComicType.fromKey(sourceKey),
+        downloadedChapters: ['downloaded-only'],
+        createdAt: DateTime(2026),
+      ),
+    );
     for (final eid in ['a', 'b', '9', '10', 'rapid']) {
       TranslationStore().put(
         ImageTranslationService.cacheKeyFor(sourceKey, 'book', eid, 1),
@@ -243,8 +262,9 @@ void main() {
         final task = manager.currentTasks
             .where((t) => t.chapters.singleOrNull?.eid == 'rapid')
             .firstOrNull;
-        if (task == null || interrupted || task.chapters.single.total == 0)
+        if (task == null || interrupted || task.chapters.single.total == 0) {
           return;
+        }
         interrupted = true;
         manager.pauseChapter(task.id, 'rapid');
         scheduleMicrotask(() => manager.resumeChapter(task.id, 'rapid'));

@@ -95,10 +95,7 @@ class StoredTranslationComic {
 }
 
 class TranslationMergeResult {
-  const TranslationMergeResult({
-    this.applied = 0,
-    this.changedKeys = const {},
-  });
+  const TranslationMergeResult({this.applied = 0, this.changedKeys = const {}});
 
   /// Incoming pages that are now stored here (new or newer than ours).
   final int applied;
@@ -122,6 +119,13 @@ class TranslationStore with ChangeNotifier {
   Timer? _notifyTimer;
 
   bool isInitialized = false;
+  bool _pageCountsReady = false;
+
+  void _ensurePageCounts() {
+    if (_pageCountsReady) return;
+    _db.execute(_createPageCountTableSql);
+    _pageCountsReady = true;
+  }
 
   Future<void> init() async {
     if (isInitialized) return;
@@ -130,6 +134,7 @@ class TranslationStore with ChangeNotifier {
     _db.execute(_createTableSql);
     _db.execute(_createIndexTableSql);
     _db.execute(_createTombstoneTableSql);
+    _ensurePageCounts();
     _migrateSchema();
     migrateLegacyKeys(_db);
     _backfillChapterIndex();
@@ -164,10 +169,12 @@ class TranslationStore with ChangeNotifier {
     if (!isInitialized) {
       throw StateError("TranslationStore is not initialized; cannot merge");
     }
+    _ensurePageCounts();
     var src = openRawDatabase(sourcePath, mode: OpenMode.readOnly);
     var applied = <String>{};
     var changed = <String>{};
     var languages = <String, String>{};
+    var pageCountsChanged = false;
     String localKey(String key) {
       if (languageFor == null) return key;
       var match = _currentKeyPattern.firstMatch(key);
@@ -184,14 +191,18 @@ class TranslationStore with ChangeNotifier {
     }
 
     try {
-      if (!_requiredColumns.every(_columnsOf(src, 'translated_page').contains)) {
+      if (!_requiredColumns.every(
+        _columnsOf(src, 'translated_page').contains,
+      )) {
         return const TranslationMergeResult();
       }
       var rows = src.select(
         "select cache_key, regions, time from translated_page;",
       );
       var indexRows =
-          _indexColumns.every(_columnsOf(src, 'translated_chapter_index').contains)
+          _indexColumns.every(
+            _columnsOf(src, 'translated_chapter_index').contains,
+          )
           ? src.select("select * from translated_chapter_index;")
           : const <Row>[];
       var tombstoneRows =
@@ -209,8 +220,34 @@ class TranslationStore with ChangeNotifier {
               "select scope_prefix, deleted_at from translated_tombstone;",
             )
           : const <Row>[];
+      final pageCountRows =
+          _columnsOf(src, 'chapter_page_count').containsAll(_pageCountColumns)
+          ? src.select('select * from chapter_page_count;')
+          : const <Row>[];
       _db.execute("BEGIN TRANSACTION;");
       try {
+        for (final row in pageCountRows) {
+          final source = row['source_key'];
+          final comic = row['comic_id'];
+          final chapter = row['chapter_id'];
+          final total = row['total_pages'];
+          final time = row['updated_at'];
+          if (source is String &&
+              comic is String &&
+              chapter is String &&
+              total is int &&
+              total > 0 &&
+              time is int) {
+            final changed = _writeChapterPageCount(
+              source,
+              comic,
+              chapter,
+              total,
+              time,
+            );
+            pageCountsChanged = changed || pageCountsChanged;
+          }
+        }
         var lookup = _db.prepare(
           "select time from translated_page where cache_key = ?;",
         );
@@ -288,8 +325,13 @@ class TranslationStore with ChangeNotifier {
     } finally {
       src.dispose();
     }
-    if (applied.isNotEmpty || changed.isNotEmpty) _notifyChanged();
-    return TranslationMergeResult(applied: applied.length, changedKeys: changed);
+    if (applied.isNotEmpty || changed.isNotEmpty || pageCountsChanged) {
+      _notifyChanged();
+    }
+    return TranslationMergeResult(
+      applied: applied.length,
+      changedKeys: changed,
+    );
   }
 
   static Set<String> _columnsOf(CommonDatabase db, String table) => db
@@ -331,8 +373,7 @@ class TranslationStore with ChangeNotifier {
     for (var t in tombstones) {
       var prefix = t['scope_prefix'] as String;
       var args = [prefix, _prefixEnd(prefix), t['deleted_at'] as int];
-      const where =
-          "cache_key >= ? and cache_key < ? and ifnull(time, 0) <= ?";
+      const where = "cache_key >= ? and cache_key < ? and ifnull(time, 0) <= ?";
       for (var row in _db.select(
         "select cache_key from translated_page where $where;",
         args,
@@ -401,6 +442,100 @@ class TranslationStore with ChangeNotifier {
     """;
 
   static const _tombstoneColumns = {'scope_prefix', 'deleted_at'};
+
+  // Source page totals are independent of translation language and saved pages.
+  static const _createPageCountTableSql = '''
+    create table if not exists chapter_page_count (
+      source_key text not null,
+      comic_id text not null,
+      chapter_id text not null,
+      total_pages int not null,
+      updated_at int not null,
+      primary key (source_key, comic_id, chapter_id)
+    );
+  ''';
+
+  static const _pageCountColumns = {
+    'source_key',
+    'comic_id',
+    'chapter_id',
+    'total_pages',
+    'updated_at',
+  };
+
+  Map<String, int> chapterPageCounts(String sourceKey, String comicId) {
+    if (!isInitialized) return const {};
+    _ensurePageCounts();
+    return {
+      for (final row in _db.select(
+        'select chapter_id, total_pages from chapter_page_count '
+        'where source_key = ? and comic_id = ?;',
+        [sourceKey, comicId],
+      ))
+        row['chapter_id'] as String: row['total_pages'] as int,
+    };
+  }
+
+  bool hasTranslationsForComic(String sourceKey, String comicId) =>
+      isInitialized &&
+      _db.select(
+        'select 1 from translated_chapter_index '
+        'where source_key = ? and comic_id = ? and page_count > 0 limit 1;',
+        [sourceKey, comicId],
+      ).isNotEmpty;
+
+  /// Records a complete page list, never the number of cached or translated pages.
+  bool recordChapterPageCount(
+    String sourceKey,
+    String comicId,
+    String chapterId,
+    int totalPages, {
+    int? updatedAt,
+  }) {
+    if (!isInitialized || totalPages <= 0) return false;
+    try {
+      _ensurePageCounts();
+      final changed = _writeChapterPageCount(
+        sourceKey,
+        comicId,
+        chapterId,
+        totalPages,
+        updatedAt ?? DateTime.now().millisecondsSinceEpoch,
+      );
+      if (changed) _notifyChanged();
+      return changed;
+    } catch (e, s) {
+      Log.error('TranslationStore', 'Record chapter page count failed: $e', s);
+      return false;
+    }
+  }
+
+  bool _writeChapterPageCount(
+    String sourceKey,
+    String comicId,
+    String chapterId,
+    int totalPages,
+    int updatedAt,
+  ) {
+    final previous = _db.select(
+      'select total_pages from chapter_page_count '
+      'where source_key = ? and comic_id = ? and chapter_id = ?;',
+      [sourceKey, comicId, chapterId],
+    );
+    _db.execute(
+      '''
+      insert into chapter_page_count
+        (source_key, comic_id, chapter_id, total_pages, updated_at)
+      values (?, ?, ?, ?, ?)
+      on conflict(source_key, comic_id, chapter_id) do update set
+        total_pages = excluded.total_pages, updated_at = excluded.updated_at
+      where excluded.updated_at > chapter_page_count.updated_at;
+    ''',
+      [sourceKey, comicId, chapterId, totalPages, updatedAt],
+    );
+    return (_db.select('select changes();').first[0] as int) > 0 &&
+        (previous.isEmpty || previous.first['total_pages'] != totalPages);
+  }
 
   /// Columns a foreign database must have for [mergeFrom] to read it.
   static const _requiredColumns = ["cache_key", "regions", "time"];
@@ -891,11 +1026,13 @@ class TranslationStore with ChangeNotifier {
     if (!isInitialized) return 0;
     var args = [scopePrefix, _prefixEnd(scopePrefix)];
     var newest =
-        _db.select(
-              "select max(time) as t from translated_page "
-              "where cache_key >= ? and cache_key < ?;",
-              args,
-            ).first['t']
+        _db
+                .select(
+                  "select max(time) as t from translated_page "
+                  "where cache_key >= ? and cache_key < ?;",
+                  args,
+                )
+                .first['t']
             as int? ??
         0;
     // Recorded first: a crash right after still removes these pages on the next
@@ -942,18 +1079,97 @@ class TranslationStore with ChangeNotifier {
   /// Writes a self-contained copy of the store to [path] (which must not
   /// exist), for the translation-only export. Runs on a background isolate: a
   /// large store takes long enough to drop frames on the main one.
-  Future<void> exportSnapshot(String path) {
+  Future<void> exportSnapshot(String path, {List<(String, String)>? comics}) {
     if (!isInitialized) {
       throw StateError("TranslationStore is not initialized; cannot export");
     }
-    return _writeSnapshot(_dbPath, path);
+    _ensurePageCounts();
+    return _writeSnapshot(_dbPath, path, comics);
   }
 
   // Static so the isolate closure can't capture this store and its timer.
-  static Future<void> _writeSnapshot(String dbPath, String path) {
+  static Future<void> _writeSnapshot(
+    String dbPath,
+    String path,
+    List<(String, String)>? comics,
+  ) {
     return DatabaseGateway.instance.isolateOp(dbPath, (db) async {
-      db.execute("vacuum into ?;", [path]);
+      _filteredSnapshot(db, path, comics);
     });
+  }
+
+  /// Called inside the app-export isolate while its gateway read lock is held.
+  static void writeSyncSnapshot({
+    required String sourcePath,
+    required String targetPath,
+  }) {
+    final db = openRawDatabase(sourcePath, mode: OpenMode.readOnly);
+    try {
+      _filteredSnapshot(db, targetPath, null);
+    } finally {
+      db.dispose();
+    }
+  }
+
+  static void _filteredSnapshot(
+    CommonDatabase source,
+    String path,
+    List<(String, String)>? comics,
+  ) {
+    source.execute('vacuum into ?;', [path]);
+    final snapshot = openRawDatabase(path);
+    try {
+      snapshot.execute(_createIndexTableSql);
+      snapshot.execute(_createPageCountTableSql);
+      if (comics != null) {
+        snapshot.execute(
+          'create temp table export_comics '
+          '(source_key text, comic_id text, primary key(source_key, comic_id));',
+        );
+        for (final (sourceKey, comicId) in comics) {
+          snapshot.execute(
+            'insert or ignore into export_comics values (?, ?);',
+            [sourceKey, comicId],
+          );
+        }
+        snapshot.execute('''
+          delete from translated_chapter_index where not exists (
+            select 1 from export_comics c where
+              c.source_key = translated_chapter_index.source_key and
+              c.comic_id = translated_chapter_index.comic_id);
+          create temp table export_pages (cache_key text primary key);
+        ''');
+        // Use the page-key index rather than matching every page to every chapter.
+        for (final row in snapshot.select(
+          'select scope_prefix from translated_chapter_index;',
+        )) {
+          final prefix = row['scope_prefix'] as String;
+          snapshot.execute(
+            'insert or ignore into export_pages '
+            'select cache_key from translated_page '
+            'where cache_key >= ? and cache_key < ?;',
+            [prefix, _prefixEnd(prefix)],
+          );
+        }
+        snapshot.execute(
+          'delete from translated_page where cache_key not in '
+          '(select cache_key from export_pages);',
+        );
+        if (_columnsOf(snapshot, 'translated_tombstone').isNotEmpty) {
+          snapshot.execute('delete from translated_tombstone;');
+        }
+      }
+      snapshot.execute('''
+        delete from chapter_page_count where not exists (
+          select 1 from translated_chapter_index i where i.page_count > 0
+            and i.source_key = chapter_page_count.source_key
+            and i.comic_id = chapter_page_count.comic_id);
+      ''');
+      // Remove discarded comics from free pages in a scoped portable archive.
+      snapshot.execute('vacuum;');
+    } finally {
+      snapshot.dispose();
+    }
   }
 
   int get count {
@@ -993,6 +1209,7 @@ class TranslationStore with ChangeNotifier {
     _notifyTimer = null;
     DatabaseGateway.instance.closeManaged(_dbPath);
     isInitialized = false;
+    _pageCountsReady = false;
   }
 
   void _notifyChanged() {

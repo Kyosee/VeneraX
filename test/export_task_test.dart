@@ -101,6 +101,34 @@ void main() {
     expect(makeTask().merged, isFalse);
   });
 
+  test('translation choice survives per-comic and merged task restoration', () {
+    for (final merged in [false, true]) {
+      for (final includeTranslations in [false, true]) {
+        final task = ExportTask(
+          id: 'translations',
+          folderPath: '/dest',
+          format: ExportFormat.veneraComics,
+          comics: makeTask().comics,
+          createdAt: DateTime(2024),
+          merged: merged,
+          includeTranslations: includeTranslations,
+          doneKeys: {'a_1'},
+        );
+        final restored = ExportTask.fromJson(task.toJson());
+        expect(restored.includeTranslations, includeTranslations);
+        expect(restored.merged, merged);
+        expect(restored.status, ExportTaskStatus.paused);
+        expect(restored.doneKeys, {'a_1'});
+      }
+    }
+  });
+
+  test('new and legacy tasks default to including translation data', () {
+    expect(makeTask().includeTranslations, isTrue);
+    final legacy = makeTask().toJson()..remove('includeTranslations');
+    expect(ExportTask.fromJson(legacy).includeTranslations, isTrue);
+  });
+
   test('phase defaults to preparing and round-trips (#92)', () {
     // Progress-phase tracking (#92): a fresh task starts at preparing, and the
     // phase must survive persistence so a restored/paused task shows sensibly.

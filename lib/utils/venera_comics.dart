@@ -5,8 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/archive.dart';
+import 'package:venera/utils/data.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
@@ -110,11 +112,22 @@ String _archivePath(String root, String relative) {
   return FilePath.join(root, normalized);
 }
 
+/// Matches stored source keys even when a selected comic's source is uninstalled.
+List<(String, String)> translationComicsForExport(Iterable<LocalComic> comics) {
+  final selected = {for (final comic in comics) (comic.comicType, comic.id)};
+  return {
+    for (final comic in TranslationStore().comics)
+      if (selected.contains((ComicType.fromKey(comic.sourceKey), comic.comicId)))
+        (comic.sourceKey, comic.comicId),
+  }.toList();
+}
+
 /// Packs selected comics into a .venera_comics zip file.
 /// Returns the created file in cache directory.
 Future<File> exportVeneraComics(
   List<LocalComic> comics, {
   bool includeImages = true,
+  bool includeTranslations = true,
   void Function(int current, int total)? onProgress,
   void Function(ExportPhase phase, String? detail)? onPhase,
 }) async {
@@ -233,6 +246,22 @@ Future<File> exportVeneraComics(
       onProgress?.call(i + 1, comics.length);
     }
 
+    if (includeTranslations) {
+      final selected = translationComicsForExport(comics);
+      final translations = selected.isEmpty
+          ? null
+          : await exportTranslations(comics: selected);
+      if (translations != null) {
+        try {
+          await translations.copyMem(
+            FilePath.join(exportDir.path, 'translations.venera'),
+          );
+        } finally {
+          await translations.deleteIgnoreError();
+        }
+      }
+    }
+
     // Create zip. This runs in an isolate and can't report sub-progress, so the
     // UI shows an indeterminate bar for this phase rather than a frozen 100%.
     onPhase?.call(ExportPhase.packaging, null);
@@ -321,6 +350,7 @@ void _moveOrCopyFile(File src, String destPath) {
 /// Returns the number of successfully imported comics.
 Future<int> importVeneraComics(
   File file, {
+  bool importTranslations = true,
   void Function(int current, int total)? onProgress,
 }) async {
   // Unique staging dir per call. importVeneraComics has two independent,
@@ -435,6 +465,12 @@ Future<int> importVeneraComics(
       onProgress?.call(i + 1, total);
     }
 
+    final translations = File(
+      FilePath.join(importDir.path, 'translations.venera'),
+    );
+    if (importTranslations && await translations.exists()) {
+      await importAppData(translations, requireTranslationsOnly: true);
+    }
     return imported;
   } finally {
     // Always clean the staging tree, even if extraction/import threw partway.

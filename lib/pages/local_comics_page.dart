@@ -12,6 +12,7 @@ import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/utils/venera_comics.dart' show translationComicsForExport;
 import 'package:venera/pages/home_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -650,15 +651,28 @@ class _LocalComicsPageState extends State<LocalComicsPage>
   void _startVeneraExport(List<LocalComic> comics) async {
     if (comics.isEmpty) return;
     bool merge = false;
+    final hasTranslations = translationComicsForExport(comics).isNotEmpty;
+    bool includeTranslations = true;
     var go = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => ContentDialog(
           title: "Export .venera_comics".tl,
-          content: SwitchListTile(
-            title: Text("Merge into a single .venera_comics".tl),
-            value: merge,
-            onChanged: (v) => setLocal(() => merge = v),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: Text("Merge into a single .venera_comics".tl),
+                value: merge,
+                onChanged: (v) => setLocal(() => merge = v),
+              ),
+              if (hasTranslations)
+                SwitchListTile(
+                  title: Text("Include translation data".tl),
+                  value: includeTranslations,
+                  onChanged: (v) => setLocal(() => includeTranslations = v),
+                ),
+            ],
           ),
           actions: [
             Button.text(
@@ -674,13 +688,19 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       ),
     );
     if (go != true || !mounted) return;
-    _startExportTask(comics, ExportFormat.veneraComics, merged: merge);
+    _startExportTask(
+      comics,
+      ExportFormat.veneraComics,
+      merged: merge,
+      includeTranslations: includeTranslations,
+    );
   }
 
   void _startExportTask(
     List<LocalComic> comics,
     ExportFormat format, {
     bool merged = false,
+    bool includeTranslations = true,
   }) async {
     if (comics.isEmpty) return;
     var manager = ExportTaskManager.instance;
@@ -695,6 +715,7 @@ class _LocalComicsPageState extends State<LocalComicsPage>
       format: format,
       comics: comics,
       merged: merged,
+      includeTranslations: includeTranslations,
       saveWithDialog: App.isOhos,
     );
     if (task == null) return;
