@@ -1,14 +1,21 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_details_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/home_layout.dart';
+import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
+import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/pages/home_page.dart';
 import 'package:venera/pages/translated_comics_page.dart';
 import 'package:venera/utils/translations.dart';
@@ -119,6 +126,95 @@ void main() {
     expect(find.text('1 pages'), findsOneWidget);
     expect(find.byTooltip('Open comic details'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a chapter with a failed page shows its failure count', (
+    tester,
+  ) async {
+    final task = PreTranslationTask(
+      id: 'partial',
+      cid: 'comic',
+      sourceKey: 'src',
+      comicType: ComicType.fromKey('src'),
+      title: 'Comic',
+      createdAt: DateTime(2026),
+      status: PreTranslationTaskStatus.completed,
+      chapters: [
+        PreTranslationChapter(
+          eid: 'ch1',
+          title: 'Chapter 1',
+          total: 2,
+          done: 1,
+          failed: 1,
+          failedPages: {1},
+        ),
+      ],
+    );
+    final history = PreTranslationTaskManager.instance.historyTasks;
+    history.add(task);
+    addTearDown(() => history.remove(task));
+    await tester.pumpWidget(const MaterialApp(home: TranslatedComicsPage()));
+    await tester.pump();
+    await tester.tap(find.byType(ComicTile).first);
+    await tester.pumpAndSettle();
+    final row = find.widgetWithText(CheckboxListTile, 'Chapter 1');
+    expect(
+      find.descendant(of: row, matching: find.text('Failed: 1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Translated')),
+      findsNothing,
+    );
+
+    final oldCachePath = App.cachePath;
+    App.cachePath = '${App.dataPath}/rendered';
+    addTearDown(() async {
+      await appdata.writeImplicitData();
+      DatabaseGateway.instance.closeManaged('${App.dataPath}/cache.db');
+      CacheManager.instance = null;
+      App.cachePath = oldCachePath;
+    });
+    await tester.runAsync(() async {
+      await CacheManager().ready;
+      final key = ImageTranslationService.cacheKeyFor('src', 'comic', 'ch1', 2);
+      final service = ImageTranslationService.instance;
+      await CacheManager().writeCache(
+        ImageTranslationService.renderedKey(key, task.config.mode),
+        [42],
+      );
+      final finished = Completer<void>();
+      service.schedule(
+        key,
+        'comic',
+        'src',
+        Uint8List(0),
+        task.config,
+        finished.complete,
+        chapter: ImageTranslationService.chapterIdentity(
+          cid: 'comic',
+          sourceKey: 'src',
+          eid: 'ch1',
+          config: task.config,
+        ),
+      );
+      await finished.future.timeout(const Duration(seconds: 3));
+    });
+    await tester.pumpAndSettle();
+    expect(task.chapters.single.failed, 0);
+    expect(task.chapters.single.done, 2);
+    expect(task.chapters.single.failedPages, isEmpty);
+    final persisted =
+        appdata.implicitData['pre_translation_task_history'] as List;
+    expect(PreTranslationTask.fromJson(persisted.single).hasFailures, isFalse);
+    expect(
+      find.descendant(of: row, matching: find.text('Failed: 1')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Translated')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('chapter picker splits cached chapters by translation status', (

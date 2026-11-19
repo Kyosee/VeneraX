@@ -505,11 +505,16 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     // groups, so the bar tracks work actually done instead of the deliberately
     // conservative resume cursor. Processed (success + failed) keeps the number
     // in step with the bar when a page fails.
-    var processed = manager
-        .livePagesOf(widget.cid, widget.sourceKey, chapter)
-        .processed;
+    final live = manager.livePagesOf(widget.cid, widget.sourceKey, chapter);
+    final processed = live.processed;
     var isCompleted = chapter.total > 0 && processed >= chapter.total;
 
+    if (isCompleted && processed > live.done) {
+      return Text(
+        'Failed: @count'.tlParams({'count': processed - live.done}),
+        style: ts.s12.withColor(context.colorScheme.error),
+      );
+    }
     if (isCompleted) {
       return Row(
         mainAxisSize: MainAxisSize.min,

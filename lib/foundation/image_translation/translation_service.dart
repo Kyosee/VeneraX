@@ -854,10 +854,15 @@ class ImageTranslationService with ChangeNotifier {
               sliceAt[i].clamp(0, translated.length),
               (sliceAt[i] + po.pending.length).clamp(0, translated.length),
             );
-      regionsOf[i] = [
-        ...po.ready,
-        ...pipeline.regionsFromTranslation(po.pending, slice),
-      ];
+      try {
+        regionsOf[i] = [
+          ...po.ready,
+          ...pipeline.regionsFromTranslation(po.pending, slice),
+        ];
+      } on FormatException catch (error) {
+        Log.warning('Image Translation', 'Incomplete page translation: $error');
+        settled[i] = true;
+      }
     }
 
     // Stage 3 — render + cache each resolved page.
@@ -993,6 +998,8 @@ class ImageTranslationService with ChangeNotifier {
       _errors.remove(renderKey);
       if (outcome != _TranslateOutcome.noContent) {
         _notifyDone(task);
+      } else {
+        notifyListeners();
       }
     } on PipelineCanceled {
       // ignore
@@ -1289,7 +1296,7 @@ class ImageTranslationService with ChangeNotifier {
   }
 
   void _notifyDone(_TranslationTask task) {
-    _completed.add(task.cacheKey);
+    markTranslated(task.cacheKey, task.config.mode);
     for (var listener in task.listeners) {
       try {
         listener();

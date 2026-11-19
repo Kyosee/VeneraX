@@ -300,6 +300,7 @@ class PreTranslationActivity {
 class PreTranslationTaskManager with ChangeNotifier {
   PreTranslationTaskManager._() {
     _load();
+    ImageTranslationService.instance.addListener(_onTranslationChanged);
     BackgroundKeepAlive.instance.translationBackgroundAllowed.addListener(
       _onBackgroundAllowanceChanged,
     );
@@ -314,6 +315,49 @@ class PreTranslationTaskManager with ChangeNotifier {
   final _runningIds = <String>{};
   final _backgroundPausedIds = <String>{};
   final _activities = <String, PreTranslationActivity>{};
+
+  /// The reader can repair a failed page without restarting its old task.
+  void _onTranslationChanged() {
+    final service = ImageTranslationService.instance;
+    var activeChanged = false;
+    var historyChanged = false;
+    for (final task in [...currentTasks, ...historyTasks]) {
+      if (!task.hasFailures) continue;
+      var changed = false;
+      for (final chapter in task.chapters) {
+        if (chapter.canceled) continue;
+        for (final index in chapter.failedPages.toList()) {
+          final key = ImageTranslationService.cacheKeyFor(
+            task.sourceKey,
+            task.cid,
+            chapter.eid,
+            index + 1,
+          );
+          final status = service.statusOf(key, task.config.mode);
+          if (status == PageTranslationStatus.translated ||
+              status == PageTranslationStatus.noContent) {
+            _markRetrySuccess(chapter, index);
+            changed = true;
+          }
+        }
+      }
+      if (!changed) continue;
+      if (task.status == PreTranslationTaskStatus.failed &&
+          task.failed == 0 &&
+          task.total > 0 &&
+          task.done == task.total) {
+        task.status = PreTranslationTaskStatus.completed;
+      }
+      if (currentTasks.contains(task)) {
+        activeChanged = true;
+      } else {
+        historyChanged = true;
+      }
+    }
+    if (activeChanged) _saveActive();
+    if (historyChanged) _saveHistory();
+    if (activeChanged || historyChanged) notifyListeners();
+  }
 
   /// Live stage detail for a running job; null once it stops. Not persisted —
   /// a restart resumes from the committed counters, not from mid-group state.
