@@ -412,6 +412,9 @@ class FollowUpdateTaskManager with ChangeNotifier {
     BackgroundKeepAlive.instance.update(
       BackgroundKeepAlive.tagFollowUpdate,
       formatTaskStatus(title: 'Checking for updates...'.tl, detail: detail),
+      progress: task.total == 0
+          ? 0
+          : (task.checked * 100 ~/ task.total).clamp(0, 100),
     );
   }
 

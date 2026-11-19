@@ -151,7 +151,8 @@ class BackgroundKeepAlive {
     unawaited(_invoke('remove', {'tag': tag}));
   }
 
-  // OHOS uses an ordinary notification, without a data-transfer grant.
+  // OHOS posts the result as an ordinary notification once the check's
+  // transfer grant, if any, is released.
   Future<void> completeFollowUpdate(String status) async {
     if (App.isAndroid) {
       try {

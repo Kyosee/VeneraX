@@ -11,6 +11,9 @@ const FOLLOW_NOTIFICATION_ID = 0x56454E43;
 const FOLLOW_NOTIFICATION_LABEL = 'venera.follow_update';
 const FOLLOW_COMPLETION_ID = 0x56454E44;
 const FOLLOW_COMPLETION_LABEL = 'venera.follow_update.complete';
+// Long tasks that also hold the transfer grant while they run. They keep a
+// notification of their own unless the grant's live view shows them.
+const LONG_TAGS = ['pre_translate', 'follow_update'];
 
 interface TransferTask {
   tag: string;
@@ -103,8 +106,8 @@ export class BackgroundService {
         }
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
           if (!await this.reconcile(tag)) return false;
-          if (tag === 'pre_translate' || tag === 'follow_update') return this.ordinaryPublished.has(tag);
-          return this.running !== undefined && this.desired.has(tag) && !this.blocked.has(tag);
+          if (LONG_TAGS.includes(tag)) return this.shownByTransfer(tag) || this.ordinaryPublished.has(tag);
+          return this.heldByTransfer(tag);
         }));
       } else if ((download && call.method === 'stop') || (!download && call.method === 'remove')) {
         const tag = download ? 'download' : this.readTag(call);
@@ -201,12 +204,29 @@ export class BackgroundService {
     return work;
   }
 
+  // Downloads and syncs come first: the live view is their only notification.
   private activeTasks(): TransferTask[] {
-    const tasks: TransferTask[] = [];
+    const transfers: TransferTask[] = [];
+    const long: TransferTask[] = [];
     this.desired.forEach((task: TransferTask, tag: string): void => {
-      if (tag !== 'pre_translate' && tag !== 'follow_update' && !this.blocked.has(tag)) tasks.push(task);
+      if (this.blocked.has(tag)) return;
+      if (LONG_TAGS.includes(tag)) long.push(task);
+      else transfers.push(task);
     });
-    return tasks;
+    return transfers.concat(long);
+  }
+
+  private heldByTransfer(tag: string): boolean {
+    return this.running !== undefined && this.desired.has(tag) && !this.blocked.has(tag);
+  }
+
+  private shownByTransfer(tag: string): boolean {
+    const first = this.activeTasks()[0];
+    return this.running !== undefined && first !== undefined && first.tag === tag;
+  }
+
+  private transferAgent(tag: string): Promise<WantAgent> {
+    return this.notificationAgent(tag === 'download', tag === 'follow_update');
   }
 
   private notificationAgent(download: boolean, followUpdates: boolean = false): Promise<WantAgent> {
@@ -252,7 +272,7 @@ export class BackgroundService {
         if (!this.listening || !await notificationManager.isNotificationEnabled()) return false;
         let first = this.activeTasks()[0];
         if (this.disposed || first === undefined) return this.stopRunning();
-        const agent = await this.notificationAgent(first.tag === 'download');
+        const agent = await this.transferAgent(first.tag);
         first = this.activeTasks()[0];
         if (this.disposed || first === undefined) return this.stopRunning();
         this.starting = true;
@@ -283,7 +303,7 @@ export class BackgroundService {
       const published = this.published;
       if (published !== undefined && published.task === first && published.status === first.status &&
         published.progress === first.progress) return true;
-      const agent = await this.notificationAgent(first.tag === 'download');
+      const agent = await this.transferAgent(first.tag);
       if (this.running !== running) return false;
       if (this.disposed || this.activeTasks()[0] !== first) return false;
       const snapshot: PublishedProgress = { task: first, status: first.status, progress: first.progress };
@@ -327,7 +347,7 @@ export class BackgroundService {
     } else if (!this.desired.has('pre_translate')) {
       // Dart may have no native task after notification permission was denied.
       this.expireTranslationGrace();
-    } else {
+    } else if (!this.heldByTransfer('pre_translate')) {
       this.requestTranslationGrace();
     }
   }
@@ -371,7 +391,9 @@ export class BackgroundService {
     const id = translation ? TRANSLATION_NOTIFICATION_ID : FOLLOW_NOTIFICATION_ID;
     const label = translation ? TRANSLATION_NOTIFICATION_LABEL : FOLLOW_NOTIFICATION_LABEL;
     const task = this.desired.get(tag);
-    if (this.disposed || task === undefined) {
+    // Shown by the grant's live view, which also keeps the work running.
+    const shown = task !== undefined && this.shownByTransfer(tag);
+    if (this.disposed || task === undefined || shown) {
       if (translation) this.cancelTranslationGrace();
       if (this.ordinaryPublished.has(tag)) {
         await notificationManager.cancel(id, label);
@@ -403,7 +425,11 @@ export class BackgroundService {
       this.ordinaryPublished.delete(tag);
       return false;
     }
-    if (translation) this.requestTranslationGrace();
+    if (translation) {
+      // A grace would only spend quota while the grant keeps the work going.
+      if (this.heldByTransfer(tag)) this.cancelTranslationGrace();
+      else this.requestTranslationGrace();
+    }
     return true;
   }
 
@@ -442,10 +468,12 @@ export class BackgroundService {
     this.published = undefined;
     const syncTags: string[] = [];
     let download = false;
+    let longTask = false;
     for (const task of tasks) {
       if (this.desired.get(task.tag) !== task) continue;
       this.blocked.add(task.tag);
       if (task.tag === 'download') download = true;
+      else if (LONG_TAGS.includes(task.tag)) longTask = true;
       else syncTags.push(task.tag);
     }
     if (download) {
@@ -458,6 +486,8 @@ export class BackgroundService {
         this.background.invokeMethod('cancelled', { tags: syncTags });
       } catch (_) {}
     }
+    // Long tasks go on with their own notification, as without the grant.
+    if (longTask) this.enqueue((): Promise<boolean> => this.reconcile());
   }
 
   dispose(): void {

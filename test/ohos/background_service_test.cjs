@@ -644,32 +644,62 @@ test('a missing cancellation subscription refuses to start instead of ignoring u
 const startTranslation = (h, status = 'Translating: 1/10', progress = 10) =>
   h.call(BACKGROUND, 'update', { tag: 'pre_translate', status, progress });
 
-test('translation has its own task notification without pretending to transfer data', async () => {
+test('translation alone holds the transfer grant and shows its progress in the live view', async () => {
   const h = harness();
   const started = startTranslation(h);
   await flush();
   assert.deepEqual(started, success(true));
-  assert.equal(h.starts.length, 0);
-  assert.equal(h.transientRequests.length, 0);
+  assert.equal(h.starts.length, 1);
   assert.equal(h.publishes.length, 1);
-  const note = h.publishes[0];
-  assert.equal(note.content.notificationContentType, 0);
-  assert.equal(note.content.normal.text, 'Translating: 1/10');
-  assert.equal(note.wantAgent.info.wants[0].parameters['venera.notification.route'], 'tasks');
+  const live = h.publishes[0];
+  assert.equal(live.content.notificationContentType, 5);
+  assert.equal(live.template.data.fileName, 'Translating: 1/10');
+  assert.equal(live.template.data.progressValue, 10);
+  assert.equal(live.wantAgent.info.wants[0].parameters['venera.notification.route'], 'tasks');
   startTranslation(h);
   await flush();
   assert.equal(h.publishes.length, 1);
   startTranslation(h, 'Translating: 2/10', 20);
   await flush();
-  assert.equal(h.publishes.at(-1).id, note.id);
+  assert.equal(h.publishes.at(-1).id, live.id);
+  assert.equal(h.publishes.at(-1).template.data.progressValue, 20);
+  // The grant keeps it going in the background, without a grace.
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 0);
+  assert.deepEqual(h.channels.get(BACKGROUND).events, []);
   const removed = h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
   await flush();
   assert.deepEqual(removed, success(true));
-  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
+  assert.equal(h.state.stops, 1);
+  assert.equal(h.active.size, 0);
+  assert.deepEqual(h.removedNotifications, []);
+});
+
+test('a cancelled grant puts long tasks back on their own notifications and grace', async () => {
+  const h = harness();
+  const startFollowUpdate = (h, status = 'Checking updates: 0/10', progress = 0) =>
+    h.call(BACKGROUND, 'update', { tag: 'follow_update', status, progress });
+  startTranslation(h);
+  startFollowUpdate(h);
+  await flush();
+  assert.equal(h.starts.length, 1);
+  h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 0);
+  h.cancel(h.starts[0].task.continuousTaskId);
+  await flush();
+  const ordinary = h.publishes.filter((note) => note.content.notificationContentType === 0);
+  assert.deepEqual(ordinary.map((note) => note.label).sort(), ['venera.follow_update', 'venera.pre_translate']);
+  assert.equal(h.transientRequests.length, 1);
+  // Dart's sync transfers stay allowed: only long tasks lost the grant.
+  assert.deepEqual(h.channels.get(BACKGROUND).events, []);
+  const progress = startFollowUpdate(h, 'Checking updates: 3/10', 30);
+  await flush();
+  assert.deepEqual(progress, success(true));
+  assert.equal(h.starts.length, 1);
 });
 
 test('translation grace expires once and is not renewed by progress updates', async () => {
-  const h = harness();
+  const h = harness({ subscribeError: true });
   startTranslation(h);
   await flush();
   h.service.setForeground(false);
@@ -691,7 +721,7 @@ test('translation grace expires once and is not renewed by progress updates', as
 });
 
 test('a refused translation grace pauses work without retrying the grant', async () => {
-  const h = harness({ transientError: true });
+  const h = harness({ transientError: true, subscribeError: true });
   startTranslation(h);
   await flush();
   h.service.setForeground(false);
@@ -702,7 +732,7 @@ test('a refused translation grace pauses work without retrying the grant', async
 });
 
 test('background without a registered notification pauses Dart translation safely', async () => {
-  const h = harness({ granted: false });
+  const h = harness({ granted: false, subscribeError: true });
   h.service.setForeground(false);
   h.service.setForeground(false);
   assert.equal(h.transientRequests.length, 0);
@@ -717,20 +747,23 @@ test('background without a registered notification pauses Dart translation safel
   assert.equal(h.transientRequests.length, 1);
 });
 
-test('translation cleanup preserves concurrent transfer notification and grant', async () => {
+test('translation behind a transfer keeps its own notification and needs no grace', async () => {
   const h = harness();
   startSync(h);
   startTranslation(h);
   await flush();
+  // The live view shows the sync; the translation keeps its own notification.
+  assert.equal(h.publishes[0].content.notificationContentType, 5);
+  const note = h.publishes.find((request) => request.label === 'venera.pre_translate');
+  assert.ok(note);
   h.service.setForeground(false);
+  assert.equal(h.transientRequests.length, 0);
   h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
   await flush();
   assert.equal(h.active.size, 1);
   assert.equal(h.state.stops, 0);
-  assert.equal(h.transientCancelled.length, 1);
-  h.transientRequests[0].callback();
   assert.deepEqual(h.channels.get(BACKGROUND).events, []);
-  assert.equal(h.removedNotifications.length, 1);
+  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
   h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
   await flush();
   assert.equal(h.active.size, 0);
@@ -739,7 +772,7 @@ test('translation cleanup preserves concurrent transfer notification and grant',
 for (const action of ['remove', 'dispose']) {
   test(`translation ${action} during publish removes the late notification`, async () => {
     const wait = deferred();
-    const h = harness({ publishWait: wait });
+    const h = harness({ publishWait: wait, subscribeError: true });
     const started = startTranslation(h);
     await flush();
     assert.equal(h.publishes.length, 1);
@@ -754,7 +787,7 @@ for (const action of ['remove', 'dispose']) {
 }
 
 test('translation disposal cancels its grace and ignores later expiry', async () => {
-  const h = harness();
+  const h = harness({ subscribeError: true });
   startTranslation(h);
   await flush();
   h.service.setForeground(false);
@@ -769,18 +802,18 @@ test('translation disposal cancels its grace and ignores later expiry', async ()
 const startFollowUpdate = (h, status = 'Checking updates: 0/10', progress = 0) =>
   h.call(BACKGROUND, 'update', { tag: 'follow_update', status, progress });
 
-test('follow updates publish once per change with their own route and no background grant', async () => {
+test('follow updates hold the transfer grant, with their own route and progress', async () => {
   const h = harness();
   const started = startFollowUpdate(h);
   await flush();
   assert.deepEqual(started, success(true));
+  assert.equal(h.starts.length, 1);
   assert.equal(h.publishes.length, 1);
-  const note = h.publishes[0];
-  assert.equal(note.notificationSlotType, 65535);
-  assert.equal(note.content.notificationContentType, 0);
-  assert.deepEqual(note.content.normal, { title: 'VeneraX', text: 'Checking updates: 0/10' });
-  assert.equal(note.isAlertOnce, true);
-  assert.deepEqual(note.wantAgent.info, {
+  const live = h.publishes[0];
+  assert.equal(live.notificationSlotType, 4);
+  assert.equal(live.content.notificationContentType, 5);
+  assert.equal(live.template.data.fileName, 'Checking updates: 0/10');
+  assert.deepEqual(live.wantAgent.info, {
     wants: [{
       bundleName: 'com.github.venera.test', abilityName: 'EntryAbility',
       parameters: { 'venera.notification.route': 'follow_updates' },
@@ -795,9 +828,29 @@ test('follow updates publish once per change with their own route and no backgro
   await flush();
   assert.deepEqual(advanced, success(true));
   assert.equal(h.publishes.length, 2);
+  assert.equal(h.publishes[1].id, live.id);
+  assert.equal(h.publishes[1].template.data.fileName, 'Checking updates: 1/10');
+  assert.equal(h.publishes[1].template.data.progressValue, 10);
+  h.service.setForeground(false);
+  assert.equal(h.starts.length, 1);
+  assert.equal(h.transientRequests.length, 0);
+});
+
+test('without the grant, follow updates publish once per change on their own notification', async () => {
+  const h = harness({ subscribeError: true });
+  startFollowUpdate(h);
+  await flush();
+  const note = h.publishes[0];
+  assert.equal(note.notificationSlotType, 65535);
+  assert.equal(note.content.notificationContentType, 0);
+  assert.deepEqual(note.content.normal, { title: 'VeneraX', text: 'Checking updates: 0/10' });
+  assert.equal(note.isAlertOnce, true);
+  assert.equal(note.wantAgent.info.requestCode, 2);
+  startFollowUpdate(h, 'Checking updates: 1/10', 10);
+  await flush();
+  assert.equal(h.publishes.length, 2);
   assert.equal(h.publishes[1].id, note.id);
   assert.equal(h.publishes[1].label, note.label);
-  assert.equal(h.publishes[1].content.normal.text, 'Checking updates: 1/10');
   h.service.setForeground(false);
   assert.equal(h.starts.length, 0);
   assert.equal(h.transientRequests.length, 0);
@@ -815,8 +868,9 @@ test('follow-update cancellation leaves concurrent download and translation noti
   assert.equal(new Set(h.publishes.map((note) => note.wantAgent.info.requestCode)).size, 3);
   const followNote = h.publishes.find((note) =>
     note.wantAgent.info.wants[0].parameters['venera.notification.route'] === 'follow_updates');
+  // The download's grant keeps the translation going without a grace.
   h.service.setForeground(false);
-  assert.equal(h.transientRequests.length, 1);
+  assert.equal(h.transientRequests.length, 0);
   const removed = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
   await flush();
   assert.deepEqual(removed, success(true));
@@ -831,52 +885,59 @@ test('follow-update cancellation leaves concurrent download and translation noti
   assert.deepEqual(translationProgress, success(true));
   assert.deepEqual(downloadProgress, success(true));
   assert.equal(h.starts.length, 1);
-  assert.equal(h.transientRequests.length, 1);
+  assert.equal(h.transientRequests.length, 0);
 });
 
-test('ending download and translation cannot remove an ongoing follow-update notification', async () => {
+test('ending download and translation moves the follow check into the live view', async () => {
   const h = harness();
   startDownload(h);
   startTranslation(h);
   startFollowUpdate(h);
   await flush();
-  const followNote = h.publishes.find((note) =>
+  const followNote = h.publishes.find((note) => note.content.notificationContentType === 0 &&
     note.wantAgent.info.wants[0].parameters['venera.notification.route'] === 'follow_updates');
+  assert.ok(followNote);
   h.service.setForeground(false);
   h.call(DOWNLOAD, 'stop');
   h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
   await flush();
-  assert.equal(h.active.size, 0);
-  assert.equal(h.state.stops, 1);
-  assert.equal(h.transientCancelled.length, 1);
-  assert.equal(h.removedNotifications.some((note) => note.id === followNote.id), false);
+  // The check still holds the grant, now shown by its live view.
+  assert.equal(h.active.size, 1);
+  assert.equal(h.state.stops, 0);
+  const live = h.publishes.at(-1);
+  assert.equal(live.content.notificationContentType, 5);
+  assert.equal(live.wantAgent.info.wants[0].parameters['venera.notification.route'], 'follow_updates');
+  assert.ok(h.removedNotifications.some((note) => note.id === followNote.id));
   const continued = startFollowUpdate(h, 'Checking updates: 2/10', 20);
   await flush();
   assert.deepEqual(continued, success(true));
-  assert.equal(h.publishes.at(-1).id, followNote.id);
+  assert.equal(h.publishes.at(-1).id, live.id);
   assert.equal(h.starts.length, 1);
-  assert.equal(h.transientRequests.length, 1);
+  assert.equal(h.transientRequests.length, 0);
 });
 
-test('follow-update completion replaces progress with a persistent independent result notification', async () => {
+test('follow-update completion ends the grant and leaves a persistent independent result notification', async () => {
   const h = harness();
   startFollowUpdate(h);
   await flush();
-  const progressNote = h.publishes[0];
+  const live = h.publishes[0];
+  assert.equal(live.content.notificationContentType, 5);
   h.service.setForeground(false);
   const completed = h.call(BACKGROUND, 'complete', { tag: 'follow_update', status: 'Found 2 updates' });
   await flush();
   assert.deepEqual(completed, success(true));
+  assert.equal(h.state.stops, 1);
+  assert.equal(h.active.size, 0);
   assert.equal(h.publishes.length, 2);
   const resultNote = h.publishes[1];
-  assert.notEqual(resultNote.id, progressNote.id);
-  assert.notEqual(resultNote.label, progressNote.label);
+  assert.notEqual(resultNote.id, live.id);
+  assert.equal(resultNote.label, 'venera.follow_update.complete');
   assert.equal(resultNote.notificationSlotType, 65535);
   assert.equal(resultNote.content.notificationContentType, 0);
   assert.deepEqual(resultNote.content.normal, { title: 'VeneraX', text: 'Found 2 updates' });
   assert.equal(resultNote.wantAgent.info.requestCode, 2);
   assert.equal(resultNote.wantAgent.info.wants[0].parameters['venera.notification.route'], 'follow_updates');
-  assert.deepEqual(h.removedNotifications, [{ id: progressNote.id, label: progressNote.label }]);
+  assert.deepEqual(h.removedNotifications, []);
   h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
   await flush();
   startFollowUpdate(h, 'Checking updates: 0/3');
@@ -884,24 +945,24 @@ test('follow-update completion replaces progress with a persistent independent r
   h.service.dispose();
   await flush();
   assert.equal(h.removedNotifications.some((note) => note.id === resultNote.id), false);
-  assert.equal(h.starts.length, 0);
+  assert.equal(h.starts.length, 2);
   assert.equal(h.transientRequests.length, 0);
   assert.equal(h.state.permissionRequests, 0);
 });
 
-test('follow-update cancellation only removes progress and never publishes a result', async () => {
+test('follow-update cancellation only ends the grant and never publishes a result', async () => {
   const h = harness();
   startFollowUpdate(h);
   await flush();
-  const note = h.publishes[0];
   const removed = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
   const duplicate = h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
   await flush();
   assert.deepEqual(removed, success(true));
   assert.deepEqual(duplicate, success(true));
   assert.equal(h.publishes.length, 1);
-  assert.deepEqual(h.removedNotifications, [{ id: note.id, label: note.label }]);
-  assert.equal(h.starts.length, 0);
+  assert.equal(h.state.stops, 1);
+  assert.equal(h.active.size, 0);
+  assert.deepEqual(h.removedNotifications, []);
 });
 
 test('denied follow-update notifications neither publish nor prompt in the background', async () => {
@@ -931,7 +992,7 @@ test('denied follow-update notifications neither publish nor prompt in the backg
 for (const action of ['remove', 'dispose']) {
   test(`follow-update ${action} during publish removes the late notification and replies once`, async () => {
     const wait = deferred();
-    const h = harness({ publishWait: wait });
+    const h = harness({ publishWait: wait, subscribeError: true });
     const started = startFollowUpdate(h);
     await flush();
     assert.equal(h.publishes.length, 1);
@@ -970,7 +1031,7 @@ test('dispose during follow-update completion removes the late result notificati
 });
 
 test('invalid follow-update requests cannot publish, remove valid progress, or grant background execution', async () => {
-  const h = harness();
+  const h = harness({ subscribeError: true });
   startFollowUpdate(h);
   await flush();
   const bad = [
@@ -1004,12 +1065,14 @@ for (const failedTag of ['pre_translate', 'follow_update']) {
   test(`${failedTag} publish failure leaves other tasks successful and completion notifications deliverable`, async () => {
     const failedLabel = failedTag === 'pre_translate' ? 'venera.pre_translate' : 'venera.follow_update';
     const h = harness({ publishFailureLabel: failedLabel });
+    // Behind a download, long tasks need notifications of their own.
+    const download = startDownload(h);
+    await flush();
     const failed = failedTag === 'pre_translate' ? startTranslation(h) : startFollowUpdate(h);
     await flush();
     assert.deepEqual(failed, success(false));
     assert.ok(h.publishes.some((note) => note.label === failedLabel));
     const other = failedTag === 'pre_translate' ? startFollowUpdate(h) : startTranslation(h);
-    const download = startDownload(h);
     await flush();
     assert.deepEqual(other, success(true));
     assert.deepEqual(download, success(true));
@@ -1032,6 +1095,11 @@ for (const failedTag of ['pre_translate', 'follow_update']) {
       assert.ok(note, label);
       assert.equal(note.content.notificationContentType, 0);
     }
+    // The long task whose notification failed still runs under the grant.
+    assert.equal(h.active.size, 1);
+    h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
+    h.call(BACKGROUND, 'remove', { tag: 'follow_update' });
+    await flush();
     assert.equal(h.active.size, 0);
   });
 }
@@ -1039,6 +1107,8 @@ for (const failedTag of ['pre_translate', 'follow_update']) {
 for (const action of ['remove', 'dispose']) {
   test(`translation cancellation failure does not prevent follow-update ${action} cleanup`, async () => {
     const h = harness();
+    // Behind a download, both long tasks have notifications of their own.
+    startDownload(h);
     startTranslation(h);
     startFollowUpdate(h);
     await flush();
@@ -1054,7 +1124,7 @@ for (const action of ['remove', 'dispose']) {
     await flush();
     assert.ok(h.cancelRequests.some((note) => note.id === translationNote.id));
     assert.deepEqual(h.removedNotifications, [{ id: followNote.id, label: followNote.label }]);
-    assert.equal(h.publishes.length, 2);
+    assert.equal(h.publishes.length, 3);
     if (action === 'remove') {
       h.config.cancelFailureLabel = undefined;
       const retry = h.call(BACKGROUND, 'remove', { tag: 'pre_translate' });
@@ -1095,6 +1165,7 @@ for (const failedTag of ['pre_translate', 'follow_update']) {
       assert.ok(note, label);
       assert.equal(note.content.notificationContentType, 0);
     }
-    assert.equal(h.active.size, 0);
+    // A translation still running keeps the grant.
+    assert.equal(h.active.size, failedTag === 'pre_translate' ? 0 : 1);
   });
 }
