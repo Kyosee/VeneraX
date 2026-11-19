@@ -44,6 +44,7 @@ void main() {
               done: 7,
               failed: 1,
               failedPages: {3},
+              paused: true,
             ),
           ],
         ).toJson(),
@@ -60,6 +61,8 @@ void main() {
       expect(resumed.isRunning, isTrue);
       expect(paused.status, PreTranslationTaskStatus.paused);
       expect(paused.chapters.single.failedPages, {3});
+      expect(resumed.chapters.single.paused, isTrue);
+      expect(paused.chapters.single.paused, isTrue);
       expect(paused.done + paused.failed, 8);
 
       manager.pause(resumed.id);
@@ -71,6 +74,7 @@ void main() {
       expect(entries.map((entry) => entry['id']), ['system', 'manual']);
       expect(entries.every((entry) => entry['keepPaused'] == true), isTrue);
       expect(entries.first['chapters'].single['done'], 7);
+      expect(entries.first['chapters'].single['paused'], isTrue);
     },
   );
 }

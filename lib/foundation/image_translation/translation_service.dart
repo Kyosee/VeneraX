@@ -737,9 +737,6 @@ class ImageTranslationService with ChangeNotifier {
     // Freshly OCR'd pages awaiting translation; null = resolved from cache,
     // already rendered, or failed during OCR.
     var pendingOcr = List<PageOcr?>.filled(pages.length, null);
-    // Text cache is (re)written only for freshly OCR'd pages, matching
-    // [_translateToCache]; cache-sourced regions are never rewritten.
-    var freshOcr = List<bool>.filled(pages.length, false);
     // Pages needing no further work (rendered-cache hit or OCR failure).
     var settled = List<bool>.filled(pages.length, false);
 
@@ -794,7 +791,6 @@ class ImageTranslationService with ChangeNotifier {
           sourceLang: sourceLang,
           targetLang: config.targetLang,
         );
-        freshOcr[i] = true;
       } on PipelineCanceled {
         rethrow;
       } catch (e, s) {
@@ -859,6 +855,12 @@ class ImageTranslationService with ChangeNotifier {
           ...po.ready,
           ...pipeline.regionsFromTranslation(po.pending, slice),
         ];
+        // Keep paid results before a chapter pause can interrupt rendering.
+        TranslationStore().put(
+          pages[i].cacheKey,
+          regionsOf[i]!,
+          chapter: chapter,
+        );
       } on FormatException catch (error) {
         Log.warning('Image Translation', 'Incomplete page translation: $error');
         settled[i] = true;
@@ -874,9 +876,6 @@ class ImageTranslationService with ChangeNotifier {
       var p = pages[i];
       onStage?.call(TranslationStage.rendering, completedPages());
       try {
-        if (freshOcr[i]) {
-          TranslationStore().put(p.cacheKey, regions, chapter: chapter);
-        }
         if (regions.isEmpty) {
           _noContent.add(p.cacheKey);
           success[i] = true; // no translatable text still counts as handled

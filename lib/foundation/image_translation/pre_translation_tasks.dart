@@ -33,6 +33,7 @@ class PreTranslationChapter {
     this.done = 0,
     this.failed = 0,
     this.canceled = false,
+    this.paused = false,
     Set<int>? failedPages,
   }) : failedPages = failedPages ?? <int>{};
 
@@ -52,6 +53,10 @@ class PreTranslationChapter {
   /// canceled chapter is simply left where it stopped and never resumed.
   bool canceled;
 
+  /// A chapter pause lets the worker continue with other queued chapters.
+  bool paused = false;
+  bool _retryRequested = false;
+
   /// Indices (into the resolved page-key list) of the pages that failed this
   /// run, so a retry can re-run exactly those and leave the succeeded pages
   /// alone. Kept in lockstep with [failed]: a page enters here when it fails
@@ -69,6 +74,7 @@ class PreTranslationChapter {
     'done': done,
     'failed': failed,
     'canceled': canceled,
+    'paused': paused,
     'failedPages': failedPages.toList(),
   };
 
@@ -80,6 +86,7 @@ class PreTranslationChapter {
       done: json['done'] ?? 0,
       failed: json['failed'] ?? 0,
       canceled: json['canceled'] == true,
+      paused: json['paused'] == true,
       failedPages: (json['failedPages'] as List? ?? [])
           .map((e) => e is int ? e : int.tryParse('$e'))
           .whereType<int>()
@@ -608,10 +615,48 @@ class PreTranslationTaskManager with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Resumes a paused pre-translation job.
-  void resume(String id) {
+  /// Pauses one chapter without suspending the rest of the comic's queue.
+  void pauseChapter(String taskId, String eid) {
+    final task = currentTasks.where((t) => t.id == taskId).firstOrNull;
+    final chapter = task?.chapters
+        .where((c) => c.eid == eid && !c.canceled)
+        .firstOrNull;
+    if (chapter == null) return;
+    chapter.paused = true;
+    _saveActive();
+    notifyListeners();
+  }
+
+  /// Resumes only the selected chapter, retaining other chapters' pauses.
+  void resumeChapter(String taskId, String eid) {
+    final task = currentTasks.where((t) => t.id == taskId).firstOrNull;
+    final chapter = task?.chapters
+        .where((c) => c.eid == eid && !c.canceled)
+        .firstOrNull;
+    if (task == null || chapter == null) return;
+    if (task.status == PreTranslationTaskStatus.paused) {
+      for (final other in task.chapters) {
+        if (!other.canceled && (other.total <= 0 || other.done < other.total)) {
+          other.paused = true;
+        }
+      }
+    }
+    chapter.paused = false;
+    resume(taskId, resumeChapters: false);
+  }
+
+  /// The task centre resumes all chapters; system resumes preserve user pauses.
+  void resume(String id, {bool resumeChapters = true}) {
     var task = currentTasks.where((t) => t.id == id).firstOrNull;
-    if (task == null || task.status != PreTranslationTaskStatus.paused) return;
+    if (task == null ||
+        (!task.isRunning && task.status != PreTranslationTaskStatus.paused)) {
+      return;
+    }
+    if (resumeChapters) {
+      for (final chapter in task.chapters) {
+        chapter.paused = false;
+      }
+    }
     task.status = PreTranslationTaskStatus.running;
     _backgroundPausedIds.remove(id);
     _saveActive();
@@ -620,6 +665,17 @@ class PreTranslationTaskManager with ChangeNotifier {
     if (!_runningIds.contains(id)) {
       unawaited(_run(task));
     }
+  }
+
+  /// Re-arms one failed chapter while the rest of its task may remain paused.
+  void retryChapter(String taskId, String eid) {
+    final task = currentTasks.where((t) => t.id == taskId).firstOrNull;
+    final chapter = task?.chapters
+        .where((c) => c.eid == eid && !c.canceled)
+        .firstOrNull;
+    if (chapter == null || chapter.failed == 0) return;
+    chapter._retryRequested = true;
+    resumeChapter(taskId, eid);
   }
 
   /// Manually re-runs the failed pages of a job. Works on a running job (the
@@ -649,7 +705,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   void _onBackgroundAllowanceChanged() {
     if (BackgroundKeepAlive.instance.translationBackgroundAllowed.value) {
       for (final id in _backgroundPausedIds.toList()) {
-        resume(id);
+        resume(id, resumeChapters: false);
       }
       _backgroundPausedIds.clear();
     } else {
@@ -697,30 +753,43 @@ class PreTranslationTaskManager with ChangeNotifier {
     _refreshKeepAlive(task);
     var revision = TranslationStore().localRevision;
     try {
-      var nextChapter = 0;
-      var retriedThrough = 0;
-      do {
-        // New chapter selections can join this queue while a group is awaiting.
-        while (nextChapter < task.chapters.length) {
-          final chapter = task.chapters[nextChapter++];
-          if (_canceledIds.contains(task.id)) break;
-          if (chapter.canceled) continue;
-          await _waitWhilePaused(task);
-          if (_canceledIds.contains(task.id)) break;
-          await _runChapter(task, chapter);
-        }
-        // Auto-retry the failed pages once: a transient error (network blip, rate
-        // limit) on the first pass is common, and one automatic sweep clears most
-        // of them without the user noticing. Only the pages that actually failed
-        // are re-run; succeeded pages are untouched.
+      final forwarded = <PreTranslationChapter>{};
+      final retried = <PreTranslationChapter>{};
+      while (!_canceledIds.contains(task.id)) {
         await _waitWhilePaused(task);
-        if (!_canceledIds.contains(task.id) &&
-            task.status == PreTranslationTaskStatus.running) {
-          await _retryFailedPasses(task, retriedThrough, nextChapter);
-          retriedThrough = nextChapter;
+        if (_canceledIds.contains(task.id)) break;
+        // Revisit paused chapters on resume and include newly appended chapters.
+        final chapter = task.chapters
+            .where((c) => !c.canceled && !c.paused && !forwarded.contains(c))
+            .firstOrNull;
+        if (chapter != null) {
+          if (await _runChapter(task, chapter)) forwarded.add(chapter);
+          continue;
         }
-      } while (!_canceledIds.contains(task.id) &&
-          nextChapter < task.chapters.length);
+        final retry = task.chapters
+            .where(
+              (c) =>
+                  !c.canceled &&
+                  !c.paused &&
+                  c.failed > 0 &&
+                  (!retried.contains(c) || c._retryRequested),
+            )
+            .firstOrNull;
+        if (retry != null) {
+          retry._retryRequested = false;
+          retried.remove(retry);
+          final index = task.chapters.indexOf(retry);
+          if (await _retryFailedPasses(task, index, index + 1)) {
+            retried.add(retry);
+          }
+          continue;
+        }
+        if (!task.chapters.any((c) => !c.canceled && c.paused)) break;
+        task.status = PreTranslationTaskStatus.paused;
+        _saveActive();
+        _refreshKeepAlive();
+        notifyListeners();
+      }
       if (task.status == PreTranslationTaskStatus.running) {
         task.status = task.failed > 0 && task.done == 0
             ? PreTranslationTaskStatus.failed
@@ -750,23 +819,36 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   /// Suspends the loop while [task] is paused, returning as soon as it resumes
   /// or gets canceled. This keeps the running isolate alive without doing work.
-  Future<void> _waitWhilePaused(PreTranslationTask task) async {
+  Future<void> _waitWhilePaused(
+    PreTranslationTask task, [
+    PreTranslationChapter? chapter,
+  ]) async {
     if (task.isRunning &&
         !BackgroundKeepAlive.instance.translationBackgroundAllowed.value) {
       _onBackgroundAllowanceChanged();
     }
     while (task.status == PreTranslationTaskStatus.paused) {
-      if (_canceledIds.contains(task.id)) return;
+      if (_canceledIds.contains(task.id) ||
+          chapter?.paused == true ||
+          chapter?.canceled == true) {
+        return;
+      }
       // Poll every second. Resume() flips the status and the next iteration
       // exits immediately.
       await Future.delayed(const Duration(seconds: 1));
     }
   }
 
-  Future<void> _runChapter(
+  bool _chapterStopped(
+    PreTranslationTask task,
+    PreTranslationChapter chapter,
+  ) => _canceledIds.contains(task.id) || chapter.canceled || chapter.paused;
+
+  Future<bool> _runChapter(
     PreTranslationTask task,
     PreTranslationChapter chapter,
   ) async {
+    if (_chapterStopped(task, chapter)) return false;
     var activity = _activities[task.id];
     activity
       ?..chapterIndex = task.chapters.indexOf(chapter) + 1
@@ -779,14 +861,16 @@ class PreTranslationTaskManager with ChangeNotifier {
     try {
       pageKeys = await _resolvePageKeys(task, chapter);
     } catch (e, s) {
+      if (_chapterStopped(task, chapter)) return false;
       Log.error('Pre-translation', 'Failed to list pages: $e', s);
       chapter.failed = chapter.total == 0 ? 1 : chapter.total - chapter.done;
       _saveActiveThrottled();
       notifyListeners();
-      return;
+      return true;
     }
     chapter.total = pageKeys.length;
     notifyListeners();
+    if (_chapterStopped(task, chapter)) return false;
 
     // Resume across restart: pages already cached are skipped without any
     // network fetch or inference.
@@ -798,7 +882,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     for (var i = startIndex; i < pageKeys.length; i += groupSize) {
       ranges.add((start: i, end: (i + groupSize).clamp(0, pageKeys.length)));
     }
-    if (ranges.isEmpty) return;
+    if (ranges.isEmpty) return true;
 
     // Overlap groups so a group's image fetch + OCR can proceed while a prior
     // group waits on the LLM. Groups may finish out of order, but their counts
@@ -819,6 +903,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     // the window slides forward by one. Earlier-registered listeners fire
     // first, so removal happens before Future.any's await returns.
     var active = <Future<void>>{};
+    var interrupted = false;
 
     void commit(int groupIndex, GroupResult result) {
       applyGroupResult(committer, chapter, activity, groupIndex, result);
@@ -856,7 +941,11 @@ class PreTranslationTaskManager with ChangeNotifier {
               );
               // A canceled/paused-out group returns null; skip committing it so
               // counts stay at the group boundary and a resume redoes it.
-              if (result != null) commit(groupIndex, result);
+              if (result != null) {
+                commit(groupIndex, result);
+              } else {
+                interrupted = true;
+              }
             } catch (e, s) {
               // Never let a group future complete with an error: with groups
               // overlapping, an errored future would make `Future.any` rethrow and
@@ -873,15 +962,16 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     while (next < ranges.length) {
-      if (_canceledIds.contains(task.id) || chapter.canceled) break;
-      await _waitWhilePaused(task);
-      if (_canceledIds.contains(task.id) || chapter.canceled) break;
+      if (_chapterStopped(task, chapter)) break;
+      await _waitWhilePaused(task, chapter);
+      if (_chapterStopped(task, chapter)) break;
       launch(next++);
       if (active.length >= overlap) {
         await Future.any(active);
       }
     }
     await Future.wait(active);
+    return !interrupted && next == ranges.length && !chapter.paused;
   }
 
   /// Applies one finished group's counts, keeping the display channel in step.
@@ -946,7 +1036,7 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// [retryFailed]. Chapters recorded before this feature existed have failures
   /// but no indices; those are re-scanned wholesale by zeroing their counters
   /// so the forward path redoes them (rendered pages skip cheaply).
-  Future<void> _retryFailedPasses(
+  Future<bool> _retryFailedPasses(
     PreTranslationTask task,
     int from,
     int to,
@@ -954,8 +1044,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     var groupSize = _batchPages;
     for (var chapterIndex = from; chapterIndex < to; chapterIndex++) {
       final chapter = task.chapters[chapterIndex];
-      if (_canceledIds.contains(task.id)) return;
-      if (chapter.canceled) continue;
+      if (_chapterStopped(task, chapter)) return false;
       if (chapter.failed <= 0) continue;
 
       // The retry sweep also walks one chapter at a time: point the activity at
@@ -975,7 +1064,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         chapter.done = 0;
         chapter.failed = 0;
         chapter.total = 0;
-        await _runChapter(task, chapter);
+        if (!await _runChapter(task, chapter)) return false;
         continue;
       }
 
@@ -995,26 +1084,27 @@ class PreTranslationTaskManager with ChangeNotifier {
               .toList()
             ..sort();
       for (var g = 0; g < targets.length; g += groupSize) {
-        if (_canceledIds.contains(task.id)) return;
-        await _waitWhilePaused(task);
-        if (_canceledIds.contains(task.id)) return;
+        if (_chapterStopped(task, chapter)) return false;
+        await _waitWhilePaused(task, chapter);
+        if (_chapterStopped(task, chapter)) return false;
         var slice = targets.sublist(
           g,
           (g + groupSize).clamp(0, targets.length),
         );
-        await _retryGroup(task, chapter, pageKeys, slice);
+        if (!await _retryGroup(task, chapter, pageKeys, slice)) return false;
         _refreshKeepAlive(task);
         _saveActiveThrottled();
         notifyListeners();
       }
     }
+    return true;
   }
 
   /// Re-translates the specific page [indices] of a chapter (a retry slice).
   /// Unlike [_runGroup] this operates on an explicit, possibly non-contiguous
   /// set and moves counts failed→done instead of appending to a prefix, so
   /// done+failed is preserved.
-  Future<void> _retryGroup(
+  Future<bool> _retryGroup(
     PreTranslationTask task,
     PreTranslationChapter chapter,
     List<String> pageKeys,
@@ -1028,14 +1118,14 @@ class PreTranslationTaskManager with ChangeNotifier {
     activity?.groups[0] = slot;
     _notifyActivity();
     try {
-      await _retrySlice(task, chapter, pageKeys, indices, slot);
+      return await _retrySlice(task, chapter, pageKeys, indices, slot);
     } finally {
       activity?.groups.remove(0);
       _notifyActivity();
     }
   }
 
-  Future<void> _retrySlice(
+  Future<bool> _retrySlice(
     PreTranslationTask task,
     PreTranslationChapter chapter,
     List<String> pageKeys,
@@ -1062,8 +1152,8 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     for (var i in indices) {
-      await _waitWhilePaused(task);
-      if (_canceledIds.contains(task.id)) return;
+      await _waitWhilePaused(task, chapter);
+      if (_chapterStopped(task, chapter)) return false;
       var imageKey = pageKeys[i];
       var cacheKey = ImageTranslationService.cacheKeyFor(
         task.sourceKey,
@@ -1084,8 +1174,8 @@ class PreTranslationTaskManager with ChangeNotifier {
           reportFetchPhase();
           continue;
         }
-        await _waitWhilePaused(task);
-        if (_canceledIds.contains(task.id)) return;
+        await _waitWhilePaused(task, chapter);
+        if (_chapterStopped(task, chapter)) return false;
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((
           index: i,
@@ -1101,7 +1191,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         reportFetchPhase();
       }
     }
-    if (pending.isEmpty) return;
+    if (pending.isEmpty) return true;
     try {
       var config = task.config;
       var results = await service.translatePageGroup(
@@ -1125,8 +1215,8 @@ class PreTranslationTaskManager with ChangeNotifier {
           comicCover: task.cover,
           chapterTitle: chapter.title,
         ),
-        shouldCancel: () => _canceledIds.contains(task.id) || chapter.canceled,
-        waitUntilResumed: () => _waitWhilePaused(task),
+        shouldCancel: () => _chapterStopped(task, chapter),
+        waitUntilResumed: () => _waitWhilePaused(task, chapter),
         onStage: (stage, completed) {
           activity.stage = stage;
           // The service scores only the pages it was handed, on the same scale.
@@ -1140,11 +1230,12 @@ class PreTranslationTaskManager with ChangeNotifier {
         }
       }
     } on PipelineCanceled {
-      return;
+      return false;
     } catch (e, s) {
       Log.warning('Pre-translation', 'Retry group failed: $e\n$s');
       // Whole group still failed; leave every index recorded.
     }
+    return true;
   }
 
   /// Moves one page from failed→done after a successful retry, keeping
@@ -1204,12 +1295,12 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
 
     for (var i = start; i < end; i++) {
-      await _waitWhilePaused(task);
+      await _waitWhilePaused(task, chapter);
       // Cancel before the group is counted: return null so the caller leaves
       // the chapter counters at the group's start boundary and a resume redoes
       // the whole group. Every page is idempotent (rendered ones skip via
       // hasRenderedPage), so nothing is double-counted or skipped.
-      if (_canceledIds.contains(task.id)) return null;
+      if (_chapterStopped(task, chapter)) return null;
       var imageKey = pageKeys[i];
       var cacheKey = ImageTranslationService.cacheKeyFor(
         task.sourceKey,
@@ -1230,8 +1321,8 @@ class PreTranslationTaskManager with ChangeNotifier {
           reportFetchPhase();
           continue;
         }
-        await _waitWhilePaused(task);
-        if (_canceledIds.contains(task.id)) return null;
+        await _waitWhilePaused(task, chapter);
+        if (_chapterStopped(task, chapter)) return null;
         var bytes = await _fetchPageBytes(task, chapter.eid, imageKey);
         pending.add((
           index: i,
@@ -1272,9 +1363,8 @@ class PreTranslationTaskManager with ChangeNotifier {
             comicCover: task.cover,
             chapterTitle: chapter.title,
           ),
-          shouldCancel: () =>
-              _canceledIds.contains(task.id) || chapter.canceled,
-          waitUntilResumed: () => _waitWhilePaused(task),
+          shouldCancel: () => _chapterStopped(task, chapter),
+          waitUntilResumed: () => _waitWhilePaused(task, chapter),
           onStage: (stage, completed) {
             activity.stage = stage;
             // The service scores only the pages it was handed, on the same

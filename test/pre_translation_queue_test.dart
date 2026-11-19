@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -54,6 +55,8 @@ void main() {
     final finished = Completer<PreTranslationTask>();
     final requested = <String>[];
     final retryStarted = Completer<void>(), retryRelease = Completer<void>();
+    final ninthStarted = Completer<void>(), ninthRelease = Completer<void>();
+    final tenthStarted = Completer<void>(), tenthRelease = Completer<void>();
     var failingLoads = 0;
     const sourceKey = 'queue-test';
     ComicSourceManager().add(
@@ -71,6 +74,14 @@ void main() {
         null,
         (cid, eid) async {
           requested.add(eid!);
+          if (eid == '9' && !ninthStarted.isCompleted) {
+            ninthStarted.complete();
+            await ninthRelease.future;
+          }
+          if (eid == '10' && !tenthStarted.isCompleted) {
+            tenthStarted.complete();
+            await tenthRelease.future;
+          }
           if (eid == 'failed') {
             failingLoads++;
             if (failingLoads == 2) {
@@ -109,7 +120,7 @@ void main() {
       ),
     );
     final config = TranslationConfig.of('book', sourceKey);
-    for (final eid in ['a', 'b']) {
+    for (final eid in ['a', 'b', '9', '10', 'rapid']) {
       TranslationStore().put(
         ImageTranslationService.cacheKeyFor(sourceKey, 'book', eid, 1),
         [],
@@ -179,9 +190,104 @@ void main() {
       expect(requested, ['failed', 'failed', 'b']);
       expect(afterRetry.done, 1);
       expect(afterRetry.failed, 1);
+
+      requested.clear();
+      final chapterFinished = Completer<PreTranslationTask>();
+      manager.onTaskFinished = chapterFinished.complete;
+      final switching = queue(['9', '10'])!;
+      await ninthStarted.future.timeout(const Duration(seconds: 3));
+      manager.pause(switching.id);
+      manager.resumeChapter(switching.id, '10');
+      expect(switching.chapters.first.paused, isTrue);
+      expect(switching.chapters.last.paused, isFalse);
+      ninthRelease.complete();
+      await tenthStarted.future.timeout(const Duration(seconds: 3));
+      expect(switching.chapters.first.done, 0);
+      expect(manager.activityOf(switching.id)!.chapterEid, '10');
+      BackgroundKeepAlive.instance.translationBackgroundAllowed.value = false;
+      BackgroundKeepAlive.instance.translationBackgroundAllowed.value = true;
+      expect(switching.chapters.first.paused, isTrue);
+      expect(switching.chapters.last.paused, isFalse);
+      manager.pauseChapter(switching.id, '10');
+      tenthRelease.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(switching.status, PreTranslationTaskStatus.paused);
+      expect(chapterFinished.isCompleted, isFalse);
+      final snapshot = PreTranslationTask.fromJson(switching.toJson());
+      expect(snapshot.chapters.every((chapter) => chapter.paused), isTrue);
+
+      manager.resumeChapter(switching.id, '10');
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (switching.chapters.last.done == 0 &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(switching.chapters.last.done, 1);
+      expect(switching.chapters.first.done, 0);
+      expect(switching.chapters.first.paused, isTrue);
+      expect(manager.currentTasks, contains(switching));
+      manager.resumeChapter(switching.id, '9');
+      final switched = await chapterFinished.future.timeout(
+        const Duration(seconds: 3),
+      );
+      expect(switched.done, 2);
+      expect(switched.failed, 0);
+      expect(requested, ['9', '10', '10', '9']);
+      expect(switched.status, PreTranslationTaskStatus.completed);
+
+      requested.clear();
+      final rapidFinished = Completer<PreTranslationTask>();
+      manager.onTaskFinished = rapidFinished.complete;
+      var interrupted = false;
+      void rapidToggle() {
+        final task = manager.currentTasks
+            .where((t) => t.chapters.singleOrNull?.eid == 'rapid')
+            .firstOrNull;
+        if (task == null || interrupted || task.chapters.single.total == 0)
+          return;
+        interrupted = true;
+        manager.pauseChapter(task.id, 'rapid');
+        scheduleMicrotask(() => manager.resumeChapter(task.id, 'rapid'));
+      }
+
+      manager.addListener(rapidToggle);
+      try {
+        queue(['rapid']);
+        final rapid = await rapidFinished.future.timeout(
+          const Duration(seconds: 3),
+        );
+        expect(rapid.done, 1);
+        expect(rapid.failed, 0);
+        expect(requested, ['rapid', 'rapid']);
+      } finally {
+        manager.removeListener(rapidToggle);
+      }
+
+      final retryPaused = queue(['failed', 'b'])!;
+      manager.pauseChapter(retryPaused.id, 'b');
+      Future<void> waitForPause() async {
+        final deadline = DateTime.now().add(const Duration(seconds: 3));
+        while (retryPaused.isRunning && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(retryPaused.status, PreTranslationTaskStatus.paused);
+      }
+
+      await waitForPause();
+      final beforeManualRetry = failingLoads;
+      manager.retryChapter(retryPaused.id, 'failed');
+      await waitForPause();
+      expect(failingLoads, beforeManualRetry + 1);
+      expect(retryPaused.chapters.last.paused, isTrue);
+      final canceledRetry = Completer<PreTranslationTask>();
+      manager.onTaskFinished = canceledRetry.complete;
+      manager.cancel(retryPaused.id);
+      await canceledRetry.future.timeout(const Duration(seconds: 3));
     } finally {
       if (!release.isCompleted) release.complete();
       if (!retryRelease.isCompleted) retryRelease.complete();
+      if (!ninthRelease.isCompleted) ninthRelease.complete();
+      if (!tenthRelease.isCompleted) tenthRelease.complete();
       manager.onTaskFinished = null;
       manager.currentTasks.clear();
       manager.historyTasks.clear();

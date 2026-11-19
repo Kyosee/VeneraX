@@ -11,6 +11,7 @@ void main() {
         total: 10,
         done: 7,
         failed: 3,
+        paused: true,
         failedPages: {2, 5, 9},
       );
       var back = PreTranslationChapter.fromJson(c.toJson());
@@ -19,6 +20,7 @@ void main() {
       expect(back.done, 7);
       expect(back.failed, 3);
       expect(back.failedPages, {2, 5, 9});
+      expect(back.paused, isTrue);
     });
 
     test('defaults failedPages to empty for legacy json without the field', () {
@@ -30,6 +32,7 @@ void main() {
         'failed': 2,
       });
       expect(back.failedPages, isEmpty);
+      expect(back.paused, isFalse);
       // A legacy chapter still reports failures so a retry is offered; it just
       // falls back to a whole-chapter rescan.
       expect(back.failed, 2);
@@ -60,8 +63,9 @@ void main() {
 
     test('hasFailures reflects any chapter with failures', () {
       expect(
-        taskWith([PreTranslationChapter(eid: '0', title: '', failed: 0)])
-            .hasFailures,
+        taskWith([
+          PreTranslationChapter(eid: '0', title: '', failed: 0),
+        ]).hasFailures,
         isFalse,
       );
       expect(
@@ -111,8 +115,7 @@ void main() {
       );
     });
 
-    test('resume-cursor invariant: a successful retry preserves done+failed',
-        () {
+    test('resume-cursor invariant: a successful retry preserves done+failed', () {
       // A retry moves a page failed->done. The forward resume cursor is
       // startIndex = done + failed, so that sum must not change or resume would
       // skip/repeat pages. This mirrors _markRetrySuccess.

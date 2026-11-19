@@ -150,6 +150,44 @@ void main() {
       expect(service.isTranslated(pages[1].cacheKey, config.mode), isTrue);
       expect(TranslationStore().get(pages[0].cacheKey)!.single.text, '译文');
       expect(TranslationStore().get(pages[1].cacheKey)!.single.text, '补译');
+
+      final switchingPage = (
+        cacheKey: ImageTranslationService.cacheKeyFor(
+          'source',
+          'book',
+          '34.2',
+          4,
+        ),
+        legacyCacheKey: null as String?,
+        imageBytes: Uint8List.fromList([1]),
+      );
+      await expectLater(
+        service.translatePageGroup(
+          [switchingPage],
+          'book@source',
+          config,
+          chapter: chapter,
+          // Switch chapters after the reply arrives, before rendering starts.
+          shouldCancel: () =>
+              TranslationStore().get(switchingPage.cacheKey) != null,
+        ),
+        throwsA(isA<PipelineCanceled>()),
+      );
+      expect(TranslationStore().get(switchingPage.cacheKey)!.single.text, '补译');
+      // A resumed chapter uses its cached reply, even if inference is unavailable.
+      appdata.settings['imageTranslationScripts'] = {
+        'fixture':
+            'function translate(request) { throw new Error("Unexpected repeated request"); }',
+      };
+      expect(
+        await service.translatePageGroup(
+          [switchingPage],
+          'book@source',
+          config,
+          chapter: chapter,
+        ),
+        [true],
+      );
     },
   );
 }
