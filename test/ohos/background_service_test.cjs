@@ -565,7 +565,9 @@ test('completion uses an independent fixed ordinary notification and preserves o
   assert.deepEqual(ordinary[0].content.normal, { title: 'VeneraX', text: 'Finished' });
   assert.equal(ordinary[0].wantAgent.info.wants[0].bundleName, 'com.github.venera.test');
   assert.equal(ordinary[0].wantAgent.info.wants[0].abilityName, 'EntryAbility');
-  assert.equal(ordinary[0].wantAgent.info.wants[0].parameters['venera.notification.route'], 'downloading');
+  // A finished comic has left the queue, so the result opens the local library.
+  assert.equal(ordinary[0].wantAgent.info.wants[0].parameters['venera.notification.route'], 'local');
+  assert.equal(ordinary[0].wantAgent.info.requestCode, 3);
   h.call(DOWNLOAD, 'complete', { status: 'Finished again' });
   await flush();
   assert.equal(h.publishes.at(-1).id, ordinary[0].id);
