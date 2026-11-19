@@ -781,6 +781,9 @@ class PreTranslationTaskManager with ChangeNotifier {
           final index = task.chapters.indexOf(retry);
           if (await _retryFailedPasses(task, index, index + 1)) {
             retried.add(retry);
+          } else {
+            // A whole-chapter retry may have reset its forward cursor.
+            forwarded.remove(retry);
           }
           continue;
         }

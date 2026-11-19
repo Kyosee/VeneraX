@@ -55,9 +55,12 @@ void main() {
     final finished = Completer<PreTranslationTask>();
     final requested = <String>[];
     final retryStarted = Completer<void>(), retryRelease = Completer<void>();
+    final recoveryStarted = Completer<void>();
+    final recoveryRelease = Completer<void>();
     final ninthStarted = Completer<void>(), ninthRelease = Completer<void>();
     final tenthStarted = Completer<void>(), tenthRelease = Completer<void>();
     var failingLoads = 0;
+    var recoveringLoads = 0;
     const sourceKey = 'queue-test';
     ComicSourceManager().add(
       ComicSource(
@@ -89,6 +92,16 @@ void main() {
               await retryRelease.future;
             }
             throw StateError('Fixture page listing failure');
+          }
+          if (eid == 'recovered') {
+            recoveringLoads++;
+            if (recoveringLoads == 1) {
+              throw StateError('Fixture first page listing failure');
+            }
+            if (recoveringLoads == 2) {
+              recoveryStarted.complete();
+              await recoveryRelease.future;
+            }
           }
           if (eid == 'a') {
             started.complete();
@@ -139,7 +152,7 @@ void main() {
         createdAt: DateTime(2026),
       ),
     );
-    for (final eid in ['a', 'b', '9', '10', 'rapid']) {
+    for (final eid in ['a', 'b', '9', '10', 'rapid', 'recovered']) {
       TranslationStore().put(
         ImageTranslationService.cacheKeyFor(sourceKey, 'book', eid, 1),
         [],
@@ -209,6 +222,31 @@ void main() {
       expect(requested, ['failed', 'failed', 'b']);
       expect(afterRetry.done, 1);
       expect(afterRetry.failed, 1);
+
+      requested.clear();
+      final recoveryFinished = Completer<PreTranslationTask>();
+      manager.onTaskFinished = recoveryFinished.complete;
+      final recovering = queue(['recovered'])!;
+      await recoveryStarted.future.timeout(const Duration(seconds: 3));
+      manager.pauseChapter(recovering.id, 'recovered');
+      recoveryRelease.complete();
+      final recoveryDeadline = DateTime.now().add(const Duration(seconds: 3));
+      while ((recovering.isRunning || recovering.chapters.single.total == 0) &&
+          DateTime.now().isBefore(recoveryDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(recovering.status, PreTranslationTaskStatus.paused);
+      expect(recovering.chapters.single.total, 1);
+      expect(recovering.done, 0);
+      expect(recoveryFinished.isCompleted, isFalse);
+      manager.resumeChapter(recovering.id, 'recovered');
+      final recovered = await recoveryFinished.future.timeout(
+        const Duration(seconds: 3),
+      );
+      expect(recovered.done, 1);
+      expect(recovered.failed, 0);
+      expect(recovered.status, PreTranslationTaskStatus.completed);
+      expect(requested, ['recovered', 'recovered', 'recovered']);
 
       requested.clear();
       final chapterFinished = Completer<PreTranslationTask>();
@@ -306,6 +344,7 @@ void main() {
     } finally {
       if (!release.isCompleted) release.complete();
       if (!retryRelease.isCompleted) retryRelease.complete();
+      if (!recoveryRelease.isCompleted) recoveryRelease.complete();
       if (!ninthRelease.isCompleted) ninthRelease.complete();
       if (!tenthRelease.isCompleted) tenthRelease.complete();
       manager.onTaskFinished = null;
