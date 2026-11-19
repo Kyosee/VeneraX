@@ -264,7 +264,7 @@ class _ReaderGestureDetectorState
       context.readerScaffold.openOrClose();
     } else if (reader.isOnChapterCommentsPage) {
       // The toolbar doesn't open from the chapter comments page.
-      _turnPageByTap(location, onComments: true);
+      _turnPageByTap(location);
     } else if (!_turnPageByTap(location)) {
       context.readerScaffold.openOrClose();
     }
@@ -279,14 +279,13 @@ class _ReaderGestureDetectorState
     if (context.readerScaffold.isOpen) {
       context.readerScaffold.openOrClose();
     } else {
-      _turnPageByTap(location, onComments: true);
+      _turnPageByTap(location);
     }
   }
 
   /// Turns the page when tap to turn is on and [location] falls in a tap
-  /// zone; false otherwise. [onComments]: the tap is on the chapter comments,
-  /// the chapter's last page, so going on from there opens the next chapter.
-  bool _turnPageByTap(Offset location, {bool onComments = false}) {
+  /// zone; false otherwise.
+  bool _turnPageByTap(Offset location) {
     if (!appdata.settings.getReaderSetting(
       reader.cid,
       reader.type.sourceKey,
@@ -309,10 +308,15 @@ class _ReaderGestureDetectorState
     } else if (y > height * (1 - _kTapToTurnPagePercent)) {
       isBottom = true;
     }
-    bool backward() => reader.toPrevPage();
+    // Past either end of a chapter, like a swipe: into the neighbouring
+    // chapter, at its last page (its comments, when shown) going back.
+    bool backward() =>
+        reader.toPrevPage() ||
+        (!reader.isFirstChapterOfGroup &&
+            reader.toPrevChapter(toLastPage: true));
     bool forward() =>
         reader.toNextPage() ||
-        (onComments && !reader.isLastChapterOfGroup && reader.toNextChapter());
+        (!reader.isLastChapterOfGroup && reader.toNextChapter());
     var prev = backward;
     var next = forward;
     final customZones = appdata.settings.getReaderSetting(

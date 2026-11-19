@@ -76,8 +76,11 @@ class _GalleryModeState extends State<_GalleryMode>
   /// The delay also coalesces rapid flips into a single cache pass.
   void _schedulePrecache(int page) {
     _precacheTimer?.cancel();
+    final chapter = reader.chapter;
     _precacheTimer = Timer(const Duration(milliseconds: 200), () {
-      if (!mounted || reader.page != page) return;
+      // A chapter switch keeps this view until the next frame, with the old
+      // images but the new chapter's id.
+      if (!mounted || reader.page != page || reader.chapter != chapter) return;
       // On the comments page this warms up the last image, the page a turn
       // back from there shows.
       cache(page);
@@ -837,6 +840,8 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   Future<void> animateToPage(int page) {
+    // Unmounted pager, e.g. while a chapter that failed to load shows its error.
+    if (!controller.hasClients) return Future.value();
     if ((page - controller.page!.round()).abs() > 1) {
       controller.jumpToPage(page > controller.page! ? page - 1 : page + 1);
     }
@@ -849,6 +854,7 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void toPage(int page) {
+    if (!controller.hasClients) return;
     controller.jumpToPage(page);
   }
 

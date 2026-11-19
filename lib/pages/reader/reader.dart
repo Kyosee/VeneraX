@@ -1276,6 +1276,9 @@ abstract mixin class _ReaderLocation {
   }
 
   bool toPage(int page) {
+    // A chapter being loaded has no pager yet; the view still registered is
+    // the disposed one of the chapter before.
+    if (isLoading) return false;
     if (_validatePage(page)) {
       if (page == this.page && page != 1 && page != totalPages) {
         return false;

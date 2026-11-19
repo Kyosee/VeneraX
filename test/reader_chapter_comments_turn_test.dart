@@ -233,6 +233,19 @@ void main() {
     expect(tester.takeException(), isNull);
     await close(tester);
 
+    // Tapping back from the first page goes the same way. Right after opening,
+    // so the switch lands inside the pending neighbour precache.
+    reader = await open(tester, 'galleryLeftToRight', chapter: 2);
+    await tester.tapAt(const Offset(50, 450));
+    await tester.pumpAndSettle();
+    expect(reader.chapter, 1);
+    expect(reader.isOnChapterCommentsPage, isTrue);
+    await tester.tapAt(const Offset(50, 450));
+    await tester.pumpAndSettle();
+    expect((reader.chapter, reader.page), (1, _pages));
+    expect(tester.takeException(), isNull);
+    await close(tester);
+
     reader = await open(
       tester,
       'galleryLeftToRight',
@@ -317,6 +330,11 @@ void main() {
     await tester.tapAt(rightBlank);
     await tester.pumpAndSettle();
     expect((reader.chapter, reader.page), (2, 1));
+
+    // No page turns while a chapter loads.
+    reader.isLoading = true;
+    expect(reader.toNextPage(), isFalse);
+    reader.isLoading = false;
     expect(tester.takeException(), isNull);
     await close(tester);
   }
