@@ -7,6 +7,8 @@ import 'package:shimmer_animation/shimmer_animation.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/components/translation_progress_surface.dart';
+import 'package:venera/pages/tasks_page.dart';
 import 'package:venera/components/related_sources_dialog.dart';
 import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
@@ -70,6 +72,10 @@ part 'cover_viewer.dart';
 part 'download_chapter_picker.dart';
 
 part 'pre_translate_chapter_picker.dart';
+
+part 'translation_workspace.dart';
+
+part 'translation_workspace_layout.dart';
 
 const double _comicDetailsWideBreakpoint = 760;
 

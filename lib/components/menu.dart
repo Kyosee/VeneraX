@@ -88,12 +88,14 @@ class _DesktopMenu extends StatefulWidget {
 }
 
 class _DesktopMenuState extends State<_DesktopMenu> {
-  static const _buttonStyle = ButtonStyle(
-    minimumSize: WidgetStatePropertyAll(Size(0, 44)),
-    padding: WidgetStatePropertyAll(
+  ButtonStyle get _buttonStyle => ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(0, 44)),
+    padding: const WidgetStatePropertyAll(
       EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     ),
-    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 15)),
+    textStyle: WidgetStatePropertyAll(
+      Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 15),
+    ),
   );
 
   final _controller = MenuController();

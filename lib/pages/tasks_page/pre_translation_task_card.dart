@@ -92,10 +92,10 @@ mixin _PreTranslationTaskCard on _TaskCardCommon {
     PreTranslationTask task, {
     required bool expanded,
   }) {
-    var activity = task.isRunning
-        ? preTranslationManager.activityOf(task.id)
-        : null;
-    var stage = activity?.headStage;
+    final active =
+        task.isRunning || task.status == PreTranslationTaskStatus.paused;
+    var activity = active ? preTranslationManager.activityOf(task.id) : null;
+    var stage = task.isRunning ? activity?.headStage : null;
     var progress = activity?.liveProgress(task) ?? task.progress;
     // Committed counters lag by design (they double as the resume cursor), so
     // the card reports the live figures a running job's activity carries.
@@ -105,111 +105,129 @@ mixin _PreTranslationTaskCard on _TaskCardCommon {
     // still while the bar advances and the card reads as stuck.
     var processedPages =
         activity?.liveProcessed(task) ?? (task.done + task.failed);
-    var progressText = task.total == 0
-        ? "0%"
+    final totalKnown =
+        task.chapters.isNotEmpty &&
+        task.chapters.every((chapter) => chapter.total > 0);
+    var progressText = !totalKnown
+        ? "Total pages unknown".tl
         : "${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
     final card = Card(
       elevation: 0,
       color: context.colorScheme.surface,
       margin: const EdgeInsets.only(bottom: 8),
-      child: _TaskExpansionTile(
-        initiallyExpanded: expanded,
-        leading: _wrapIconWithRotation(
-          getTaskIcon('pre_translate', task.isRunning, status: task.status.name),
-          task.isRunning,
-          task.status.name,
-        ),
-        title: Text(
-getTaskTitle('pre_translate', {'title': task.title}),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: buildTaskSubtitle(
-          [
-            stage == null
-                ? preTranslateStatusText(task)
-                : translationStageText(stage),
-            "@count chapters".tlParams({'count': task.chapters.length}),
-            progressText,
-          ],
-          task.createdAt,
-          task.finishedAt,
-        ),
-        trailing: _buildPreTranslateTrailing(task),
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(
-              value: task.isRunning && task.total == 0 ? null : progress,
+      clipBehavior: Clip.antiAlias,
+      child: TranslationProgressSurface(
+        active: active && !totalKnown,
+        progress: !active
+            ? 0
+            : totalKnown
+            ? progress
+            : null,
+        paused: task.status == PreTranslationTaskStatus.paused,
+        child: _TaskExpansionTile(
+          initiallyExpanded: expanded,
+          leading: _wrapIconWithRotation(
+            getTaskIcon(
+              'pre_translate',
+              task.isRunning,
+              status: task.status.name,
             ),
+            task.isRunning,
+            task.status.name,
           ),
-          const SizedBox(height: 8),
-          buildSourceBox(
-            title: "Details".tl,
-            titleTrailing: TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          title: Text(
+            getTaskTitle('pre_translate', {'title': task.title}),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: buildTaskSubtitle(
+            [
+              stage == null
+                  ? preTranslateStatusText(task)
+                  : translationStageText(stage),
+              "@count chapters".tlParams({'count': task.chapters.length}),
+              progressText,
+            ],
+            task.createdAt,
+            task.finishedAt,
+          ),
+          trailing: _buildPreTranslateTrailing(task),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: LinearProgressIndicator(
+                value: task.isRunning && !totalKnown ? null : progress,
               ),
-              onPressed: () => context.to(
-                () => ComicPage(
-                  id: task.cid,
-                  sourceKey: task.sourceKey,
-                  title: task.title,
-                ),
-              ),
-              icon: const Icon(Icons.chrome_reader_mode_outlined, size: 16),
-              label: Text("View Detail".tl, style: ts.s12),
             ),
-            children: [
-              if (activity != null && activity.chapterIndex > 0) ...[
-                Text(
-                  activity.chapterTitle.isEmpty
-                      ? "Chapter @index/@total".tlParams({
-                          'index': activity.chapterIndex,
-                          'total': task.chapters.length,
-                        })
-                      : "Chapter @index/@total: @title".tlParams({
-                          'index': activity.chapterIndex,
-                          'total': task.chapters.length,
-                          'title': activity.chapterTitle,
-                        }),
-                  style: ts.s14,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            buildSourceBox(
+              title: "Details".tl,
+              backgroundColor: Colors.transparent,
+              titleTrailing: TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                const SizedBox(height: 2),
-              ],
-              if (activity != null && activity.groups.isNotEmpty) ...[
+                onPressed: () => context.to(
+                  () => ComicPage(
+                    id: task.cid,
+                    sourceKey: task.sourceKey,
+                    title: task.title,
+                  ),
+                ),
+                icon: const Icon(Icons.chrome_reader_mode_outlined, size: 16),
+                label: Text("View Detail".tl, style: ts.s12),
+              ),
+              children: [
+                if (activity != null && activity.chapterIndex > 0) ...[
+                  Text(
+                    activity.chapterTitle.isEmpty
+                        ? "Chapter @index/@total".tlParams({
+                            'index': activity.chapterIndex,
+                            'total': task.chapters.length,
+                          })
+                        : "Chapter @index/@total: @title".tlParams({
+                            'index': activity.chapterIndex,
+                            'total': task.chapters.length,
+                            'title': activity.chapterTitle,
+                          }),
+                    style: ts.s14,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                if (activity != null && activity.groups.isNotEmpty) ...[
+                  Text(
+                    "In progress: @detail".tlParams({
+                      'detail': translationStageBreakdown(activity),
+                    }),
+                    style: ts.s14,
+                  ),
+                  const SizedBox(height: 2),
+                ],
                 Text(
-                  "In progress: @detail".tlParams({
-                    'detail': translationStageBreakdown(activity),
+                  "Pages: @processed/@total".tlParams({
+                    'processed': processedPages,
+                    'total': totalKnown ? task.total : '?',
                   }),
                   style: ts.s14,
                 ),
-                const SizedBox(height: 2),
+                if (failedPages > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    "Failed: @count".tlParams({'count': failedPages}),
+                    style: ts.s14.withColor(context.colorScheme.error),
+                  ),
+                ],
               ],
-              Text(
-                "Pages: @processed/@total".tlParams({
-                  'processed': processedPages,
-                  'total': task.total,
-                }),
-                style: ts.s14,
-              ),
-              if (failedPages > 0) ...[
-                const SizedBox(height: 2),
-                Text(
-                  "Failed: @count".tlParams({'count': failedPages}),
-                  style: ts.s14.withColor(context.colorScheme.error),
-                ),
-              ],
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
 
-    return _wrapHistoryCard(card, 'pre_translate', task.id, task.isRunning);
+    return _wrapHistoryCard(card, 'pre_translate', task.id, active);
   }
 }

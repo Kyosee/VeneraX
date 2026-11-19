@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/components/task_list.dart';
+import 'package:venera/components/translation_progress_surface.dart';
 import 'package:venera/foundation/comic_source_update_tasks.dart';
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/data_sync_tasks.dart';

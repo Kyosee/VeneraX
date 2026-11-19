@@ -27,7 +27,10 @@ class _MobileMenu extends StatelessWidget {
         foregroundColor: color,
         minimumSize: const Size(0, 48),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
+        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+        ),
         alignment: AlignmentDirectional.centerStart,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -71,7 +74,10 @@ class _MobileMenu extends StatelessWidget {
         style: FilledButton.styleFrom(
           minimumSize: const Size(0, 54),
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+          textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -131,7 +137,9 @@ class _MobileMenu extends StatelessWidget {
     final largeText = MediaQuery.textScalerOf(context).scale(14) > 20;
     final columns = largeText ? 2 : math.min(3, items.length);
     final itemWidth = (width - (columns - 1) * 8) / columns;
-    const labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w500);
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(fontSize: 13, fontWeight: FontWeight.w500);
     final labelHeight = items.fold<double>(0, (height, entry) {
       final painter = TextPainter(
         text: TextSpan(

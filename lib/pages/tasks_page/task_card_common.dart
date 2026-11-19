@@ -166,21 +166,26 @@ mixin _TaskCardCommon on State<TasksPage> {
     required List<Widget> children,
     String? title,
     Widget? titleTrailing,
+    Color? backgroundColor,
   }) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: context.colorScheme.surfaceContainerLow,
+        color: backgroundColor ?? context.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          OverflowBar(
+            alignment: MainAxisAlignment.spaceBetween,
+            overflowAlignment: OverflowBarAlignment.end,
+            spacing: 8,
+            overflowSpacing: 8,
             children: [
-              Expanded(child: Text(title ?? "By comic source".tl, style: ts.s16)),
+              Text(title ?? "By comic source".tl, style: ts.s16),
               if (titleTrailing != null) titleTrailing,
             ],
           ),
