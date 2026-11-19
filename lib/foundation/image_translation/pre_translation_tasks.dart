@@ -389,8 +389,8 @@ class PreTranslationTaskManager with ChangeNotifier {
   void Function(PreTranslationTask task)? onTaskFinished;
 
   /// Starts pre-translating [chapters] (source chapter ids) of a comic. Returns
-  /// null when translation is not usable (models/endpoint not configured) or a
-  /// job for the comic is already running.
+  /// null when translation is not usable or no chapters are selected. New
+  /// chapters join the comic's running or paused job without duplicating it.
   PreTranslationTask? start({
     required String cid,
     required String sourceKey,
@@ -404,9 +404,25 @@ class PreTranslationTaskManager with ChangeNotifier {
       return null;
     }
     var existing = currentTasks
-        .where((t) => t.comicKey == '$cid@$sourceKey' && t.isRunning)
+        .where(
+          (t) =>
+              t.comicKey == '$cid@$sourceKey' &&
+              (t.isRunning || t.status == PreTranslationTaskStatus.paused),
+        )
         .firstOrNull;
     if (existing != null) {
+      final queued = existing.chapters
+          .where((chapter) => !chapter.canceled)
+          .map((chapter) => chapter.eid)
+          .toSet();
+      final added = chapters
+          .where((chapter) => queued.add(chapter.eid))
+          .toList();
+      if (added.isNotEmpty) {
+        existing.chapters.addAll(added);
+        _saveActive();
+        notifyListeners();
+      }
       return existing;
     }
     var task = PreTranslationTask(
@@ -449,7 +465,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     // queued-but-not-started chapters, not just active ones.
     for (var task in currentTasks) {
       if (task.comicKey != comicKey) continue;
-      var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
+      var chapter = task.chapters
+          .where((c) => c.eid == eid && !c.canceled)
+          .firstOrNull;
       // A per-chapter cancel leaves the chapter in the running job but no longer
       // being worked; fall through so the history/stored-text lookup can still
       // surface a "translated" marker if some pages were done before the cancel.
@@ -476,11 +494,17 @@ class PreTranslationTaskManager with ChangeNotifier {
     String sourceKey,
     PreTranslationChapter chapter,
   ) {
-    var task = runningTaskFor(cid, sourceKey);
+    final task = currentTasks
+        .where(
+          (task) =>
+              task.comicKey == '$cid@$sourceKey' &&
+              task.chapters.contains(chapter),
+        )
+        .firstOrNull;
     // Identity check, not eid: a per-chapter cancel makes chapterProgressFor
     // fall through to a history record for the same eid, and that record must
     // not be credited with the running job's buffered pages.
-    if (task == null || !task.chapters.contains(chapter)) {
+    if (task == null) {
       return livePagesFor(chapter, null);
     }
     return livePagesFor(chapter, _activities[task.id]);
@@ -549,7 +573,9 @@ class PreTranslationTaskManager with ChangeNotifier {
   void cancelChapter(String taskId, String eid) {
     var task = currentTasks.where((t) => t.id == taskId).firstOrNull;
     if (task == null) return;
-    var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
+    var chapter = task.chapters
+        .where((c) => c.eid == eid && !c.canceled)
+        .firstOrNull;
     if (chapter == null || chapter.canceled) return;
     chapter.canceled = true;
     // If nothing is left to do, cancel the whole job. "Left to do" = a chapter
@@ -671,22 +697,30 @@ class PreTranslationTaskManager with ChangeNotifier {
     _refreshKeepAlive(task);
     var revision = TranslationStore().localRevision;
     try {
-      for (var chapter in task.chapters) {
-        if (_canceledIds.contains(task.id)) break;
-        if (chapter.canceled) continue;
+      var nextChapter = 0;
+      var retriedThrough = 0;
+      do {
+        // New chapter selections can join this queue while a group is awaiting.
+        while (nextChapter < task.chapters.length) {
+          final chapter = task.chapters[nextChapter++];
+          if (_canceledIds.contains(task.id)) break;
+          if (chapter.canceled) continue;
+          await _waitWhilePaused(task);
+          if (_canceledIds.contains(task.id)) break;
+          await _runChapter(task, chapter);
+        }
+        // Auto-retry the failed pages once: a transient error (network blip, rate
+        // limit) on the first pass is common, and one automatic sweep clears most
+        // of them without the user noticing. Only the pages that actually failed
+        // are re-run; succeeded pages are untouched.
         await _waitWhilePaused(task);
-        if (_canceledIds.contains(task.id)) break;
-        await _runChapter(task, chapter);
-      }
-      // Auto-retry the failed pages once: a transient error (network blip, rate
-      // limit) on the first pass is common, and one automatic sweep clears most
-      // of them without the user noticing. Only the pages that actually failed
-      // are re-run; succeeded pages are untouched.
-      await _waitWhilePaused(task);
-      if (!_canceledIds.contains(task.id) &&
-          task.status == PreTranslationTaskStatus.running) {
-        await _retryFailedPasses(task);
-      }
+        if (!_canceledIds.contains(task.id) &&
+            task.status == PreTranslationTaskStatus.running) {
+          await _retryFailedPasses(task, retriedThrough, nextChapter);
+          retriedThrough = nextChapter;
+        }
+      } while (!_canceledIds.contains(task.id) &&
+          nextChapter < task.chapters.length);
       if (task.status == PreTranslationTaskStatus.running) {
         task.status = task.failed > 0 && task.done == 0
             ? PreTranslationTaskStatus.failed
@@ -912,9 +946,14 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// [retryFailed]. Chapters recorded before this feature existed have failures
   /// but no indices; those are re-scanned wholesale by zeroing their counters
   /// so the forward path redoes them (rendered pages skip cheaply).
-  Future<void> _retryFailedPasses(PreTranslationTask task) async {
+  Future<void> _retryFailedPasses(
+    PreTranslationTask task,
+    int from,
+    int to,
+  ) async {
     var groupSize = _batchPages;
-    for (var chapter in task.chapters) {
+    for (var chapterIndex = from; chapterIndex < to; chapterIndex++) {
+      final chapter = task.chapters[chapterIndex];
       if (_canceledIds.contains(task.id)) return;
       if (chapter.canceled) continue;
       if (chapter.failed <= 0) continue;
@@ -1086,7 +1125,7 @@ class PreTranslationTaskManager with ChangeNotifier {
           comicCover: task.cover,
           chapterTitle: chapter.title,
         ),
-        shouldCancel: () => _canceledIds.contains(task.id),
+        shouldCancel: () => _canceledIds.contains(task.id) || chapter.canceled,
         waitUntilResumed: () => _waitWhilePaused(task),
         onStage: (stage, completed) {
           activity.stage = stage;
@@ -1233,7 +1272,8 @@ class PreTranslationTaskManager with ChangeNotifier {
             comicCover: task.cover,
             chapterTitle: chapter.title,
           ),
-          shouldCancel: () => _canceledIds.contains(task.id),
+          shouldCancel: () =>
+              _canceledIds.contains(task.id) || chapter.canceled,
           waitUntilResumed: () => _waitWhilePaused(task),
           onStage: (stage, completed) {
             activity.stage = stage;
@@ -1396,12 +1436,16 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   void _saveActive() {
     appdata.implicitData[_activeKey] = currentTasks
-        .where((t) => t.isRunning || t.status == PreTranslationTaskStatus.paused)
-        .map((t) => {
-              ...t.toJson(),
-              if (!t.isRunning && !_backgroundPausedIds.contains(t.id))
-                'keepPaused': true,
-            })
+        .where(
+          (t) => t.isRunning || t.status == PreTranslationTaskStatus.paused,
+        )
+        .map(
+          (t) => {
+            ...t.toJson(),
+            if (!t.isRunning && !_backgroundPausedIds.contains(t.id))
+              'keepPaused': true,
+          },
+        )
         .toList();
     appdata.writeImplicitData();
   }
