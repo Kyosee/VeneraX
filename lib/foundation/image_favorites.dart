@@ -172,6 +172,37 @@ class ImageFavoritesComic {
     }
   }
 
+  /// Puts saved chapters back at the positions their ids have now, after
+  /// chapters were inserted or reordered. A chapter whose id is gone keeps
+  /// its position. Changes nothing and returns false when nothing moves or
+  /// two chapters would share a position.
+  bool remapChaptersById(List<String> ids, List<String> titles) {
+    var moved = false;
+    final taken = <int>{};
+    final result = <ImageFavoritesEp>[];
+    for (final e in imageFavoritesEp) {
+      final index = e.eid.isEmpty ? -1 : ids.indexOf(e.eid);
+      final ep = index < 0 ? e.ep : index + 1;
+      if (!taken.add(ep)) return false;
+      if (ep == e.ep) {
+        result.add(e);
+        continue;
+      }
+      moved = true;
+      final name = titles.elementAtOrNull(index) ?? e.epName;
+      result.add(
+        ImageFavoritesEp(e.eid, ep, [
+          for (final f in e.imageFavorites) f.copyWith(ep: ep, epName: name),
+        ], name, e.maxPage),
+      );
+    }
+    if (!moved) return false;
+    imageFavoritesEp
+      ..clear()
+      ..addAll(result);
+    return true;
+  }
+
   @override
   bool operator ==(Object other) {
     return other is ImageFavoritesComic &&

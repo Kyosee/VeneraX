@@ -155,9 +155,6 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
     var image = imageFavorites[index];
     bool isSelected = widget.selectedImageFavorites[image] ?? false;
     int curPage = image.page;
-    String pageText = curPage == firstPage
-        ? '@a Cover'.tlParams({"a": image.epName})
-        : curPage.toString();
 
     return InkWell(
       onTap: () {
@@ -203,12 +200,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
                 ),
               ),
             ),
-            Text(
-              pageText,
-              style: ts.s10,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            )
+            _imageFavoritePlace(widget.imageFavoritesComic, image, ts.s10),
           ],
         ),
       ),
@@ -343,9 +335,6 @@ class _ImageFavoritesGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     bool isSelected = selectedImageFavorites[image] ?? false;
-    String pageText = image.page == firstPage
-        ? '@a Cover'.tlParams({"a": image.epName})
-        : image.page.toString();
     return InkWell(
       onTap: () {
         if (multiSelectMode) {
@@ -363,11 +352,11 @@ class _ImageFavoritesGridItem extends StatelessWidget {
       },
       onSecondaryTapDown: (_) => addSelected(image),
       borderRadius: BorderRadius.circular(8),
-      child: buildContent(context, isSelected, pageText),
+      child: buildContent(context, isSelected),
     );
   }
 
-  Widget buildContent(BuildContext context, bool isSelected, String pageText) {
+  Widget buildContent(BuildContext context, bool isSelected) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -402,19 +391,58 @@ class _ImageFavoritesGridItem extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
           ),
-          Text(
-            pageText,
-            style: ts.s10.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
+          _imageFavoritePlace(
+            comic,
+            image,
+            ts.s10.copyWith(color: Theme.of(context).colorScheme.outline),
           ),
         ],
       ),
     );
   }
+}
+
+/// Where a saved image is from: its chapter and page, or only the page for a
+/// comic without chapters. The chapter name gives way first.
+Widget _imageFavoritePlace(
+  ImageFavoritesComic comic,
+  ImageFavorite image,
+  TextStyle style,
+) {
+  if (image.page == firstPage) {
+    return Text(
+      '@a Cover'.tlParams({"a": image.epName}),
+      style: style,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+    );
+  }
+  final chapterless =
+      comic.imageFavoritesEp.length == 1 && image.epName == 'E${image.ep}';
+  if (chapterless) {
+    return Text(
+      '${image.page}',
+      style: style,
+      maxLines: 1,
+      textAlign: TextAlign.center,
+    );
+  }
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Flexible(
+        child: Text(
+          image.epName,
+          style: style,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      Text(' · ${image.page}', style: style, maxLines: 1),
+    ],
+  );
 }
 
 /// 漫画网格视图下的单部漫画格子：封面 + 标题 + 收藏数角标。

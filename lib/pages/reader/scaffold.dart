@@ -696,7 +696,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           seconds: 1,
         );
       } else {
-        var imageFavoritesComic =
+        ImageFavoritesComic loadComic() =>
             ImageFavoriteManager().find(id, sourceKey) ??
             ImageFavoritesComic(
               id,
@@ -711,6 +711,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               subTitle,
               maxPage,
             );
+        var imageFavoritesComic = loadComic();
         ImageFavorite imageFavorite = ImageFavorite(
           page,
           imageKey,
@@ -721,11 +722,35 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           sourceKey,
           epName,
         );
-        ImageFavoritesEp? imageFavoritesEp = imageFavoritesComic
-            .imageFavoritesEp
-            .firstWhereOrNull((e) {
-              return e.ep == ep;
-            });
+        ImageFavoritesEp? savedEp() =>
+            imageFavoritesComic.imageFavoritesEp.firstWhereOrNull(
+              (e) => e.ep == ep,
+            );
+        bool otherVersion(ImageFavoritesEp? e) =>
+            e != null && e.eid != eid && e.eid != "";
+        var imageFavoritesEp = savedEp();
+        if (otherVersion(imageFavoritesEp)) {
+          // Chapters inserted or reordered: saved images follow their ids.
+          final chapters = context.reader.widget.chapters;
+          if (chapters != null &&
+              imageFavoritesComic.remapChaptersById(
+                chapters.ids.toList(),
+                chapters.titles.toList(),
+              )) {
+            ImageFavoriteManager().addOrUpdateOrDelete(imageFavoritesComic);
+            imageFavoritesEp = savedEp();
+          }
+        }
+        if (otherVersion(imageFavoritesEp)) {
+          if (!await _clearReplacedChapter(
+            imageFavoritesComic,
+            imageFavoritesEp!,
+          )) {
+            return;
+          }
+          imageFavoritesComic = loadComic();
+          imageFavoritesEp = savedEp();
+        }
         if (imageFavoritesEp == null) {
           if (page != firstPage &&
               context.reader.effectiveSetting('autoFavoriteCover') == true) {
@@ -753,21 +778,8 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           }
           imageFavoritesComic.imageFavoritesEp.add(imageFavoritesEp);
         } else {
-          if (imageFavoritesEp.eid != eid) {
-            // 空字符串说明是从pica导入的, 那我们就手动刷一遍保证一致
-            if (imageFavoritesEp.eid == "") {
-              imageFavoritesEp.eid == eid;
-            } else {
-              // 避免多章节漫画源的章节顺序发生变化, 如果情况比较多, 做一个以eid为准更新ep的功能
-              showToast(
-                message:
-                    "The chapter order of the comic may have changed, temporarily not supported for collection"
-                        .tl,
-                context: context,
-              );
-              return;
-            }
-          }
+          // 空字符串说明是从pica导入的, 那我们就手动刷一遍保证一致
+          if (imageFavoritesEp.eid == "") imageFavoritesEp.eid = eid;
           imageFavoritesEp.imageFavorites.add(imageFavorite);
         }
 
@@ -783,6 +795,42 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       Log.error("Image Favorite", e, stackTrace);
       showToast(message: e.toString(), context: context, seconds: 1);
     }
+  }
+
+  /// The chapter at this position was replaced by another version, and the
+  /// images saved for it are of the old one; a chapter's images all come from
+  /// one version. True once they are deleted.
+  Future<bool> _clearReplacedChapter(
+    ImageFavoritesComic comic,
+    ImageFavoritesEp old,
+  ) async {
+    final delete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => ContentDialog(
+        title: "This chapter was replaced".tl,
+        content: Text(
+          "The @n images collected from this chapter are from an earlier version of it. Delete them to collect images from the current version."
+              .tlParams({'n': old.imageFavorites.length}),
+        ).paddingHorizontal(16).paddingVertical(8),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text("View old images".tl),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text("Delete and collect".tl),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || delete == null) return false;
+    if (!delete) {
+      context.to(() => SingleComicImageFavoritesPage(comic: comic, ep: old.ep));
+      return false;
+    }
+    ImageFavoriteManager().deleteImageFavorite(old.imageFavorites.toList());
+    return true;
   }
 
   /// Low-frequency actions, folded into the top bar's menu to keep both bars

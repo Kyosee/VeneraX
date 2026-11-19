@@ -49,6 +49,7 @@ import 'package:venera/foundation/shortcuts.dart';
 import 'package:venera/foundation/wide_page_split.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
 import 'package:venera/pages/reader/auto_page_turning_button.dart';
 import 'package:venera/pages/reader/auto_scroll_activity.dart';
 import 'package:venera/pages/reader/continuous_page_turn_coordinator.dart';

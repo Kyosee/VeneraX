@@ -9,9 +9,12 @@ part of 'image_favorites_page.dart';
 /// 数据刷新：监听全局单例 [ImageFavoriteManager]，删除后用
 /// [ImageFavoriteManager.find] 重新拉取本漫画的最新数据；若图片被删空则退回。
 class SingleComicImageFavoritesPage extends StatefulWidget {
-  const SingleComicImageFavoritesPage({super.key, required this.comic});
+  const SingleComicImageFavoritesPage({super.key, required this.comic, this.ep});
 
   final ImageFavoritesComic comic;
+
+  /// Shows only the images of this chapter.
+  final int? ep;
 
   @override
   State<SingleComicImageFavoritesPage> createState() =>
@@ -28,7 +31,20 @@ class _SingleComicImageFavoritesPageState
 
   final scrollController = ScrollController();
 
-  List<ImageFavorite> get images => comic.images.toList();
+  List<ImageFavorite> get images => _shown(comic);
+
+  List<ImageFavorite> _shown(ImageFavoritesComic comic) => [
+    for (final image in comic.images)
+      if (widget.ep == null || image.ep == widget.ep) image,
+  ];
+
+  String get _title {
+    if (widget.ep == null) return comic.title;
+    final chapter = comic.imageFavoritesEp.firstWhereOrNull(
+      (e) => e.ep == widget.ep,
+    );
+    return chapter == null ? comic.title : '${comic.title} · ${chapter.epName}';
+  }
 
   @override
   void initState() {
@@ -48,16 +64,15 @@ class _SingleComicImageFavoritesPageState
   void _onDataChanged() {
     if (!mounted) return;
     var latest = ImageFavoriteManager().find(comic.id, comic.sourceKey);
-    if (latest == null || latest.images.isEmpty) {
+    if (latest == null || _shown(latest).isEmpty) {
       Navigator.of(context).maybePop();
       return;
     }
+    final shown = _shown(latest);
     setState(() {
       comic = latest;
       // 清理已不存在的选中项
-      selectedImageFavorites.removeWhere(
-        (k, v) => !latest.images.contains(k),
-      );
+      selectedImageFavorites.removeWhere((k, v) => !shown.contains(k));
       if (selectedImageFavorites.isEmpty) {
         multiSelectMode = false;
       }
@@ -79,7 +94,7 @@ class _SingleComicImageFavoritesPageState
   }
 
   void selectAll() {
-    for (var i in comic.images) {
+    for (var i in images) {
       selectedImageFavorites[i] = true;
     }
     update();
@@ -127,7 +142,7 @@ class _SingleComicImageFavoritesPageState
       slivers: [
         if (!multiSelectMode)
           SliverAppbar(
-            title: Text(comic.title),
+            title: Text(_title),
             actions: [
               Tooltip(
                 message: "Multi-Select".tl,
