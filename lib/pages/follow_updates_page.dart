@@ -1301,7 +1301,8 @@ class _FollowUpdateSettingsDialogState
         const Divider(height: 24),
         _sectionLabel("Fixed check time".tl),
         Text(
-          "Automatic checks wait until this time of day.".tl,
+          "Automatic checks start at this time each day. With an interval of 24 hours or more, comics are checked at this time."
+              .tl,
           style: ts.s12.withColor(context.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),

@@ -132,14 +132,54 @@ abstract class FollowUpdateScope {
   }
 
   /// Whether a comic last checked at [lastCheck] is due for another check.
-  /// Pure, for testing.
-  static bool isDue(DateTime? lastCheck, {DateTime? now, int? interval}) {
+  ///
+  /// With a fixed check time the interval also counts in whole days from it:
+  /// every 24 hours at 21:00 is each day at 21:00, even after a check earlier
+  /// that day; shorter intervals still run that often. Pure, for testing.
+  static bool isDue(
+    DateTime? lastCheck, {
+    DateTime? now,
+    int? interval,
+    String? fixedTime,
+  }) {
     if (lastCheck == null) {
       return true;
     }
     var hours = interval ?? intervalHours;
     var reference = now ?? DateTime.now();
-    return !reference.isBefore(lastCheck.add(Duration(hours: hours)));
+    if (!reference.isBefore(lastCheck.add(Duration(hours: hours)))) {
+      return true;
+    }
+    var time = parseFixedTime(fixedTime ?? FollowUpdateScope.fixedTime);
+    if (time == null) {
+      return false;
+    }
+    // The fixed time at or before the last check, then whole days on.
+    var slot = DateTime(
+      lastCheck.year,
+      lastCheck.month,
+      lastCheck.day,
+      time.hour,
+      time.minute,
+    );
+    if (lastCheck.isBefore(slot)) {
+      slot = DateTime(
+        slot.year,
+        slot.month,
+        slot.day - 1,
+        time.hour,
+        time.minute,
+      );
+    }
+    var days = (hours + 23) ~/ 24;
+    var next = DateTime(
+      slot.year,
+      slot.month,
+      slot.day + days,
+      time.hour,
+      time.minute,
+    );
+    return !reference.isBefore(next);
   }
 
   static String describeFixedTime(String value) {

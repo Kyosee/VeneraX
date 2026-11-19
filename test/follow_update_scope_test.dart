@@ -221,5 +221,44 @@ void main() {
       expect(FollowUpdateScope.parseFixedTime('12'), isNull);
       expect(FollowUpdateScope.parseFixedTime('12:00:00'), isNull);
     });
+
+    bool due(DateTime last, DateTime now, int interval, String time) =>
+        FollowUpdateScope.isDue(
+          last,
+          now: now,
+          interval: interval,
+          fixedTime: time,
+        );
+
+    test('with a day interval the fixed time is the daily check', () {
+      // A morning check does not push the evening one to the next day.
+      final morning = DateTime(2026, 11, 17, 10, 58);
+      expect(due(morning, DateTime(2026, 11, 17, 20, 59), 24, '21:00'), isFalse);
+      expect(due(morning, DateTime(2026, 11, 17, 21), 24, '21:00'), isTrue);
+      final evening = DateTime(2026, 11, 17, 21, 5);
+      expect(due(evening, DateTime(2026, 11, 18, 20, 59), 24, '21:00'), isFalse);
+      expect(due(evening, DateTime(2026, 11, 18, 21), 24, '21:00'), isTrue);
+      // A check after midnight counts from the evening before.
+      final night = DateTime(2026, 11, 18, 0, 30);
+      expect(due(night, DateTime(2026, 11, 18, 21), 24, '21:00'), isTrue);
+    });
+
+    test('longer intervals count whole days from the fixed time', () {
+      final last = DateTime(2026, 11, 17, 10, 58);
+      expect(due(last, DateTime(2026, 11, 18, 20, 59), 48, '21:00'), isFalse);
+      expect(due(last, DateTime(2026, 11, 18, 21), 48, '21:00'), isTrue);
+    });
+
+    test('shorter intervals still run that often', () {
+      final last = DateTime(2026, 11, 17, 9, 30);
+      expect(due(last, DateTime(2026, 11, 17, 10), 1, '08:00'), isFalse);
+      expect(due(last, DateTime(2026, 11, 17, 10, 30), 1, '08:00'), isTrue);
+    });
+
+    test('without a fixed time only the interval counts', () {
+      final last = DateTime(2026, 11, 17, 10, 58);
+      expect(due(last, DateTime(2026, 11, 17, 21), 24, ''), isFalse);
+      expect(due(last, DateTime(2026, 11, 18, 10, 58), 24, ''), isTrue);
+    });
   });
 }
