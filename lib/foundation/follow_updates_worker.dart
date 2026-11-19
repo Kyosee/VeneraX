@@ -7,6 +7,7 @@ import 'package:venera/foundation/background_follow_queue.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
+import 'package:venera/foundation/follow_update_result.dart';
 import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/js_engine.dart';
@@ -122,6 +123,9 @@ void runFollowUpdatesWorker(List<String> args) {
           await JsEngine().init();
           await ComicSourceManager().init();
           markStage('checks');
+          final updatedKeys = <String>{};
+          var failed = 0;
+          var checked = 0;
           while (!cancelled && due.isNotEmpty) {
             final batch = queue.takeBatch(due, updateTimes);
             if (batch.isEmpty) break;
@@ -136,6 +140,9 @@ void runFollowUpdatesWorker(List<String> args) {
                   requestTimeout: const Duration(seconds: 20),
                 );
                 queue.complete(key, updated: result.updated);
+                checked++;
+                if (result.updated) updatedKeys.add(key);
+                if (result.errorMessage != null) failed++;
                 if (result.errorMessage == null && !cancelled) {
                   DataSync().requestAutoUpload();
                 }
@@ -148,6 +155,13 @@ void runFollowUpdatesWorker(List<String> args) {
           }
           await notifyPending();
           outcome = cancelled ? 'cancelled' : 'checked';
+          if (!cancelled && due.isEmpty && checked > 0) {
+            await FollowUpdateResult(
+              checkedAt: DateTime.now(),
+              updatedKeys: updatedKeys,
+              failed: failed,
+            ).save();
+          }
           await ReadingWidgetService.instance.refresh(
             kinds: const [
               ReadingWidgetKind.following,

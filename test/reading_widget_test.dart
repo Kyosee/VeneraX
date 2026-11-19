@@ -11,6 +11,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_result.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/reading_widget.dart';
@@ -58,6 +59,7 @@ void main() {
     snapshots.clear();
     active = true;
     reads = 0;
+    appdata.implicitData.remove('follow_update_last_result');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(readingWidgetChannel, (call) async {
           if (call.method == 'hasWidgets') return active;
@@ -367,6 +369,10 @@ void main() {
         followed('new', true, 1000),
         followed('read', false, 2000),
       ];
+      var check = FollowUpdateResult(
+        checkedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+        updatedKeys: {'42 new', '42 read'},
+      );
       File('${directory.path}/page.png').writeAsBytesSync([1]);
       final downloaded = LocalComic(
         id: 'offline',
@@ -383,6 +389,7 @@ void main() {
       final publisher = ReadingWidgetService(
         recent: () => [history('recent')],
         following: () => followedItems,
+        lastCheck: () => check,
         local: () => [downloaded],
         visible: (_) => true,
         coverBytes: (_) async => Uint8List(0),
@@ -393,13 +400,13 @@ void main() {
         (latest(ReadingWidgetKind.following)['items'] as List).map(
           (item) => item['id'],
         ),
-        ['new', 'read'],
+        ['new'],
       );
       expect(
         (latest(ReadingWidgetKind.updates)['items'] as List).map(
           (item) => item['id'],
         ),
-        ['new'],
+        ['new', 'read'],
       );
       expect(
         (latest(ReadingWidgetKind.local)['items'] as List).map(
@@ -425,12 +432,39 @@ void main() {
       followedItems[0].hasNewUpdate = false;
       followedItems[0].lastCheckTime = 100000;
       await publisher.refresh();
+      expect(latest(ReadingWidgetKind.updates)['items'], hasLength(2));
+      expect(latest(ReadingWidgetKind.updates)['subtitle'], previousCheck);
+      expect(latest(ReadingWidgetKind.following)['items'], isEmpty);
+      check = FollowUpdateResult(
+        checkedAt: DateTime.fromMillisecondsSinceEpoch(100000),
+        updatedKeys: {},
+      );
+      await publisher.refresh();
       expect(latest(ReadingWidgetKind.updates)['items'], isEmpty);
+      expect(
+        latest(ReadingWidgetKind.updates)['emptyText'],
+        'The latest check found no updates.',
+      );
       expect(
         latest(ReadingWidgetKind.updates)['subtitle'],
         isNot(previousCheck),
       );
-      expect(latest(ReadingWidgetKind.following)['items'], hasLength(2));
+      check = FollowUpdateResult(
+        checkedAt: check.checkedAt,
+        updatedKeys: {},
+        failed: 1,
+      );
+      await publisher.refresh();
+      expect(
+        latest(ReadingWidgetKind.updates)['emptyText'],
+        contains('could not be checked'),
+      );
+      check = FollowUpdateResult(checkedAt: check.checkedAt, updatedKeys: null);
+      await publisher.refresh();
+      expect(
+        latest(ReadingWidgetKind.updates)['emptyText'],
+        'Run a check to see its results here.',
+      );
     },
   );
 

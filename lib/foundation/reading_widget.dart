@@ -18,6 +18,7 @@ import 'comic_state_repository.dart';
 import 'comic_type.dart';
 import 'favorites.dart';
 import 'follow_update_scope.dart';
+import 'follow_update_result.dart';
 import 'follow_update_tasks.dart';
 import 'history.dart';
 import 'image_provider/base_image_provider.dart';
@@ -96,26 +97,59 @@ List<FavoriteItemWithUpdateInfo> readingWidgetFollowedComics() {
   return items;
 }
 
+Future<List<LocalComic>> readingWidgetLocalComics() async {
+  if (!App.local.isInitialized) return [];
+  final sort = App.local.sortType;
+  var comics = App.local.getComics(
+    sort.isSize || sort == LocalSortType.lastRead
+        ? LocalSortType.defaultSort
+        : sort,
+  );
+  if (sort.isSize) {
+    comics = await sortLocalComicsBySize(
+      comics,
+      descending: sort == LocalSortType.sizeDesc,
+    );
+  }
+  final readAt = [
+    for (final comic in comics)
+      App.history.isInitialized
+          ? App.history
+                    .find(comic.id, comic.comicType)
+                    ?.time
+                    .millisecondsSinceEpoch ??
+                0
+          : 0,
+  ];
+  final indexes = List.generate(comics.length, (index) => index)
+    ..sort((a, b) {
+      final byReading = readAt[b].compareTo(readAt[a]);
+      return byReading != 0 ? byReading : a.compareTo(b);
+    });
+  return [for (final index in indexes) comics[index]];
+}
+
 /// Publishes a small native snapshot; no source credentials or remote URLs leave
 /// Dart. Each refresh invalidates older thumbnail work before it can publish.
 class ReadingWidgetService with WidgetsBindingObserver {
   ReadingWidgetService({
     List<Comic> Function()? recent,
     List<FavoriteItemWithUpdateInfo> Function()? following,
-    List<LocalComic> Function()? local,
+    FutureOr<List<LocalComic>> Function()? local,
+    FollowUpdateResult? Function()? lastCheck,
     bool Function(Comic)? visible,
     this.coverBytes,
   }) : _recent = recent ?? (() => HistoryManager().getRecent()),
        _following = following ?? readingWidgetFollowedComics,
-       _local =
-           local ??
-           (() => App.local.isInitialized ? App.local.getRecent() : []),
+       _local = local ?? readingWidgetLocalComics,
+       _lastCheck = lastCheck ?? (() => FollowUpdateResult.latest),
        _visible = visible ?? isReadingWidgetHistoryVisible;
 
   static final instance = ReadingWidgetService();
   final List<Comic> Function() _recent;
   final List<FavoriteItemWithUpdateInfo> Function() _following;
-  final List<LocalComic> Function() _local;
+  final FutureOr<List<LocalComic>> Function() _local;
+  final FollowUpdateResult? Function() _lastCheck;
   final bool Function(Comic) _visible;
   final Future<Uint8List> Function(Comic)? coverBytes;
   final Map<String, String> _covers = {};
@@ -209,15 +243,24 @@ class ReadingWidgetService with WidgetsBindingObserver {
               )
           ? <FavoriteItemWithUpdateInfo>[]
           : _following();
+      final lastCheck = locked || !kinds.contains(ReadingWidgetKind.updates)
+          ? null
+          : _lastCheck();
       final collections =
           <ReadingWidgetKind, List<Comic>>{
             ReadingWidgetKind.history:
                 locked || !kinds.contains(ReadingWidgetKind.history)
                 ? []
                 : _recent(),
-            ReadingWidgetKind.following: followed,
-            ReadingWidgetKind.updates: followed
+            ReadingWidgetKind.following: followed
                 .where((item) => item.hasNewUpdate == true)
+                .toList(),
+            ReadingWidgetKind.updates: followed
+                .where(
+                  (item) =>
+                      lastCheck?.updatedKeys?.contains(item.identityKey) ==
+                      true,
+                )
                 .toList(),
             ReadingWidgetKind.local: const [],
           }.map(
@@ -228,7 +271,7 @@ class ReadingWidgetService with WidgetsBindingObserver {
         0,
         (latest, item) => math.max(latest, item.lastCheckTime ?? 0),
       );
-      final checkText = checked == 0
+      String checkText(int checked) => checked == 0
           ? 'Not checked yet'.tl
           : 'Last checked: @t'.tlParams({
               't': DateTime.fromMillisecondsSinceEpoch(
@@ -249,14 +292,18 @@ class ReadingWidgetService with WidgetsBindingObserver {
           'title': switch (kind) {
             ReadingWidgetKind.history => 'Recent reading'.tl,
             ReadingWidgetKind.following => 'Follow Updates'.tl,
-            ReadingWidgetKind.updates => 'New updates'.tl,
+            ReadingWidgetKind.updates => 'Latest check'.tl,
             ReadingWidgetKind.local => 'Local comics'.tl,
           },
           'subtitle':
               !locked &&
                   (kind == ReadingWidgetKind.following ||
                       kind == ReadingWidgetKind.updates)
-              ? checkText
+              ? checkText(
+                  kind == ReadingWidgetKind.updates
+                      ? lastCheck?.checkedAt.millisecondsSinceEpoch ?? 0
+                      : checked,
+                )
               : '',
           'emptyText': locked
               ? 'Open VeneraX to view comics'.tl
@@ -264,9 +311,16 @@ class ReadingWidgetService with WidgetsBindingObserver {
                   ReadingWidgetKind.history =>
                     'Read a comic to keep your place here.'.tl,
                   ReadingWidgetKind.following =>
-                    'Add favorites to your follow list to see them here.'.tl,
+                    'No unread updates. Open your follow list to check.'.tl,
                   ReadingWidgetKind.updates =>
-                    'No new updates. Open your follow list to check.'.tl,
+                    lastCheck?.updatedKeys == null
+                        ? 'Run a check to see its results here.'.tl
+                        : lastCheck!.failed > 0
+                        ? 'Some comics could not be checked. Open your follow list to retry.'
+                              .tl
+                        : lastCheck.updatedKeys!.isEmpty
+                        ? 'The latest check found no updates.'.tl
+                        : 'No updates to show from the latest check.'.tl,
                   ReadingWidgetKind.local =>
                     'Import or download comics to read them here.'.tl,
                 },
@@ -353,13 +407,29 @@ class ReadingWidgetService with WidgetsBindingObserver {
       await _localCheck!.then((_) {}, onError: (_) {});
       if (revision != _revision) return null;
     }
-    final comics = _local();
-    final check = _localCheck = loadLocalComicStatuses(comics).then(
-      (statuses) => [
-        for (var i = 0; i < comics.length; i++)
-          if (statuses[i] != LocalComicStatus.notDownloaded) comics[i],
-      ],
-    );
+    final check = _localCheck = () async {
+      final comics = (await _local()).where(_visible).toList();
+      final readable = <LocalComic>[];
+      // Stop after filling the snapshot; a large library need not be scanned.
+      for (
+        var start = 0;
+        start < comics.length && readable.length < 6;
+        start += 20
+      ) {
+        if (revision != _revision) break;
+        final batch = comics.sublist(
+          start,
+          math.min(start + 20, comics.length),
+        );
+        final statuses = await loadLocalComicStatuses(batch);
+        for (var i = 0; i < batch.length; i++) {
+          if (statuses[i] != LocalComicStatus.notDownloaded) {
+            readable.add(batch[i]);
+          }
+        }
+      }
+      return readable;
+    }();
     try {
       return await check;
     } finally {

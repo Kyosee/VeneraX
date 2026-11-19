@@ -13,6 +13,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
+import 'package:venera/foundation/follow_update_result.dart';
 import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/res.dart';
@@ -322,6 +323,8 @@ void main() {
       response.complete(Res(_details(target)));
       await manualFinished.future.timeout(const Duration(seconds: 3));
       expect(manual.status, FollowUpdateTaskStatus.completed);
+      final lastResult = FollowUpdateResult.latest!;
+      expect(lastResult.updatedKeys, contains(read(target).identityKey));
       await Future<void>.delayed(Duration.zero);
 
       target = 'scheduled';
@@ -343,6 +346,8 @@ void main() {
       expect(manager.hasPendingWork, isFalse);
       expect(read(comic.id).lastCheckDateTime, isNull);
       expect(keepAliveCalls, isEmpty);
+      expect(FollowUpdateResult.latest!.checkedAt, lastResult.checkedAt);
+      expect(FollowUpdateResult.latest!.updatedKeys, lastResult.updatedKeys);
     },
   );
 

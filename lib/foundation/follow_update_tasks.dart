@@ -5,6 +5,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/background_follow_queue.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_result.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
 import 'package:venera/utils/data_sync.dart';
@@ -79,6 +80,8 @@ class FollowUpdateTask {
   int updated;
   int failed;
   DateTime? finishedAt;
+
+  Set<String>? updatedComicKeys = <String>{};
 
   bool get isRunning => status == FollowUpdateTaskStatus.running;
 
@@ -258,6 +261,9 @@ class FollowUpdateTaskManager with ChangeNotifier {
       return;
     }
     _runningIds.add(task.id);
+    // Saved counters can lag committed checks after a hard kill. Do not present
+    // a resumed task's partial identities as a complete last-check result.
+    if (resume) task.updatedComicKeys = null;
     try {
       _refreshKeepAlive(task);
       await for (var progress in updateFolders(
@@ -298,6 +304,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
           if (progress.comicUpdated) {
             task.updated++;
             source.updated++;
+            task.updatedComicKeys?.add(comic.identityKey);
           }
           if (progress.errorMessage != null) {
             task.failed++;
@@ -317,6 +324,13 @@ class FollowUpdateTaskManager with ChangeNotifier {
       _progressNotifyTimer?.cancel();
       _progressNotifyTimer = null;
       _finalize(task);
+      if (task.status == FollowUpdateTaskStatus.completed) {
+        await FollowUpdateResult(
+          checkedAt: task.finishedAt ?? DateTime.now(),
+          updatedKeys: task.updatedComicKeys,
+          failed: task.failed,
+        ).save();
+      }
       if (backgroundQueue == null &&
           task.status == FollowUpdateTaskStatus.completed &&
           task.updated > 0) {

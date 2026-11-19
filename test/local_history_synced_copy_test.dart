@@ -11,6 +11,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/utils/translations.dart';
 
 LocalComic _comic(String id, String title, Directory root) => LocalComic(
@@ -104,6 +105,37 @@ void main() {
     );
     expect(HistoryManager().find('201', ComicType.local)?.page, 30);
     expect(LocalManager().getComics(LocalSortType.lastRead).first.id, '201');
+  });
+
+  test('local widgets rank reading before the full library order', () async {
+    final manager = LocalManager();
+    final originalSort = manager.sortType;
+    try {
+      for (var i = 0; i < 24; i++) {
+        await manager.add(
+          _comic('widget-$i', 'Widget ${i.toString().padLeft(2, '0')}', root),
+          'widget-$i',
+        );
+      }
+      manager.sortType = LocalSortType.nameDesc;
+      HistoryManager().addHistory(
+        _record('widget-0', 'Widget 00', DateTime(2026, 11, 20)),
+      );
+      HistoryManager().addHistory(
+        _record('widget-1', 'Widget 01', DateTime(2026, 11, 19)),
+      );
+      final comics = await readingWidgetLocalComics();
+      expect(comics.take(2).map((c) => c.id), ['widget-0', 'widget-1']);
+      expect(
+        comics
+            .where((c) => c.id.startsWith('widget-'))
+            .skip(2)
+            .map((c) => c.id),
+        [for (var i = 23; i >= 2; i--) 'widget-$i'],
+      );
+    } finally {
+      manager.sortType = originalSort;
+    }
   });
 
   test('comic settings made on another device apply to this copy', () async {
