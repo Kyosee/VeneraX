@@ -30,6 +30,10 @@ struct ReadingCard {
     }
   }
 
+  private rowKey(item: ReadingWidgetItem): string {
+    return `${this.dimension}:${JSON.stringify(item)}`;
+  }
+
   private iconResource(): Resource {
     switch (this.kind) {
       case 'following': return $r('app.media.reading_widget_following');
@@ -96,14 +100,18 @@ struct ReadingCard {
         }.justifyContent(FlexAlign.Center).width('100%').layoutWeight(1)
         .onClick(() => this.open(this.uri))
       } else if (this.dimension === 2) {
-        Column({ space: 6 }) {
-          Row({ space: 10 }) {
-            this.cover(this.items[0], 52, 76)
-            this.bookTitle(this.items[0], true)
-          }.width('100%').layoutWeight(1)
-          this.progress(this.items[0])
-        }.width('100%').layoutWeight(1).onClick(() => this.open(this.items[0].uri))
-        .accessibilityText(`${this.items[0].title}, ${this.items[0].progress}, ${this.items[0].sourceName}`)
+        // Builders take their arguments by value and ForEach reuses a row while its
+        // key holds, so the key carries everything a row shows (#349).
+        ForEach(this.items.slice(0, 1), (item: ReadingWidgetItem) => {
+          Column({ space: 6 }) {
+            Row({ space: 10 }) {
+              this.cover(item, 52, 76)
+              this.bookTitle(item, true)
+            }.width('100%').layoutWeight(1)
+            this.progress(item)
+          }.width('100%').layoutWeight(1).onClick(() => this.open(item.uri))
+          .accessibilityText(`${item.title}, ${item.progress}, ${item.sourceName}`)
+        }, (item: ReadingWidgetItem) => this.rowKey(item))
       } else {
         Column({ space: 6 }) {
           ForEach(this.items.slice(0, this.dimension === 4 ? 4 : 2), (item: ReadingWidgetItem) => {
@@ -119,7 +127,7 @@ struct ReadingCard {
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
             }.width('100%').layoutWeight(1).onClick(() => this.open(item.uri))
             .accessibilityText(`${item.title}, ${item.progress}, ${item.sourceName}`)
-          }, (item: ReadingWidgetItem) => item.uri)
+          }, (item: ReadingWidgetItem) => this.rowKey(item))
         }.width('100%').layoutWeight(1)
       }
       if (this.subtitle.length > 0 && this.dimension === 4) {
