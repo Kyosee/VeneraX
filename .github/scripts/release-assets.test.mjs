@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { releaseDownloads } from './release-downloads.mjs';
 
 const workflow = readFileSync(new URL('../workflows/main.yml', import.meta.url), 'utf8')
   .replaceAll('\r\n', '\n');
@@ -29,6 +30,21 @@ const packages = [
   'VeneraX-9.8.7+654-harmonyos-unsigned.hap',
   'VeneraX-9.8.7+654-harmonyos-emulator-x64-unsigned.hap',
 ];
+
+test('manual download links cover exactly the required full packages', () => {
+  for (const version of ['9.8.7', '9.8.7-beta.1']) {
+    const body = releaseDownloads('https://github.com/Kyosee/VeneraX', `v${version}`, `${version}+654`);
+    const links = [...body.matchAll(/\]\((https:[^)]+)\)/g)].map(match => new URL(match[1]));
+    assert.equal(links.length, packages.length);
+    assert.deepEqual(
+      links.map(url => decodeURIComponent(url.pathname.split('/').at(-1))).sort(),
+      packages.map(name => name.replace('9.8.7', version)).sort(),
+    );
+    assert.ok(links.every(url => url.pathname.startsWith(`/Kyosee/VeneraX/releases/download/v${version}/`)));
+    assert.match(body, /无需手动下载/);
+    assert.match(body, /cannot be installed manually/);
+  }
+});
 
 function validate(t, { missing, empty } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'venera-release-assets-'));

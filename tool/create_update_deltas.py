@@ -125,7 +125,7 @@ def generate(current, previous, output, version, min_saving=0.2, policy=None):
             if max(old.stat().st_size, new.stat().st_size) > MAX_FILE:
                 continue
             arch = 'x64' if windows else architecture
-            name = f'VeneraX-{old_version}-to-{version}-{platform}-{arch}.patch'
+            name = f'VeneraX-update-{old_version}-to-{version}-{platform}-{arch}.patch'
             with tempfile.TemporaryDirectory(prefix='venera-delta-') as temporary:
                 patch = Path(temporary) / name
                 if windows:

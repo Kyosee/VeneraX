@@ -29,6 +29,7 @@ class DeltaGenerationTest(unittest.TestCase):
         (self.new / 'VeneraX-1.0.1-arm64-v8a.apk').write_bytes(new)
         manifest = self.generate()
         entry = manifest['deltas'][0]
+        self.assertEqual(entry['patchAsset'], 'VeneraX-update-1.0.0-to-1.0.1-android-arm64-v8a.patch')
         patch = (self.out / entry['patchAsset']).read_bytes()
         self.assertEqual(deltas.bsdiff4.patch(old, patch), new)
         self.assertEqual(entry['oldSha256'], deltas.digest(old))

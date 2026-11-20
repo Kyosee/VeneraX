@@ -9,12 +9,17 @@ service or Flutter engine modification is required.
 - Keep all existing full packages and names.
 - `update-manifest.json` identifies optional patches for this release. It is
   uploaded only when at least one patch was produced.
-- `VeneraX-OLD-to-NEW-android-ABI.patch` is a standard BSDIFF40 patch of the final,
+- `VeneraX-update-OLD-to-NEW-android-ABI.patch` is a standard BSDIFF40 patch of the final,
   signed APK. Applying it reproduces the complete published APK byte for byte.
-- `VeneraX-OLD-to-NEW-windows-x64.patch` is a ZIP containing `delta.json` and
+- `VeneraX-update-OLD-to-NEW-windows-x64.patch` is a ZIP containing `delta.json` and
   changed file payloads. Unchanged files are copied from the installed directory;
   changed files are either BSDIFF40 or complete files. The client verifies every
   result, creates a temporary complete ZIP and uses the existing Windows updater.
+
+Release pages list full installation packages first in a download table. Internal
+update assets have an auto-update-only label. New patch names use the `update-`
+prefix to sort after full packages by filename; v3.0.1 keeps its original names.
+Clients resolve patches by the exact `patchAsset` name in the manifest.
 
 The release workflow considers the two most recent releases in the same channel
 and publishes a patch only if it saves at least 20% compared with the matching
