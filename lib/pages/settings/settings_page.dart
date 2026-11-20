@@ -47,6 +47,7 @@ import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/app_update_download.dart';
 import 'package:venera/pages/app_lock_setup.dart';
 import 'package:venera/pages/comic_source_page.dart';
+import 'package:venera/pages/diagnostics_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/guide_page.dart';

@@ -23,6 +23,7 @@ import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
+import 'package:venera/pages/diagnostics_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/app_links.dart';
@@ -198,6 +199,7 @@ void checkUpdates() {
 
 /// Start navigation and scheduled work after setup, agreement and app unlock.
 void startInteractiveServices() {
+  showAbnormalExitNotice();
   _autoCleanHistory();
   ReadingWidgetService.instance.start();
   if (App.isAndroid) initAndroidExtras();

@@ -2017,7 +2017,16 @@
     "Show folder list": "展开文件夹列表",
     "Hide folder list": "收起文件夹列表",
     "Shift pages by one": "错开一页",
-    "Undo page shift": "取消错开"
+    "Undo page shift": "取消错开",
+    "Diagnostic report": "诊断信息",
+    "Export diagnostic report": "导出诊断信息",
+    "For reporting a crash; addresses and accounts are hidden": "反馈闪退时使用，网址和账号会自动隐藏",
+    "The last run did not end normally": "上次运行没有正常结束",
+    "Bug reports are public. Addresses, accounts and local paths are hidden automatically, but a title inside an error message cannot be recognized. Read the text below before you post it.": "问题反馈是公开的。网址、账号和本机路径已自动隐藏，但报错文字里夹带的标题无法识别，发布前请先看一遍下面的内容。",
+    "This run": "本次运行",
+    "Report a problem": "去反馈",
+    "Report copied. Paste it into the logs field.": "已复制，粘贴到 logs 栏即可",
+    "Failed to build the report": "生成诊断信息失败"
   },
   "zh_TW": {
     "Adaptive reading mode": "自適應閱讀模式",
@@ -4037,6 +4046,15 @@
     "Show folder list": "展開資料夾列表",
     "Hide folder list": "收合資料夾列表",
     "Shift pages by one": "錯開一頁",
-    "Undo page shift": "取消錯開"
+    "Undo page shift": "取消錯開",
+    "Diagnostic report": "診斷資訊",
+    "Export diagnostic report": "匯出診斷資訊",
+    "For reporting a crash; addresses and accounts are hidden": "回報閃退時使用，網址和帳號會自動隱藏",
+    "The last run did not end normally": "上次執行沒有正常結束",
+    "Bug reports are public. Addresses, accounts and local paths are hidden automatically, but a title inside an error message cannot be recognized. Read the text below before you post it.": "問題回報是公開的。網址、帳號和本機路徑已自動隱藏，但錯誤訊息裡夾帶的標題無法辨識，發布前請先看一遍下面的內容。",
+    "This run": "本次執行",
+    "Report a problem": "前往回報",
+    "Report copied. Paste it into the logs field.": "已複製，貼到 logs 欄即可",
+    "Failed to build the report": "產生診斷資訊失敗"
   }
 }

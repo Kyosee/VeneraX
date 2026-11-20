@@ -231,6 +231,12 @@ class _LogsPageState extends State<LogsPage> {
         onClick: _openPreviousRun,
       ),
       MenuEntry(
+        icon: Icons.bug_report_outlined,
+        text: 'Export diagnostic report'.tl,
+        subtitle: 'For reporting a crash; addresses and accounts are hidden'.tl,
+        onClick: () => context.to(() => const DiagnosticsPage()),
+      ),
+      MenuEntry(
         icon: Icons.network_check,
         text: Log.verboseNetwork
             ? 'Stop Logging All Requests'.tl
