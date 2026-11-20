@@ -1,0 +1,52 @@
+name: Cache the platform's prebuilt ONNX Runtime
+description: Restore the dependency consumed by Gradle, CMake or SwiftPM.
+inputs:
+  platform:
+    description: android, windows-x64, linux-x64, linux-arm64 or apple
+    required: true
+  warm-only:
+    description: Populate the cache without setting up a build.
+    default: 'false'
+outputs:
+  cache-hit:
+    description: Whether the locked dependency was restored from Actions.
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - id: dependency
+      shell: bash
+      env:
+        TARGET: ${{ inputs.platform }}
+        PYTHON_CMD: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+      run: '"$PYTHON_CMD" "$GITHUB_ACTION_PATH/prebuilt.py" key "$TARGET" >> "$GITHUB_OUTPUT"'
+    - name: Restore ONNX Runtime
+      id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: build/ci-onnx/${{ inputs.platform }}
+        key: ${{ steps.dependency.outputs.key }}
+        enableCrossOsArchive: true
+    - name: Download the locked runtime
+      id: provision
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: ${{ inputs.warm-only != 'true' }}
+      shell: bash
+      env:
+        TARGET: ${{ inputs.platform }}
+        PYTHON_CMD: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+      run: '"$PYTHON_CMD" "$GITHUB_ACTION_PATH/prebuilt.py" download "$TARGET"'
+    - name: Save ONNX Runtime
+      if: steps.provision.outcome == 'success'
+      uses: actions/cache/save@v4
+      with:
+        path: build/ci-onnx/${{ inputs.platform }}
+        key: ${{ steps.dependency.outputs.key }}
+        enableCrossOsArchive: true
+    - name: Make ONNX Runtime available to the platform build
+      if: inputs.warm-only != 'true' && (steps.restore.outputs.cache-hit == 'true' || steps.provision.outcome == 'success')
+      shell: bash
+      env:
+        TARGET: ${{ inputs.platform }}
+        PYTHON_CMD: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+      run: '"$PYTHON_CMD" "$GITHUB_ACTION_PATH/prebuilt.py" install "$TARGET"'

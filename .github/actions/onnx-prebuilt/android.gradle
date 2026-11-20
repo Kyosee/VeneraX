@@ -1,0 +1,20 @@
+def source = System.getenv('VENERAX_ONNX_MAVEN')
+if (source) {
+    def androidProject = new File(System.getenv('GITHUB_WORKSPACE'), 'android').canonicalFile
+    gradle.beforeProject { project ->
+        if (project.rootProject.projectDir != androidProject) return
+        project.repositories.exclusiveContent {
+            forRepository {
+                project.repositories.maven {
+                    name = 'VeneraXOnnxRuntime'
+                    url = new File(source).toURI()
+                    metadataSources { mavenPom(); ignoreGradleMetadataRedirection() }
+                }
+            }
+            filter {
+                includeVersion 'com.microsoft.onnxruntime', 'onnxruntime-android',
+                        System.getenv('VENERAX_ONNX_ANDROID_VERSION')
+            }
+        }
+    }
+}
