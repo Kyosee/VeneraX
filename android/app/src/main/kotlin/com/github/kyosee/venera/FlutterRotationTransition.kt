@@ -1,23 +1,33 @@
 package io.github.kyosee.venera
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
-import android.os.SystemClock
+import android.os.Handler
+import android.view.PixelCopy
 import android.view.SurfaceHolder
 import io.flutter.embedding.android.FlutterFragment
 import io.flutter.embedding.android.FlutterSurfaceView
 import io.flutter.embedding.android.FlutterView
 import io.flutter.embedding.engine.renderer.FlutterRenderer
+import io.flutter.embedding.engine.renderer.FlutterUiResizeListener
 
 /** Commits a resized SurfaceView only after Flutter has rendered its new size. */
 internal class FlutterRotationTransition(
     private val activity: Activity,
     private val renderer: () -> FlutterRenderer?,
-) : SurfaceHolder.Callback2 {
+    private val probe: (FlutterSurfaceView, Int, Int, (Boolean) -> Unit) -> Unit = ::probeFrameCorner,
+) : SurfaceHolder.Callback2, FlutterUiResizeListener {
     private var surface: FlutterSurfaceView? = null
     private val pending = mutableListOf<Runnable>()
     private var previousWidth = 0
     private var previousHeight = 0
+    private var attachedRenderer: FlutterRenderer? = null
+    private var rasterWidth = 0
+    private var rasterHeight = 0
+    private var check: Runnable? = null
+    private var timeout: Runnable? = null
 
     fun attach() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || surface != null || activity.isDestroyed) return
@@ -29,6 +39,8 @@ internal class FlutterRotationTransition(
             previousWidth = it.width
             previousHeight = it.height
             it.holder.addCallback(this)
+            attachedRenderer = renderer()
+            attachedRenderer?.addResizingFlutterUiListener(this)
         }
     }
 
@@ -50,34 +62,64 @@ internal class FlutterRotationTransition(
         if ((!rotated && !rotationPending) || width <= 0 || height <= 0) return drawingFinished.run()
         // An already visible Flutter UI can finish the embedding's redraw callback
         // before the new raster arrives, stretching the previous surface buffer.
-        val started = SystemClock.uptimeMillis()
         pending.add(drawingFinished)
-        val check = object : Runnable {
+        var copying = false
+        val readyCheck = object : Runnable {
             override fun run() {
-                if (!pending.contains(drawingFinished)) return
-                val frame = try { renderer()?.bitmap } catch (_: RuntimeException) { null }
-                val ready = frame == null || (frame.width == width && frame.height == height)
-                frame?.recycle()
-                if (ready || SystemClock.uptimeMillis() - started > 1000) {
-                    pending.remove(drawingFinished)
-                    drawingFinished.run()
-                } else {
-                    view.postDelayed(this, 32)
+                if (!pending.contains(drawingFinished) || copying ||
+                    rasterWidth != width || rasterHeight != height) return
+                copying = true
+                probe(view, width, height) { ready ->
+                    copying = false
+                    if (!pending.contains(drawingFinished)) return@probe
+                    if (ready) finishPending() else view.postDelayed(this, 32)
                 }
             }
         }
-        view.postOnAnimation(check)
+        check = readyCheck
+        timeout = Runnable { finishPending() }.also { view.postDelayed(it, 1000) }
+        view.postOnAnimation(readyCheck)
+    }
+
+    override fun resizeEngineView(width: Int, height: Int) {
+        rasterWidth = width
+        rasterHeight = height
+        check?.let { surface?.postOnAnimation(it) }
     }
 
     private fun finishPending() {
+        check?.let { surface?.removeCallbacks(it) }
+        timeout?.let { surface?.removeCallbacks(it) }
+        check = null
+        timeout = null
         val callbacks = pending.toList()
         pending.clear()
         callbacks.forEach(Runnable::run)
     }
 
     fun dispose() {
+        attachedRenderer?.removeResizingFlutterUiListener(this)
+        attachedRenderer = null
         surface?.holder?.removeCallback(this)
         finishPending()
         surface = null
+        rasterWidth = 0
+        rasterHeight = 0
+    }
+}
+
+private fun probeFrameCorner(view: FlutterSurfaceView, width: Int, height: Int, complete: (Boolean) -> Unit) {
+    // A new-size frame may still be rasterizing when the resize callback arrives.
+    // The old orientation cannot contain the new bottom-right pixel. Copy one
+    // pixel asynchronously instead of reading the entire GPU frame on the UI thread.
+    val pixel = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    try {
+        PixelCopy.request(view, Rect(width - 1, height - 1, width, height), pixel, { result ->
+            pixel.recycle()
+            complete(result == PixelCopy.SUCCESS)
+        }, Handler(view.handler.looper))
+    } catch (_: IllegalArgumentException) {
+        pixel.recycle()
+        complete(false)
     }
 }

@@ -36,7 +36,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterFragmentActivity() {
-    private val rotationTransition = FlutterRotationTransition(this) { flutterEngine?.renderer }
+    private val rotationTransition = FlutterRotationTransition(this, { flutterEngine?.renderer })
 
     override fun onDestroy() {
         rotationTransition.dispose()

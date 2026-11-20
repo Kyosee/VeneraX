@@ -1,7 +1,6 @@
 package io.github.kyosee.venera
 
 import android.app.Activity
-import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Looper
 import android.view.SurfaceHolder
@@ -30,6 +29,7 @@ class FlutterRotationTransitionTest {
     private lateinit var renderer: FlutterRenderer
     private lateinit var transition: FlutterRotationTransition
     private val holder = mock(SurfaceHolder::class.java)
+    private val probes = mutableListOf<(Boolean) -> Unit>()
 
     @Before
     fun setUp() {
@@ -38,7 +38,7 @@ class FlutterRotationTransitionTest {
         view.id = FlutterFragment.FLUTTER_VIEW_ID
         activity.setContentView(view)
         renderer = mock(FlutterRenderer::class.java)
-        transition = FlutterRotationTransition(activity) { renderer }
+        transition = FlutterRotationTransition(activity, { renderer }) { _, _, _, done -> probes.add(done) }
         transition.attach()
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 300, 600))
         transition.surfaceRedrawNeededAsync(holder, Runnable {})
@@ -48,20 +48,22 @@ class FlutterRotationTransitionTest {
     fun tearDown() { transition.dispose() }
 
     @Test
-    fun rotationWaitsForMatchingRasterSizeAndReleasesBitmaps() {
-        val old = Bitmap.createBitmap(300, 600, Bitmap.Config.ARGB_8888)
-        val resized = Bitmap.createBitmap(600, 300, Bitmap.Config.ARGB_8888)
-        `when`(renderer.bitmap).thenReturn(old, resized)
+    fun rotationWaitsForNewRasterAndQueuedBufferWithoutCapturingTheScreen() {
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
         var finishes = 0
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
         assertEquals(0, finishes)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
-        assertTrue(old.isRecycled)
+        assertTrue(probes.isEmpty())
         assertEquals(0, finishes)
+        transition.resizeEngineView(600, 300)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(40))
+        probes.removeAt(0)(false)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(40))
+        assertEquals(0, finishes)
+        probes.removeAt(0)(true)
         assertEquals(1, finishes)
-        assertTrue(resized.isRecycled)
+        verify(renderer, never()).bitmap
     }
 
     @Test
@@ -70,41 +72,42 @@ class FlutterRotationTransitionTest {
         var finishes = 0
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
         assertEquals(1, finishes)
-        verifyNoInteractions(renderer)
+        assertTrue(probes.isEmpty())
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
         transition.dispose()
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
         assertEquals(2, finishes)
-        verifyNoInteractions(renderer)
+        verify(renderer).removeResizingFlutterUiListener(transition)
     }
 
     @Test
-    fun missingCaptureNeverBlocksTheWindow() {
+    fun missingResizeSignalTimesOutWithoutHoldingTheWindow() {
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
         var finishes = 0
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
         assertEquals(1, finishes)
     }
 
     @Test
     fun insetResizeDuringRotationStillWaitsForMatchingFrame() {
-        val old = Bitmap.createBitmap(300, 600, Bitmap.Config.ARGB_8888)
-        val resized = Bitmap.createBitmap(600, 280, Bitmap.Config.ARGB_8888)
-        `when`(renderer.bitmap).thenReturn(old, resized)
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
         var finishes = 0
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
+        transition.resizeEngineView(600, 300)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(40))
+        val stale = probes.removeAt(0)
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 280))
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
+        stale(true)
         assertEquals(1, finishes)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
         assertEquals(1, finishes)
+        transition.resizeEngineView(600, 280)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(40))
+        probes.removeAt(0)(true)
         assertEquals(2, finishes)
-        assertTrue(old.isRecycled)
-        assertTrue(resized.isRecycled)
     }
 
     @Test
@@ -117,15 +120,13 @@ class FlutterRotationTransitionTest {
         var finishes = 0
         transition.surfaceRedrawNeededAsync(holder, Runnable { finishes++ })
         assertEquals(0, finishes)
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
+        transition.surfaceDestroyed(holder)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
         assertEquals(1, finishes)
     }
 
     @Test
     fun stalledRendererTimesOutAndSupersededDrawCompletesOnlyOnce() {
-        `when`(renderer.bitmap).thenAnswer {
-            Bitmap.createBitmap(300, 600, Bitmap.Config.ARGB_8888)
-        }
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
         var firstFinishes = 0
         var secondFinishes = 0
@@ -133,7 +134,9 @@ class FlutterRotationTransitionTest {
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 300, 600))
         transition.surfaceRedrawNeededAsync(holder, Runnable { secondFinishes++ })
         assertEquals(1, firstFinishes)
+        transition.resizeEngineView(300, 600)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
+        probes.removeAt(0)(true)
         assertEquals(1, secondFinishes)
 
         `when`(holder.surfaceFrame).thenReturn(Rect(0, 0, 600, 300))
