@@ -294,8 +294,6 @@ class AppTabBar extends StatefulWidget {
 class _AppTabBarState extends State<AppTabBar> {
   late TabController _controller;
 
-  late List<GlobalKey> keys;
-
   static const _kTabHeight = 48.0;
 
   static const tabPadding = EdgeInsets.symmetric(horizontal: 6, vertical: 6);
@@ -315,12 +313,6 @@ class _AppTabBarState extends State<AppTabBar> {
   var scrollViewportKey = GlobalKey();
 
   var offsets = <double>[];
-
-  @override
-  void initState() {
-    keys = widget.tabs.map((e) => GlobalKey()).toList();
-    super.initState();
-  }
 
   @override
   void dispose() {
@@ -520,19 +512,16 @@ class _AppTabBarState extends State<AppTabBar> {
     return InkWell(
       onTap: () => onTabClicked(i),
       borderRadius: BorderRadius.circular(tabRadius),
-      child: KeyedSubtree(
-        key: keys[i],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: DefaultTextStyle(
-            style: DefaultTextStyle.of(context).style.copyWith(
-              color: i == _controller.animation?.value.round()
-                  ? context.colorScheme.primary
-                  : context.colorScheme.onSurface,
-              fontWeight: FontWeight.w500,
-            ),
-            child: widget.tabs[i],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: DefaultTextStyle(
+          style: DefaultTextStyle.of(context).style.copyWith(
+            color: i == _controller.animation?.value.round()
+                ? context.colorScheme.primary
+                : context.colorScheme.onSurface,
+            fontWeight: FontWeight.w500,
           ),
+          child: widget.tabs[i],
         ),
       ),
     ).padding(tabPadding);

@@ -9,6 +9,60 @@ void main() {
     await AppTranslation.init();
   });
 
+  for (final explicitController in [false, true]) {
+    testWidgets('handles changing tabs with explicit=$explicitController', (
+      tester,
+    ) async {
+      Widget buildApp(int count) {
+        return MaterialApp(
+          home: DefaultTabController(
+            length: count,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: AppTabBar(
+                  controller: explicitController
+                      ? DefaultTabController.of(context)
+                      : null,
+                  tabs: List.generate(count, (i) => Tab(text: 'Tab $i')),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildApp(1));
+      final state = tester.state(find.byType(AppTabBar));
+
+      await tester.pumpWidget(buildApp(3));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(tester.state(find.byType(AppTabBar)), same(state));
+      expect(find.text('Tab 2'), findsOneWidget);
+      await tester.tap(find.text('Tab 2'));
+      await tester.pumpAndSettle();
+      expect(
+        DefaultTabController.of(tester.element(find.byType(AppTabBar))).index,
+        2,
+      );
+
+      for (final count in [1, 0, 2]) {
+        await tester.pumpWidget(buildApp(count));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(tester.state(find.byType(AppTabBar)), same(state));
+        expect(find.byType(Tab), findsNWidgets(count));
+      }
+      await tester.tap(find.text('Tab 1'));
+      await tester.pumpAndSettle();
+      expect(
+        DefaultTabController.of(tester.element(find.byType(AppTabBar))).index,
+        1,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('restores an index safely before the first tab layout', (
     tester,
   ) async {
