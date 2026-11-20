@@ -34,6 +34,7 @@ void main() {
       directory: dir,
       version: '1.0.0',
       bootTime: () => 1000,
+      osExit: () async => null,
       observeLifecycle: false,
     );
     SessionGuard.begin('sync');
@@ -44,7 +45,12 @@ void main() {
       directory: dir,
       version: '1.0.0',
       bootTime: () => 1000,
-      osExit: () async => (reason: 3, message: 'Signal:SIGSEGV'),
+      osExit: () async => (
+        crashed: true,
+        description: 'CRASH_NATIVE (5): crash',
+        at: null,
+      ),
+      osTrace: () async => 'signal 11 (SIGSEGV)',
       observeLifecycle: false,
     );
     expect(SessionGuard.previousExit, PreviousExit.suspectedCrash);
@@ -60,8 +66,10 @@ void main() {
     expect(latest.record.active, ['sync']);
     expect(latest.archivedAt, greaterThanOrEqualTo(crashed));
     // What the system said about the exit is kept with it.
-    expect(latest.osExit, 'CPP_CRASH (3): Signal:SIGSEGV');
+    expect(latest.osExit, 'CRASH_NATIVE (5): crash');
+    expect(latest.trace.readAsStringSync(), 'signal 11 (SIGSEGV)');
     expect(kept.last.osExit, isNull);
+    expect(kept.last.trace.existsSync(), isFalse);
     final entries = Log.parse(latest.log.readAsStringSync());
     expect(entries.single.title, 'Sync');
     expect(entries.single.content, 'last words');

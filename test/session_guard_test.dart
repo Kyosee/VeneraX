@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/boot_time.dart';
+import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/session_guard.dart';
 
 /// A crash has to be told apart from everything that ends a process without
@@ -25,6 +26,7 @@ void main() {
         directory: dir,
         version: version,
         bootTime: () => boot,
+        osExit: () async => null,
         observeLifecycle: false,
       );
 
@@ -129,57 +131,49 @@ void main() {
   });
 
   group('where the system says how the process ended', () {
-    PreviousExit withReason(SessionRecord prev, int reason) =>
+    PreviousExit judged(SessionRecord prev, bool? crashed) =>
         SessionGuard.classify(
           prev,
           version: '1.0.0',
           bootAt: 1000,
-          osReason: reason,
+          osCrashed: crashed,
         );
 
+    Future<void> launchAfter(OsExit? exit) => SessionGuard.start(
+      directory: dir,
+      version: '1.0.0',
+      bootTime: () => 1000,
+      osExit: () async => exit,
+      observeLifecycle: false,
+    );
+
     test('a crash or a freeze is one even off screen', () {
-      for (final reason in [1, 3, 4, 5]) {
-        expect(
-          withReason(record(presence: SessionRecord.away), reason),
-          PreviousExit.suspectedCrash,
-          reason: '$reason',
-        );
-      }
+      expect(
+        judged(record(presence: SessionRecord.away), true),
+        PreviousExit.suspectedCrash,
+      );
     });
 
     test('an app the user ended, or a normal exit, is none even in use', () {
-      for (final reason in [2, 8, 9]) {
-        expect(
-          withReason(record(), reason),
-          PreviousExit.background,
-          reason: '$reason',
-        );
-      }
+      expect(judged(record(), false), PreviousExit.background);
     });
 
     test('a reclaimed app is judged by whether it was in use', () {
-      for (final reason in [0, 6, 7, 10, 99]) {
-        expect(
-          withReason(record(), reason),
-          PreviousExit.suspectedCrash,
-          reason: '$reason',
-        );
-        expect(
-          withReason(record(presence: SessionRecord.away), reason),
-          PreviousExit.background,
-          reason: '$reason',
-        );
-      }
+      expect(judged(record(), null), PreviousExit.suspectedCrash);
+      expect(
+        judged(record(presence: SessionRecord.away), null),
+        PreviousExit.background,
+      );
     });
 
     test('closing itself and an update still come first', () {
-      expect(withReason(record(clean: true), 3), PreviousExit.clean);
+      expect(judged(record(clean: true), true), PreviousExit.clean);
       expect(
         SessionGuard.classify(
           record(),
           version: '1.0.1',
           bootAt: 1000,
-          osReason: 3,
+          osCrashed: true,
         ),
         PreviousExit.appUpdated,
       );
@@ -191,15 +185,13 @@ void main() {
       SessionGuard.onLifecycle(AppLifecycleState.paused);
       kill();
 
-      await SessionGuard.start(
-        directory: dir,
-        version: '1.0.0',
-        bootTime: () => 1000,
-        osExit: () async => (reason: 3, message: 'Signal:SIGSEGV'),
-        observeLifecycle: false,
-      );
+      await launchAfter((
+        crashed: true,
+        description: 'CRASH_NATIVE (5)',
+        at: null,
+      ));
       expect(SessionGuard.previousExit, PreviousExit.suspectedCrash);
-      expect(SessionGuard.previousOsExit?.reason, 3);
+      expect(SessionGuard.previousOsExit?.description, 'CRASH_NATIVE (5)');
       expect(SessionGuard.current!.earlyFailures, 1);
       expect(SessionGuard.takePendingReport(), isNotNull);
     });
@@ -209,15 +201,54 @@ void main() {
       SessionGuard.onLifecycle(AppLifecycleState.resumed);
       kill();
 
+      await launchAfter((
+        crashed: false,
+        description: 'USER_REQUESTED (10)',
+        at: null,
+      ));
+      expect(SessionGuard.previousExit, PreviousExit.background);
+      expect(SessionGuard.takePendingReport(), isNull);
+    });
+
+    test('an exit recorded before the run began is about an earlier run', () async {
+      await launch();
+      SessionGuard.onLifecycle(AppLifecycleState.resumed);
+      SessionGuard.onLifecycle(AppLifecycleState.paused);
+      final started = SessionGuard.current!.id;
+      kill();
+
+      // The process was not seen to die: an old crash must not be pinned on
+      // this run.
+      await launchAfter((
+        crashed: true,
+        description: 'CRASH_NATIVE (5)',
+        at: started - 60000,
+      ));
+      expect(SessionGuard.previousExit, PreviousExit.background);
+      expect(SessionGuard.previousOsExit, isNull);
+      kill();
+
+      await launchAfter((
+        crashed: true,
+        description: 'CRASH_NATIVE (5)',
+        at: DateTime.now().millisecondsSinceEpoch,
+      ));
+      expect(SessionGuard.previousExit, PreviousExit.suspectedCrash);
+    });
+
+    test('a first launch does not ask the system at all', () async {
+      var asked = 0;
       await SessionGuard.start(
         directory: dir,
         version: '1.0.0',
         bootTime: () => 1000,
-        osExit: () async => (reason: 9, message: ''),
+        osExit: () async {
+          asked++;
+          return null;
+        },
         observeLifecycle: false,
       );
-      expect(SessionGuard.previousExit, PreviousExit.background);
-      expect(SessionGuard.takePendingReport(), isNull);
+      expect(asked, 0);
     });
   });
 

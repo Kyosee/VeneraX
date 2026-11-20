@@ -250,9 +250,12 @@ abstract final class DiagnosticsReport {
       abnormal: true,
       endedBefore: report.archivedAt,
       osExit: report.osExit,
-      // Asked for now rather than when the run was set aside: the system
-      // delivers a crash report some time after the next launch.
-      systemReport: App.isOhos
+      // Android's is on file from when the run was set aside. HarmonyOS
+      // delivers its report some time after the next launch, so that one is
+      // asked for now.
+      systemReport: report.trace.existsSync()
+          ? report.trace.readAsStringSync()
+          : App.isOhos
           ? systemReportFor(
               await readOhosNativeRecords(),
               from: report.record.id,

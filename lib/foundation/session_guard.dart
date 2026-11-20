@@ -169,6 +169,7 @@ typedef SessionReport = ({
   SessionRecord record,
   int archivedAt,
   File log,
+  File trace,
   String? osExit,
 });
 
@@ -210,6 +211,8 @@ abstract final class SessionGuard {
   /// What the system itself said about [previous], where it says anything.
   static OsExit? previousOsExit;
 
+  static Future<String?> Function() _osTrace = readOsExitTrace;
+
   /// Chosen on the recovery page: this run leaves out the work the app would
   /// otherwise start by itself.
   static bool safeMode = false;
@@ -221,13 +224,14 @@ abstract final class SessionGuard {
 
   /// Judges the previous run and starts recording this one.
   ///
-  /// [osExit] is the system's own account of how the previous process ended,
-  /// on the one platform that gives it (HarmonyOS).
+  /// [osExit] is the system's own account of how the previous process ended
+  /// and [osTrace] its record of a crash, on the platforms that keep one.
   static Future<void> start({
     Directory? directory,
     String? version,
     int? Function() bootTime = bootTimeMillis,
-    Future<OsExit?> Function()? osExit,
+    Future<OsExit?> Function() osExit = readOsExit,
+    Future<String?> Function() osTrace = readOsExitTrace,
     bool observeLifecycle = true,
   }) async {
     try {
@@ -236,13 +240,19 @@ abstract final class SessionGuard {
       final file = File('${dir.path}/$_fileName');
       final prev = SessionRecord.tryRead(file);
       final boot = bootTime();
-      final os = await (osExit ?? (App.isOhos ? readOhosLastExit : null))
-          ?.call();
+      var os = prev == null ? null : await osExit();
+      // An exit the system recorded before the previous run began is about an
+      // earlier process: this one ended unnoticed, or the app was started
+      // again inside a process that never died.
+      final endedAt = os?.at;
+      if (prev != null && endedAt != null && endedAt < prev.id - 1000) {
+        os = null;
+      }
       final exit = classify(
         prev,
         version: appVersion,
         bootAt: boot,
-        osReason: os?.reason,
+        osCrashed: os?.crashed,
       );
       final record = SessionRecord(
         id: DateTime.now().millisecondsSinceEpoch,
@@ -254,7 +264,8 @@ abstract final class SessionGuard {
       if (_offerRecovery) record.fragile = true;
       previous = prev;
       previousExit = exit;
-      previousOsExit = prev == null ? null : os;
+      previousOsExit = os;
+      _osTrace = osTrace;
       _file = file;
       _current = record;
       if (observeLifecycle) {
@@ -282,7 +293,7 @@ abstract final class SessionGuard {
     SessionRecord? prev, {
     required String version,
     required int? bootAt,
-    int? osReason,
+    bool? osCrashed,
   }) {
     if (prev == null) return PreviousExit.unknown;
     if (prev.clean) return PreviousExit.clean;
@@ -290,9 +301,8 @@ abstract final class SessionGuard {
     // Where the system says how the process ended there is nothing to infer:
     // a crash is one even off screen, and an app the user ended is not one
     // even in mid-use.
-    final crashed = osReason == null ? null : osExitIsCrash(osReason);
-    if (crashed != null) {
-      return crashed ? PreviousExit.suspectedCrash : PreviousExit.background;
+    if (osCrashed != null) {
+      return osCrashed ? PreviousExit.suspectedCrash : PreviousExit.background;
     }
     final prevBoot = prev.bootAt;
     if (prevBoot != null &&
@@ -503,9 +513,16 @@ abstract final class SessionGuard {
         jsonEncode({
           ...prev.toJson(),
           'archivedAt': DateTime.now().millisecondsSinceEpoch,
-          if (os != null) 'osExit': describeOsExit(os),
+          if (os != null) 'osExit': os.description,
         }),
       );
+      if (os?.crashed == true) {
+        // Kept as the system wrote it; the report redacts it when shown.
+        final trace = await _osTrace();
+        if (trace != null) {
+          File('${dir.path}/${prev.id}.trace.txt').writeAsStringSync(trace);
+        }
+      }
       final log = Log.previousFile;
       if (await log.exists()) {
         final source = await log.open();
@@ -522,7 +539,7 @@ abstract final class SessionGuard {
       }
       final stale = _reportIds(dir).skip(_maxReports);
       for (final id in stale) {
-        for (final suffix in const ['json', 'log']) {
+        for (final suffix in const ['json', 'log', 'trace.txt']) {
           final file = File('${dir.path}/$id.$suffix');
           if (file.existsSync()) file.deleteSync();
         }
@@ -557,6 +574,7 @@ abstract final class SessionGuard {
           record: SessionRecord.fromJson(json),
           archivedAt: json['archivedAt'] as int? ?? id,
           log: File('${dir.path}/$id.log'),
+          trace: File('${dir.path}/$id.trace.txt'),
           osExit: json['osExit'] as String?,
         ));
       }
@@ -581,6 +599,7 @@ abstract final class SessionGuard {
     previous = null;
     previousExit = PreviousExit.unknown;
     previousOsExit = null;
+    _osTrace = readOsExitTrace;
     safeMode = false;
   }
 }

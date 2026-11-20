@@ -237,6 +237,17 @@ class MainActivity : FlutterFragmentActivity() {
                     res.success(ok)
                 }
 
+                "readLastExit" -> {
+                    val withTrace = call.argument<Boolean>("trace") ?: false
+                    // A binder call and, with the trace, a read of up to half a megabyte.
+                    Thread {
+                        val exit = runCatching { ProcessExit.last(applicationContext, withTrace) }
+                            .onFailure { Log.w("Venera", "read last exit failed: ${it.message}") }
+                            .getOrNull()
+                        runOnUiThread { res.success(exit) }
+                    }.start()
+                }
+
                 else -> res.notImplemented()
             }
         }
