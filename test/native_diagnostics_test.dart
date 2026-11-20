@@ -76,6 +76,169 @@ void main() {
     expect(parseAndroidExit(null), isNull);
   });
 
+  group('an uncaught Java exception the app recorded', () {
+    const uncaught =
+        'time=1700000000400\n'
+        'reason=java.lang.IllegalStateException: no view\n'
+        'thread=main\n'
+        'java.lang.IllegalStateException: no view\n'
+        '\tat io.github.kyosee.venera.MainActivity.onCreate(MainActivity.kt:1)\n';
+    Map<String, Object?> systemRecord(String name, int reason, int at) => {
+      'kind': 'crash',
+      'name': name,
+      'reason': reason,
+      'description': 'crash',
+      'at': at,
+      'format': 'text',
+      'trace': null,
+    };
+
+    test('gives the Java crash the system recorded its reason and stack', () {
+      expect(
+        parseAndroidRecords({
+          ...systemRecord('CRASH', 4, 1700000000900),
+          'uncaught': uncaught,
+        }),
+        (
+          exit: (
+            crashed: true,
+            description: 'CRASH (4): java.lang.IllegalStateException: no view',
+            at: 1700000000900,
+          ),
+          trace: uncaught,
+        ),
+      );
+      // Either may be noted first.
+      expect(
+        parseAndroidRecords({
+          ...systemRecord('CRASH', 4, 1699999991000),
+          'uncaught': uncaught,
+        }).trace,
+        uncaught,
+      );
+    });
+
+    test('is the whole account where the system keeps no exit record', () {
+      expect(parseAndroidRecords({'uncaught': uncaught}), (
+        exit: (
+          crashed: true,
+          description: 'java.lang.IllegalStateException: no view',
+          at: 1700000000400,
+        ),
+        trace: uncaught,
+      ));
+    });
+
+    test('is ignored when it is not about the exit the system recorded', () {
+      final plain = (
+        exit: (
+          crashed: true,
+          description: 'CRASH (4): crash',
+          at: 1700000020000,
+        ),
+        trace: null,
+      );
+      // Left over from an earlier process.
+      expect(
+        parseAndroidRecords({
+          ...systemRecord('CRASH', 4, 1700000020000),
+          'uncaught': uncaught,
+        }),
+        plain,
+      );
+      // The process died some other way at about the same time.
+      expect(
+        parseAndroidRecords({
+          ...systemRecord('CRASH_NATIVE', 5, 1700000000900),
+          'uncaught': uncaught,
+        }),
+        (
+          exit: (
+            crashed: true,
+            description: 'CRASH_NATIVE (5): crash',
+            at: 1700000000900,
+          ),
+          trace: null,
+        ),
+      );
+      // A system record without a time cannot be matched.
+      expect(
+        parseAndroidRecords({
+          ...systemRecord('CRASH', 4, 0)..remove('at'),
+          'uncaught': uncaught,
+        }).trace,
+        isNull,
+      );
+    });
+
+    test('is ignored when it cannot be read', () {
+      const unreadable = [
+        '',
+        'garbage',
+        // Torn off before the reason.
+        'time=1700000000400\n',
+        // No time to tie it to a process.
+        'reason=java.lang.IllegalStateException\nthread=main\n',
+        'time=soon\nreason=java.lang.IllegalStateException\n',
+      ];
+      for (final text in unreadable) {
+        expect(parseAndroidRecords({'uncaught': text}), (
+          exit: null,
+          trace: null,
+        ), reason: text);
+        expect(
+          parseAndroidRecords({
+            ...systemRecord('CRASH', 4, 1700000000900),
+            'uncaught': text,
+          }),
+          (
+            exit: (
+              crashed: true,
+              description: 'CRASH (4): crash',
+              at: 1700000000900,
+            ),
+            trace: null,
+          ),
+          reason: text,
+        );
+      }
+      expect(parseAndroidRecords({'uncaught': 42}), (exit: null, trace: null));
+      // Nothing on record at all, or an older host.
+      expect(parseAndroidRecords(null), (exit: null, trace: null));
+      expect(
+        parseAndroidRecords(systemRecord('CRASH', 4, 1700000000900)).exit,
+        parseAndroidExit(systemRecord('CRASH', 4, 1700000000900)),
+      );
+    });
+
+    test('is the crash trace unless the system has one of its own', () async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const channel = MethodChannel('venera/method_channel');
+      Uint8List? systemTrace;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        expect(call.method, 'readLastExit');
+        if (call.arguments['trace'] == true) {
+          return {
+            ...systemRecord('CRASH', 4, 1700000000900),
+            'trace': systemTrace,
+          };
+        }
+        return {
+          ...systemRecord('CRASH', 4, 1700000000900),
+          'uncaught': uncaught,
+        };
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      final exit = await readOsExit();
+      expect(exit?.description, startsWith('CRASH (4): java.lang.'));
+      expect(await readOsExitTrace(), uncaught);
+      systemTrace = Uint8List.fromList('system trace'.codeUnits);
+      expect(await readOsExitTrace(), 'system trace');
+    });
+  });
+
   test(
     'native crash stacks reach logs without truncation or repeated resume entries',
     () async {

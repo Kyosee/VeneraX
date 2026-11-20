@@ -209,6 +209,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- Records uncaught Java exceptions; created ahead of the other providers. -->
+        <provider
+            android:name=".DiagnosticsInitProvider"
+            android:authorities="${applicationId}.diagnostics-init"
+            android:exported="false"
+            android:initOrder="1000" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

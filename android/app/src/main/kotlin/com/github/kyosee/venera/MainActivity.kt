@@ -244,7 +244,16 @@ class MainActivity : FlutterFragmentActivity() {
                         val exit = runCatching { ProcessExit.last(applicationContext, withTrace) }
                             .onFailure { Log.w("Venera", "read last exit failed: ${it.message}") }
                             .getOrNull()
-                        runOnUiThread { res.success(exit) }
+                        // The app's own record goes along once, with the exit itself.
+                        val result = if (withTrace) exit else {
+                            val uncaught = UncaughtExceptionRecord.take(applicationContext)
+                            when {
+                                exit != null -> exit + ("uncaught" to uncaught)
+                                uncaught != null -> mapOf("uncaught" to uncaught)
+                                else -> null
+                            }
+                        }
+                        runOnUiThread { res.success(result) }
                     }.start()
                 }
 

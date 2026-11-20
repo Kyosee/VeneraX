@@ -33,11 +33,13 @@ Future<OsExit?> readOsExit() async {
       );
     }
     if (App.isAndroid) {
-      return parseAndroidExit(
+      final records = parseAndroidRecords(
         await _channel.invokeMapMethod<String, Object?>('readLastExit', {
           'trace': false,
         }),
       );
+      _androidUncaught = records.trace;
+      return records.exit;
     }
     // HarmonyOS is neither and keeps its own branch above.
     if (App.isWindows || App.isLinux) return _takeHostExit();
@@ -51,7 +53,8 @@ Future<OsExit?> readOsExit() async {
 
 /// The system's own record of the previous process's crash or freeze, as
 /// text: a native crash's stacks or the thread dump of a hang. Android 11 on,
-/// and what the Windows and Linux hosts recorded.
+/// and what the Windows and Linux hosts recorded. On Android an uncaught Java
+/// exception the app recorded stands in where the system keeps no trace.
 Future<String?> readOsExitTrace() async {
   if (App.isWindows || App.isLinux) return _hostTrace;
   if (!App.isAndroid) return null;
@@ -61,16 +64,20 @@ Future<String?> readOsExitTrace() async {
       {'trace': true},
     );
     final trace = exit?['trace'];
-    if (trace is! Uint8List || trace.isEmpty) return null;
+    if (trace is! Uint8List || trace.isEmpty) return _androidUncaught;
     return exit?['format'] == 'tombstone'
         ? describeTombstone(trace)
         : utf8.decode(trace, allowMalformed: true);
   } on MissingPluginException {
-    return null;
+    return _androidUncaught;
   } on PlatformException {
-    return null;
+    return _androidUncaught;
   }
 }
+
+/// What [readOsExit] took from the Android host: the uncaught Java exception
+/// that ended the previous process, where the app recorded one.
+String? _androidUncaught;
 
 /// What [readOsExit] took from the host on Windows and Linux: reading the
 /// record removes it.
@@ -179,6 +186,59 @@ OsExit? parseAndroidExit(Map<String, Object?>? exit) {
         ? '$name ($reason)'
         : '$name ($reason): $detail',
     at: exit['at'] as int?,
+  );
+}
+
+/// How far apart the app's record of an uncaught exception and the system's
+/// record of the crash it caused may be and still be the same event.
+const _uncaughtMatchWindow = 10000;
+
+/// Reads what the Android host passes on: the system's exit record and the
+/// uncaught Java exception the app recorded as it went down, which gives a
+/// Java crash the stack the system leaves out. [trace] is that record in full,
+/// where it is taken to speak for the previous process.
+({OsExit? exit, String? trace}) parseAndroidRecords(
+  Map<String, Object?>? exit,
+) {
+  try {
+    return _parseAndroidRecords(exit);
+  } catch (_) {
+    // Malformed is the same as absent.
+    return (exit: null, trace: null);
+  }
+}
+
+({OsExit? exit, String? trace}) _parseAndroidRecords(
+  Map<String, Object?>? exit,
+) {
+  if (exit == null) return (exit: null, trace: null);
+  final text = exit['uncaught'];
+  final uncaughtText = text is String ? text : null;
+  var uncaught = uncaughtText == null ? null : parseHostRecord(uncaughtText);
+  // Without a time it cannot be tied to any process.
+  if (uncaught?.at == null) uncaught = null;
+  if (!exit.containsKey('kind')) {
+    // Before Android 11 the app's record is all there is.
+    return uncaught == null
+        ? (exit: null, trace: null)
+        : (exit: uncaught, trace: uncaughtText);
+  }
+  final system = parseAndroidExit(exit)!;
+  final systemAt = system.at;
+  if (uncaught == null ||
+      exit['name'] != 'CRASH' ||
+      systemAt == null ||
+      (uncaught.at! - systemAt).abs() > _uncaughtMatchWindow) {
+    // An earlier process's, or not what ended this one.
+    return (exit: system, trace: null);
+  }
+  return (
+    exit: (
+      crashed: system.crashed,
+      description: 'CRASH (${exit['reason']}): ${uncaught.description}',
+      at: systemAt,
+    ),
+    trace: uncaughtText,
   );
 }
 
