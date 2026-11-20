@@ -12,9 +12,9 @@
     <string name="reading_widget_following">Following</string>
     <string name="reading_widget_following_cover">Following · Covers</string>
     <string name="reading_widget_following_list">Following · List</string>
-    <string name="reading_widget_updates">New updates</string>
-    <string name="reading_widget_updates_cover">New updates · Covers</string>
-    <string name="reading_widget_updates_list">New updates · List</string>
+    <string name="reading_widget_updates">Latest check</string>
+    <string name="reading_widget_updates_cover">Latest check · Covers</string>
+    <string name="reading_widget_updates_list">Latest check · List</string>
     <string name="reading_widget_local">Local comics</string>
     <string name="reading_widget_local_cover">Local comics · Covers</string>
     <string name="reading_widget_local_list">Local comics · List</string>

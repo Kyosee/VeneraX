@@ -17,6 +17,7 @@ import android.view.View
 import android.widget.RemoteViews
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMethodCodec
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.ceil
@@ -88,7 +89,10 @@ object ReadingWidgets {
 
     fun register(context: Context, messenger: BinaryMessenger) {
         val appContext = context.applicationContext
-        MethodChannel(messenger, "venera/reading_widget").setMethodCallHandler { call, result ->
+        MethodChannel(
+            messenger, "venera/reading_widget", StandardMethodCodec.INSTANCE,
+            messenger.makeBackgroundTaskQueue(),
+        ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasWidgets" -> result.success(
                     providers(appContext).any { (kind, _, ids) -> kind.key == call.arguments && ids.isNotEmpty() },
@@ -194,11 +198,7 @@ object ReadingWidgets {
         snapshot: ReadingWidgetSnapshot,
     ) {
         // A provider may restart after settings persisted but before Dart cleared the snapshot.
-        val contentAllowed = runCatching {
-            !JSONObject(File(context.filesDir, "appdata.json").readText())
-                .getJSONObject("settings").optBoolean("authorizationRequired", true)
-        }.getOrDefault(false)
-        val visible = if (contentAllowed && !preferences(context).getBoolean("locked", true)) snapshot else ReadingWidgetSnapshot(
+        val visible = if (!snapshot.locked && contentAllowed(context)) snapshot else ReadingWidgetSnapshot(
             context.getString(snapshot.kind.titleResource),
             context.getString(R.string.reading_widget_open),
             emptyList(),
@@ -228,14 +228,15 @@ object ReadingWidgets {
         val fontScale = context.resources.configuration.fontScale
         val showSubtitle = visible.subtitle.isNotEmpty() && height >= 200
         val showSource = width >= 240 && height >= 260
-        val titleLines = if (height < 240 || width < 220) 1 else 2
+        val titleLines = if (!covers || height < 240 || width < 220) 1 else 2
         val headerHeight = max(32, ceil(18 * fontScale + 4).toInt()) +
                 if (showSubtitle) ceil(14 * fontScale + 2).toInt() else 0
         val hasMetadata = showSource || visible.items.any { it.badge.isNotEmpty() }
         val rowHeight = max(66, ceil((17 * titleLines + 14 + if (hasMetadata) 14 else 0) * fontScale + 21).toInt())
-        val count = if (covers) 2 else ((height - 32 - headerHeight) / rowHeight).coerceIn(1, MAX_ITEMS)
+        val count = if (covers) (if (width >= 300) 3 else 2)
+            else ((height - 32 - headerHeight) / rowHeight).coerceIn(1, MAX_ITEMS)
         val coverTextHeight = ceil((16 * titleLines + 13 + if (showSource) 12 else 0) * fontScale + 20).toInt()
-        val coverHeight = minOf(160, ((width - 40) / 2f / 0.72f).toInt(), height - 32 - headerHeight - coverTextHeight)
+        val coverHeight = minOf(180, ((width - 24 - count * 8) / count.toFloat() / 0.72f).toInt(), height - 32 - headerHeight - coverTextHeight)
             .coerceAtLeast(28)
         views.setViewVisibility(R.id.reading_widget_subtitle, if (showSubtitle) View.VISIBLE else View.GONE)
         visible.items.take(count).forEach { item ->
@@ -279,9 +280,23 @@ object ReadingWidgets {
         }
         views.setViewVisibility(R.id.reading_widget_items, if (visible.items.isEmpty()) View.GONE else View.VISIBLE)
         views.setViewVisibility(R.id.reading_widget_empty, if (visible.items.isEmpty()) View.VISIBLE else View.GONE)
+        if (visible.items.isNotEmpty() && !contentAllowed(context)) {
+            render(context, manager, id, covers, snapshot.copy(locked = true, items = emptyList()))
+            return
+        }
         // Full replacement releases old cover bitmaps and removed/private content.
         manager.updateAppWidget(id, views)
+        // A provider callback can overlap publication on the background queue.
+        if (visible.items.isNotEmpty() && !contentAllowed(context)) {
+            render(context, manager, id, covers, snapshot.copy(locked = true, items = emptyList()))
+        }
     }
+
+    private fun contentAllowed(context: Context): Boolean = runCatching {
+        !preferences(context).getBoolean("locked", true) &&
+            !JSONObject(File(context.filesDir, "appdata.json").readText())
+                .getJSONObject("settings").optBoolean("authorizationRequired", true)
+    }.getOrDefault(false)
 
     private fun pendingIntent(context: Context, uri: Uri): PendingIntent {
         val intent = Intent(Intent.ACTION_VIEW, uri, context, MainActivity::class.java)

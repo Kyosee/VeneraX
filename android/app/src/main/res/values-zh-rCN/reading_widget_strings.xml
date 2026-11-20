@@ -12,9 +12,9 @@
     <string name="reading_widget_following">追更</string>
     <string name="reading_widget_following_cover">追更 · 封面</string>
     <string name="reading_widget_following_list">追更 · 列表</string>
-    <string name="reading_widget_updates">有更新</string>
-    <string name="reading_widget_updates_cover">有更新 · 封面</string>
-    <string name="reading_widget_updates_list">有更新 · 列表</string>
+    <string name="reading_widget_updates">最近检查</string>
+    <string name="reading_widget_updates_cover">最近检查 · 封面</string>
+    <string name="reading_widget_updates_list">最近检查 · 列表</string>
     <string name="reading_widget_local">本地漫画</string>
     <string name="reading_widget_local_cover">本地漫画 · 封面</string>
     <string name="reading_widget_local_list">本地漫画 · 列表</string>
