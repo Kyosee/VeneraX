@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Check Issue triage
+        run: node --test .github/scripts/issue-triage.test.mjs
       - name: Check AppImage packaging
         run: |
           python3 -m unittest discover -s debian -p 'test_*.py'
