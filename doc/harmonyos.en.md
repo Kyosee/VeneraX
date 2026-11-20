@@ -28,7 +28,7 @@ This is an experimental adaptation. The complete app can be built as x64 and ARM
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`, commit `744cbb4f08e577787774c04033cc19a9d318d0d2`, Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865, API 26 SDK |
 | SDK components | JBR, Node, ohpm, hvigor, `hdc`, and native SDK Clang, CMake and Ninja |
-| Rust | Rust 1.95 with `x86_64-unknown-linux-ohos` and `aarch64-unknown-linux-ohos` targets |
+| Rust | Rust 1.95 with `aarch64-unknown-linux-ohos` for releases or `x86_64-unknown-linux-ohos` for emulator development |
 | Runtime | Official HarmonyOS 7 / API 26 x86_64 phone emulator; ARM64 phone runtime unverified |
 | App declaration | Minimum HarmonyOS 5.0.5 / API 17, target API 26; a minimum declaration is not acceptance testing |
 | Other platforms | Existing standard Flutter environment uses 3.44.3 and stays separate from the OH SDK and project directory |
@@ -70,7 +70,7 @@ rustup target list --installed --toolchain 1.95
 
 These environment variables affect only the current terminal and child processes. Do not copy the OH download source or SDK paths into a standard Flutter development terminal. Recheck the upstream SDK instructions when upgrading.
 
-`--version` should match the OH SDK / Dart version in the table. Fix OHOS toolchain errors reported by `doctor -v` before building. The Rust target list must contain both targets above. The build script also checks native components and pinned source revisions.
+`--version` should match the OH SDK / Dart version in the table. Fix OHOS toolchain errors reported by `doctor -v` before building. Install the Rust target for the selected device. The build script also checks native components and pinned source revisions.
 
 ## Quick start: x64 emulator
 
@@ -90,11 +90,11 @@ VeneraX already contains its `ohos/` project. Do not run `flutter create` for th
 ### 2. Build the complete application
 
 ```powershell
-./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -TargetPlatform ohos-x64
 Get-ChildItem build/ohos/hap/*.hap
 ```
 
-The default entrypoint is `lib/main.dart`, the platform is `ohos-x64`, the mode is `debug` and signing is disabled. The first build downloads some sources and compiles native libraries; duration depends on network and host. The stages are listed under [Build stages and parameters](#build-stages-and-parameters).
+The default entrypoint is `lib/main.dart`, the default platform is `ohos-arm64` (the example selects `ohos-x64` for the emulator), the mode is `debug` and signing is disabled. The first build downloads some sources and compiles native libraries; duration depends on network and host. The stages are listed under [Build stages and parameters](#build-stages-and-parameters).
 
 A successful build prints the actual HAP path. The validated toolchain copies the HAP into `build/ohos/hap/`; an unsigned package is commonly `entry-default-unsigned.hap`. After changing the ABI or mode, the filename may still be the same, and the directory can contain an older artifact. Use the output from the current successful build.
 
@@ -140,8 +140,8 @@ Back up existing device data before exercising the features you changed. To vali
 | 1 | OH Flutter `pub get --enforce-lockfile` | Resolves locked dependencies; fix dependency, SDK and network problems here first |
 | 2 | [prepare_ohos.dart](../tool/prepare_ohos.dart) | Prepares icons, local OHOS dependency copies, WebView patches, package configuration and native source mappings |
 | 3 | `refresh_plugins.dart` | Registers adapters with the current OH SDK plugin generator; template is [tool/ohos](../tool/ohos/refresh_plugins.dart.template) |
-| 4 | [build_ohos_rhttp.ps1](../tool/build_ohos_rhttp.ps1) | Builds locked Rust sources for both OHOS ABIs |
-| 5 | [build_ohos_onnx.ps1](../tool/build_ohos_onnx.ps1) | Fetches pinned ONNX/Eigen sources, applies the project patch and builds both OHOS ABIs |
+| 4 | [build_ohos_rhttp.ps1](../tool/build_ohos_rhttp.ps1) | Builds locked Rust sources for the selected OHOS ABI |
+| 5 | [build_ohos_onnx.ps1](../tool/build_ohos_onnx.ps1) | Fetches pinned ONNX/Eigen sources, applies the project patch and builds the selected OHOS ABI |
 | 6 | OH Flutter `build hap --no-pub` | Packages by mode, entrypoint and HAP ABI; native CMake also builds SQLite, QuickJS, ZIP, 7z and PNG |
 
 Network access may be required for Pub/Cargo dependencies, the GitCode WebView source, GitHub ONNX, GitLab Eigen, SQLite official source and CMake downloads. `-WebViewSource`, `-OnnxSource` and `-EigenSource` can reuse source checkouts, but the full build is not offline by default.
@@ -156,7 +156,7 @@ These parameters belong to [build_ohos.ps1](../tool/build_ohos.ps1).
 |---|---|---|
 | `-FlutterSdk` | required | OH Flutter SDK root |
 | `-DevEcoStudio` | required | DevEco Studio root |
-| `-TargetPlatform` | `ohos-x64` | `ohos-x64` or `ohos-arm64`, selecting the final HAP ABI |
+| `-TargetPlatform` | `ohos-arm64` | `ohos-x64` or `ohos-arm64`, selecting the final HAP ABI |
 | `-Target` | `lib/main.dart` | Complete app or a probe Dart entrypoint |
 | `-BuildMode` | `debug` | `debug`, `profile` or `release` |
 | `-CodeSign` | off | Enable only after configuring a valid signing identity in DevEco |
@@ -164,7 +164,7 @@ These parameters belong to [build_ohos.ps1](../tool/build_ohos.ps1).
 | `-OnnxSource` | automatic | ONNX checkout at the fixed revision; only the project compatibility patch is allowed |
 | `-EigenSource` | automatic | Clean Eigen checkout at the fixed revision |
 
-`-TargetPlatform` selects the final HAP ABI. Direct script invocation prepares both native architectures by default. The release workflow prepares libraries for each ABI and passes `-UsePreparedNativeLibraries` to skip recompilation.
+`-TargetPlatform` selects the final HAP ABI. The script prepares native libraries for the selected architecture. The release workflow prepares ARM64 libraries and passes `-UsePreparedNativeLibraries` to skip recompilation.
 
 ## Release builds
 
@@ -177,11 +177,11 @@ The `Build_HarmonyOS` job in `Build ALL` uses GitHub-hosted `ubuntu-22.04`, with
 | `FLUTTER_OHOS_SDK` | Flutter OH SDK fetched at the pinned revision |
 | `DEVECO_STUDIO` | Extracted `command-line-tools` directory on the runner |
 
-Dispatch `Build ALL` with `platform=harmonyos` to validate both HAPs. The ARM64 phone and x86_64 emulator packages build in parallel on separate runners. The workflow caches the official tool archive by version and caches ONNX and rhttp separately by native inputs and ABI. Each missing library is compiled and saved before HAP packaging.
+Dispatch `Build ALL` with `platform=harmonyos` to build and verify the unsigned ARM64 device HAP. Release builds and scheduled cache warming target ARM64 only. The workflow caches the official tool archive by version and caches ONNX and rhttp separately by native inputs and ABI. Each missing library is compiled and saved before HAP packaging.
 
 `master` restores the caches and fills missing entries every Monday and Thursday at 02:37 UTC. To warm them ahead of a release, dispatch `platform=native-cache` on `master`. This also prepares the prebuilt ONNX packages for Android, Windows, Linux, and Apple. On a cache hit, `Restore ONNX Runtime` or `Restore rhttp` reports the restored key and the corresponding build step is skipped.
 
-The workflow packages from an isolated checkout and checks the version, release mode, ABI, and native libraries inside each HAP before upload. Temporary artifacts are kept for seven days. Published packages remain in the Release. Builds, automated tests, and packaging run on GitHub-hosted runners. Phone signing is covered below.
+The workflow packages from an isolated checkout and checks the version, release mode, ABI, and native libraries inside the ARM64 HAP before upload. Temporary artifacts are kept for seven days. Published packages remain in the Release. Builds, automated tests, and packaging run on GitHub-hosted runners. Phone signing is covered below.
 
 ## ARM64 build, signing and installation
 
@@ -287,7 +287,7 @@ Find the earliest failed stage and the concrete error in the full log; the final
 | `Flutter dependency resolution failed.` | Check the same OH SDK, network and lockfile; do not bypass it by casually updating the lockfile |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | Preparation detected rewritten package configuration; restart through the main script so resolution, preparation and registration happen in order |
 | `WebView requires official commit` or `Cannot apply the OHOS loader patch` | Check the pinned source revision and locked dependency shape; do not edit the shared cache to bypass it |
-| `Missing OHOS Rust targets` | Install both targets and confirm `rustup run 1.95 rustc --version` succeeds |
+| `Missing OHOS Rust targets` | Install the target for the selected device and confirm `rustup run 1.95 rustc --version` succeeds |
 | `The OHOS ONNX build requires an x64 host.` | Use Ubuntu or Windows x64; selecting an ARM64 HAP does not make the host build ARM64-compatible |
 | ONNX/Eigen fetch, revision or source-modification failure | Check access to the official repositories and required revisions; keep only the project patch in reused checkouts |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | Inspect earlier Dart, hvigor or CMake errors and check whether a later `pub get` overwrote generated configuration |

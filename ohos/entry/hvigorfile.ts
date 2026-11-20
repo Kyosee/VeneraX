@@ -10,7 +10,7 @@ const nativeAbiPlugin: HvigorPlugin = {
             const mapping: Record<string, string> = {
                 'ohos-arm64': 'arm64-v8a', 'ohos-x64': 'x86_64',
             };
-            const platforms = hvigor.getParameter().getExtParam('TARGET_PLATFORM') ?? 'ohos-arm64,ohos-x64';
+            const platforms = hvigor.getParameter().getExtParam('TARGET_PLATFORM') ?? 'ohos-arm64';
             const abis = platforms.split(',').map(platform => {
                 const abi = mapping[platform];
                 if (!abi) throw new Error(`Unsupported HarmonyOS platform: ${platform}`);

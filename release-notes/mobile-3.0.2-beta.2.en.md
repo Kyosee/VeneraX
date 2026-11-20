@@ -16,7 +16,7 @@
 
 **Android installation**: If you are unsure of your device architecture, choose the universal APK without an architecture suffix. It can be installed over the existing stable release.
 
-**HarmonyOS installation**: Choose the ARM64 package containing `harmonyos-unsigned.hap` for phones and tablets. The `harmonyos-emulator-x64-unsigned.hap` package is only for x64 emulators. Both HAP packages are unsigned; physical devices require signing. HarmonyOS displays version `3.0.2.2`, which corresponds to this `3.0.2-beta.2` preview.
+**HarmonyOS installation**: This preview includes one unsigned ARM64 HAP for phones and tablets, ending in `harmonyos-unsigned.hap`. Sign it before installing it on a device. HarmonyOS displays version `3.0.2.2` for this `3.0.2-beta.2` preview.
 
 **Feedback**: Reading, backgrounding, screen locking and resuming still need testing on physical Android and HarmonyOS devices. If another crash occurs, reopen the app, export diagnostics and include the time of the crash.
 

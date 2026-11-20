@@ -378,20 +378,10 @@ jobs:
   Build_HarmonyOS:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || contains(fromJSON('["all","harmonyos","native-cache","mobile-preview"]'), inputs.platform) }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            platform: ohos-arm64
-            rust_target: aarch64-unknown-linux-ohos
-          - abi: x86_64
-            platform: ohos-x64
-            rust_target: x86_64-unknown-linux-ohos
     env:
       OHOS_CLI_VERSION: '26.0.0.865'
       PACKAGE_HAP: ${{ github.event_name != 'schedule' && inputs.platform != 'native-cache' }}
-      ABI: ${{ matrix.abi }}
+      ABI: arm64-v8a
     timeout-minutes: 180
     permissions:
       contents: read
@@ -426,14 +416,14 @@ jobs:
         with:
           key: ${{ steps.inputs.outputs.onnx }}
           path: |
-            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/libonnxruntime.so
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/libonnxruntime.so
             ${{ runner.temp }}/venerax-ohos/ohos/entry/src/main/resources/rawfile/onnxruntime
       - name: Restore rhttp
         id: rhttp
         uses: actions/cache/restore@v4
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
-          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/librhttp.so
+          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -489,21 +479,19 @@ jobs:
           git -C "$FLUTTER_OHOS_SDK" checkout --detach 744cbb4f08e577787774c04033cc19a9d318d0d2
       - name: Build rhttp on cache miss
         if: steps.rhttp.outputs.cache-hit != 'true'
-        env:
-          RUST_TARGET: ${{ matrix.rust_target }}
         run: |
           set -euo pipefail
           cd "$VENERAX_OHOS_CHECKOUT"
           "$FLUTTER_OHOS_SDK/bin/flutter" pub get --enforce-lockfile
           rustup toolchain install 1.95 --profile minimal
-          rustup target add --toolchain 1.95 "$RUST_TARGET"
+          rustup target add --toolchain 1.95 aarch64-unknown-linux-ohos
           pwsh -NoProfile -File tool/build_ohos_rhttp.ps1 -NativeSdk "$DEVECO_STUDIO/sdk/default/openharmony/native" -Abi "$ABI"
       - name: Save rhttp
         if: steps.rhttp.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
-          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/librhttp.so
+          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
       - name: Build ONNX Runtime on cache miss
         if: steps.onnx.outputs.cache-hit != 'true'
         run: |
@@ -513,10 +501,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "$VENERAX_OHOS_CHECKOUT/ohos/entry"
-          machine='AArch64'
-          if [[ "$ABI" == x86_64 ]]; then machine='X86-64'; fi
           for lib in libonnxruntime.so librhttp.so; do
-            readelf -h "libs/$ABI/$lib" | grep -E "Machine:.*$machine"
+            readelf -h "libs/$ABI/$lib" | grep -E 'Machine:.*AArch64'
           done
           test -s src/main/resources/rawfile/onnxruntime/LICENSE
           test -s src/main/resources/rawfile/onnxruntime/ThirdPartyNotices.txt
@@ -526,12 +512,12 @@ jobs:
         with:
           key: ${{ steps.inputs.outputs.onnx }}
           path: |
-            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/libonnxruntime.so
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/libonnxruntime.so
             ${{ runner.temp }}/venerax-ohos/ohos/entry/src/main/resources/rawfile/onnxruntime
       - name: Check HarmonyOS native bridges
         if: env.PACKAGE_HAP == 'true'
         run: node --test test/ohos/*.cjs
-      - name: Build HarmonyOS release packages
+      - name: Build HarmonyOS ARM64 release package
         if: env.PACKAGE_HAP == 'true'
         shell: pwsh
         run: |
@@ -542,11 +528,11 @@ jobs:
             -FlutterSdk $env:FLUTTER_OHOS_SDK `
             -DevEcoStudio $env:DEVECO_STUDIO `
             -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'result') `
-            -TargetPlatform ${{ matrix.platform }} -UsePreparedNativeLibraries
+            -UsePreparedNativeLibraries
       - uses: actions/upload-artifact@v7
         if: env.PACKAGE_HAP == 'true'
         with:
-          name: harmonyos_build_${{ matrix.abi }}
+          name: harmonyos_build_arm64
           path: result/*.hap
           if-no-files-found: error
           retention-days: 7
@@ -586,8 +572,7 @@ jobs:
           path: ${{ runner.temp }}/mobile-preview/android
       - uses: actions/download-artifact@v8
         with:
-          pattern: harmonyos_build_*
-          merge-multiple: true
+          name: harmonyos_build_arm64
           path: ${{ runner.temp }}/mobile-preview/harmonyos
       - name: Publish validated Android and HarmonyOS packages
         env:
@@ -678,8 +663,7 @@ jobs:
           path: outputs
       - uses: actions/download-artifact@v8
         with:
-          pattern: harmonyos_build_*
-          merge-multiple: true
+          name: harmonyos_build_arm64
           path: outputs
 
       - name: Validate release inputs
@@ -712,7 +696,7 @@ jobs:
           files=(
             outputs/*.ipa outputs/*.dmg outputs/*.apk outputs/*.zip
             outputs/*.exe outputs/*.deb outputs/*.zst outputs/*.AppImage
-            outputs/*.hap
+            "outputs/VeneraX-${app_version}-harmonyos-unsigned.hap"
           )
           test "${#files[@]}" -gt 0 || { echo "No release assets found"; exit 1; }
           cp -- "${files[@]}" release-assets/
@@ -738,7 +722,6 @@ jobs:
           require_asset "release-assets/VeneraX-${version}-windows.zip"
           require_asset "release-assets/VeneraX-${version}-windows-installer.exe"
           require_asset "release-assets/VeneraX-${app_version}-harmonyos-unsigned.hap"
-          require_asset "release-assets/VeneraX-${app_version}-harmonyos-emulator-x64-unsigned.hap"
           while IFS= read -r asset; do
             test -s "$asset" || { echo "Empty release asset: $asset"; exit 1; }
           done < <(find release-assets -maxdepth 1 -type f -print)

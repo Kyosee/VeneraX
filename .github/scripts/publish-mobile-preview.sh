@@ -17,9 +17,7 @@ assets=("$root/android/VeneraX-$version.apk")
 for abi in arm64-v8a armeabi-v7a x86_64; do
   assets+=("$root/android/VeneraX-$version-$abi.apk")
 done
-for target in harmonyos harmonyos-emulator-x64; do
-  assets+=("$root/harmonyos/VeneraX-$app_version-$target-unsigned.hap")
-done
+assets+=("$root/harmonyos/VeneraX-$app_version-harmonyos-unsigned.hap")
 for asset in "${assets[@]}"; do
   [[ -f "$asset" && -s "$asset" ]] || fail "Missing or empty package: ${asset##*/}"
 done

@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$FlutterSdk,
     [Parameter(Mandatory = $true)][string]$DevEcoStudio,
-    [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform = 'ohos-x64',
+    [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform = 'ohos-arm64',
     [string]$Target = 'lib/main.dart',
     [ValidateSet('debug', 'profile', 'release')][string]$BuildMode = 'debug',
     [switch]$CodeSign,
@@ -57,8 +57,9 @@ try {
     & $dart "--packages=$sdkPackages" .dart_tool/ohos/refresh_plugins.dart $FlutterSdk
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS plugin registration failed.' }
     if (-not $UsePreparedNativeLibraries) {
-        & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
-        & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
+        $abi = if ($TargetPlatform -eq 'ohos-arm64') { 'arm64-v8a' } else { 'x86_64' }
+        & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -Abi $abi
+        & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -Abi $abi -SourceRoot $OnnxSource -EigenRoot $EigenSource
     }
     $buildArguments = @('build', 'hap', "--$BuildMode", '--target-platform', $TargetPlatform, '--no-pub', '-t', $Target)
     if (-not $CodeSign) { $buildArguments += '--no-codesign' }

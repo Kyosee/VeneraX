@@ -5,7 +5,6 @@ param(
     [Parameter(Mandatory = $true)][string]$FlutterSdk,
     [Parameter(Mandatory = $true)][string]$DevEcoStudio,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform,
     [switch]$UsePreparedNativeLibraries
 )
 
@@ -59,55 +58,46 @@ $nativeLibraries = @(
     'liblodepng_flutter.so', 'libonnxruntime.so', 'libinappwebview.so',
     'libqjs.so', 'librhttp.so', 'libsqlite3.so', 'libzip_flutter.so'
 )
-$targets = @(
-    # All HarmonyOS devices are ARM64; only the x86_64 host emulator needs x64.
-    @{ Platform = 'ohos-arm64'; Abi = 'arm64-v8a'; Name = 'harmonyos' },
-    @{ Platform = 'ohos-x64'; Abi = 'x86_64'; Name = 'harmonyos-emulator-x64' }
-)
 $buildScript = Join-Path $checkoutRoot 'tool/build_ohos.ps1'
 $builtHap = Join-Path $checkoutRoot 'build/ohos/hap/entry-default-unsigned.hap'
-foreach ($target in $targets) {
-    if ($TargetPlatform -and $target.Platform -ne $TargetPlatform) { continue }
-    # Each ABI overwrites the same generated filename. Never reuse an older HAP.
-    if (Test-Path -LiteralPath $builtHap) { Remove-Item -LiteralPath $builtHap -Force }
-    & $buildScript -FlutterSdk $FlutterSdk -DevEcoStudio $DevEcoStudio `
-        -Target lib/main.dart -TargetPlatform $target.Platform -BuildMode release `
-        -UsePreparedNativeLibraries:$UsePreparedNativeLibraries
-    if ($LASTEXITCODE -ne 0) { throw "HarmonyOS build failed for $($target.Platform)." }
-    if (-not (Test-Path -LiteralPath $builtHap) -or (Get-Item -LiteralPath $builtHap).Length -eq 0) {
-        throw "Missing HarmonyOS package for $($target.Platform)."
-    }
-
-    $archive = [IO.Compression.ZipFile]::OpenRead($builtHap)
-    try {
-        $manifestEntry = $archive.GetEntry('module.json')
-        if ($null -eq $manifestEntry) { throw 'The HAP has no module.json.' }
-        $reader = [IO.StreamReader]::new($manifestEntry.Open())
-        try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-        $app = $manifest.app
-        if ($app.versionName -ne $ohosVersionName -or $app.versionCode -ne $versionCode) {
-            throw "Packaged version does not match $appVersion (expected $ohosVersionName/$versionCode)."
-        }
-        if ($app.bundleName -ne 'com.github.kyosee.venera' -or
-            $app.debug -ne $false -or $app.buildMode -ne 'release') {
-            throw 'Expected the VeneraX release application in the HAP.'
-        }
-        $abis = @($archive.Entries.FullName | ForEach-Object {
-            if ($_ -match '^libs/([^/]+)/[^/]+\.so$') { $Matches[1] }
-        } | Sort-Object -Unique)
-        if ($abis.Count -ne 1 -or $abis[0] -ne $target.Abi) {
-            throw "Unexpected packaged ABI: $($abis -join ', '); expected $($target.Abi)."
-        }
-        foreach ($library in $nativeLibraries) {
-            $entry = $archive.GetEntry("libs/$($target.Abi)/$library")
-            if ($null -eq $entry -or $entry.Length -eq 0) {
-                throw "Missing native library: $library ($($target.Abi))."
-            }
-        }
-    } finally {
-        $archive.Dispose()
-    }
-    $filename = "VeneraX-$appVersion-$($target.Name)-unsigned.hap"
-    Copy-Item -LiteralPath $builtHap -Destination (Join-Path $OutputDirectory $filename)
-    Write-Host "Verified $filename (release, $($target.Abi))."
+if (Test-Path -LiteralPath $builtHap) { Remove-Item -LiteralPath $builtHap -Force }
+& $buildScript -FlutterSdk $FlutterSdk -DevEcoStudio $DevEcoStudio `
+    -Target lib/main.dart -TargetPlatform 'ohos-arm64' -BuildMode release `
+    -UsePreparedNativeLibraries:$UsePreparedNativeLibraries
+if ($LASTEXITCODE -ne 0) { throw "HarmonyOS build failed for ohos-arm64." }
+if (-not (Test-Path -LiteralPath $builtHap) -or (Get-Item -LiteralPath $builtHap).Length -eq 0) {
+    throw "Missing HarmonyOS package for ohos-arm64."
 }
+
+$archive = [IO.Compression.ZipFile]::OpenRead($builtHap)
+try {
+    $manifestEntry = $archive.GetEntry('module.json')
+    if ($null -eq $manifestEntry) { throw 'The HAP has no module.json.' }
+    $reader = [IO.StreamReader]::new($manifestEntry.Open())
+    try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+    $app = $manifest.app
+    if ($app.versionName -ne $ohosVersionName -or $app.versionCode -ne $versionCode) {
+        throw "Packaged version does not match $appVersion (expected $ohosVersionName/$versionCode)."
+    }
+    if ($app.bundleName -ne 'com.github.kyosee.venera' -or
+        $app.debug -ne $false -or $app.buildMode -ne 'release') {
+        throw 'Expected the VeneraX release application in the HAP.'
+    }
+    $abis = @($archive.Entries.FullName | ForEach-Object {
+        if ($_ -match '^libs/([^/]+)/[^/]+\.so$') { $Matches[1] }
+    } | Sort-Object -Unique)
+    if ($abis.Count -ne 1 -or $abis[0] -ne 'arm64-v8a') {
+        throw "Unexpected packaged ABI: $($abis -join ', '); expected arm64-v8a."
+    }
+    foreach ($library in $nativeLibraries) {
+        $entry = $archive.GetEntry("libs/arm64-v8a/$library")
+        if ($null -eq $entry -or $entry.Length -eq 0) {
+            throw "Missing native library: $library (arm64-v8a)."
+        }
+    }
+} finally {
+    $archive.Dispose()
+}
+$filename = "VeneraX-$appVersion-harmonyos-unsigned.hap"
+Copy-Item -LiteralPath $builtHap -Destination (Join-Path $OutputDirectory $filename)
+Write-Host "Verified $filename (release, arm64-v8a)."

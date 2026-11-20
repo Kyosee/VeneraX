@@ -23,8 +23,7 @@ export function releaseDownloads(repositoryUrl, tag, appVersion, scope = 'all') 
       link('Debian ARM64', `VeneraX-${version}-arm64.deb`),
       link('Arch x86_64', `VeneraX-${version}-${build}-x86_64.pkg.tar.zst`),
     ].join(' · ')],
-    ['HarmonyOS', link('未签名 HAP / Unsigned', `VeneraX-${appVersion}-harmonyos-unsigned.hap`),
-      link('x64 模拟器 / Emulator', `VeneraX-${appVersion}-harmonyos-emulator-x64-unsigned.hap`)],
+    ['HarmonyOS', link('ARM64 真机 / Unsigned HAP', `VeneraX-${appVersion}-harmonyos-unsigned.hap`), '—'],
   ];
   if (scope === 'mobile') {
     return [

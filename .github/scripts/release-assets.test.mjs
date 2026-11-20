@@ -28,7 +28,6 @@ const packages = [
   'VeneraX-9.8.7-x86_64.AppImage',
   'VeneraX-9.8.7-aarch64.AppImage',
   'VeneraX-9.8.7+654-harmonyos-unsigned.hap',
-  'VeneraX-9.8.7+654-harmonyos-emulator-x64-unsigned.hap',
 ];
 
 test('manual download links cover exactly the required full packages', () => {
@@ -46,7 +45,7 @@ test('manual download links cover exactly the required full packages', () => {
   }
 });
 
-test('mobile previews link only to the four APKs and two HAPs', () => {
+test('mobile previews link only to the four APKs and the ARM64 HAP', () => {
   const body = releaseDownloads('https://github.com/Kyosee/VeneraX', 'mobile-9.8.7-beta.1', '9.8.7-beta.1+654', 'mobile');
   const assets = [...body.matchAll(/\]\((https:[^)]+)\)/g)]
     .map(match => decodeURIComponent(new URL(match[1]).pathname.split('/').at(-1))).sort();
