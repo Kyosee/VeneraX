@@ -1,71 +1,98 @@
-name: Report a bug
-description: Reporting problems with the APP
+name: 故障反馈 / Bug report
+description: 已有功能出错、闪退或卡顿，用这个入口。 / Something is broken, crashing or slow.
 title: "[Bug]: "
 labels: ["bug🐞"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting a problem, please complete the title and fill in the following information.
-        
-        感谢您的反馈，请填写完整标题并填写以下信息。
-        
-        **Please do not report any issues related to config files.**
-        
-        **请不要报告与配置文件相关的任何问题。**
-        
-        This project is a comic reader that allows users write their own config files. And there is no built-in comic source.
-        
-        本项目是一个漫画阅读器，允许用户编写自己的配置文件，并且没有内置漫画源。
+        **哪里出错了？** 标题写清“操作 + 异常”，例如“切回竖屏后，阅读图片短暂拉伸”。一条反馈只描述一个问题。
+        **What went wrong?** Name the action and symptom in the title, and keep each report to one problem.
 
-        **Issues are public. Please describe the problem itself, without including site names, addresses, keys, or parsing code.**
+        先[搜索已有反馈](https://github.com/Kyosee/VeneraX/issues?q=is%3Aissue)，再用本仓库 [Releases](https://github.com/Kyosee/VeneraX/releases) 中最新适用版本确认。无法更新或启动时，直接说明情况即可。
+        Search existing reports and check the latest applicable release. If updating or starting the app fails, explain below.
 
-        **Issue 内容是公开的。请描述问题本身，不要附带站点名称、地址、密钥或解析代码。**
+        <details>
+        <summary>提交范围与隐私 / Scope and privacy</summary>
 
-        **Do not post links to other projects, other versions, or extension repositories; such content will be removed.**
+        这里只处理本仓库发布的 VeneraX 应用本体问题，不受理其他构建、配置文件、源站或源脚本的问题；应用没有内置漫画源。
+        Only VeneraX builds published here are supported. Other builds, configuration files, websites and source scripts are outside this repository's scope; no comic sources are bundled.
 
-        **请勿发布其他项目、其他版本或扩展仓库的地址，此类内容会被删除。**
+        Issue 与附件公开。请移除站点名称及地址、解析代码、账号、Cookie、Token 和密钥。不要发布其他项目、其他版本或扩展仓库的地址，此类内容会被移除。
+        Reports and attachments are public. Remove site names, addresses, parsing code, accounts, cookies, tokens and keys. Links to other projects, versions or extension repositories will be removed.
 
-        **Please reproduce the problem on the latest build from this repository's Release page first; problems seen only on other builds (including third-party modified versions) will not be handled.**
-
-        **请先用本仓库 Release 页的最新版本复现问题；在其他版本（包括第三方修改版）上出现的问题不予处理。**
-  - type: dropdown
-    id: bugType
-    attributes:
-      label: Bug type
-      description: What type of bug are you reporting?
-      options:
-        - Crash
-        - UI
-        - Performance
-        - Security
-        - Reader
-        - JS Engine
-        - Comic Source
-        - Other
-    validations:
-      required: true
+        </details>
   - type: textarea
     id: what-happened
     attributes:
-      label: Description
-      description: Describe the problem
+      label: 实际发生了什么？ / What happened?
+      description: 用一两句话描述现象；有错误提示时请保留原文。 / Describe the symptom and quote any error message.
+      placeholder: "例如：横屏切回竖屏后，图片被拉长约 1 秒才恢复，应用没有退出。 / After rotating back to portrait, the image stretches for about a second."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎样触发？ / How can we reproduce it?
+      description: 从哪个页面开始、做了什么、多久发生一次；偶发问题写最近一次经过即可。 / Give the steps and frequency, or describe the last occurrence.
+      placeholder: |
+        1. 打开一本本地漫画 / Open a local comic
+        2. 竖屏切到横屏，再切回竖屏 / Rotate to landscape, then back
+        3. 出现频率：每次切换 / Happens on every rotation
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: 你期望的结果 / Expected result
+      description: 说明正常情况下应该怎样，一句话即可。 / One sentence describing what should happen.
+      placeholder: "例如：切换方向后图片保持正确比例。 / Images should keep their proportions after rotation."
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        <details>
+        <summary>哪些细节有助于复现？按需补在上面的步骤中 / Useful details for your case</summary>
+
+        - **闪退或启动失败**：从哪个版本升级、在哪一步退出、还能否重新打开。 / Previous version, exit point and whether reopening works.
+        - **阅读或卡顿**：本地或在线、阅读模式、横竖屏、双页/裁切设置；区分图片加载慢和整个界面卡住。 / Local or online content, reading mode, orientation and page settings; image delay or a frozen interface.
+        - **同步或数据**：哪台设备传到哪台、执行顺序、同步什么内容；导入时注明文件类型与大致数量。 / Device A to B, operation order and affected data; file type and count for imports.
+        - **下载或网络**：单个还是所有任务、Wi-Fi 或移动网络、代理是否开启、错误原文；不需要站点信息。 / One or all tasks, connection type, proxy state and error text; no site details.
+        - **图片翻译**：本地或在线模式、停在识别还是翻译阶段；不要填写服务地址或密钥。 / Local or online mode, and whether recognition or translation fails; no endpoints or keys.
+
+        </details>
+  - type: dropdown
+    id: bugType
+    attributes:
+      label: 问题分类 / Category
+      description: 闪退或无法启动选 Crash；其他问题选最接近的一项，不确定可选其他。 / Use Crash for crashes or startup failures; otherwise choose the closest match.
+      options:
+        - Crash
+        - 阅读与翻页 / Reader
+        - 卡顿、耗电或内存占用 / Performance
+        - 界面与操作 / UI
+        - 同步、备份与导入导出 / Sync and data
+        - 下载与网络请求 / Download and network
+        - 图片翻译 / Image translation
+        - 脚本运行引擎 / JS engine
+        - 安全问题 / Security
+        - 其他 / Other
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Version
-      description: | 
-        App version.
-        
-        Please try to update if it is not the latest version
+      label: VeneraX 版本 / App version
+      description: 在“设置 > 关于与帮助”查看；注明正式版或测试版，不要只写“最新版”。无法启动时填安装包版本。 / Copy the exact version from Settings > About & help or the installer, including stable or beta.
+      placeholder: "例如：3.0.0，Releases 正式版 / 3.0.0, stable release"
     validations:
       required: true
   - type: dropdown
     id: platform
     attributes:
-      label: Operating system
+      label: 应用平台 / App platform
+      description: 可多选。APK 选 Android，原生 HAP 选 HarmonyOS；按安装的应用选择，不按设备品牌选择。 / Multiple selections allowed. Choose Android for APKs and HarmonyOS for native HAPs.
       multiple: true
       options:
         - Android
@@ -78,11 +105,23 @@ body:
     validations:
       required: true
   - type: textarea
+    id: environment
+    attributes:
+      label: 设备与系统版本 / Device and OS version
+      description: 填写型号和完整系统版本；多台设备分别写，便于对照。 / Include the model and OS version for each affected device.
+      placeholder: |
+        例如：设备 A：平板型号，HarmonyOS 版本，原生 HAP
+        Device A: tablet model, HarmonyOS version, native HAP
+        设备 B：手机型号，Android 版本
+        Device B: phone model, Android version
+    validations:
+      required: true
+  - type: textarea
     id: logs
     attributes:
-      label: logs
-  - type: textarea
-    id: screenshotOrVideo
-    attributes:
-      label: Screenshot or video
-      description: Upload relevant screenshots or videos here
+      label: 日志、截图或录屏（选填） / Logs, screenshots or video (optional)
+      description: |
+        闪退或报错建议附日志，显示异常建议附录屏；点击此框后可拖入附件或粘贴截图。
+        日志入口：设置 > 关于与帮助 > 应用日志 > 右上角“导出”。无法取得时可说明原因，不影响提交。上传前检查隐私信息。
+        Logs help with errors; recordings help with visual issues. Click here to attach files or paste images.
+        Export logs from Settings > About & help > App logs > Export. If unavailable, explain why; attachments are optional. Review private information before uploading.
