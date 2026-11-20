@@ -34,6 +34,14 @@ function harness(reason = 3) {
   return { service, files, reads, emit: event => watcher.onReceive('OS', [{ appEventInfos: [event] }]) };
 }
 
+test('the reason this launch was given is passed on whole, whatever it is', () => {
+  assert.equal(harness(3).service.lastExit(), '3\nNative failure');
+  // Reasons that leave no stored record still answer how the process ended.
+  const ended = harness(9);
+  assert.equal(ended.service.lastExit(), '9\nNative failure');
+  assert.equal(ended.service.read().length, 0);
+});
+
 test('normal exits are quiet while abnormal exits survive restart', () => {
   assert.equal(harness(2).service.read().length, 0);
   const h = harness();

@@ -68,6 +68,10 @@ export default class EntryAbility extends FlutterAbility {
           result.success(this.diagnostics?.read() ?? []);
           return;
         }
+        if (call.method === 'readLastExit') {
+          result.success(this.diagnostics?.lastExit() ?? '');
+          return;
+        }
         if (this.deviceServices?.handleMethodCall(call, result)) return;
         if (this.fileServices?.handleMethodCall(call, result)) return;
         if (this.launcherIcons?.handleMethodCall(call, result)) return;

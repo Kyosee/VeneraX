@@ -145,6 +145,7 @@ function harness(options = {}) {
     NativeDiagnostics: class {
       constructor() { lifecycle.push('diagnostics.create'); }
       read() { return ['NativeCrash: test stack']; }
+      lastExit() { return '3\nSignal:SIGSEGV'; }
       dispose() { lifecycle.push('diagnostics.dispose'); }
     },
     bundleManager: {},
@@ -384,6 +385,9 @@ test('EntryAbility captures diagnostics before startup, exposes them and dispose
   const system = h.channels.find(channel => channel.name === 'venera/method_channel');
   assert.deepEqual(invoke(system.handler, 'readNativeDiagnostics'), [
     { kind: 'success', value: ['NativeCrash: test stack'] },
+  ]);
+  assert.deepEqual(invoke(system.handler, 'readLastExit'), [
+    { kind: 'success', value: '3\nSignal:SIGSEGV' },
   ]);
   ability.onDestroy();
   assert.ok(h.lifecycle.indexOf('diagnostics.dispose') < h.lifecycle.indexOf('super.destroy'));

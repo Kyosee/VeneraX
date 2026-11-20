@@ -48,6 +48,12 @@ void main() {
         redactor.redact('Connection refused, address = 192.168.1.20, port = 5005'),
         'Connection refused, address = site-2, port = 5005',
       );
+      expect(redactor.redact('10.0.0.5:8080 refused'), 'site-3 refused');
+    });
+
+    test('a build number is not taken for an address', () {
+      const line = 'Build info: ALN-AL00 5.0.0.102(C00E102R4P17)';
+      expect(redactor.redact(line), line);
     });
 
     test('credentials are hidden wherever they appear', () {
@@ -282,6 +288,74 @@ void main() {
       expect(report, contains('info 10 '));
       expect(report, contains('info 29 '));
       expect(report, isNot(contains('x' * 300)));
+    });
+
+    test('the system\'s own account of the exit is included', () {
+      final report = DiagnosticsReport.build(
+        appVersion: '1.2.4',
+        platform: 'ohos',
+        run: run(),
+        abnormal: true,
+        osExit: 'CPP_CRASH (3): Signal:SIGSEGV(SEGV_MAPERR)@0x0000000000000010',
+        systemReport:
+            'APP_CRASH: {"time":1005000,"crashType":"NativeCrash"}\n'
+            'Module name:com.github.kyosee.venera\n'
+            'Build info:ALN-AL00 5.0.0.102(C00E102R4P17)\n'
+            '#00 pc 00000000000abcde /data/storage/el1/bundle/libs/arm64/libapp.so(_kDartIsolateSnapshotInstructions+1234)\n'
+            'HiLog: fetch https://example.com/a.webp failed',
+      );
+      expect(
+        report,
+        contains(
+          'System exit reason: CPP_CRASH (3): '
+          'Signal:SIGSEGV(SEGV_MAPERR)@0x0000000000000010',
+        ),
+      );
+      expect(report, contains('== System crash report =='));
+      // The frames a crash is diagnosed from survive as they are.
+      expect(report, contains('Module name:com.github.kyosee.venera'));
+      expect(report, contains('5.0.0.102(C00E102R4P17)'));
+      expect(
+        report,
+        contains(
+          '#00 pc 00000000000abcde /data/storage/el1/bundle/libs/arm64/'
+          'libapp.so(_kDartIsolateSnapshotInstructions+1234)',
+        ),
+      );
+      expect(report, contains('fetch https://site-1/….webp failed'));
+    });
+
+    test('a long system report is cut and still leaves room for errors', () {
+      final report = build(
+        entries: [entry(LogLevel.error, 'Reader', 'kept')],
+      );
+      final long = DiagnosticsReport.build(
+        appVersion: '1.2.4',
+        platform: 'ohos',
+        run: run(),
+        abnormal: true,
+        endedBefore: 1000000 + 100000,
+        systemReport: 'APP_CRASH: ${'frame\n' * 20000}',
+        entries: [entry(LogLevel.error, 'Reader', 'kept')],
+      );
+      expect(long.length, lessThan(65536));
+      expect(long.length, greaterThan(report.length + 20000));
+      expect(long, contains('kept'));
+    });
+
+    test('system reports are matched to a run by their own time stamp', () {
+      String? pick(List<String> records) => DiagnosticsReport.systemReportFor(
+        records,
+        from: 1000000,
+        to: 1100000,
+      );
+      const mine = 'APP_CRASH: {"time":1050000,"crashType":"NativeCrash"}\nstack';
+      const older = 'APP_CRASH: {"time":900000}\nold stack';
+      const freeze = 'APP_FREEZE: {"time":1099999}\nfrozen';
+      expect(pick([older, mine, freeze]), '$mine\n\n$freeze');
+      expect(pick([older]), isNull);
+      // A stored exit line carries no time and belongs to no run in particular.
+      expect(pick(['Previous process exit (3): Signal']), isNull);
     });
 
     test('fits an issue body however much was logged', () {

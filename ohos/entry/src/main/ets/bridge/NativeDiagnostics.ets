@@ -5,10 +5,12 @@ import { hiAppEvent } from '@kit.PerformanceAnalysisKit';
 export class NativeDiagnostics {
   private path: string;
   private watcher?: hiAppEvent.Watcher;
+  private exit: string;
 
   constructor(filesDir: string, launch: AbilityConstant.LaunchParam) {
     this.path = `${filesDir}/native_diagnostics.json`;
     const reason = launch.lastExitReason;
+    this.exit = `${reason}\n${launch.lastExitMessage ?? ''}`;
     if ([1, 3, 4, 5, 6, 7, 10].includes(reason)) {
       this.record(`Previous process exit (${reason}): ${launch.lastExitMessage ?? ''}`);
     }
@@ -57,6 +59,12 @@ export class NativeDiagnostics {
       try { fs.writeSync(file.fd, JSON.stringify(records.slice(-4))); } finally { fs.closeSync(file); }
       fs.renameSync(`${this.path}.tmp`, this.path);
     } catch (_) { console.warn('Unable to persist native diagnostics'); }
+  }
+
+  // Why the system says the previous process ended, as "<reason>\n<message>".
+  // Unlike the stored records this covers every reason and only this launch.
+  lastExit(): string {
+    return this.exit;
   }
 
   read(): string[] {

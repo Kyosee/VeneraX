@@ -6,6 +6,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/session_guard.dart';
 
 /// Hides what identifies a site, an account or this device in text that is
@@ -92,8 +93,12 @@ class Redactor {
     caseSensitive: false,
   );
 
+  // Four dotted numbers are as often a build number (`5.0.0.102`) as an
+  // address, so one counts only with a port or where a message calls it one.
   static final _ipv4 = RegExp(
-    r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w.])',
+    r'((?:address|host|ip)\s*[:=]\s*)?'
+    r'(?<![\w.])((?:\d{1,3}\.){3}\d{1,3})(:\d{1,5})?(?![\w.])',
+    caseSensitive: false,
   );
 
   // How dart:io reports the file an operation failed on. Folder names are
@@ -131,7 +136,10 @@ class Redactor {
         })
         .replaceAllMapped(_homeDirectory, (m) => '${m[1]}<user>')
         .replaceAllMapped(_host, (m) => _site(m[0]!))
-        .replaceAllMapped(_ipv4, (m) => _site(m[0]!));
+        .replaceAllMapped(_ipv4, (m) {
+          if (m[1] == null && m[3] == null) return m[0]!;
+          return '${m[1] ?? ''}${_site(m[2]!)}';
+        });
   }
 
   String _replaceUrl(Match match) {
@@ -175,6 +183,8 @@ abstract final class DiagnosticsReport {
   static const _maxContextEntries = 20;
 
   static const _maxContextLength = 200;
+
+  static const _maxSystemReportLength = 24000;
 
   static String get platform =>
       '${Platform.operatingSystem} ${Platform.operatingSystemVersion} '
@@ -239,10 +249,38 @@ abstract final class DiagnosticsReport {
       run: report.record,
       abnormal: true,
       endedBefore: report.archivedAt,
+      osExit: report.osExit,
+      // Asked for now rather than when the run was set aside: the system
+      // delivers a crash report some time after the next launch.
+      systemReport: App.isOhos
+          ? systemReportFor(
+              await readOhosNativeRecords(),
+              from: report.record.id,
+              to: report.archivedAt,
+            )
+          : null,
       entries: entries,
       names: _scriptNames(),
       secrets: _accountSecrets(),
     );
+  }
+
+  static final _recordTime = RegExp(r'^APP_(?:CRASH|FREEZE): \{"time":(\d+)');
+
+  /// The system's crash and freeze reports that fall within one run.
+  ///
+  /// The host keeps the last few across launches, so which run a report is
+  /// about has to come from the time the system stamped on it.
+  static String? systemReportFor(
+    Iterable<String> records, {
+    required int from,
+    required int to,
+  }) {
+    final matching = records.where((record) {
+      final time = int.tryParse(_recordTime.firstMatch(record)?[1] ?? '');
+      return time != null && time >= from - 1000 && time <= to + 1000;
+    }).toList();
+    return matching.isEmpty ? null : matching.join('\n\n');
   }
 
   static Future<String> forCurrentRun() async => build(
@@ -262,6 +300,8 @@ abstract final class DiagnosticsReport {
     SessionRecord? run,
     bool abnormal = false,
     int? endedBefore,
+    String? osExit,
+    String? systemReport,
     Iterable<LogItem> entries = const [],
     Iterable<String> names = const [],
     Iterable<String> secrets = const [],
@@ -294,12 +334,28 @@ abstract final class DiagnosticsReport {
           'In progress: ${run.active.isEmpty ? 'nothing recorded' : run.active.join(', ')}',
         );
       if (run.safeMode) buffer.writeln('Safe mode: yes');
+      if (osExit != null) {
+        buffer.writeln('System exit reason: ${redactor.redact(osExit)}');
+      }
       if (run.steps.isNotEmpty) {
         buffer.writeln('Steps:');
         for (final step in run.steps) {
           buffer.writeln('  ${_offset(step.at - run.id)} ${step.name}');
         }
       }
+    }
+
+    if (systemReport != null) {
+      // The stack is at the top of a system report; what follows it are
+      // registers, memory maps and log lines.
+      var text = redactor.redact(systemReport);
+      if (text.length > _maxSystemReportLength) {
+        text = '${text.substring(0, _maxSystemReportLength)}...';
+      }
+      buffer
+        ..writeln()
+        ..writeln('== System crash report ==')
+        ..writeln(text);
     }
 
     // A previous run's file can hold entries from before or after that run.

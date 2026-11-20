@@ -5,6 +5,27 @@ import 'package:venera/foundation/native_diagnostics.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('the exit reason the host passes on is read back', () {
+    expect(parseOsExit('3\nSignal:SIGSEGV'), (
+      reason: 3,
+      message: 'Signal:SIGSEGV',
+    ));
+    expect(parseOsExit('9\n'), (reason: 9, message: ''));
+    expect(parseOsExit('2'), (reason: 2, message: ''));
+    // An older host, or one that could not tell.
+    expect(parseOsExit(null), isNull);
+    expect(parseOsExit(''), isNull);
+    expect(parseOsExit('unknown'), isNull);
+
+    expect(
+      describeOsExit((reason: 3, message: 'Signal:SIGSEGV')),
+      'CPP_CRASH (3): Signal:SIGSEGV',
+    );
+    expect(describeOsExit((reason: 9, message: '')), 'USER_REQUEST (9)');
+    expect(describeOsExit((reason: 42, message: '')), 'UNKNOWN (42)');
+  });
+
   test(
     'native crash stacks reach logs without truncation or repeated resume entries',
     () async {

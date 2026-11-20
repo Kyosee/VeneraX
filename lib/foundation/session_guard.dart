@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/boot_time.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/native_diagnostics.dart';
 
 /// How the previous run ended, as far as this one can tell.
 enum PreviousExit {
@@ -164,7 +165,12 @@ class SessionRecord {
 }
 
 /// An abnormal exit set aside by [SessionGuard.archivePreviousRun].
-typedef SessionReport = ({SessionRecord record, int archivedAt, File log});
+typedef SessionReport = ({
+  SessionRecord record,
+  int archivedAt,
+  File log,
+  String? osExit,
+});
 
 /// Records enough about each run for the next one to tell whether it crashed,
 /// and what it was doing.
@@ -201,6 +207,9 @@ abstract final class SessionGuard {
 
   static PreviousExit previousExit = PreviousExit.unknown;
 
+  /// What the system itself said about [previous], where it says anything.
+  static OsExit? previousOsExit;
+
   /// Chosen on the recovery page: this run leaves out the work the app would
   /// otherwise start by itself.
   static bool safeMode = false;
@@ -211,10 +220,14 @@ abstract final class SessionGuard {
   static bool get offerRecovery => _offerRecovery;
 
   /// Judges the previous run and starts recording this one.
+  ///
+  /// [osExit] is the system's own account of how the previous process ended,
+  /// on the one platform that gives it (HarmonyOS).
   static Future<void> start({
     Directory? directory,
     String? version,
     int? Function() bootTime = bootTimeMillis,
+    Future<OsExit?> Function()? osExit,
     bool observeLifecycle = true,
   }) async {
     try {
@@ -223,7 +236,14 @@ abstract final class SessionGuard {
       final file = File('${dir.path}/$_fileName');
       final prev = SessionRecord.tryRead(file);
       final boot = bootTime();
-      final exit = classify(prev, version: appVersion, bootAt: boot);
+      final os = await (osExit ?? (App.isOhos ? readOhosLastExit : null))
+          ?.call();
+      final exit = classify(
+        prev,
+        version: appVersion,
+        bootAt: boot,
+        osReason: os?.reason,
+      );
       final record = SessionRecord(
         id: DateTime.now().millisecondsSinceEpoch,
         version: appVersion,
@@ -234,6 +254,7 @@ abstract final class SessionGuard {
       if (_offerRecovery) record.fragile = true;
       previous = prev;
       previousExit = exit;
+      previousOsExit = prev == null ? null : os;
       _file = file;
       _current = record;
       if (observeLifecycle) {
@@ -261,10 +282,18 @@ abstract final class SessionGuard {
     SessionRecord? prev, {
     required String version,
     required int? bootAt,
+    int? osReason,
   }) {
     if (prev == null) return PreviousExit.unknown;
     if (prev.clean) return PreviousExit.clean;
     if (prev.version != version) return PreviousExit.appUpdated;
+    // Where the system says how the process ended there is nothing to infer:
+    // a crash is one even off screen, and an app the user ended is not one
+    // even in mid-use.
+    final crashed = osReason == null ? null : osExitIsCrash(osReason);
+    if (crashed != null) {
+      return crashed ? PreviousExit.suspectedCrash : PreviousExit.background;
+    }
     final prevBoot = prev.bootAt;
     if (prevBoot != null &&
         bootAt != null &&
@@ -469,10 +498,12 @@ abstract final class SessionGuard {
       // The file being written now must not be the one copied.
       Log.ensureOpen();
       final dir = _reportsDirectory..createSync(recursive: true);
+      final os = previousOsExit;
       File('${dir.path}/${prev.id}.json').writeAsStringSync(
         jsonEncode({
           ...prev.toJson(),
           'archivedAt': DateTime.now().millisecondsSinceEpoch,
+          if (os != null) 'osExit': describeOsExit(os),
         }),
       );
       final log = Log.previousFile;
@@ -526,6 +557,7 @@ abstract final class SessionGuard {
           record: SessionRecord.fromJson(json),
           archivedAt: json['archivedAt'] as int? ?? id,
           log: File('${dir.path}/$id.log'),
+          osExit: json['osExit'] as String?,
         ));
       }
     } catch (_) {
@@ -548,6 +580,7 @@ abstract final class SessionGuard {
     _offerRecovery = false;
     previous = null;
     previousExit = PreviousExit.unknown;
+    previousOsExit = null;
     safeMode = false;
   }
 }

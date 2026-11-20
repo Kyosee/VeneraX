@@ -128,6 +128,99 @@ void main() {
     });
   });
 
+  group('where the system says how the process ended', () {
+    PreviousExit withReason(SessionRecord prev, int reason) =>
+        SessionGuard.classify(
+          prev,
+          version: '1.0.0',
+          bootAt: 1000,
+          osReason: reason,
+        );
+
+    test('a crash or a freeze is one even off screen', () {
+      for (final reason in [1, 3, 4, 5]) {
+        expect(
+          withReason(record(presence: SessionRecord.away), reason),
+          PreviousExit.suspectedCrash,
+          reason: '$reason',
+        );
+      }
+    });
+
+    test('an app the user ended, or a normal exit, is none even in use', () {
+      for (final reason in [2, 8, 9]) {
+        expect(
+          withReason(record(), reason),
+          PreviousExit.background,
+          reason: '$reason',
+        );
+      }
+    });
+
+    test('a reclaimed app is judged by whether it was in use', () {
+      for (final reason in [0, 6, 7, 10, 99]) {
+        expect(
+          withReason(record(), reason),
+          PreviousExit.suspectedCrash,
+          reason: '$reason',
+        );
+        expect(
+          withReason(record(presence: SessionRecord.away), reason),
+          PreviousExit.background,
+          reason: '$reason',
+        );
+      }
+    });
+
+    test('closing itself and an update still come first', () {
+      expect(withReason(record(clean: true), 3), PreviousExit.clean);
+      expect(
+        SessionGuard.classify(
+          record(),
+          version: '1.0.1',
+          bootAt: 1000,
+          osReason: 3,
+        ),
+        PreviousExit.appUpdated,
+      );
+    });
+
+    test('a crash off screen is reported and counts as an early failure', () async {
+      await launch();
+      SessionGuard.onLifecycle(AppLifecycleState.resumed);
+      SessionGuard.onLifecycle(AppLifecycleState.paused);
+      kill();
+
+      await SessionGuard.start(
+        directory: dir,
+        version: '1.0.0',
+        bootTime: () => 1000,
+        osExit: () async => (reason: 3, message: 'Signal:SIGSEGV'),
+        observeLifecycle: false,
+      );
+      expect(SessionGuard.previousExit, PreviousExit.suspectedCrash);
+      expect(SessionGuard.previousOsExit?.reason, 3);
+      expect(SessionGuard.current!.earlyFailures, 1);
+      expect(SessionGuard.takePendingReport(), isNotNull);
+    });
+
+    test('ending the task while reading is not reported', () async {
+      await launch();
+      SessionGuard.onLifecycle(AppLifecycleState.resumed);
+      kill();
+
+      await SessionGuard.start(
+        directory: dir,
+        version: '1.0.0',
+        bootTime: () => 1000,
+        osExit: () async => (reason: 9, message: ''),
+        observeLifecycle: false,
+      );
+      expect(SessionGuard.previousExit, PreviousExit.background);
+      expect(SessionGuard.takePendingReport(), isNull);
+    });
+  });
+
   group('whether the user is looking at the app', () {
     String presence(
       AppLifecycleState? state, {
