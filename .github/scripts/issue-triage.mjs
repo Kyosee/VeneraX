@@ -143,7 +143,7 @@ export function parseReport(body = '', title = '', supplements = []) {
     sensitive: sensitiveText(body) || sensitiveText(title) || /security|安全问题/i.test(fields.category ?? '') };
 }
 
-function blocks(text, path, repo, ref) {
+function blocks(text, path, repo, ref, splitNumbered = false) {
   const lines = text.split(/\r?\n/);
   const out = [];
   let start = 0, heading = '';
@@ -154,6 +154,8 @@ function blocks(text, path, repo, ref) {
   for (let i = 0; i < lines.length; i++) {
     if (/^#{1,4}\s|^\*\*[^*]+\*\*\s*$/.test(lines[i])) {
       save(i); start = i; heading = lines[i];
+    } else if (splitNumbered && /^\d+\.\s/.test(lines[i])) {
+      save(i); start = i;
     }
   }
   save(lines.length);
@@ -168,8 +170,9 @@ export async function knowledge(report, text, repo, ref, root = ROOT) {
   const readmePath = report.zh ? 'README.md' : 'README_EN.md';
   const guidePath = report.zh ? 'doc/guide.zh.md' : 'doc/guide.en.md';
   // Select excerpts locally; no embeddings or extra model call is needed.
-  const tokens = [...new Set((text.toLowerCase().match(/[a-z][a-z0-9-]{2,}|\p{Script=Han}{2,}/gu) ?? []).flatMap(t => /\p{Script=Han}/u.test(t) ? Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)) : [t]))].slice(0, 120);
-  const items = [...blocks(guide, guidePath, repo, ref), ...blocks(readme, readmePath, repo, ref)];
+  const tokens = [...new Set((text.toLowerCase().match(/[a-z][a-z0-9-]{2,}|\p{Script=Han}{2,}/gu) ?? []).flatMap(t => /\p{Script=Han}/u.test(t) ? Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)) : [t]))]
+    .filter(t => !/^(?:the|and|for|from|with|that|this|what|when|where|which|whether|how|have|has|had|was|were|are|does|not|but|can|could|should|would|want|know|before|after|yet|anything|something|venerax)$/.test(t)).slice(0, 120);
+  const items = [...blocks(guide, guidePath, repo, ref), ...blocks(readme, readmePath, repo, ref, true)];
   const ranked = items.map(b => ({ ...b, score: tokens.reduce((n, t) => n + (b.text.toLowerCase().includes(t) ? 1 : 0) + (b.heading.toLowerCase().includes(t) ? 2 : 0), 0) }))
     .filter(b => b.score > 0 && !/目录|Contents|Star History|致谢|Acknowledg/i.test(b.heading))
     .sort((a, b) => b.score - a.score);
@@ -178,8 +181,9 @@ export async function knowledge(report, text, repo, ref, root = ROOT) {
     .filter(b => /用户协议|User Agreement|重要说明|Important|隐私|Privacy|问题反馈|Feedback|许可|Licens/i.test(b.heading))
     .slice(0, 4).map(b => b.text.slice(0, 325)).join('\n').slice(0, 1300);
   let remaining = 3000;
-  const documents = ranked.slice(0, 3).map((item, i) => {
-    const excerpt = item.text.slice(0, Math.min(1200, remaining)); remaining -= excerpt.length;
+  const selected = ranked.slice(0, 3);
+  const documents = selected.map((item, i) => {
+    const excerpt = item.text.slice(0, Math.min(1200, Math.floor(remaining / (selected.length - i)))); remaining -= excerpt.length;
     return { id: `D${i + 1}`, text: excerpt, url: item.url };
   }).filter(d => d.text);
   return { policy, documents };

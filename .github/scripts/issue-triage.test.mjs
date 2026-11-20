@@ -397,6 +397,18 @@ test('knowledge is bounded, relevant and cites actual inspected files', async ()
   assert.match(prompt, /GPLv3/); assert.match(prompt, /untrusted/); assert.match(prompt, /optional/);
 });
 
+test('English backup questions retrieve the relevant numbered paragraph instead of a section prefix', async () => {
+  const text = 'Before changing devices, I want to know whether an exported VeneraX app-data backup includes downloaded comic image files. What should I keep separately?';
+  const ctx = await knowledge({ zh: false }, text, 'Kyosee/VeneraX', 'a'.repeat(40));
+  const backup = ctx.documents.find(d => d.text.includes('An application data backup is not a backup of downloaded images.'));
+  assert.ok(backup, 'The actual backup scope must reach the model');
+  assert.ok(backup.text.includes('Comic images should be handled separately'));
+  const line = Number(backup.url.match(/#L(\d+)$/)[1]);
+  const readme = await readFile(new URL('../../README_EN.md', import.meta.url), 'utf8');
+  assert.ok(readme.split(/\r?\n/)[line - 1].includes('Importing, restoring or synchronizing'));
+  assert.ok(ctx.documents.reduce((n, d) => n + d.text.length, 0) <= 3000);
+});
+
 test('rejects invented citations, external links, executable output and unsupported endpoints', async () => {
   assert.throws(() => validateAnswer({ ...answer, answer: 'Click a menu', sources: [] }, []));
   assert.throws(() => validateAnswer({ ...answer, sources: ['D9'] }, []));

@@ -95,12 +95,15 @@ never cause automatic rejection or closure.
 
 可信上下文来自当前默认分支的 README 协议与基本信息、`doc/guide.zh.md` 或
 `doc/guide.en.md`。本地按关键词选最多 3 段相关内容，输出引用指向实际读取的提交。
+README 中的编号条款按段落检索，避免长章节开头挤掉真正相关的说明；上下文总预算不变。
 没有依据时交人工；默认分支文档不等于用户安装版本。首版不做全仓库代码分析或重复单自动判定。
 
 Context comes from the default branch's README policy/project information and the
 Chinese or English app guide. Local keyword matching selects at most three
 excerpts; citations point to the inspected commit. Missing evidence goes to a
-maintainer. Default-branch docs do not necessarily describe the installed release.
+maintainer. Numbered README clauses are searched individually so relevant content
+is not lost behind a long section introduction, without increasing the context budget.
+Default-branch docs do not necessarily describe the installed release.
 The initial version does not analyze the full codebase or automatically decide duplicates.
 
 ## 用量与人工接管 / Usage and handover

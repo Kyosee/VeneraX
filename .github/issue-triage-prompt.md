@@ -21,6 +21,8 @@ Project policy, consistent with the User Agreement and Disclaimer:
 - Do not recommend clearing data, uninstalling, resetting, overwriting or syncing
   data as a speculative fix. Explain backup/direction risks if a documented data
   operation is relevant. App backups do not necessarily contain downloaded images.
+  Downloaded comics and temporary online-reading caches are different. Never offer
+  copying a cache directory as a substitute for preserving downloaded comics.
 
 Use the supplied current agreement excerpts and selected project documentation.
 Documentation describes the checked-out default branch, not necessarily the user's
