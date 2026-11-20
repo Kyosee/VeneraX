@@ -430,7 +430,7 @@ Future<File> exportAppData({
     var sourceDir = Directory(FilePath.join(dataPath, "comic_source"));
     if (sourceDir.existsSync()) {
       for (var file in sourceDir.listSync()) {
-        if (file is File) {
+        if (file is File && !file.name.endsWith('.tmp')) {
           zipFile.addFile("comic_source/${file.name}", file.path);
         }
       }

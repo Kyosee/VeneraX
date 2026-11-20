@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -65,6 +66,28 @@ void main() {
     SingleInstanceCookieJar.instance = null;
     JsEngine().dispose();
     root.deleteSync(recursive: true);
+  });
+
+  test('backups exclude atomic write files and keep saved data', () async {
+    final sourceDir = Directory('${root.path}/comic_source')
+      ..createSync(recursive: true);
+    const saved = '{"setting":"saved"}';
+    File('${sourceDir.path}/example.data').writeAsStringSync(saved);
+    File('${sourceDir.path}/example.js').writeAsStringSync('// Script');
+    File('${sourceDir.path}/example.data.tmp').writeAsStringSync('{"setting":');
+    File('${sourceDir.path}/example.js.tmp').writeAsStringSync('// Incomplete');
+
+    for (final sync in [true, false]) {
+      final backup = await exportAppData(sync: sync);
+      final archive = ZipDecoder().decodeBytes(backup.readAsBytesSync());
+      expect(archive.findFile('comic_source/example.data.tmp'), isNull);
+      expect(archive.findFile('comic_source/example.js.tmp'), isNull);
+      expect(
+        utf8.decode(archive.findFile('comic_source/example.data')!.content),
+        saved,
+      );
+      expect(archive.findFile('comic_source/example.js'), isNotNull);
+    }
   });
 
   test(
