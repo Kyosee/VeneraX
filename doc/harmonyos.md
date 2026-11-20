@@ -2,7 +2,7 @@
 
 中文 | [English](harmonyos.en.md)
 
-本手册用于在 **Windows x64** 上从源码构建和验证 VeneraX 鸿蒙版。只想安装已发布的包，请看 [安装与签名说明](harmonyos-testing.md)；本页只记录 VeneraX 自身的鸿蒙构建、签名、探针和设备验证。
+本手册记录 VeneraX 鸿蒙版的云端构建、签名、探针和设备验证。正式构建使用 GitHub 托管 Ubuntu；Windows 示例保留用于说明现有工具调用。只想安装已发布的包，请看 [安装与签名说明](harmonyos-testing.md)。
 
 当前为实验性适配：完整应用可构建为 x64 和 ARM64 HAP，运行记录来自官方 x64 手机模拟器。ARM64 真机签名安装与运行、持久目录授权、认证成功及原生 PDF 渲染仍需设备验证。本页保留既有验证记录，文档更新不代表重新完成了运行测试。
 
@@ -24,7 +24,7 @@
 
 | 项目 | 要求或记录 |
 |---|---|
-| 宿主 | Windows x64、PowerShell、Git；项目脚本使用 `.bat` / `.exe`，ONNX 脚本检查 x64 宿主架构 |
+| 宿主 | 正式构建使用 GitHub 托管 Ubuntu x64、PowerShell 7 和 Git；脚本也保留 Windows x64 兼容 |
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`，Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865，API 26 SDK |
 | SDK 组件 | JBR、Node、ohpm、hvigor、`hdc`，以及 native SDK 中的 Clang、CMake 和 Ninja |
@@ -168,17 +168,18 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 
 ## 正式发布构建
 
-`Build ALL` 的 `Build_HarmonyOS` 使用带 `venerax-harmonyos` 标签的 Windows 临时 runner。注册时使用 `--ephemeral --no-default-labels --labels venerax-harmonyos`，每次只接收一个任务；在该 runner 进程中设置：
+`Build ALL` 的 `Build_HarmonyOS` 使用 GitHub 托管的 `ubuntu-22.04`，不依赖开发者电脑或 self-hosted runner。云端从华为官方链接下载 Command Line Tools 26.0.0.865（包含 API 26 SDK），安装 JDK 21、Node 22、固定版本的 Flutter OH 与 Rust。
 
-| 环境变量 | 内容 |
+| 配置 | 内容 |
 |---|---|
-| `VENERAX_OHOS_CHECKOUT` | 已初始化的独立 Flutter OH 项目目录 |
-| `FLUTTER_OHOS_SDK` | 本手册指定的 Flutter OH SDK 目录 |
-| `DEVECO_STUDIO` | DevEco Studio 安装目录 |
+| Actions secret `DEVECO_COMMAND_LINE_TOOLS_URL` | 华为下载中心提供的 Linux x64 26.0.0.865 工具包下载链接；链接失效时更新此项 |
+| `VENERAX_OHOS_CHECKOUT` | 流水线在 Runner 临时目录创建的独立 Flutter OH 项目检出 |
+| `FLUTTER_OHOS_SDK` | 流水线获取的固定提交 Flutter OH SDK |
+| `DEVECO_STUDIO` | 云端解压后的 `command-line-tools` 根目录 |
 
-先手动运行 `Build ALL`，选择 `platform=harmonyos` 验证构建。正式打版本标签前重新注册并启动一次性 runner；标签触发的全平台发布会等待鸿蒙产物。
+先手动运行 `Build ALL`，选择 `platform=harmonyos` 验证构建；标签触发的全平台发布会等待鸿蒙产物。工具包压缩文件按版本缓存，避免重复下载；不上传本机缓存、个人配置或本机构建产物。
 
-流水线将独立目录快进至本次提交，遇到已跟踪文件的本地修改或无法快进时停止。它复用 `tool/build_ohos.ps1` 构建两种架构，并检查 HAP 内的版本、release 模式、ABI 和原生库，再上传带架构和 `unsigned` 标识的包。runner 完成任务后自动注销，真机签名按下节处理。
+流水线将独立目录检出至本次提交，复用 `tool/build_ohos.ps1` 自动获取原生依赖并构建两种架构。上传前检查 HAP 内的版本、release 模式、ABI 和原生库。临时构建产物保留 7 天，正式安装包由 Release 保存；真机签名按下节处理。构建、自动化测试和打包均在托管 Runner 执行，云端失败时也不回退到本机。
 
 ## ARM64 构建、签名与安装
 
@@ -280,12 +281,12 @@ node --test test/ohos/pdf_bridge_test.cjs
 
 | 现象 | 下一步 |
 |---|---|
-| 找不到 `flutter.bat`、JBR、Node、Clang、CMake 或 Ninja | 核对传入的 SDK 根目录及 DevEco SDK 组件；主脚本是 Windows 构建入口 |
+| 找不到 Flutter、JDK、Node、Clang、CMake 或 Ninja | 核对 SDK 根目录、命令行工具组件，以及 Runner 的 JAVA_HOME、NODE_HOME 和 PATH |
 | `Flutter dependency resolution failed.` | 使用同一个 OH SDK 检查版本、网络和锁文件要求；不以随意升级锁文件绕过问题 |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | 准备脚本检测到已改写的包配置；从主构建脚本重新开始，让其按顺序解析、准备并注册 |
 | `WebView requires official commit` 或 `Cannot apply the OHOS loader patch` | 核对固定源码提交与锁定依赖；准备脚本依赖指定源码形态，不能手改共享缓存来绕过 |
 | `Missing OHOS Rust targets` | 安装两个 targets，并确认 `rustup run 1.95 rustc --version` 成功 |
-| `The OHOS ONNX build requires an x64 Windows host.` | 在 Windows x64 主机构建；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
+| `The OHOS ONNX build requires an x64 host.` | 使用 Ubuntu 或 Windows x64 宿主；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
 | ONNX/Eigen 下载、提交或源码修改检查失败 | 检查官方仓库访问及要求的提交；复用 checkout 时保留项目规定的补丁状态，其他修改先另存 |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | 检查前面的 Dart、hvigor 或 CMake 原始错误，以及生成配置是否被后续 `pub get` 覆盖 |
 | `00801017`、缺少 `x86_64` ABI、`install parse native so failed` | 对照设备 `uname -m`、本次目标参数与实际 HAP；排除误装另一个架构的旧产物 |

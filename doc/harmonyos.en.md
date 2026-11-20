@@ -2,7 +2,7 @@
 
 [中文](harmonyos.md) | English
 
-This guide builds and validates the VeneraX HarmonyOS port from source on **Windows x64**. To install a published package, use the [installation and signing guide](harmonyos-testing.en.md). This page covers VeneraX's own HarmonyOS build, signing, probes and device validation.
+This guide covers VeneraX HarmonyOS cloud builds, signing, probes, and device validation. Release builds use GitHub-hosted Ubuntu; Windows examples document the existing tool invocations. To install a published package, use the [installation and signing guide](harmonyos-testing.en.md).
 
 This is an experimental adaptation. The complete app can be built as x64 and ARM64 HAPs, while runtime records come from the official x64 phone emulator. ARM64 phone signing, installation and runtime, persistent directory authorization, successful authentication and native PDF rendering still need device validation. The records below are historical validation; editing this guide does not rerun them.
 
@@ -24,7 +24,7 @@ This is an experimental adaptation. The complete app can be built as x64 and ARM
 
 | Item | Requirement or record |
 |---|---|
-| Host | Windows x64, PowerShell and Git; the project scripts use `.bat` / `.exe`, and the ONNX script checks for an x64 host |
+| Host | GitHub-hosted Ubuntu x64 with PowerShell 7 and Git for release builds; Windows x64 remains supported |
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`, commit `744cbb4f08e577787774c04033cc19a9d318d0d2`, Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865, API 26 SDK |
 | SDK components | JBR, Node, ohpm, hvigor, `hdc`, and native SDK Clang, CMake and Ninja |
@@ -168,17 +168,18 @@ These parameters belong to [build_ohos.ps1](../tool/build_ohos.ps1).
 
 ## Release builds
 
-The `Build_HarmonyOS` job in `Build ALL` uses a temporary Windows runner with the `venerax-harmonyos` label. Register it with `--ephemeral --no-default-labels --labels venerax-harmonyos` so it accepts one job, and set these variables in its process:
+The `Build_HarmonyOS` job in `Build ALL` uses GitHub-hosted `ubuntu-22.04`, without a developer machine or self-hosted runner. It downloads Command Line Tools 26.0.0.865, including the API 26 SDK, from Huawei and installs JDK 21, Node 22, and the pinned Flutter OH and Rust toolchains.
 
-| Environment variable | Value |
+| Configuration | Value |
 |---|---|
-| `VENERAX_OHOS_CHECKOUT` | Initialized, isolated Flutter OH project directory |
-| `FLUTTER_OHOS_SDK` | Flutter OH SDK directory specified in this guide |
-| `DEVECO_STUDIO` | DevEco Studio installation directory |
+| Actions secret `DEVECO_COMMAND_LINE_TOOLS_URL` | Official Huawei Linux x64 26.0.0.865 tool archive URL; refresh it if the download link expires |
+| `VENERAX_OHOS_CHECKOUT` | Isolated Flutter OH checkout created in the runner's temporary directory |
+| `FLUTTER_OHOS_SDK` | Flutter OH SDK fetched at the pinned revision |
+| `DEVECO_STUDIO` | Extracted `command-line-tools` directory on the runner |
 
-First dispatch `Build ALL` with `platform=harmonyos` to validate the build. Register and start another one-job runner before pushing the release tag; the tag-triggered release waits for the HarmonyOS packages.
+First dispatch `Build ALL` with `platform=harmonyos` to validate the build. Tag-triggered releases wait for the HarmonyOS packages. The official archive is cached by version; local caches, personal configuration, and locally built artifacts are never uploaded as substitutes.
 
-The workflow fast-forwards the isolated checkout to the requested commit, stopping if tracked files have local changes or a fast-forward is impossible. It reuses `tool/build_ohos.ps1` for both architectures, checks the packaged version, release mode, ABI and native libraries, and uploads packages with explicit architecture and `unsigned` names. The runner unregisters after its job. Phone signing is covered below.
+The workflow checks out the requested commit in isolation and reuses `tool/build_ohos.ps1` to acquire native dependencies and build both architectures. It checks the packaged version, release mode, ABI, and native libraries before uploading. Temporary artifacts are retained for seven days; published packages remain in the Release. Builds, automated tests, and packaging run only on GitHub-hosted runners, including when diagnosing failures. Phone signing is covered below.
 
 ## ARM64 build, signing and installation
 
@@ -280,12 +281,12 @@ Find the earliest failed stage and the concrete error in the full log; the final
 
 | Symptom | Next step |
 |---|---|
-| Missing `flutter.bat`, JBR, Node, Clang, CMake or Ninja | Check the SDK roots and DevEco components; the main script is a Windows build entrypoint |
+| Missing Flutter, JDK, Node, Clang, CMake or Ninja | Check the SDK roots, command-line components, and runner JAVA_HOME, NODE_HOME, and PATH |
 | `Flutter dependency resolution failed.` | Check the same OH SDK, network and lockfile; do not bypass it by casually updating the lockfile |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | Preparation detected rewritten package configuration; restart through the main script so resolution, preparation and registration happen in order |
 | `WebView requires official commit` or `Cannot apply the OHOS loader patch` | Check the pinned source revision and locked dependency shape; do not edit the shared cache to bypass it |
 | `Missing OHOS Rust targets` | Install both targets and confirm `rustup run 1.95 rustc --version` succeeds |
-| `The OHOS ONNX build requires an x64 Windows host.` | Build on Windows x64; selecting an ARM64 HAP does not make the host build ARM64-compatible |
+| `The OHOS ONNX build requires an x64 host.` | Use Ubuntu or Windows x64; selecting an ARM64 HAP does not make the host build ARM64-compatible |
 | ONNX/Eigen fetch, revision or source-modification failure | Check access to the official repositories and required revisions; keep only the project patch in reused checkouts |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | Inspect earlier Dart, hvigor or CMake errors and check whether a later `pub get` overwrote generated configuration |
 | `00801017`, missing `x86_64` ABI or `install parse native so failed` | Compare `uname -m`, target parameters and the actual HAP; exclude an older artifact of another ABI |

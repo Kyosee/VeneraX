@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$executableSuffix = if ($env:OS -eq 'Windows_NT') { '.exe' } else { '' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 
 function Get-PinnedSource([string]$Path, [string]$DefaultPath, [string]$Remote, [string]$Revision) {
@@ -47,15 +48,15 @@ foreach ($source in @($SourceRoot, $EigenRoot)) {
 }
 
 if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) {
-    throw 'The OHOS ONNX build requires an x64 Windows host.'
+    throw 'The OHOS ONNX build requires an x64 host.'
 }
 foreach ($path in @(
     (Join-Path $SourceRoot 'VERSION_NUMBER'),
     (Join-Path $SourceRoot 'cmake/CMakeLists.txt'),
     (Join-Path $EigenRoot 'CMakeLists.txt'),
     (Join-Path $EigenRoot 'Eigen/Core'),
-    (Join-Path $NativeSdk 'build-tools/cmake/bin/cmake.exe'),
-    (Join-Path $NativeSdk 'build-tools/cmake/bin/ninja.exe'),
+    (Join-Path $NativeSdk "build-tools/cmake/bin/cmake$executableSuffix"),
+    (Join-Path $NativeSdk "build-tools/cmake/bin/ninja$executableSuffix"),
     (Join-Path $NativeSdk 'build/cmake/ohos.toolchain.cmake'),
     $patchPath
 )) {
@@ -129,12 +130,12 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows" AND NOT CMAKE_HOST_SYSTEM_PROCESSOR
 endif()
 '@
     [IO.File]::WriteAllText($hostPlatformPath, $hostPlatform, [Text.UTF8Encoding]::new($false))
-    $cmake = Join-Path $NativeSdk 'build-tools/cmake/bin/cmake.exe'
+    $cmake = Join-Path $NativeSdk "build-tools/cmake/bin/cmake$executableSuffix"
     $cmakeArgs = @(
         '-S', (Join-Path $SourceRoot 'cmake'),
         '-B', $buildRoot,
         '-G', 'Ninja',
-        "-DCMAKE_MAKE_PROGRAM=$(Join-Path $NativeSdk 'build-tools/cmake/bin/ninja.exe')",
+        "-DCMAKE_MAKE_PROGRAM=$(Join-Path $NativeSdk "build-tools/cmake/bin/ninja$executableSuffix")",
         "-DCMAKE_TOOLCHAIN_FILE=$(Join-Path $NativeSdk 'build/cmake/ohos.toolchain.cmake')",
         "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$hostPlatformPath",
         '-DCMAKE_BUILD_TYPE=Release',

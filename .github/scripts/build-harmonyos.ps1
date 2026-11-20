@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$flutterCommand = if ($env:OS -eq 'Windows_NT') { 'bin/flutter.bat' } else { 'bin/flutter' }
 $checkoutRoot = (Resolve-Path -LiteralPath $Checkout).Path
 $sourceRoot = (Resolve-Path -LiteralPath $SourceRepository).Path
 if ($checkoutRoot -eq $sourceRoot) {
@@ -15,7 +16,7 @@ if ($checkoutRoot -eq $sourceRoot) {
 }
 foreach ($path in @(
     (Join-Path $checkoutRoot '.git'),
-    (Join-Path $FlutterSdk 'bin/flutter.bat'),
+    (Join-Path $FlutterSdk $flutterCommand),
     (Join-Path $DevEcoStudio 'sdk/default/openharmony')
 )) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing build prerequisite: $path" }
@@ -62,16 +63,12 @@ $targets = @(
     @{ Platform = 'ohos-x64'; Abi = 'x86_64'; Name = 'harmonyos-emulator-x64' }
 )
 $buildScript = Join-Path $checkoutRoot 'tool/build_ohos.ps1'
-$sources = Join-Path $checkoutRoot '.dart_tool/ohos/sources'
 $builtHap = Join-Path $checkoutRoot 'build/ohos/hap/entry-default-unsigned.hap'
 foreach ($target in $targets) {
     # Each ABI overwrites the same generated filename. Never reuse an older HAP.
     if (Test-Path -LiteralPath $builtHap) { Remove-Item -LiteralPath $builtHap -Force }
     & $buildScript -FlutterSdk $FlutterSdk -DevEcoStudio $DevEcoStudio `
-        -Target lib/main.dart -TargetPlatform $target.Platform -BuildMode release `
-        -OnnxSource (Join-Path $sources 'onnxruntime') `
-        -EigenSource (Join-Path $sources 'eigen') `
-        -WebViewSource (Join-Path $sources 'inappwebview')
+        -Target lib/main.dart -TargetPlatform $target.Platform -BuildMode release
     if ($LASTEXITCODE -ne 0) { throw "HarmonyOS build failed for $($target.Platform)." }
     if (-not (Test-Path -LiteralPath $builtHap) -or (Get-Item -LiteralPath $builtHap).Length -eq 0) {
         throw "Missing HarmonyOS package for $($target.Platform)."

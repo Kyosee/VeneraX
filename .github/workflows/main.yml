@@ -170,7 +170,6 @@ jobs:
       - run: flutter pub get
       - run: flutter build apk --release
       - name: Verify Android signature continuity
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -240,6 +239,7 @@ jobs:
         with:
           name: apks
           path: build/app/outputs/apk/release
+          retention-days: 7
   Build_Windows:
     runs-on: windows-latest
     if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' }}
@@ -354,10 +354,9 @@ jobs:
           path: build/linux/x64/release/debian # This is a bug related to flutter_to_debian, but it's not a big deal.
 
   Build_HarmonyOS:
-    # Register a one-job runner with this label and the isolated OH toolchain.
-    runs-on: [venerax-harmonyos]
+    runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'harmonyos' }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -365,8 +364,57 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Prepare cloud build directories
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get update -qq
+          sudo apt-get install -y libgl1-mesa-dev ninja-build
+          git clone --no-hardlinks "$GITHUB_WORKSPACE" "$RUNNER_TEMP/venerax-ohos"
+          git -C "$RUNNER_TEMP/venerax-ohos" checkout --detach "$GITHUB_SHA"
+          {
+            echo "VENERAX_OHOS_CHECKOUT=$RUNNER_TEMP/venerax-ohos"
+            echo "FLUTTER_OHOS_SDK=$RUNNER_TEMP/flutter-ohos"
+            echo "DEVECO_STUDIO=$RUNNER_TEMP/deveco/command-line-tools"
+          } >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Cache official HarmonyOS tool archive
+        id: ohos_tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/commandline-tools-linux.zip
+          key: harmonyos-cli-linux-x64-26.0.0.865
+      - name: Download official HarmonyOS tools
+        if: steps.ohos_tools.outputs.cache-hit != 'true'
+        env:
+          DEVECO_URL: ${{ secrets.DEVECO_COMMAND_LINE_TOOLS_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$DEVECO_URL" || { echo "DEVECO_COMMAND_LINE_TOOLS_URL is missing"; exit 1; }
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/commandline-tools-linux.zip" "$DEVECO_URL"
+      - name: Install HarmonyOS toolchains
+        run: |
+          set -euo pipefail
+          unzip -q "$RUNNER_TEMP/commandline-tools-linux.zip" -d "$RUNNER_TEMP/deveco"
+          test -d "$DEVECO_STUDIO/sdk/default/openharmony/native"
+          echo "$DEVECO_STUDIO/bin" >> "$GITHUB_PATH"
+          echo "NODE_HOME=$(dirname "$(command -v node)")" >> "$GITHUB_ENV"
+          git init "$FLUTTER_OHOS_SDK"
+          git -C "$FLUTTER_OHOS_SDK" remote add origin https://gitcode.com/CPF-Flutter/flutter_flutter.git
+          git -C "$FLUTTER_OHOS_SDK" fetch --depth 1 origin 744cbb4f08e577787774c04033cc19a9d318d0d2
+          git -C "$FLUTTER_OHOS_SDK" checkout --detach FETCH_HEAD
+          rustup toolchain install 1.95 --profile minimal
+          rustup target add --toolchain 1.95 x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos
+      - name: Check HarmonyOS native bridges
+        run: node --test test/ohos/*.cjs
       - name: Build HarmonyOS release packages
-        shell: powershell
+        shell: pwsh
         run: |
           & .github/scripts/build-harmonyos.ps1 `
             -Checkout $env:VENERAX_OHOS_CHECKOUT `
@@ -380,6 +428,7 @@ jobs:
           name: harmonyos_build
           path: result/*.hap
           if-no-files-found: error
+          retention-days: 7
 
   Test_AppImage:
     needs: [Build_Linux, Build_Linux_ARM64]

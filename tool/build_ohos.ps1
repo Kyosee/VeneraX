@@ -12,9 +12,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$flutter = Join-Path $FlutterSdk 'bin/flutter.bat'
+$windowsHost = $env:OS -eq 'Windows_NT'
+$pathVariable = if ($windowsHost) { 'Path' } else { 'PATH' }
+$commandSuffix = if ($windowsHost) { '.bat' } else { '' }
+$flutter = Join-Path $FlutterSdk "bin/flutter$commandSuffix"
+$dart = Join-Path $FlutterSdk "bin/dart$commandSuffix"
 $environmentNames = @(
-    'OS', 'DEVECO_SDK_HOME', 'JAVA_HOME', 'NODE_HOME', 'Path',
+    'OS', 'DEVECO_SDK_HOME', 'JAVA_HOME', 'NODE_HOME', $pathVariable,
     'FLUTTER_NATIVE_ASSETS', 'FLUTTER_DART_DATA_ASSETS'
 )
 $previousEnvironment = @{}
@@ -24,15 +28,20 @@ foreach ($name in $environmentNames) {
 
 Push-Location $projectRoot
 try {
-    $env:OS = 'Windows_NT'
     $env:DEVECO_SDK_HOME = Join-Path $DevEcoStudio 'sdk'
-    $env:JAVA_HOME = Join-Path $DevEcoStudio 'jbr'
-    $env:NODE_HOME = Join-Path $DevEcoStudio 'tools/node'
-    $env:Path = @(
+    if (Test-Path -LiteralPath (Join-Path $DevEcoStudio 'jbr')) {
+        $env:JAVA_HOME = Join-Path $DevEcoStudio 'jbr'
+    }
+    if (Test-Path -LiteralPath (Join-Path $DevEcoStudio 'tools/node')) {
+        $env:NODE_HOME = Join-Path $DevEcoStudio 'tools/node'
+    }
+    $buildPath = @(
         (Join-Path $FlutterSdk 'bin'), $env:NODE_HOME,
+        (Join-Path $DevEcoStudio 'bin'),
         (Join-Path $DevEcoStudio 'tools/ohpm/bin'),
-        (Join-Path $DevEcoStudio 'tools/hvigor/bin'), $env:Path
+        (Join-Path $DevEcoStudio 'tools/hvigor/bin'), $previousEnvironment[$pathVariable]
     ) -join [IO.Path]::PathSeparator
+    [Environment]::SetEnvironmentVariable($pathVariable, $buildPath, 'Process')
     # OHOS native code is built by CMake. Upstream Dart hooks target Linux.
     $env:FLUTTER_NATIVE_ASSETS = 'false'
     $env:FLUTTER_DART_DATA_ASSETS = 'true'
@@ -41,10 +50,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Flutter dependency resolution failed.' }
     $prepareArguments = @('tool/prepare_ohos.dart')
     if ($WebViewSource) { $prepareArguments += $WebViewSource }
-    & (Join-Path $FlutterSdk 'bin/dart.bat') @prepareArguments
+    & $dart @prepareArguments
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS dependency preparation failed.' }
     $sdkPackages = Join-Path $FlutterSdk 'packages/flutter_tools/.dart_tool/package_config.json'
-    & (Join-Path $FlutterSdk 'bin/dart.bat') "--packages=$sdkPackages" .dart_tool/ohos/refresh_plugins.dart $FlutterSdk
+    & $dart "--packages=$sdkPackages" .dart_tool/ohos/refresh_plugins.dart $FlutterSdk
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS plugin registration failed.' }
     & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
     & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
