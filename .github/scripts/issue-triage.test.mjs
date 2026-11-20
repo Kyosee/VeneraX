@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseReport, managedComment, knowledge, validateAnswer, askModel, run, READY, WAITING, MARKER } from './issue-triage.mjs';
+import { parseReport, managedComment, knowledge, validateAnswer, askModel, failureReason, run, READY, WAITING, MARKER } from './issue-triage.mjs';
 
 const FIELDS = {
   '实际发生了什么？ / What happened?': '切回竖屏后图片拉伸一秒。',
@@ -272,4 +272,21 @@ test('rejects invented citations, external links, executable output and unsuppor
   assert.throws(() => validateAnswer({ ...answer, summary: '[Open support](custom:example)' }, []));
   assert.throws(() => validateAnswer({ ...answer, close: true }, []));
   await assert.rejects(askModel({ env: { ...ENV, ISSUE_AI_API_URL: 'http://example.org/v1/chat/completions' }, fetchImpl: () => { throw new Error('Must not request'); } }), /Invalid API URL/);
+});
+
+test('failure diagnostics identify actionable causes without exposing error details', async t => {
+  assert.equal(failureReason(new Error('AI HTTP 401')), 'AI HTTP 401');
+  assert.equal(failureReason(new Error('AI HTTP 401\nprivate provider message')), 'Unexpected integration error');
+  assert.equal(failureReason(new Error('Invalid API URL')), 'Invalid API URL');
+  assert.equal(failureReason({ code: 'ERR_INVALID_URL', message: 'private URL' }), 'Invalid API URL');
+  assert.equal(failureReason(new SyntaxError('private model content')), 'Invalid AI JSON');
+  assert.equal(failureReason(new DOMException('private diagnostic', 'TimeoutError')), 'AI request timed out');
+  assert.equal(failureReason(new Error('Authorization: Bearer secret')), 'Unexpected integration error');
+  const logs = [];
+  t.mock.method(console, 'log', message => logs.push(message));
+  const f = fixture();
+  await f.go(ENV, async () => new Response('private provider diagnostic', { status: 429 }));
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /AI HTTP 429/);
+  assert.doesNotMatch(logs[0], /private provider diagnostic|test-only-provider-key/);
 });
