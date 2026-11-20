@@ -126,5 +126,7 @@ body:
       description: |
         闪退或报错建议附日志，显示异常建议附录屏；点击此框后可拖入附件或粘贴截图。
         日志入口：设置 > 关于与帮助 > 应用日志 > 右上角“导出”。无法取得时可说明原因，不影响提交。上传前检查隐私信息。
+        闪退或启动失败：应用日志页右上角菜单 >「导出诊断信息」，内容已自动隐藏网址和账号。
         Logs help with errors; recordings help with visual issues. Click here to attach files or paste images.
         Export logs from Settings > About & help > App logs > Export. If unavailable, explain why; attachments are optional. Review private information before uploading.
+        For crashes or failed launches: App logs > menu > Export diagnostic report. Addresses and accounts are already hidden.
