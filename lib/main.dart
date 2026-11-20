@@ -2,11 +2,13 @@ import 'dart:async';
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flex_seed_scheme/flex_seed_scheme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/native_diagnostics.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/startup_page.dart';
 import 'package:venera/utils/io.dart';
@@ -37,6 +39,10 @@ void main(List<String> args) {
   overrideIO(() {
     runZonedGuarded(() async {
       WidgetsFlutterBinding.ensureInitialized();
+      // A debug run is stopped from the IDE all the time, which is no crash.
+      if (!kDebugMode || const bool.fromEnvironment('SESSION_GUARD')) {
+        await SessionGuard.start();
+      }
       try {
         await init();
       } on PlatformException catch (error) {
@@ -56,7 +62,9 @@ void main(List<String> args) {
         ));
         return;
       }
+      SessionGuard.step('init');
       runApp(const MyApp());
+      SessionGuard.appStarted();
       if (App.isDesktop) {
         await windowManager.ensureInitialized();
         AppShortcuts.install();

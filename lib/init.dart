@@ -19,6 +19,7 @@ import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/reading_widget.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -50,6 +51,8 @@ extension _FutureInit<T> on Future<T> {
 /// Only includes what's needed for theme, locale, and basic app state.
 Future<void> init({bool interactive = true}) async {
   await App.init().wait();
+  // Has to happen during this launch: the next one overwrites that run's log.
+  unawaited(SessionGuard.archivePreviousRun());
   // Never load shared state before the background extension has released it.
   await FollowUpdatesScheduler.acquireUiData();
   if (interactive) await OnboardingStore.instance.load(App.dataPath);
@@ -104,6 +107,7 @@ Future<void> initDeferred() async {
   } catch (e, s) {
     Log.error("init", "$e\n$s");
   } finally {
+    SessionGuard.step('init.deferred');
     deferredInitCompleter.complete();
   }
 }

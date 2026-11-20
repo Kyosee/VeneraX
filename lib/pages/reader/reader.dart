@@ -42,6 +42,7 @@ import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
@@ -331,6 +332,7 @@ class _ReaderState extends State<Reader>
 
   @override
   void initState() {
+    SessionGuard.begin('reader');
     if (type == ComicType.local) {
       appdata.settings.shareSyncedComicSettings(
         cid,
@@ -466,6 +468,7 @@ class _ReaderState extends State<Reader>
 
   @override
   void dispose() {
+    SessionGuard.end('reader');
     _stopReadingTimer();
     _notifyReadingStatisticsChanged();
     App.rootRouteObserver.unsubscribe(this);

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
@@ -133,6 +134,7 @@ class TrayController with TrayListener, WindowListener {
         _restoreWindow();
         break;
       case _menuQuit:
+        SessionGuard.markCleanExit();
         exit(0);
     }
   }

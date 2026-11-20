@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/init.dart';
 import 'package:venera/pages/auth_page.dart';
@@ -62,6 +63,7 @@ class _StartupPageState extends State<StartupPage> {
   void _decline() {
     setState(() => _declined = true);
     if (App.isDesktop) {
+      SessionGuard.markCleanExit();
       unawaited(windowManager.destroy());
     } else if (App.isAndroid || App.isOhos) {
       unawaited(SystemNavigator.pop());

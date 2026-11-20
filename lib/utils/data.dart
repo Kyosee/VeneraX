@@ -19,6 +19,7 @@ import 'package:venera/foundation/image_translation/translation_performance_conf
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
@@ -284,6 +285,19 @@ Future<File> exportAppData({
   bool sync = true,
   bool includeLocalComics = true,
   bool includeTranslations = true,
+}) => SessionGuard.during(
+  'backup.export',
+  () => _exportAppData(
+    sync: sync,
+    includeLocalComics: includeLocalComics,
+    includeTranslations: includeTranslations,
+  ),
+);
+
+Future<File> _exportAppData({
+  required bool sync,
+  required bool includeLocalComics,
+  required bool includeTranslations,
 }) async {
   var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   var cacheFilePath = FilePath.join(App.cachePath, '$time.venera');
@@ -697,6 +711,7 @@ Future<ImportOutcome> importAppData(
   }
   final completer = Completer<void>();
   _importInProgress = completer.future;
+  SessionGuard.begin('backup.import');
   try {
     return await _importAppDataLocked(
       file,
@@ -710,6 +725,7 @@ Future<ImportOutcome> importAppData(
       requireTranslationsOnly: requireTranslationsOnly,
     );
   } finally {
+    SessionGuard.end('backup.import');
     _importInProgress = null;
     completer.complete();
   }

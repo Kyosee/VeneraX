@@ -7,6 +7,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/tray.dart';
 import 'package:venera/utils/io.dart';
 import 'package:window_manager/window_manager.dart';
@@ -126,6 +127,7 @@ class _WindowFrameState extends State<WindowFrame> {
     if (App.isWindows && appdata.settings['minimizeToTray'] == true) {
       TrayController.instance.hideToTray();
     } else {
+      SessionGuard.markCleanExit();
       exit(0);
     }
   }

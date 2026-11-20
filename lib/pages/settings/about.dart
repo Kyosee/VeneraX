@@ -707,6 +707,7 @@ Future<bool> _runWindowsUpdaterExecutable({
     );
     App.rootContext.showMessage(message: "Updater started. App will restart after update".tl);
     await Future.delayed(const Duration(milliseconds: 400));
+    SessionGuard.markCleanExit();
     exit(0);
   } catch (e, s) {
     Log.error("Windows Update", e.toString(), s);
@@ -753,6 +754,7 @@ Future<void> _runWindowsUpdaterScript({
   ], mode: ProcessStartMode.detached);
   App.rootContext.showMessage(message: message);
   await Future.delayed(const Duration(milliseconds: 400));
+  SessionGuard.markCleanExit();
   exit(0);
 }
 // --- PowerShell Scripts ---

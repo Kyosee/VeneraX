@@ -8,6 +8,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/follow_update_result.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/follow_updates.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -261,6 +262,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
       return;
     }
     _runningIds.add(task.id);
+    SessionGuard.begin('follow.check');
     // Saved counters can lag committed checks after a hard kill. Do not present
     // a resumed task's partial identities as a complete last-check result.
     if (resume) task.updatedComicKeys = null;
@@ -370,7 +372,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
   /// Idempotent.
   void _finalize(FollowUpdateTask task) {
     _canceledIds.remove(task.id);
-    _runningIds.remove(task.id);
+    if (_runningIds.remove(task.id)) SessionGuard.end('follow.check');
     _moveToHistory(task);
     _systemScheduledIds.remove(task.id);
   }

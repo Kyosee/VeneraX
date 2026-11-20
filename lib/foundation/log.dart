@@ -90,11 +90,20 @@ class Log {
     _file = file.openWrite();
   }
 
-  static void addLog(LogLevel level, String title, String content) {
-    if (isMuted) return;
+  /// Rotates and opens the file now rather than on the first entry, so that
+  /// [previousFile] is settled for whoever needs to read it.
+  static void ensureOpen() {
     if (_file == null && App.isInitialized) {
       _openFile();
     }
+  }
+
+  /// What the previous run wrote. Only meaningful once this run's file is open.
+  static File get previousFile => _directory().joinFile(_previousFileName);
+
+  static void addLog(LogLevel level, String title, String content) {
+    if (isMuted) return;
+    ensureOpen();
 
     if (!ignoreLimitation && content.length > maxLogLength) {
       content = "${content.substring(0, maxLogLength)}...";

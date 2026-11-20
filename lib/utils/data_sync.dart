@@ -14,6 +14,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio_io.dart';
@@ -422,7 +423,10 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     showLoadingDialog(
       App.rootContext,
       cancelButtonText: "Shut Down".tl,
-      onCancel: () => exit(0),
+      onCancel: () {
+        SessionGuard.markCleanExit();
+        exit(0);
+      },
       barrierDismissible: false,
       message: "Syncing Data".tl,
     );
@@ -432,6 +436,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         _isSyncingImages) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
+    SessionGuard.markCleanExit();
     exit(0);
   }
 
@@ -439,17 +444,44 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
   factory DataSync() => instance ?? (instance = DataSync._());
 
-  bool _isDownloading = false;
+  // The three flags double as steps in the run record: an interrupted sync is
+  // the first thing to rule in or out when a run ends abnormally.
+  static void _note(String activity, bool running) =>
+      running ? SessionGuard.begin(activity) : SessionGuard.end(activity);
+
+  bool _downloading = false;
+
+  bool get _isDownloading => _downloading;
+
+  set _isDownloading(bool value) {
+    if (value != _downloading) _note('sync.download', value);
+    _downloading = value;
+  }
 
   bool get isDownloading => _isDownloading;
 
-  bool _isUploading = false;
+  bool _uploading = false;
+
+  bool get _isUploading => _uploading;
+
+  set _isUploading(bool value) {
+    if (value != _uploading) _note('sync.upload', value);
+    _uploading = value;
+  }
 
   bool get isUploading => _isUploading;
 
   bool _haveWaitingTask = false;
 
-  bool _isSyncingImages = false;
+  bool _syncingImages = false;
+
+  bool get _isSyncingImages => _syncingImages;
+
+  set _isSyncingImages(bool value) {
+    if (value != _syncingImages) _note('sync.images', value);
+    _syncingImages = value;
+  }
+
   bool get isSyncingImages => _isSyncingImages;
 
   /// True while a downloaded/imported backup is being applied to the local

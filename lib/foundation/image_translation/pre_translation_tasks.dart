@@ -18,6 +18,7 @@ import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
@@ -749,6 +750,7 @@ class PreTranslationTaskManager with ChangeNotifier {
       return;
     }
     _runningIds.add(task.id);
+    SessionGuard.begin('pretranslate');
     _activities[task.id] = PreTranslationActivity();
     _refreshKeepAlive(task);
     var revision = TranslationStore().localRevision;
@@ -805,6 +807,7 @@ class PreTranslationTaskManager with ChangeNotifier {
       _backgroundPausedIds.remove(task.id);
       _canceledIds.remove(task.id);
       _runningIds.remove(task.id);
+      SessionGuard.end('pretranslate');
       // The coalescing timer is shared by every running job, so it is not this
       // job's to cancel; the notifyListeners below already flushes this one.
       _activities.remove(task.id);

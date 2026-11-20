@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
@@ -435,6 +436,7 @@ class _IsolateWorker {
       }
     });
     try {
+      SessionGuard.step('translate.worker');
       _isolate = await Isolate.spawn(
         _workerMain,
         port.sendPort,
