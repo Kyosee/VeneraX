@@ -644,6 +644,15 @@ class LocalManager with ChangeNotifier {
     );
   }
 
+  void updateDownloadedTitle(String id, ComicType type, String title) {
+    if (!isInitialized) return;
+    _db.execute(
+      'UPDATE comics SET title = ? WHERE id = ? AND comic_type = ? AND title <> ?',
+      [title, id, type.value, title],
+    );
+    if (_db.updatedRows != 0) notifyListeners();
+  }
+
   /// Replaces a pure local comic after a successful directory rescan.
   /// Stable identity and user state live outside the refreshed metadata row.
   void replaceLocalComic(LocalComic comic) {

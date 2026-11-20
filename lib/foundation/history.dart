@@ -675,6 +675,35 @@ class HistoryManager with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateSourceMetadata(
+    String id,
+    ComicType type, {
+    String? title,
+    String? subtitle,
+    String? cover,
+  }) => _queueHistoryWrite(() {
+    if (!isInitialized) return;
+    final current = find(id, type);
+    if (current == null) return;
+    final newTitle = title ?? current.title;
+    final newSubtitle = subtitle ?? current.subtitle;
+    final newCover = cover ?? current.cover;
+    if (current.title == newTitle &&
+        current.subtitle == newSubtitle &&
+        current.cover == newCover) {
+      return;
+    }
+    _db.execute(
+      'UPDATE history SET title = ?, subtitle = ?, cover = ? WHERE id = ? AND type = ?',
+      [newTitle, newSubtitle, newCover, id, type.value],
+    );
+    current
+      ..title = newTitle
+      ..subtitle = newSubtitle
+      ..cover = newCover;
+    notifyListeners();
+  });
+
   /// Update the set of read episodes for a comic and persist it.
   ///
   /// Used by the manual "mark as read/unread" feature on the chapters list.
@@ -1126,22 +1155,16 @@ class HistoryManager with ChangeNotifier {
         }
 
         var comicDetails = res.data;
+        await const ComicStateRepository().updateStoredSourceMetadata(
+          history.id,
+          history.type,
+          comicDetails,
+          includeHistoryCoverAndSubtitle: true,
+        );
         // Mirror full details to domain DB
         try {
           const ComicStateRepository().mirrorComicDetails(comicDetails);
         } catch (_) {}
-        // Reading may have advanced or been cleared while the request ran.
-        final updatedHistory = find(history.id, history.type);
-        if (updatedHistory == null) return const _HistoryRefreshResult(true);
-        updatedHistory
-          ..title = comicDetails.title
-          ..subtitle = comicDetails.subTitle ?? ''
-          ..cover = comicDetails.cover;
-
-        // A refresh only rewrites display fields, so it must not pull a record
-        // the user removed from the list back into it — the refresh-all task
-        // works from a snapshot taken before the deletion.
-        updateHistoryKeepingVisibility(updatedHistory);
         return const _HistoryRefreshResult(true);
       } catch (e, s) {
         lastError = e.toString();

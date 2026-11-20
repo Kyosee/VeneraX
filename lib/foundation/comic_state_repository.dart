@@ -253,6 +253,8 @@ class ComicStateRepository {
       // (issue #135), so it must not override the local title/cover.
       title:
           _pick([
+            // Search results and refreshed records carry their source title.
+            if (!identity.isLocal && comic is! FavoriteItem) comic.title,
             localComic?.title,
             domain?.title,
             updateInfo?.title,
@@ -479,6 +481,25 @@ class ComicStateRepository {
         _mirrorChapters(identity, comic.chapters);
         _mirrorCommonState(identity, comicId);
       },
+    );
+  }
+
+  /// Updates existing records for the requested source ID after a live fetch.
+  Future<void> updateStoredSourceMetadata(
+    String id,
+    ComicType type,
+    ComicDetails details, {
+    bool includeHistoryCoverAndSubtitle = false,
+  }) async {
+    if (type == ComicType.local) return;
+    final title = details.title.trim().isEmpty ? null : details.title;
+    if (title != null) _local.updateDownloadedTitle(id, type, title);
+    await _history.updateSourceMetadata(
+      id,
+      type,
+      title: title,
+      subtitle: includeHistoryCoverAndSubtitle ? details.subTitle ?? '' : null,
+      cover: includeHistoryCoverAndSubtitle ? details.cover : null,
     );
   }
 

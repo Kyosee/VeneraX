@@ -131,6 +131,10 @@ void main() {
         domain.getComicBaseInfo('remote:source_a:a')!.title,
         'Alpha 2',
       );
+      domain.ensureWorkForComic(comicId: 'remote:source_a:a');
+      final renamed = browsed('a', '日本語タイトル');
+      expect(repository.displayInfoFor(renamed).title, renamed.title);
+      expect(repository.displayInfoFor(browsed('a', '')).title, 'Alpha 2');
     } finally {
       domain.close();
       tempDir.deleteSync(recursive: true);
