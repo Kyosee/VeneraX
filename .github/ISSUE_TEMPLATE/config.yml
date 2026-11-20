@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: 已有反馈与处理进展 / Existing issues
+    url: https://github.com/Kyosee/VeneraX/issues?q=is%3Aissue
+    about: 先搜关键词，已关闭的问题也可能有答案。 / Search both open and closed issues before submitting.
+  - name: 版本下载与更新说明 / Releases
+    url: https://github.com/Kyosee/VeneraX/releases
+    about: 查看可用版本、修复内容与安装包。 / Check available builds, fixes and downloads.

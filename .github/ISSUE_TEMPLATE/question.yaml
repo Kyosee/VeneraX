@@ -1,0 +1,50 @@
+name: 使用疑问 / Usage help
+description: 不清楚某项功能怎么用，或某个设置是什么意思。 / Ask how a feature or setting works.
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **想完成什么，卡在哪一步？** 标题写具体问题，例如“如何只同步阅读进度”。先[搜索已有问答](https://github.com/Kyosee/VeneraX/issues?q=is%3Aissue)，一条提问聚焦一件事。
+        **What are you trying to do, and where are you stuck?** Ask a specific question in the title and search existing answers first.
+
+        遇到报错、闪退或卡顿，请用[故障反馈](https://github.com/Kyosee/VeneraX/issues/new?template=bug.yaml)；希望新增功能，请用[功能建议](https://github.com/Kyosee/VeneraX/issues/new?template=enhancement.yaml)。
+        Use a bug report for broken behavior, or a feature request for a new capability.
+
+        <details>
+        <summary>提交范围与隐私 / Scope and privacy</summary>
+
+        这里只解答 VeneraX 应用本体的使用问题，不提供漫画源、配置文件或源脚本支持；应用没有内置漫画源。
+        Help covers the VeneraX app only, not comic sources, configuration files or source scripts; no comic sources are bundled.
+
+        Issue 与附件公开。请移除站点名称及地址、解析代码、账号、Cookie、Token 和密钥。不要发布其他项目、其他版本或扩展仓库的地址，此类内容会被移除。
+        Reports and attachments are public. Remove site names, addresses, parsing code, accounts, cookies, tokens and keys. Links to other projects, versions or extension repositories will be removed.
+
+        </details>
+  - type: textarea
+    id: question
+    attributes:
+      label: 你想完成什么？ / What would you like to do?
+      description: 说明使用目标和具体疑问，不必写成长文。 / State your goal and the question you need answered.
+      placeholder: "例如：想让手机和平板共享阅读进度，但保留各自的阅读设置。应该怎样设置？ / How can I share reading progress between two devices while keeping their reading settings separate?"
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: 试过什么，卡在哪里？ / What have you tried?
+      description: 写出找过的页面、做过的操作及不理解的地方；还没操作也可以直接说明。 / Mention the page or steps you tried and what is unclear; say so if you have not started yet.
+      placeholder: "例如：找到了同步设置，但不清楚哪些选项会影响另一台设备。 / I found the sync settings, but do not know which options affect the other device."
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 版本与平台（选填） / Version and platform (optional)
+      description: 与具体设备或菜单有关时填写。版本在“设置 > 关于与帮助”查看；注明 Android APK 或原生 HarmonyOS HAP。 / Useful for device or menu questions. Find the version in Settings > About & help and identify the app platform.
+      placeholder: "例如：3.0.0，Android 15 / 3.0.0, Android 15"
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 截图或补充说明（选填） / Screenshot or context (optional)
+      description: 可以附上看不懂的设置页面；上传前遮盖私人信息。 / Attach the setting you are asking about, with private information hidden.

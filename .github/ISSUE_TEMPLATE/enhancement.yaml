@@ -1,42 +1,48 @@
-name: Feature Request
-description: Suggest improvements to the APP
+name: 功能建议 / Feature request
+description: 希望新增能力，或让现有操作更顺手。 / Suggest a capability or a simpler workflow.
 title: "[Enhancement]: "
 labels: ["enhancement🚀"]
 body:
   - type: markdown
     attributes:
       value: |
-        Welcome to make a feature request, please fill in the following information after completing the title.
-        
-        欢迎提出功能建议，请填写完整标题后填写以下信息。
-        
-        **Please do not report any issues related to config files.**
+        **你希望哪一步更好用？** 标题直接写想要的改进，例如“记住阅读统计上次选择的时间范围”。一条建议聚焦一件事，先[搜索已有建议](https://github.com/Kyosee/VeneraX/issues?q=is%3Aissue)。
+        **What would make your task easier?** Name the improvement in the title, focus on one request and search existing suggestions first.
 
-        **请不要报告与配置文件相关的任何问题。**
+        已有功能报错、失效或卡顿，请改用[故障反馈](https://github.com/Kyosee/VeneraX/issues/new?template=bug.yaml)。
+        For errors, broken behavior or slow performance, use the bug report form.
 
-        This project is a comic reader that allows users write their own config files. And there is no built-in comic source.
+        <details>
+        <summary>提交范围与隐私 / Scope and privacy</summary>
 
-        本项目是一个漫画阅读器，允许用户编写自己的配置文件，并且没有内置漫画源。
+        这里只讨论 VeneraX 应用本体的能力，不受理配置文件、源站或源脚本的需求；应用没有内置漫画源。
+        Suggestions should concern the VeneraX app, not configuration files, websites or source scripts; no comic sources are bundled.
 
-        **Issues are public. Please describe the capability you need, without including site names, addresses, keys, or parsing code.**
+        Issue 与附件公开。请移除站点名称及地址、解析代码、账号、Cookie、Token 和密钥。不要发布其他项目、其他版本或扩展仓库的地址，此类内容会被移除。
+        Reports and attachments are public. Remove site names, addresses, parsing code, accounts, cookies, tokens and keys. Links to other projects, versions or extension repositories will be removed.
 
-        **Issue 内容是公开的。请描述你需要的能力，不要附带站点名称、地址、密钥或解析代码。**
-
-        **Do not post links to other projects, other versions, or extension repositories; such content will be removed.**
-
-        **请勿发布其他项目、其他版本或扩展仓库的地址，此类内容会被删除。**
+        </details>
   - type: textarea
     id: what-happened
     attributes:
-      label: Description
-      description: Describe your suggestion.
+      label: 现在有什么不方便？ / What is inconvenient today?
+      description: 你在做什么，需要重复哪些操作，或哪个需求还无法完成？ / Describe your task and the limitation of the current workflow.
+      placeholder: "例如：我通常只看累计阅读统计，但每次打开都要重新切换时间范围。 / I check lifetime reading statistics, but have to select that range every time."
+    validations:
+      required: true
+  - type: textarea
+    id: desired-result
+    attributes:
+      label: 希望改成怎样？ / What would work better?
+      description: 描述使用后的效果即可，不需要设计技术方案；给一个具体例子更好。 / Describe the desired experience; no technical design is needed.
+      placeholder: "例如：重新打开统计页时，继续显示上次选中的时间范围。 / Reopening statistics should keep the last selected range."
     validations:
       required: true
   - type: dropdown
     id: platform
     attributes:
-      label: Operating System
-      description: If the feature is for a particular platform, please select here
+      label: 适用平台（选填） / Relevant platforms (optional)
+      description: 只针对某些平台时再选，可多选；通用建议可以留空。 / Select only for platform-specific requests; leave blank for general improvements.
       multiple: true
       options:
         - Android
@@ -46,10 +52,8 @@ body:
         - macOS
         - linux
         - other
-    validations:
-      required: false
   - type: textarea
     id: screenshotOrVideo
     attributes:
-      label: picture
-      description: If you need to use a picture, please upload it here.
+      label: 示意图或补充说明（选填） / Illustration or context (optional)
+      description: 可附截图、简单草图，或说明现在用什么办法绕过；无需粘贴其他项目链接。 / Attach a screenshot or sketch, or describe your current workaround without linking other projects.
