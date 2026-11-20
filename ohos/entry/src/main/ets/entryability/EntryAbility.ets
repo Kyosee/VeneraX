@@ -11,6 +11,7 @@ import { BackgroundService } from '../bridge/BackgroundService';
 import { LauncherIconService } from '../bridge/LauncherIconService';
 import { FollowSchedulerService } from '../bridge/FollowSchedulerService';
 import { ReadingWidgetService } from '../widget/ReadingWidgetService';
+import { NativeDiagnostics } from '../bridge/NativeDiagnostics';
 
 export default class EntryAbility extends FlutterAbility {
   private channels: MethodChannel[] = [];
@@ -22,8 +23,10 @@ export default class EntryAbility extends FlutterAbility {
   private background?: BackgroundService;
   private launcherIcons?: LauncherIconService;
   private pendingWant?: Want;
+  private diagnostics?: NativeDiagnostics;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    this.diagnostics = new NativeDiagnostics(this.context.filesDir, launchParam);
     this.pendingWant = want;
     super.onCreate(want, launchParam);
     this.deliverInitialWant();
@@ -61,6 +64,10 @@ export default class EntryAbility extends FlutterAbility {
     const system = new MethodChannel(messenger, 'venera/method_channel');
     system.setMethodCallHandler({
       onMethodCall: (call: MethodCall, result: MethodResult): void => {
+        if (call.method === 'readNativeDiagnostics') {
+          result.success(this.diagnostics?.read() ?? []);
+          return;
+        }
         if (this.deviceServices?.handleMethodCall(call, result)) return;
         if (this.fileServices?.handleMethodCall(call, result)) return;
         if (this.launcherIcons?.handleMethodCall(call, result)) return;
@@ -109,6 +116,12 @@ export default class EntryAbility extends FlutterAbility {
   onForeground(): void {
     super.onForeground();
     this.background?.setForeground(true);
+  }
+
+  onDestroy(): void {
+    this.diagnostics?.dispose();
+    this.diagnostics = undefined;
+    super.onDestroy();
   }
 }
 

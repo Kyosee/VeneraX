@@ -39,6 +39,7 @@ import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/shortcuts.dart';
 import 'package:venera/foundation/tray.dart';
 import 'package:venera/network/app_dio.dart';

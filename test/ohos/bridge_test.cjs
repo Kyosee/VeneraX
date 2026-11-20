@@ -105,13 +105,17 @@ function harness(options = {}) {
     setMethodCallHandler(handler) { this.handler = handler; }
   }
   class FlutterAbility {
-    context = { filesDir: '/mock/files', cacheDir: '/mock/cache' };
+    context = { filesDir: '/mock/files', cacheDir: '/mock/cache', abilityInfo: { bundleName: 'test.venera' } };
+    onCreate() { lifecycle.push('super.create'); }
+    onDestroy() { lifecycle.push('super.destroy'); }
     configureFlutterEngine() { lifecycle.push('super.configure'); }
     cleanUpFlutterEngine() { lifecycle.push('super.cleanup'); }
     onBackground() { lifecycle.push('super.background'); }
   }
   class Service {
     handleMethodCall() { return false; }
+    handleWant() {}
+    setForeground() {}
     dispose() { lifecycle.push('service.dispose'); }
   }
   const context = vm.createContext({
@@ -136,6 +140,13 @@ function harness(options = {}) {
     BackgroundService: Service,
     LauncherIconService: Service,
     PdfService: Service,
+    FollowSchedulerService: Service,
+    ReadingWidgetService: Service,
+    NativeDiagnostics: class {
+      constructor() { lifecycle.push('diagnostics.create'); }
+      read() { return ['NativeCrash: test stack']; }
+      dispose() { lifecycle.push('diagnostics.dispose'); }
+    },
     bundleManager: {},
     console: { warn(message) { warnings.push(message); } },
   });
@@ -362,6 +373,20 @@ test('dispose cancels once, detaches the channel, and rejects future calls', () 
   assert.equal(h.instances[0].cancels, 1);
   assert.equal(h.channels[0].handler, null);
   expectError(invoke(h.service), 'AUTH_CLOSED');
+});
+
+test('EntryAbility captures diagnostics before startup, exposes them and disposes the watcher', () => {
+  const h = harness();
+  const ability = new h.EntryAbility();
+  ability.onCreate({}, {});
+  assert.ok(h.lifecycle.indexOf('diagnostics.create') < h.lifecycle.indexOf('super.create'));
+  ability.configureFlutterEngine(h.engine);
+  const system = h.channels.find(channel => channel.name === 'venera/method_channel');
+  assert.deepEqual(invoke(system.handler, 'readNativeDiagnostics'), [
+    { kind: 'success', value: ['NativeCrash: test stack'] },
+  ]);
+  ability.onDestroy();
+  assert.ok(h.lifecycle.indexOf('diagnostics.dispose') < h.lifecycle.indexOf('super.destroy'));
 });
 
 test('EntryAbility registers authentication and cancels before super.onBackground', () => {

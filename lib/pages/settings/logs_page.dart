@@ -46,6 +46,8 @@ class _LogsPageState extends State<LogsPage> {
     super.initState();
     _snapshot();
     if (_live) Log.changes.addListener(_onLogsChanged);
+    // OS crash events can arrive after the startup read.
+    if (_live && App.isOhos) unawaited(readOhosNativeDiagnostics());
   }
 
   @override

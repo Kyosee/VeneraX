@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/startup_page.dart';
 import 'package:venera/utils/io.dart';
@@ -104,6 +105,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     App.registerForceRebuild(forceRebuild);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addObserver(this);
+    if (App.isOhos) unawaited(readOhosNativeDiagnostics());
     syncOhosStartupTheme();
     syncReaderNightModeWithSystem(rebuild: false);
     super.initState();
@@ -131,6 +133,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && App.isOhos) {
+      unawaited(readOhosNativeDiagnostics());
+    }
     if (state == AppLifecycleState.resumed && App.isMobile) {
       DownloadKeepAlive.instance.onResume();
     }
