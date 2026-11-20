@@ -10,6 +10,7 @@
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/standard_method_codec.h>
 #include "flutter/generated_plugin_registrant.h"
+#include "crash_record.h"
 #include <thread>
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -63,6 +64,9 @@ void monitorUIThread() {
 
         if (duration > normalTimeout) {
             std::cerr << "The UI thread is dead. Terminate the application.";
+            // The exit code says nothing; this tells the next launch it froze.
+            WriteExitRecord(
+                "the window stopped responding for 10 seconds and was closed");
             std::exit(0);
         }
 
@@ -265,6 +269,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
             "onHotkey", std::make_unique<flutter::EncodableValue>(
                             static_cast<int32_t>(wparam)));
         return 0;
+    }
+    // Shutdown and sign-out end the process without closing the window.
+    if (message == WM_ENDSESSION && wparam != 0) {
+        MarkSessionEnded();
     }
     if (flutter_controller_) {
         std::optional<LRESULT> result =

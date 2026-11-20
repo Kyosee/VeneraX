@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
@@ -38,6 +39,8 @@ Future<OsExit?> readOsExit() async {
         }),
       );
     }
+    // HarmonyOS is neither and keeps its own branch above.
+    if (App.isWindows || App.isLinux) return _takeHostExit();
   } on MissingPluginException {
     // An older host.
   } on PlatformException catch (error) {
@@ -47,8 +50,10 @@ Future<OsExit?> readOsExit() async {
 }
 
 /// The system's own record of the previous process's crash or freeze, as
-/// text: a native crash's stacks or the thread dump of a hang. Android 11 on.
+/// text: a native crash's stacks or the thread dump of a hang. Android 11 on,
+/// and what the Windows and Linux hosts recorded.
 Future<String?> readOsExitTrace() async {
+  if (App.isWindows || App.isLinux) return _hostTrace;
   if (!App.isAndroid) return null;
   try {
     final exit = await _channel.invokeMapMethod<String, Object?>(
@@ -65,6 +70,96 @@ Future<String?> readOsExitTrace() async {
   } on PlatformException {
     return null;
   }
+}
+
+/// What [readOsExit] took from the host on Windows and Linux: reading the
+/// record removes it.
+String? _hostTrace;
+
+OsExit? _takeHostExit() {
+  final directory = hostRecordDirectory();
+  if (directory == null) return null;
+  final records = takeHostRecords(Directory(directory));
+  _hostTrace = records.trace;
+  return records.exit;
+}
+
+/// Where the Windows and Linux hosts record how the process ended. They work
+/// it out by themselves, so that a crash while the engine starts is recorded
+/// too, and both sides have to agree on it.
+String? hostRecordDirectory([Map<String, String>? environment]) {
+  try {
+    final env = environment ?? Platform.environment;
+    if (App.isWindows) {
+      final base = env['LOCALAPPDATA'];
+      return base == null || base.isEmpty ? null : '$base\\VeneraX';
+    }
+    if (App.isLinux) {
+      // XDG ignores a relative path.
+      final cache = env['XDG_CACHE_HOME'];
+      if (cache != null && cache.startsWith('/')) return '$cache/venerax';
+      final home = env['HOME'];
+      return home == null || home.isEmpty ? null : '$home/.cache/venerax';
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Reads the `time=` and `reason=` lines a host crash record starts with.
+OsExit? parseHostRecord(String text) {
+  int? at;
+  String? reason;
+  for (final line in const LineSplitter().convert(text)) {
+    if (line.startsWith('time=')) {
+      at = int.tryParse(line.substring(5).trim());
+    } else if (line.startsWith('reason=')) {
+      reason = line.substring(7).trim();
+    } else {
+      // The stack follows.
+      break;
+    }
+  }
+  if (reason == null || reason.isEmpty) return null;
+  return (crashed: true, description: reason, at: at);
+}
+
+/// Reads what the host left in [directory] and removes it, so that a record
+/// never speaks for a later process.
+///
+/// A crash wins over the end of the system session: the process may have
+/// crashed while the session was ending.
+({OsExit? exit, String? trace}) takeHostRecords(Directory directory) {
+  try {
+    final crash = File('${directory.path}/native_crash.txt');
+    final ended = File('${directory.path}/session_ended');
+    String? text;
+    if (crash.existsSync()) {
+      text = utf8.decode(crash.readAsBytesSync(), allowMalformed: true);
+      crash.deleteSync();
+    }
+    int? endedAt;
+    if (ended.existsSync()) {
+      endedAt = ended.lastModifiedSync().millisecondsSinceEpoch;
+      ended.deleteSync();
+    }
+    final exit = text == null ? null : parseHostRecord(text);
+    if (exit != null) return (exit: exit, trace: text);
+    if (endedAt != null) {
+      return (
+        exit: (
+          crashed: false,
+          description: 'the system session ended',
+          at: endedAt,
+        ),
+        trace: null,
+      );
+    }
+  } catch (_) {
+    // Unreadable is the same as absent.
+  }
+  return (exit: null, trace: null);
 }
 
 /// Reads what the Android host makes of `ApplicationExitInfo`.
