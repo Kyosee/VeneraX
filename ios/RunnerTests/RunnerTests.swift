@@ -104,4 +104,30 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(restored.badge, "New")
     XCTAssertEqual(restored.pageProgress, 35)
   }
+
+  func testRenamedAppGroupsResolveConsistentlyAndIgnoreUnrelatedGroups() throws {
+    let original = ReadingWidgetStore.appGroup
+    let renamed = original + ".TEAM123456"
+    let expected = directory.appendingPathComponent("renamed")
+    var queried: [String] = []
+    let groups = ["group.unrelated", original + "evil", original + ".", renamed, renamed, original]
+    let resolved = ReadingWidgetStore.resolveContainer(appGroups: groups) { group in
+      queried.append(group)
+      return group == renamed ? expected : nil
+    }
+    XCTAssertEqual(resolved, expected)
+    XCTAssertEqual(queried, [renamed])
+    XCTAssertEqual(ReadingWidgetStore.resolveContainer(appGroups: nil) { $0 == original ? expected : nil }, expected)
+    XCTAssertNil(ReadingWidgetStore.resolveContainer(appGroups: groups) { _ in nil })
+    XCTAssertTrue(try ReadingWidgetStore(container: expected).isLocked)
+  }
+
+  func testPreviewsContainOnlySyntheticItemsWithoutFilePaths() {
+    for kind in ReadingWidgetKind.allCases {
+      let preview = ReadingWidgetSnapshot.preview(kind)
+      XCTAssertFalse(preview.locked)
+      XCTAssertEqual(preview.items.count, 6)
+      XCTAssertTrue(preview.items.allSatisfy { $0.id.hasPrefix("preview-") && $0.coverPath.isEmpty && $0.type == 0 })
+    }
+  }
 }

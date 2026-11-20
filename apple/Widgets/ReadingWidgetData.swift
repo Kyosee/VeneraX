@@ -47,6 +47,15 @@ struct ReadingWidgetSnapshot: Codable {
         Self(kind: kind, locked: locked, title: "", emptyText: "", subtitle: "", items: [])
     }
 
+    static func preview(_ kind: ReadingWidgetKind) -> Self {
+        Self(kind: kind, locked: false, title: "", emptyText: "", subtitle: "", items: (1...6).map {
+            ReadingWidgetItem(id: "preview-\($0)", type: 0,
+                title: String(format: NSLocalizedString("Sample comic %d", comment: "Synthetic widget preview"), $0),
+                progress: NSLocalizedString("Chapter 2 · Page 7", comment: "Synthetic widget preview"),
+                coverPath: "", pageProgress: 35 + $0 * 5)
+        })
+    }
+
     static func decode(_ json: String) throws -> Self {
         guard let data = json.data(using: .utf8), data.count <= 256 * 1024 else {
             throw ReadingWidgetError.invalidSnapshot
@@ -73,12 +82,24 @@ final class ReadingWidgetStore {
     private let files = FileManager.default
 
     init(container: URL? = nil) throws {
-        guard let url = container ?? FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroup
+        guard let url = container ?? Self.resolveContainer(
+            appGroups: Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String],
+            lookup: { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) }
         ) else {
             throw ReadingWidgetError.containerUnavailable
         }
         self.container = url
+    }
+
+    static func resolveContainer(appGroups: [String]?, lookup: (String) -> URL?) -> URL? {
+        // Re-signers may rename the entitlement in both the host and extension.
+        let renamed = Set((appGroups ?? []).filter {
+            $0.hasPrefix(appGroup + ".") && $0.count > appGroup.count + 1
+        }).sorted()
+        for group in renamed + [appGroup] {
+            if let url = lookup(group) { return url }
+        }
+        return nil
     }
 
     var isLocked: Bool {

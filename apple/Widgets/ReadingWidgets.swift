@@ -35,13 +35,14 @@ private struct ReadingWidget: Widget {
 private struct ReadingWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: ReadingWidgetSnapshot
+    var isPreview: Bool = false
 }
 
 private struct ReadingWidgetProvider: TimelineProvider {
     let kind: ReadingWidgetKind
 
     func placeholder(in context: Context) -> ReadingWidgetEntry {
-        ReadingWidgetEntry(date: Date(), snapshot: .empty(kind))
+        ReadingWidgetEntry(date: Date(), snapshot: .preview(kind), isPreview: true)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ReadingWidgetEntry) -> Void) {
@@ -70,6 +71,7 @@ private struct ReadingWidgetView: View {
     }
 
     private var snapshot: ReadingWidgetSnapshot {
+        if entry.isPreview { return .preview(entry.snapshot.kind) }
         guard let store = try? ReadingWidgetStore(), !store.isLocked else {
             return .empty(entry.snapshot.kind)
         }
@@ -108,17 +110,30 @@ private struct ReadingWidgetView: View {
                 item(data.items[0], large: false)
                     .frame(maxHeight: .infinity, alignment: .center)
             } else if family == .systemMedium {
-                HStack(alignment: .center, spacing: 14) {
-                    ForEach(Array(data.items.prefix(2).enumerated()), id: \.offset) { _, book in
-                        bookLink(book, kind: data.kind, large: false)
+                GeometryReader { geometry in
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(data.items.prefix(3).enumerated()), id: \.offset) { _, book in
+                            Link(destination: data.kind.itemURL(book) ?? data.kind.headerURL) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ReadingWidgetCover(path: book.coverPath, preview: entry.isPreview)
+                                        .frame(height: max(24, geometry.size.height - 44))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    Text(book.title).font(.caption.weight(.semibold)).lineLimit(1)
+                                    progress(book)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.buttonStyle(.plain)
+                        }
                     }
-                }.frame(maxHeight: .infinity)
+                }
             } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(data.items.prefix(4).enumerated()), id: \.offset) { _, book in
-                        bookLink(book, kind: data.kind, large: true)
+                GeometryReader { geometry in
+                    VStack(spacing: 8) {
+                        ForEach(Array(data.items.prefix(max(1, min(6, Int((geometry.size.height + 8) / 60)))).enumerated()), id: \.offset) { _, book in
+                            bookLink(book, kind: data.kind, large: true)
+                                .frame(height: 52)
+                        }
                     }
-                }.frame(maxHeight: .infinity, alignment: .top)
+                }
             }
             if !data.subtitle.isEmpty && family != .systemSmall {
                 Text(data.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -126,7 +141,7 @@ private struct ReadingWidgetView: View {
         }
         .widgetURL(destination)
         .tint(accent)
-        .privacySensitive()
+        .privacySensitive(!entry.isPreview)
     }
 
     private func header(_ data: ReadingWidgetSnapshot) -> some View {
@@ -148,14 +163,14 @@ private struct ReadingWidgetView: View {
     private func item(_ book: ReadingWidgetItem, large: Bool) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .center, spacing: 9) {
-                ReadingWidgetCover(path: book.coverPath)
+                ReadingWidgetCover(path: book.coverPath, preview: entry.isPreview)
                     .frame(width: large ? 36 : 44, height: large ? 52 : 64)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(book.title).font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary).lineLimit(2)
-                    if let badge = book.badge, !badge.isEmpty {
+                        .foregroundStyle(.primary).lineLimit(large ? 1 : 2)
+                    if let badge = book.badge, !badge.isEmpty, !large {
                         Text(badge).font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(colorScheme == .dark ? Color.orange : Color(red: 0.60, green: 0.35, blue: 0))
                             .lineLimit(1)
@@ -198,6 +213,7 @@ private struct ReadingWidgetView: View {
 
 private struct ReadingWidgetCover: View {
     let path: String
+    var preview: Bool = false
 
     private var image: Image? {
         guard let store = try? ReadingWidgetStore(), !store.isLocked,
@@ -212,7 +228,13 @@ private struct ReadingWidgetCover: View {
     }
 
     var body: some View {
-        if let image = image {
+        if preview {
+            ZStack {
+                Color(red: 0.40, green: 0.31, blue: 0.64)
+                Image(systemName: "book.closed.fill")
+                    .font(.title2).foregroundStyle(Color(red: 0.96, green: 0.88, blue: 0.73))
+            }.accessibilityHidden(true)
+        } else if let image = image {
             image.resizable().scaledToFill()
         } else {
             ZStack {
@@ -228,7 +250,7 @@ private extension ReadingWidgetKind {
         switch self {
         case .history: return NSLocalizedString("Recent reading", comment: "Widget name")
         case .following: return NSLocalizedString("Following", comment: "Widget name")
-        case .updates: return NSLocalizedString("Comic updates", comment: "Widget name")
+        case .updates: return NSLocalizedString("Latest check", comment: "Widget name")
         case .local: return NSLocalizedString("Local comics", comment: "Widget name")
         }
     }

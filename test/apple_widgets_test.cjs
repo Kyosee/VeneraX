@@ -156,7 +156,7 @@ for (const platform of ['ios', 'macos']) {
 }
 
 test('every WidgetKit text has an English, Simplified and Traditional Chinese resource', () => {
-  const swift = read('apple/Widgets/ReadingWidgets.swift');
+  const swift = read('apple/Widgets/ReadingWidgets.swift') + read('apple/Widgets/ReadingWidgetData.swift');
   const keys = [...swift.matchAll(/NSLocalizedString\("([^"\n]+)"/g)].map(match => match[1]).sort();
   for (const locale of ['en', 'zh-Hans', 'zh-Hant']) {
     const entries = [...read(`apple/Widgets/Resources/${locale}.lproj/Localizable.strings`)
