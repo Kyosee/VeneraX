@@ -28,7 +28,7 @@ This is an experimental adaptation. The complete app can be built as x64 and ARM
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`, commit `744cbb4f08e577787774c04033cc19a9d318d0d2`, Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865, API 26 SDK |
 | SDK components | JBR, Node, ohpm, hvigor, `hdc`, and native SDK Clang, CMake and Ninja |
-| Rust | Rust 1.85.1 with `x86_64-unknown-linux-ohos` and `aarch64-unknown-linux-ohos` targets |
+| Rust | Rust 1.95 with `x86_64-unknown-linux-ohos` and `aarch64-unknown-linux-ohos` targets |
 | Runtime | Official HarmonyOS 7 / API 26 x86_64 phone emulator; ARM64 phone runtime unverified |
 | App declaration | Minimum HarmonyOS 5.0.5 / API 17, target API 26; a minimum declaration is not acceptance testing |
 | Other platforms | Existing standard Flutter environment uses 3.44.3 and stays separate from the OH SDK and project directory |
@@ -62,10 +62,10 @@ $env:FLUTTER_STORAGE_BASE_URL = 'https://flutter-ohos.obs.cn-south-1.myhuaweiclo
 & $ohFlutter --version
 & $ohFlutter doctor -v
 git --version
-rustup toolchain install 1.85.1
-rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.85.1
-rustup run 1.85.1 rustc --version
-rustup target list --installed --toolchain 1.85.1
+rustup toolchain install 1.95
+rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.95
+rustup run 1.95 rustc --version
+rustup target list --installed --toolchain 1.95
 ```
 
 These environment variables affect only the current terminal and child processes. Do not copy the OH download source or SDK paths into a standard Flutter development terminal. Recheck the upstream SDK instructions when upgrading.
@@ -284,7 +284,7 @@ Find the earliest failed stage and the concrete error in the full log; the final
 | `Flutter dependency resolution failed.` | Check the same OH SDK, network and lockfile; do not bypass it by casually updating the lockfile |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | Preparation detected rewritten package configuration; restart through the main script so resolution, preparation and registration happen in order |
 | `WebView requires official commit` or `Cannot apply the OHOS loader patch` | Check the pinned source revision and locked dependency shape; do not edit the shared cache to bypass it |
-| `Missing OHOS Rust targets` | Install both targets and confirm `rustup run 1.85.1 rustc --version` succeeds |
+| `Missing OHOS Rust targets` | Install both targets and confirm `rustup run 1.95 rustc --version` succeeds |
 | `The OHOS ONNX build requires an x64 Windows host.` | Build on Windows x64; selecting an ARM64 HAP does not make the host build ARM64-compatible |
 | ONNX/Eigen fetch, revision or source-modification failure | Check access to the official repositories and required revisions; keep only the project patch in reused checkouts |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | Inspect earlier Dart, hvigor or CMake errors and check whether a later `pub get` overwrote generated configuration |

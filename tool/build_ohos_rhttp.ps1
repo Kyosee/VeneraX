@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$NativeSdk,
-    [ValidateNotNullOrEmpty()][string]$Toolchain = '1.85.1',
+    [ValidateNotNullOrEmpty()][string]$Toolchain = '1.95',
     [ValidateRange(1, 8)][int]$Jobs = 8
 )
 

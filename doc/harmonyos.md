@@ -28,7 +28,7 @@
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`，Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865，API 26 SDK |
 | SDK 组件 | JBR、Node、ohpm、hvigor、`hdc`，以及 native SDK 中的 Clang、CMake 和 Ninja |
-| Rust | Rust 1.85.1；同时安装 `x86_64-unknown-linux-ohos` 和 `aarch64-unknown-linux-ohos` targets |
+| Rust | Rust 1.95；同时安装 `x86_64-unknown-linux-ohos` 和 `aarch64-unknown-linux-ohos` targets |
 | 运行环境 | 官方 HarmonyOS 7 / API 26 x86_64 手机模拟器；ARM64 真机运行未验证 |
 | 应用声明 | 最低 HarmonyOS 5.0.5 / API 17，目标 API 26；最低版本声明不等于最低版本验收 |
 | 其他平台 | 现有标准 Flutter 环境使用 3.44.3，与 OH SDK 及项目目录分开 |
@@ -62,10 +62,10 @@ $env:FLUTTER_STORAGE_BASE_URL = 'https://flutter-ohos.obs.cn-south-1.myhuaweiclo
 & $ohFlutter --version
 & $ohFlutter doctor -v
 git --version
-rustup toolchain install 1.85.1
-rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.85.1
-rustup run 1.85.1 rustc --version
-rustup target list --installed --toolchain 1.85.1
+rustup toolchain install 1.95
+rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain 1.95
+rustup run 1.95 rustc --version
+rustup target list --installed --toolchain 1.95
 ```
 
 这些环境变量只影响当前终端及其子进程，关闭窗口后结束；不要把 OH 下载源和 SDK 路径覆盖到标准 Flutter 开发终端。下载源来自该版本 SDK 的 README，升级 SDK 时应重新核对官方说明。
@@ -284,7 +284,7 @@ node --test test/ohos/pdf_bridge_test.cjs
 | `Flutter dependency resolution failed.` | 使用同一个 OH SDK 检查版本、网络和锁文件要求；不以随意升级锁文件绕过问题 |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | 准备脚本检测到已改写的包配置；从主构建脚本重新开始，让其按顺序解析、准备并注册 |
 | `WebView requires official commit` 或 `Cannot apply the OHOS loader patch` | 核对固定源码提交与锁定依赖；准备脚本依赖指定源码形态，不能手改共享缓存来绕过 |
-| `Missing OHOS Rust targets` | 安装两个 targets，并确认 `rustup run 1.85.1 rustc --version` 成功 |
+| `Missing OHOS Rust targets` | 安装两个 targets，并确认 `rustup run 1.95 rustc --version` 成功 |
 | `The OHOS ONNX build requires an x64 Windows host.` | 在 Windows x64 主机构建；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
 | ONNX/Eigen 下载、提交或源码修改检查失败 | 检查官方仓库访问及要求的提交；复用 checkout 时保留项目规定的补丁状态，其他修改先另存 |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | 检查前面的 Dart、hvigor 或 CMake 原始错误，以及生成配置是否被后续 `pub get` 覆盖 |

@@ -1,0 +1,2 @@
+# Cargokit's toolchain parser requires LF line endings.
+/rust-toolchain.toml text eol=lf
