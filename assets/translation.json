@@ -2026,7 +2026,12 @@
     "This run": "本次运行",
     "Report a problem": "去反馈",
     "Report copied. Paste it into the logs field.": "已复制，粘贴到 logs 栏即可",
-    "Failed to build the report": "生成诊断信息失败"
+    "Failed to build the report": "生成诊断信息失败",
+    "The app closed right after starting, more than once": "最近几次启动后都很快异常退出",
+    "Safe mode skips automatic sync, update checks and resuming unfinished tasks for this run. Your data is not changed.": "安全模式下，本次运行不会自动同步、检查更新或继续未完成的任务，不会改动你的数据。",
+    "Start in safe mode": "以安全模式启动",
+    "Start normally": "正常启动",
+    "Safe mode: automatic sync, update checks and unfinished tasks are off for this run": "安全模式：本次运行已关闭自动同步、更新检查和未完成任务的续传"
   },
   "zh_TW": {
     "Adaptive reading mode": "自適應閱讀模式",
@@ -4055,6 +4060,11 @@
     "This run": "本次執行",
     "Report a problem": "前往回報",
     "Report copied. Paste it into the logs field.": "已複製，貼到 logs 欄即可",
-    "Failed to build the report": "產生診斷資訊失敗"
+    "Failed to build the report": "產生診斷資訊失敗",
+    "The app closed right after starting, more than once": "最近幾次啟動後都很快異常結束",
+    "Safe mode skips automatic sync, update checks and resuming unfinished tasks for this run. Your data is not changed.": "安全模式下，本次執行不會自動同步、檢查更新或繼續未完成的任務，不會更動你的資料。",
+    "Start in safe mode": "以安全模式啟動",
+    "Start normally": "正常啟動",
+    "Safe mode: automatic sync, update checks and unfinished tasks are off for this run": "安全模式：本次執行已關閉自動同步、更新檢查和未完成任務的續傳"
   }
 }

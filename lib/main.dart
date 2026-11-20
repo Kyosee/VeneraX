@@ -10,6 +10,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/pages/auth_page.dart';
+import 'package:venera/pages/recovery_page.dart';
 import 'package:venera/pages/startup_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -42,6 +43,7 @@ void main(List<String> args) {
       // A debug run is stopped from the IDE all the time, which is no crash.
       if (!kDebugMode || const bool.fromEnvironment('SESSION_GUARD')) {
         await SessionGuard.start();
+        if (SessionGuard.offerRecovery) await runRecovery();
       }
       try {
         await init();

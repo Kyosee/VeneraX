@@ -11,6 +11,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/read_later.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -92,6 +93,15 @@ void main() {
       Future<void> finishUpload(int count) =>
           waitUntil(() => uploads >= count && !sync.isUploading);
       try {
+        // Safe mode holds every automatic sync back; nothing is left pending
+        // to fire once it ends.
+        SessionGuard.safeMode = true;
+        sync.requestAutoUpload();
+        await tester.pump(const Duration(seconds: 60));
+        expect(sync.hasPendingChanges, isFalse);
+        expect(uploads, 0);
+        SessionGuard.safeMode = false;
+
         sync.requestAutoUpload();
         expect(sync.hasPendingChanges, isTrue);
         for (var i = 0; i < 5; i++) {

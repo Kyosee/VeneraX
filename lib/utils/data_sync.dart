@@ -108,7 +108,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       );
       return;
     }
-    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
+    if (_automaticTasksBlocked) return;
     var result = await downloadData();
     // Startup settle (#114): pay an account the previous run left open (a
     // killed process, or an iOS session that never got a background settle).
@@ -326,7 +326,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// before the initial sync completed, or while an upload is already in
   /// flight (it carries the account).
   Future<void> settlePendingChanges() async {
-    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
+    if (_automaticTasksBlocked) return;
     if (syncMode == WebdavSyncMode.manual) return;
     if (!hasPendingChanges) return;
     if (!isConfigured) return;
@@ -349,7 +349,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   /// import, headless CLI) do not come through here — they call
   /// [uploadData] with `force: true` directly.
   void requestAutoUpload() {
-    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
+    if (_automaticTasksBlocked) return;
     if (!isConfigured) return;
     if (_isApplyingBackup) return;
     if (App.isBackgroundTask) {
@@ -400,7 +400,9 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     // point. Manual mode is deliberately absent: the user opted out of every
     // automatic upload.
     var hasOpenAccount =
-        syncMode != WebdavSyncMode.manual && hasPendingChanges;
+        syncMode != WebdavSyncMode.manual &&
+        hasPendingChanges &&
+        !SessionGuard.safeMode;
     if (hasPendingDebounce || hasOpenAccount) {
       // Flush the pending change before exit. Deliberately NOT forced: if this
       // device is behind the server, uploading would overwrite newer remote
@@ -583,6 +585,13 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
   bool get initialRestoreDeferred =>
       appdata.implicitData['webdavSetupRestorePending'] == true;
+
+  /// Nothing syncs by itself before onboarding is done, while the first
+  /// restore is put off, or in safe mode. Explicit syncs are unaffected.
+  bool get _automaticTasksBlocked =>
+      OnboardingStore.instance.blocksAutomaticTasks ||
+      initialRestoreDeferred ||
+      SessionGuard.safeMode;
 
   bool _hasCompletedInitialSync() {
     if (initialRestoreDeferred) return false;
@@ -1434,7 +1443,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
   Timer? _imageSyncTimer;
 
   void _scheduleImageSync() {
-    if (OnboardingStore.instance.blocksAutomaticTasks || initialRestoreDeferred) return;
+    if (_automaticTasksBlocked) return;
     if (!_shouldSyncImages()) return;
     _imageSyncTimer?.cancel();
     _imageSyncTimer = Timer(const Duration(seconds: 30), () {

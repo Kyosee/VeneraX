@@ -51,7 +51,8 @@ extension _FutureInit<T> on Future<T> {
 /// Critical initialization that must complete before UI renders.
 /// Only includes what's needed for theme, locale, and basic app state.
 Future<void> init({bool interactive = true}) async {
-  await App.init().wait();
+  // The recovery page has already done this when it prepared a report.
+  if (!App.isInitialized) await App.init().wait();
   // Has to happen during this launch: the next one overwrites that run's log.
   unawaited(SessionGuard.archivePreviousRun());
   // Never load shared state before the background extension has released it.
@@ -191,6 +192,8 @@ Future<void> _checkAppUpdates() async {
 }
 
 void checkUpdates() {
+  // Safe mode leaves out what the app would start by itself.
+  if (SessionGuard.safeMode) return;
   // Delay to make sure navigator context is ready for update dialogs.
   Future.delayed(const Duration(seconds: 2), _checkAppUpdates).wait();
   FollowUpdatesService.initChecker();
@@ -200,8 +203,12 @@ void checkUpdates() {
 /// Start navigation and scheduled work after setup, agreement and app unlock.
 void startInteractiveServices() {
   showAbnormalExitNotice();
-  _autoCleanHistory();
-  ReadingWidgetService.instance.start();
+  if (SessionGuard.safeMode) {
+    showSafeModeNotice();
+  } else {
+    _autoCleanHistory();
+    ReadingWidgetService.instance.start();
+  }
   if (App.isAndroid) initAndroidExtras();
   if (App.isOhos) {
     handleLinks();

@@ -15,6 +15,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/reader/reader.dart';
@@ -555,6 +556,8 @@ class LocalManager with ChangeNotifier {
   /// up to the configured parallelism. Tasks the user manually paused stay
   /// paused (wasRunning was persisted as false for them).
   void _autoResumeDownloads() {
+    // Safe mode: the queue is restored, and stays paused until the user says.
+    if (SessionGuard.safeMode) return;
     final limit = _maxParallelDownloads;
     var started = 0;
     for (final t in downloadingTasks) {

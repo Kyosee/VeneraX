@@ -35,6 +35,23 @@ void showAbnormalExitNotice() {
   });
 }
 
+/// Says why this run is quieter than usual, so that a sync that does not
+/// happen is not taken for a new fault.
+void showSafeModeNotice() {
+  Future.delayed(const Duration(seconds: 2), () {
+    final context = App.rootNavigatorKey.currentContext;
+    if (context == null) return;
+    showToast(
+      context: context,
+      message:
+          'Safe mode: automatic sync, update checks and unfinished tasks '
+                  'are off for this run'
+              .tl,
+      seconds: 8,
+    );
+  });
+}
+
 /// The redacted report for an abnormal exit or for the current run, shown in
 /// full before the user copies, saves or posts it.
 ///
