@@ -16,20 +16,31 @@ Open the repository's **Settings → Secrets and variables → Actions**.
 
 | 位置 / Location | 名称 / Name | 内容 / Value |
 | --- | --- | --- |
-| Secrets | `ISSUE_AI_API_URL` | 完整 HTTPS Chat Completions 地址，例如 `https://api.example.com/v1/chat/completions` / Full HTTPS endpoint, including `/chat/completions` |
+| Secrets | `ISSUE_AI_API_URL` | 完整 HTTPS 地址，以 `/chat/completions` 或 `/responses` 结尾 / Full HTTPS Chat Completions or Responses endpoint |
 | Secrets | `ISSUE_AI_API_KEY` | 模型服务的 API Key，不带 `Bearer ` / Provider API key, without `Bearer ` |
 | Variables | `ISSUE_AI_MODEL` | 服务商实际支持的模型 ID / Exact model ID offered by the provider |
 | Variables | `ISSUE_AI_ENABLED` | `true` 启用；`false` 或留空仅运行固定规则 / `true` enables AI; otherwise only fixed rules run |
 
-接口需兼容 Chat Completions：支持 `model`、`messages`、`max_tokens`、非流式响应，
-返回 `choices[0].message.content`。选择能遵循 JSON 输出要求的文本模型即可。
-不支持只有 Responses、Anthropic Messages 或其他原生协议的地址；必须使用该服务
-提供的兼容端点。填 Key 后不会立即调用，也不会扫描历史 Issue；新建的 Issue 才自动受理。
+按地址自动选择协议，无需额外开关。填写服务商支持的完整端点，不能只填域名或 `/v1`。
+两种方式均使用同一份提示词与安全校验，要求模型返回 JSON，且使用非流式响应。
 
-The endpoint must support Chat Completions with `model`, `messages`, `max_tokens`
-and non-streaming `choices[0].message.content`. Use a text model that follows JSON
-instructions. Responses-only, Anthropic Messages and other native protocols need
-a compatible endpoint. Adding a key does not call the model or backfill old Issues.
+The URL selects the protocol automatically; no extra setting is needed. Supply the
+provider's full endpoint, not just a host or `/v1`. Both protocols share the prompt
+and output validation and require a non-streaming JSON answer from the model.
+
+| 协议 / Protocol | 地址示例 / Example URL | 请求与返回 / Request and response |
+| --- | --- | --- |
+| Chat Completions | `https://api.example.com/v1/chat/completions` | `messages`、`max_tokens` → `choices[0].message.content` |
+| Responses | `https://api.example.com/v1/responses` | `input`、`max_output_tokens`、`store: false` → `output` 中已完成的 assistant `output_text` / Completed assistant text in `output` |
+
+仅处理最终文本，不执行模型工具调用；未完成、拒答或格式无效时回退固定规则。
+不自动切换另一端点重试。Anthropic Messages 等其他原生协议仍需兼容端点。
+填 Key 后不会立即调用，也不会扫描历史 Issue；新建的 Issue 才自动受理。
+
+Only final text is used; model tool calls are never executed. Incomplete, refused
+or invalid output falls back to fixed rules without retrying another endpoint.
+Other native protocols, such as Anthropic Messages, need a compatible endpoint.
+Adding a key does not call the model or backfill old Issues.
 
 基础标签与评论使用 Actions 自动提供的 `GITHUB_TOKEN`，无需额外 PAT。
 启用仓库 Actions 即可；组织限制写权限时，由管理员允许此工作流的 `issues: write`。
@@ -75,7 +86,8 @@ The initial version does not analyze the full codebase or automatically decide d
 
 - 默认每单最多 2 次模型调用：初答及作者补充后的复查；固定缺项清楚时先不用 AI。
   最多 700 输出 token，25 秒超时；文档片段合计不超过 3,000 字符、协议片段
-  1,300 字符、正文 3,500 字符、补充 1,200 字符。字符上限不是精确 token 或费用承诺。
+  1,300 字符、正文 3,500 字符、补充 1,200 字符。Responses 的输出上限包含推理 token，
+  宜选适合简短回答的模型。字符上限不是精确 token 或费用承诺。
 - 提供商仍可能对失败请求计费。请在服务商后台设置额度；关闭 `ISSUE_AI_ENABLED`
   可立即阻止后续 AI 调用，保留基本受理。Actions 和模型服务各按自己的规则计费。
 - 维护者回复、指派或更改受管理标签后，停止自动追问及覆盖分类。
@@ -86,7 +98,8 @@ The initial version does not analyze the full codebase or automatically decide d
 
 - At most two model calls per Issue by default: initial response and one follow-up.
   Clear required-field gaps are handled without AI. Responses have a 700-token cap
-  and 25-second timeout; context has the character limits listed above.
+  and 25-second timeout; context has the character limits listed above. The Responses
+  cap includes reasoning tokens, so choose a model suited to concise answers.
 - Providers may charge failed requests. Set a provider-side budget. Disabling
   `ISSUE_AI_ENABLED` stops future AI calls while preserving intake. Actions and the
   model provider apply their own billing rules.
@@ -106,12 +119,16 @@ node --test .github/scripts/issue-triage.test.mjs
 **Issue triage** 运行记录。失败日志仅记录固定错误类别或 HTTP 状态，不输出模型响应、Issue 原文或凭据。
 `Invalid API URL` 表示地址格式不符；`AI HTTP 401/403` 检查 Key 与权限，
 `AI HTTP 404` 检查接口路径与模型，`AI HTTP 429` 检查服务商额度/限流；
-`Invalid AI JSON/content/result` 表示返回内容不符合协议或安全校验。修正配置后，有写权限的维护者可在原单评论 `/triage retry` 验证。
+`Invalid AI JSON/content/result` 表示返回内容不符合协议或安全校验；`AI response incomplete`
+表示模型未完成输出（可能达到 token 上限），可检查服务商状态或改用适合简短回答的模型。
+修正配置后，有写权限的维护者可在原单评论 `/triage retry` 验证。
 
 Tests mock GitHub and model requests without using a paid API. After deployment,
 inspect the **Issue triage** Actions runs. Failures log only fixed error categories
 or HTTP status codes, without provider responses, Issue text or credentials.
 Check the endpoint format for `Invalid API URL`, credentials/permissions for
 HTTP 401/403, path/model for 404, and provider quota/rate limits for 429. Invalid
-AI JSON/content/result means protocol or output validation failed. After fixing
-configuration, a repository writer can comment `/triage retry` on the same Issue.
+AI JSON/content/result means protocol or output validation failed. `AI response incomplete`
+means generation did not finish, possibly due to the token cap; check the provider
+status or use a model suited to concise answers. After fixing configuration, a
+repository writer can comment `/triage retry` on the same Issue.
