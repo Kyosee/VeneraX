@@ -381,18 +381,21 @@ export async function run({ github, context, env = process.env, root = ROOT, fet
     return value;
   };
   const before = await unchanged();
-  if (!before) return;
+  if (!before) { console.log('AI triage skipped: Issue changed before the request.'); return; }
   try {
     const documents = await knowledge(report, [issue.title, ...Object.values(report.fields), ...recent.map(c => c.body)].join('\n'), `${context.repo.owner}/${context.repo.repo}`, context.sha, root);
     const prompt = await readFile(resolve(root, '.github/issue-triage-prompt.md'), 'utf8');
     const ai = await askModel({ env, prompt, report, title: issue.title, body: issue.body, comments: supplements.slice(-3), context: documents, followup: state.responded, fetchImpl });
     const after = await unchanged();
-    if (!after || after.updated_at !== before.updated_at) return;
+    // Bot comment writes can update the timestamp later; compare actual labels instead.
+    if (!after || JSON.stringify(names(after).sort()) !== JSON.stringify(names(before).sort())) {
+      console.log('AI triage skipped: Issue changed during the request.'); return;
+    }
     issue = after;
     if (ai.questions.length && !state.responded && !queueOverridden) {
       await syncLabels(github, target, issue, state, [...desired.filter(n => n !== READY && n !== WAITING), WAITING]);
     }
-    if (!await unchanged()) return;
+    if (!await unchanged()) { console.log('AI triage skipped: Issue changed before publishing.'); return; }
     state.ai = ai;
     state.references = documents.documents.filter(d => ai.sources.includes(d.id)).map(({ id, url }) => ({ id, url }));
     await publish(render(report, state, ai, documents.documents));

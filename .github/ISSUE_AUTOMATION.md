@@ -121,6 +121,7 @@ node --test .github/scripts/issue-triage.test.mjs
 `AI HTTP 404` 检查接口路径与模型，`AI HTTP 429` 检查服务商额度/限流；
 `Invalid AI JSON/content/result` 表示返回内容不符合协议或安全校验；`AI response incomplete`
 表示模型未完成输出（可能达到 token 上限），可检查服务商状态或改用适合简短回答的模型。
+`AI triage skipped` 表示处理期间反馈发生变化，已丢弃过时分析；日志会注明发生阶段。
 修正配置后，有写权限的维护者可在原单评论 `/triage retry` 验证。
 
 Tests mock GitHub and model requests without using a paid API. After deployment,
@@ -130,5 +131,6 @@ Check the endpoint format for `Invalid API URL`, credentials/permissions for
 HTTP 401/403, path/model for 404, and provider quota/rate limits for 429. Invalid
 AI JSON/content/result means protocol or output validation failed. `AI response incomplete`
 means generation did not finish, possibly due to the token cap; check the provider
-status or use a model suited to concise answers. After fixing configuration, a
+status or use a model suited to concise answers. `AI triage skipped` identifies the
+stage where Issue changes caused stale analysis to be discarded. After fixing configuration, a
 repository writer can comment `/triage retry` on the same Issue.

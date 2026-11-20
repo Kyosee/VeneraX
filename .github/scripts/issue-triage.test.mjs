@@ -253,6 +253,25 @@ test('stale model output is abandoned when a human changes the Issue during the 
   assert.doesNotMatch(f.comments[0].body, /AI 辅助/);
 });
 
+test('a bot-only Issue timestamp update does not discard a valid AI reply', async () => {
+  const f = fixture();
+  await f.go(ENV, async () => {
+    f.touch();
+    return Response.json({ choices: [{ message: { content: JSON.stringify(answer) } }] });
+  });
+  assert.match(f.comments[0].body, /AI 辅助/);
+});
+
+test('label changes during a request discard AI output even before timeline events appear', async () => {
+  const f = fixture();
+  await f.go(ENV, async () => {
+    f.issue.labels.push('in progress');
+    return Response.json({ choices: [{ message: { content: JSON.stringify(answer) } }] });
+  });
+  assert.doesNotMatch(f.comments[0].body, /AI 辅助/);
+  assert.ok(f.issue.labels.includes('in progress'));
+});
+
 test('knowledge is bounded, relevant and cites actual inspected files', async () => {
   const p = parseReport(body());
   const ctx = await knowledge(p, '漫画缓存目录 空间 迁移', 'Kyosee/VeneraX', 'a'.repeat(40));
