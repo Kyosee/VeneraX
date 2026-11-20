@@ -363,6 +363,8 @@ opens this library, while other platforms retain their existing initialization.
 `f217402897f40ebba457e2421bc0a4702771968e`, with Eigen's pinned commit
 `1d8b82b0740839c0de7f1242a3585e3390ff5f33` from its official GitLab repository.
 The initial build fetches these Git sources into `.dart_tool/ohos/sources`.
+If Microsoft's repository is unavailable, ONNX is fetched from Intel's fork at
+the same pinned commit. This fallback does not use Intel-specific changes or binaries.
 Existing checkouts can be supplied using `-OnnxSource` and `-EigenSource` on the
 main build script. Modified sources other than `tool/ohos/onnxruntime.patch` are
 rejected. The patch handles missing pthread affinity and compiler feature

@@ -330,6 +330,6 @@ QuickJS、ZIP、7z 和 PNG 使用锁定依赖中已有的源码。`prepare_ohos.
 
 `build_ohos_rhttp.ps1` 使用 Cargo 的 `--locked` 参数及官方 SDK 的 Clang，将锁定的 rhttp 包内 Rust 源码编译为两个 OHOS 目标。HTTP/3 保持启用。生成的库仅复制到 `ohos/entry/libs`，不修改共享 Pub 缓存或 Cargo.lock。OHOS 加载器会显式打开此库，其他平台保持原有初始化流程。
 
-`build_ohos_onnx.ps1` 使用微软提交 `f217402897f40ebba457e2421bc0a4702771968e` 构建 ONNX Runtime 1.22.0，并使用 Eigen 官方 GitLab 仓库锁定的提交 `1d8b82b0740839c0de7f1242a3585e3390ff5f33`。首次构建会将这些 Git 源码获取到 `.dart_tool/ohos/sources`。可以在主构建脚本中通过 `-OnnxSource` 和 `-EigenSource` 提供现有检出目录。除 `tool/ohos/onnxruntime.patch` 外的源码修改会被拒绝。该补丁处理缺失的 pthread 亲和性及编译器特性声明；CPUINFO 被禁用，完整 CPU 算子集保持启用。上游依赖下载检查和 TLS 验证保持启用。相关库及其许可证说明仅打包到 OHOS 目标中。
+`build_ohos_onnx.ps1` 使用微软提交 `f217402897f40ebba457e2421bc0a4702771968e` 构建 ONNX Runtime 1.22.0，并使用 Eigen 官方 GitLab 仓库锁定的提交 `1d8b82b0740839c0de7f1242a3585e3390ff5f33`。首次构建会将这些 Git 源码获取到 `.dart_tool/ohos/sources`。微软仓库不可用时，从 Intel 的 fork 获取同一个固定提交，不使用 Intel 后续改动或预编译库。可以在主构建脚本中通过 `-OnnxSource` 和 `-EigenSource` 提供现有检出目录。除 `tool/ohos/onnxruntime.patch` 外的源码修改会被拒绝。该补丁处理缺失的 pthread 亲和性及编译器特性声明；CPUINFO 被禁用，完整 CPU 算子集保持启用。上游依赖下载检查和 TLS 验证保持启用。相关库及其许可证说明仅打包到 OHOS 目标中。
 
 脚本严格使用 `pubspec.lock`，仅修改进程环境变量，并在结束后恢复。每次 `pub get` 后都需要运行准备步骤；构建脚本会依次执行这两步。上游 Dart 原生钩子目前会将 OHOS 识别为 Linux；实验性构建会禁用这些代码资源，改用鸿蒙工具链构建支持的库。PDF 在支持的设备上使用官方系统 Kit，不使用 Linux PDFium 二进制库。不得通过关闭 TLS 验证、应用锁检查或签名要求来绕过缺失的平台实现。
