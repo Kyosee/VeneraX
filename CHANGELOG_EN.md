@@ -4,6 +4,56 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v3.0.1](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.1) - 2026-11-20
+
+### Added
+
+- Android can now schedule update checks in the background without opening the app; timing depends on the system's background restrictions. (#359)
+- Android and Windows now support smaller downloads for future updates when a matching incremental package is available. Updating from 3.0.0 to this version still requires a full package.
+- Re-translate an individual page while reading without re-translating the entire chapter. (#174)
+- Comic exports can now include translation data so saved translations can be used on another device.
+- The Tasks page now shows the download queue, including the current comic, progress and speed, with a shortcut to download management.
+- Manually importing a full app backup can restore WebDAV account details, followed folders and translation performance settings that have not been configured on this device. Sync backups continue to keep these settings separate on each device. (#349)
+- After an abnormal exit, preview, copy, save or share a diagnostic report to help report crashes and freezes. The report automatically masks recognized sensitive information, such as URLs, email addresses, WebDAV account details, passwords, cookies, access tokens, API keys, comic source names and personal details in file paths.
+- Repeated launch failures now open a recovery screen with options to start in safe mode, view a diagnostic report or try a normal launch.
+
+### Changed
+
+- Pre-translation and the translation library now share a chapter management page with search, status filters, progress and batch actions to start, pause, resume, cancel, re-translate or delete translations.
+- Translation chapters show known page totals and let you fetch missing totals. Page counts are retained when the corresponding translations are synced, imported or exported.
+- Local comics on the home page now follow the sort order selected in the local library. (#351)
+- Reading statistics now remember the last selected tab. (#350)
+- Download completion notifications on Android and HarmonyOS now open the local library so finished comics are easier to find.
+- Saved favorite images now show their chapter and can be viewed one chapter at a time. (#349)
+- Smoother local comic reading with two-page layouts, wide-page splitting and rapid page turns, with less stuttering during sync and home-screen widget updates. (#352, #355)
+- WebDAV real-time sync now groups reading progress from consecutive page turns into one upload. It tries to sync after about 15 seconds without further changes, or about 30 seconds after the first unsynced change if page turns continue. Leaving the reader saves the latest progress and attempts to sync it, reducing stuttering and data usage from frequent backup uploads.
+
+### Fixed
+
+- Fixed temporary image stretching, layout jumps and unstable reading positions when rotating the device. (#349)
+- Fixed tapping the page edge failing to open the previous chapter from the first page or the next chapter from the last page. (#349)
+- Fixed per-comic reading settings saved for the same local comic on another device not taking effect. Enabled settings on the current device still take priority. (#353)
+- Fixed unfinished pre-translation tasks losing their paused state or being unavailable to resume after restarting the app. (#189)
+- Fixed pages with incomplete translation replies being treated as finished. Missing translations can now be retried. (#155)
+- Fixed update checks and pre-translation being interrupted too soon after switching HarmonyOS to the background. (#349)
+- Fixed an earlier check causing a scheduled check at the configured daily time to be skipped. (#349)
+- Fixed long stalls when opening or returning to the app, or entering from a home-screen widget, while local comic folders were being read. (#349)
+- Fixed home-screen update widgets confusing unread comic counts with the results of the last check. (#349)
+- Fixed HarmonyOS home-screen widgets failing to show updated page numbers, chapters or covers. (#349)
+- Fixed repeated entries from widgets, launcher shortcuts or notifications stacking duplicate pages, and update-check shortcuts opening an incomplete version of the page. (#349)
+- Fixed image favorites failing after chapters were inserted, reordered or replaced. A prompt lets you view or manage images saved from an older chapter version. (#349)
+- Fixed Windows in-app updates potentially leaving an incomplete installation when files were locked.
+- Fixed card sizes and button positions jumping when switching modes in the random comic draw dialog. (#354)
+- Fixed the HarmonyOS startup icon shrinking unexpectedly and losing its rounded corners. (#349)
+- Fixed iOS home-screen widgets potentially failing to read app data after the app was re-signed. (#349)
+- Fixed network error logs including response cookies, reducing the risk of exposing login information in exported logs.
+
+### Removed
+
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v3.0.0...v3.0.1
+
 ## [v3.0.0](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.0) - 2026-11-15
 
 ### Added
