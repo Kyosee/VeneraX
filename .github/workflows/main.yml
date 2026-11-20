@@ -610,11 +610,6 @@ jobs:
             > "$RUNNER_TEMP/remote-assets.txt"
           diff -u "$RUNNER_TEMP/local-assets.txt" "$RUNNER_TEMP/remote-assets.txt"
 
-          # Labels clarify internal assets without changing manifest references.
-          while IFS=$'\t' read -r asset_id name; do
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-              -f "label=自动更新专用（无需手动下载） / Auto-update only — $name" > /dev/null
-          done < <(jq -r '.assets[] | select(.name == "update-manifest.json" or (.name | endswith(".patch"))) | [.id, .name] | @tsv' "$release_json")
           echo "release_id=$(jq -r '.id' "$release_json")" >> "$GITHUB_OUTPUT"
 
       - name: Publish verified release

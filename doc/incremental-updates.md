@@ -16,9 +16,9 @@ service or Flutter engine modification is required.
   changed files are either BSDIFF40 or complete files. The client verifies every
   result, creates a temporary complete ZIP and uses the existing Windows updater.
 
-Release pages list full installation packages first in a download table. Internal
-update assets have an auto-update-only label. New patch names use the `update-`
-prefix to sort after full packages by filename; v3.0.1 keeps its original names.
+Release pages list full installation packages first in a download table, with a
+notice explaining that patches cannot be installed manually. Patch names use the
+`update-` prefix to sort after full packages by filename.
 Clients resolve patches by the exact `patchAsset` name in the manifest.
 
 The release workflow considers the two most recent releases in the same channel
