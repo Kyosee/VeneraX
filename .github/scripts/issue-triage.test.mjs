@@ -290,3 +290,122 @@ test('failure diagnostics identify actionable causes without exposing error deta
   assert.match(logs[0], /AI HTTP 429/);
   assert.doesNotMatch(logs[0], /private provider diagnostic|test-only-provider-key/);
 });
+
+test('both protocols send the same bounded context and publish a cited answer', async () => {
+  const value = { ...answer, questions: [], answer: '请先核对项目指南中的说明。', sources: ['D1'] };
+  const text = JSON.stringify(value);
+  let expectedMessages;
+  for (const endpoint of ['chat/completions', 'responses']) {
+    for (const slash of ['', '/']) {
+      const f = fixture();
+      await f.go({ ...ENV, ISSUE_AI_API_URL: `https://api.example.com/custom/v1/${endpoint}${slash}` }, async (url, options) => {
+        assert.equal(url, `https://api.example.com/custom/v1/${endpoint}`);
+        assert.equal(options.method, 'POST'); assert.equal(options.redirect, 'error');
+        assert.equal(options.headers.Authorization, `Bearer ${ENV.ISSUE_AI_API_KEY}`);
+        assert.ok(options.signal instanceof AbortSignal);
+        const request = JSON.parse(options.body);
+        assert.equal(request.model, ENV.ISSUE_AI_MODEL); assert.equal(request.stream, false);
+        assert.equal(request.tools, undefined); assert.ok(!options.body.includes(ENV.ISSUE_AI_API_KEY));
+        const messages = request.messages ?? request.input;
+        expectedMessages ??= messages;
+        assert.deepEqual(messages, expectedMessages);
+        assert.equal(messages[0].role, 'system'); assert.match(messages[0].content, /Current agreement excerpt/);
+        assert.equal(messages[1].role, 'user');
+        assert.ok(JSON.parse(messages[1].content).documents.length > 0);
+        if (endpoint === 'chat/completions') {
+          assert.equal(request.max_tokens, 700); assert.equal(request.input, undefined);
+          assert.equal(request.max_output_tokens, undefined);
+          return Response.json({ choices: [{ finish_reason: 'stop', message: { content: text } }] });
+        }
+        assert.equal(request.max_output_tokens, 700); assert.equal(request.store, false);
+        assert.equal(request.messages, undefined); assert.equal(request.max_tokens, undefined);
+        return Response.json({ status: 'completed', output: [
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Private reasoning' }] },
+          { type: 'function_call', name: 'unrequested_tool', arguments: 'Never execute this' },
+          { type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'Intermediate commentary' }] },
+          { type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [
+            { type: 'output_text', text: text.slice(0, 20) }, { type: 'output_text', text: text.slice(20) },
+          ] },
+        ] });
+      });
+      assert.match(f.comments[0].body, /AI 辅助/);
+      assert.match(f.comments[0].body, /参考当前项目文档/);
+      assert.equal(managedComment(f.comments).state.ai.answer, value.answer);
+      assert.doesNotMatch(f.comments[0].body, /Private reasoning|Never execute this|Intermediate commentary/);
+      assert.ok(f.issue.labels.includes(READY)); assert.equal(f.issue.state, 'open');
+    }
+  }
+});
+
+test('Responses follow-up shares the call budget and updates one bot comment', async () => {
+  const f = fixture();
+  let calls = 0;
+  const response = async () => {
+    calls++;
+    return Response.json({ status: 'completed', output: [{
+      type: 'message', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: JSON.stringify(answer) }],
+    }] });
+  };
+  const env = { ...ENV, ISSUE_AI_API_URL: 'https://api.example.com/v1/responses' };
+  await f.go(env, response); assert.ok(f.issue.labels.includes(WAITING));
+  f.reply('每次都会'); await f.go(env, response);
+  assert.ok(f.issue.labels.includes(READY)); assert.ok(!f.issue.labels.includes(WAITING));
+  assert.deepEqual(managedComment(f.comments).state.ai.questions, []);
+  f.reply('还有补充'); await f.go(env, response);
+  assert.equal(calls, 2); assert.equal(f.comments.filter(c => c.user.type === 'Bot').length, 1);
+});
+
+test('Responses rejects incomplete, refused, non-text and invalid outputs', async () => {
+  const message = { type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(answer) }] };
+  const complete = { status: 'completed', output: [message] };
+  const args = { env: { ...ENV, ISSUE_AI_API_URL: 'https://api.example.com/v1/responses' },
+    prompt: 'Return JSON.', report: parseReport(body()), title: 'Test', body: body(), comments: [], context: { policy: '', documents: [] } };
+  for (const status of ['incomplete', 'failed', 'cancelled', 'queued', 'in_progress', undefined]) {
+    await assert.rejects(askModel({ ...args, fetchImpl: async () => Response.json({ ...complete, status }) }), /AI response incomplete/);
+  }
+  for (const data of [null, [], { status: 'completed' }, { ...complete, output: [] },
+    { ...complete, output: [{ type: 'function_call', arguments: JSON.stringify(answer) }] },
+    { ...complete, output: [{ ...message, status: 'incomplete' }] },
+    { ...complete, output: [{ ...message, phase: 'commentary' }] },
+    { ...complete, output: [{ ...message, phase: 'unknown' }] },
+    { ...complete, output: [{ ...message, role: 'user' }] },
+    { ...complete, output: [{ ...message, content: [{ type: 'refusal', refusal: 'Cannot answer' }] }] },
+    { ...complete, output: [{ ...message, content: [{ type: 'output_text', text: 42 }] }] },
+    { ...complete, output: [{ ...message, content: {} }] },
+  ]) {
+    await assert.rejects(askModel({ ...args, fetchImpl: async () => Response.json(data) }), /Invalid AI content/);
+  }
+  await assert.rejects(askModel({ ...args, fetchImpl: async () => Response.json({ ...complete, output: [{ ...message,
+    content: [{ type: 'output_text', text: JSON.stringify({ ...answer, sources: ['D9'] }) }],
+  }] }) }), /Invalid AI result/);
+  for (const endpoint of ['chat/completions', 'responses']) {
+    for (const suffix of ['?api_key=private', '#private']) {
+      await assert.rejects(askModel({ env: { ...ENV, ISSUE_AI_API_URL: `https://api.example.com/v1/${endpoint}${suffix}` } }), /Invalid API URL/);
+    }
+  }
+  for (const url of ['https://api.example.com/v1', 'https://api.example.com/v1/response', 'https://user:private@api.example.com/v1/responses']) {
+    await assert.rejects(askModel({ env: { ...ENV, ISSUE_AI_API_URL: url } }), /Invalid API URL/);
+  }
+});
+
+test('both protocols safely fall back on incomplete or refused output without exposing provider details', async t => {
+  const logs = [];
+  t.mock.method(console, 'log', message => logs.push(message));
+  const message = { content: JSON.stringify(answer) };
+  const cases = [
+    ['responses', { status: 'incomplete', incomplete_details: { reason: 'private provider detail' }, output: [] }, 'AI response incomplete'],
+    ['chat/completions', { choices: [{ finish_reason: 'length', message }] }, 'AI response incomplete'],
+    ['chat/completions', { choices: [{ finish_reason: null, message }] }, 'AI response incomplete'],
+    ['chat/completions', { choices: [{ finish_reason: 'stop', message: { ...message, refusal: 'private provider detail' } }] }, 'Invalid AI content'],
+  ];
+  for (const [endpoint, data] of cases) {
+    const f = fixture();
+    await f.go({ ...ENV, ISSUE_AI_API_URL: `https://api.example.com/v1/${endpoint}` }, async () => Response.json(data));
+    assert.ok(f.issue.labels.includes(READY)); assert.equal(f.comments.length, 1);
+    assert.doesNotMatch(f.comments[0].body, /AI 辅助|private provider detail/);
+  }
+  assert.equal(logs.length, cases.length);
+  assert.ok(logs.every((log, i) => log.includes(cases[i][2])));
+  assert.ok(logs.every(log => !/private provider detail|test-only-provider-key/.test(log)));
+});

@@ -157,25 +157,45 @@ export function validateAnswer(value, docs) {
 
 export async function askModel({ env, prompt, report, title, body, comments, context, followup, fetchImpl = fetch }) {
   const url = new URL(env.ISSUE_AI_API_URL);
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.pathname.endsWith('/chat/completions')) throw new Error('Invalid API URL');
+  const protocol = url.pathname.match(/\/(chat\/completions|responses)\/?$/)?.[1];
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !protocol) throw new Error('Invalid API URL');
+  url.pathname = url.pathname.replace(/\/$/, '');
+  const responses = protocol === 'responses';
+  const messages = [
+    { role: 'system', content: `${prompt}\n\nCurrent agreement excerpt:\n${context.policy}` },
+    { role: 'user', content: JSON.stringify({ type: report.type, language: report.zh ? 'zh' : 'en', followup,
+      title: clean(title).slice(0, 200), report: clean(body).slice(0, 3500),
+      supplements: comments.map(c => clean(c.body)).join('\n').slice(-1200),
+      documents: context.documents.map(({ id, text }) => ({ id, text })) }) },
+  ];
   const response = await fetchImpl(url.href, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(25000),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.ISSUE_AI_API_KEY}` },
-    body: JSON.stringify({ model: env.ISSUE_AI_MODEL, max_tokens: 700, stream: false,
-      messages: [
-        { role: 'system', content: `${prompt}\n\nCurrent agreement excerpt:\n${context.policy}` },
-        { role: 'user', content: JSON.stringify({ type: report.type, language: report.zh ? 'zh' : 'en', followup,
-          title: clean(title).slice(0, 200), report: clean(body).slice(0, 3500),
-          supplements: comments.map(c => clean(c.body)).join('\n').slice(-1200),
-          documents: context.documents.map(({ id, text }) => ({ id, text })) }) },
-      ],
+    body: JSON.stringify({ model: env.ISSUE_AI_MODEL, stream: false,
+      ...(responses ? { input: messages, max_output_tokens: 700, store: false } : { messages, max_tokens: 700 }),
     }),
   });
   if (!response.ok) throw new Error(`AI HTTP ${response.status}`);
   const raw = await response.text();
   if (raw.length > 32000) throw new Error('AI result too large');
   const data = JSON.parse(raw);
-  const content = data.choices?.[0]?.message?.content;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid AI content');
+  let content;
+  if (responses) {
+    if (data.status !== 'completed') throw new Error('AI response incomplete');
+    if (!Array.isArray(data.output)) throw new Error('Invalid AI content');
+    // Reasoning and tool items are not user-facing answers and are never executed.
+    const output = data.output.filter(item => item?.type === 'message' && (item.phase == null || item.phase === 'final_answer'));
+    if (!output.length || output.some(item => item.role !== 'assistant' || item.status !== 'completed' ||
+        !Array.isArray(item.content) || !item.content.length ||
+        item.content.some(part => part?.type !== 'output_text' || typeof part.text !== 'string'))) throw new Error('Invalid AI content');
+    content = output.flatMap(item => item.content).map(part => part.text).join('');
+  } else {
+    const choice = data.choices?.[0];
+    if (choice?.finish_reason !== undefined && choice.finish_reason !== 'stop') throw new Error('AI response incomplete');
+    if (choice?.message?.refusal) throw new Error('Invalid AI content');
+    content = choice?.message?.content;
+  }
   if (typeof content !== 'string') throw new Error('Invalid AI content');
   const answer = validateAnswer(JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, '').trim()), context.documents);
   // Optional evidence must not become a blocking requirement through AI wording.
@@ -187,7 +207,7 @@ export async function askModel({ env, prompt, report, title, body, comments, con
 export function failureReason(error) {
   const message = error?.message ?? '';
   if (/^AI HTTP [45]\d{2}$/.test(message)) return message;
-  if (['Invalid API URL', 'Invalid AI result', 'AI result too large', 'Invalid AI content'].includes(message)) return message;
+  if (['Invalid API URL', 'Invalid AI result', 'AI result too large', 'Invalid AI content', 'AI response incomplete'].includes(message)) return message;
   if (error?.code === 'ERR_INVALID_URL') return 'Invalid API URL';
   if (['TimeoutError', 'AbortError'].includes(error?.name)) return 'AI request timed out';
   if (error?.name === 'SyntaxError') return 'Invalid AI JSON';
