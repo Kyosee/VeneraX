@@ -386,7 +386,7 @@ jobs:
           node-version: '22'
       - name: Cache official HarmonyOS tool archive
         id: ohos_tools
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
           key: harmonyos-cli-linux-x64-26.0.0.865
@@ -410,10 +410,17 @@ jobs:
           echo "NODE_HOME=$(dirname "$(command -v node)")" >> "$GITHUB_ENV"
           git init "$FLUTTER_OHOS_SDK"
           git -C "$FLUTTER_OHOS_SDK" remote add origin https://gitcode.com/CPF-Flutter/flutter_flutter.git
-          git -C "$FLUTTER_OHOS_SDK" fetch --depth 1 origin 744cbb4f08e577787774c04033cc19a9d318d0d2
-          git -C "$FLUTTER_OHOS_SDK" checkout --detach FETCH_HEAD
+          # Flutter derives its SDK version from the upstream release tag.
+          git -C "$FLUTTER_OHOS_SDK" fetch --depth 1 origin tag 3.44.9+ohos-1.0.0-beta
+          git -C "$FLUTTER_OHOS_SDK" checkout --detach 744cbb4f08e577787774c04033cc19a9d318d0d2
           rustup toolchain install 1.95 --profile minimal
           rustup target add --toolchain 1.95 x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos
+      - name: Save official HarmonyOS tool archive
+        if: steps.ohos_tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/commandline-tools-linux.zip
+          key: harmonyos-cli-linux-x64-26.0.0.865
       - name: Check HarmonyOS native bridges
         run: node --test test/ohos/*.cjs
       - name: Build HarmonyOS release packages
