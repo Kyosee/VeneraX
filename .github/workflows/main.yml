@@ -397,7 +397,10 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DEVECO_URL" || { echo "DEVECO_COMMAND_LINE_TOOLS_URL is missing"; exit 1; }
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/commandline-tools-linux.zip" "$DEVECO_URL"
+          # Secret values pasted or piped from Windows may include a line ending.
+          download_url=$(printf '%s' "$DEVECO_URL" | tr -d '\r\n')
+          echo "::add-mask::$download_url"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/commandline-tools-linux.zip" "$download_url"
       - name: Install HarmonyOS toolchains
         run: |
           set -euo pipefail
