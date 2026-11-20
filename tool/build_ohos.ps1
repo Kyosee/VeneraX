@@ -5,6 +5,7 @@ param(
     [string]$Target = 'lib/main.dart',
     [ValidateSet('debug', 'profile', 'release')][string]$BuildMode = 'debug',
     [switch]$CodeSign,
+    [switch]$UsePreparedNativeLibraries,
     [string]$OnnxSource,
     [string]$EigenSource,
     [string]$WebViewSource
@@ -55,8 +56,10 @@ try {
     $sdkPackages = Join-Path $FlutterSdk 'packages/flutter_tools/.dart_tool/package_config.json'
     & $dart "--packages=$sdkPackages" .dart_tool/ohos/refresh_plugins.dart $FlutterSdk
     if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS plugin registration failed.' }
-    & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
-    & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
+    if (-not $UsePreparedNativeLibraries) {
+        & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native')
+        & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -SourceRoot $OnnxSource -EigenRoot $EigenSource
+    }
     $buildArguments = @('build', 'hap', "--$BuildMode", '--target-platform', $TargetPlatform, '--no-pub', '-t', $Target)
     if (-not $CodeSign) { $buildArguments += '--no-codesign' }
     & $flutter @buildArguments

@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit,
     [Parameter(Mandatory = $true)][string]$FlutterSdk,
     [Parameter(Mandatory = $true)][string]$DevEcoStudio,
-    [Parameter(Mandatory = $true)][string]$OutputDirectory
+    [Parameter(Mandatory = $true)][string]$OutputDirectory,
+    [ValidateSet('ohos-x64', 'ohos-arm64')][string]$TargetPlatform,
+    [switch]$UsePreparedNativeLibraries
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,10 +67,12 @@ $targets = @(
 $buildScript = Join-Path $checkoutRoot 'tool/build_ohos.ps1'
 $builtHap = Join-Path $checkoutRoot 'build/ohos/hap/entry-default-unsigned.hap'
 foreach ($target in $targets) {
+    if ($TargetPlatform -and $target.Platform -ne $TargetPlatform) { continue }
     # Each ABI overwrites the same generated filename. Never reuse an older HAP.
     if (Test-Path -LiteralPath $builtHap) { Remove-Item -LiteralPath $builtHap -Force }
     & $buildScript -FlutterSdk $FlutterSdk -DevEcoStudio $DevEcoStudio `
-        -Target lib/main.dart -TargetPlatform $target.Platform -BuildMode release
+        -Target lib/main.dart -TargetPlatform $target.Platform -BuildMode release `
+        -UsePreparedNativeLibraries:$UsePreparedNativeLibraries
     if ($LASTEXITCODE -ne 0) { throw "HarmonyOS build failed for $($target.Platform)." }
     if (-not (Test-Path -LiteralPath $builtHap) -or (Get-Item -LiteralPath $builtHap).Length -eq 0) {
         throw "Missing HarmonyOS package for $($target.Platform)."

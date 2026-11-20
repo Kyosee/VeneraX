@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$NativeSdk,
     [ValidateNotNullOrEmpty()][string]$Toolchain = '1.95',
+    [ValidateSet('x86_64', 'arm64-v8a')][string[]]$Abi = @('x86_64', 'arm64-v8a'),
     [ValidateRange(1, 8)][int]$Jobs = 8
 )
 
@@ -50,9 +51,10 @@ $targets = [ordered]@{
     'x86_64-unknown-linux-ohos' = 'x86_64'
     'aarch64-unknown-linux-ohos' = 'arm64-v8a'
 }
+$selectedTargets = @($targets.Keys | Where-Object { $targets[$_] -in $Abi })
 $installedTargets = & rustup target list --installed --toolchain $Toolchain
 if ($LASTEXITCODE -ne 0) { throw "Cannot inspect Rust targets for toolchain '$Toolchain'." }
-$missingTargets = @($targets.Keys | Where-Object { $_ -notin $installedTargets })
+$missingTargets = @($selectedTargets | Where-Object { $_ -notin $installedTargets })
 if ($missingTargets.Count -gt 0) {
     throw "Missing OHOS Rust targets: $($missingTargets -join ', '). Run: rustup target add x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos --toolchain $Toolchain"
 }
@@ -72,7 +74,7 @@ $environment = @{
     RHTTP_OHOS_CLANG_TARGET = 'x86_64-linux-ohos'
     CARGO_ENCODED_RUSTFLAGS = $rustFlags -join [char]31
 }
-foreach ($target in $targets.Keys) {
+foreach ($target in $selectedTargets) {
     $ccTarget = $target.Replace('-', '_')
     $cargoTarget = $ccTarget.ToUpperInvariant()
     $environment["CARGO_TARGET_${cargoTarget}_LINKER"] = $clangWrapper
@@ -90,7 +92,7 @@ try {
         [Environment]::SetEnvironmentVariable($name, $environment[$name], 'Process')
     }
     $libraries = [ordered]@{}
-    foreach ($target in $targets.Keys) {
+    foreach ($target in $selectedTargets) {
         [Environment]::SetEnvironmentVariable('RHTTP_OHOS_CLANG_TARGET', $target.Replace('-unknown', ''), 'Process')
         Write-Host "Building rhttp for $target..."
         & cargo "+$Toolchain" build --locked --release --lib --jobs $Jobs --manifest-path $manifestPath --target $target --target-dir $targetDir

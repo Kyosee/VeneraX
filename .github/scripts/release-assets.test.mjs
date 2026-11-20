@@ -46,6 +46,14 @@ test('manual download links cover exactly the required full packages', () => {
   }
 });
 
+test('mobile previews link only to the four APKs and two HAPs', () => {
+  const body = releaseDownloads('https://github.com/Kyosee/VeneraX', 'mobile-9.8.7-beta.1', '9.8.7-beta.1+654', 'mobile');
+  const assets = [...body.matchAll(/\]\((https:[^)]+)\)/g)]
+    .map(match => decodeURIComponent(new URL(match[1]).pathname.split('/').at(-1))).sort();
+  assert.deepEqual(assets, packages.filter(name => /\.(apk|hap)$/.test(name))
+    .map(name => name.replace('9.8.7', '9.8.7-beta.1')).sort());
+});
+
 function validate(t, { missing, empty } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'venera-release-assets-'));
   t.after(() => {

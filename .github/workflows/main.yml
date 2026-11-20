@@ -1,6 +1,8 @@
 name: Build ALL
-run-name: Build ALL
+run-name: ${{ github.event_name == 'schedule' && 'Warm native dependencies' || inputs.platform && format('Build {0}', inputs.platform) || 'Build ALL' }}
 on:
+  schedule:
+    - cron: '37 2 * * 1,4'
   push:
     tags:
       - "v*"
@@ -19,6 +21,8 @@ on:
           - macos
           - linux
           - harmonyos
+          - native-cache
+          - mobile-preview
       appimage_run_id:
         description: "Existing build run to test AppImages without rebuilding (platform: linux)"
         type: string
@@ -126,7 +130,7 @@ jobs:
           path: result/
   Build_Android:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'android' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'android' || inputs.platform == 'mobile-preview' }}
     steps:
       - uses: actions/checkout@v7
       - run: rm -rf /opt/hostedtoolcache
@@ -355,7 +359,21 @@ jobs:
 
   Build_HarmonyOS:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'harmonyos' }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || contains(fromJSON('["all","harmonyos","native-cache","mobile-preview"]'), inputs.platform) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            platform: ohos-arm64
+            rust_target: aarch64-unknown-linux-ohos
+          - abi: x86_64
+            platform: ohos-x64
+            rust_target: x86_64-unknown-linux-ohos
+    env:
+      OHOS_CLI_VERSION: '26.0.0.865'
+      PACKAGE_HAP: ${{ github.event_name != 'schedule' && inputs.platform != 'native-cache' }}
+      ABI: ${{ matrix.abi }}
     timeout-minutes: 180
     permissions:
       contents: read
@@ -367,9 +385,6 @@ jobs:
       - name: Prepare cloud build directories
         run: |
           set -euo pipefail
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-          sudo apt-get update -qq
-          sudo apt-get install -y libgl1-mesa-dev ninja-build
           git clone --no-hardlinks "$GITHUB_WORKSPACE" "$RUNNER_TEMP/venerax-ohos"
           git -C "$RUNNER_TEMP/venerax-ohos" checkout --detach "$GITHUB_SHA"
           {
@@ -377,6 +392,31 @@ jobs:
             echo "FLUTTER_OHOS_SDK=$RUNNER_TEMP/flutter-ohos"
             echo "DEVECO_STUDIO=$RUNNER_TEMP/deveco/command-line-tools"
           } >> "$GITHUB_ENV"
+      - name: Identify native build inputs
+        id: inputs
+        run: |
+          set -euo pipefail
+          onnx=$(git rev-parse HEAD:tool/build_ohos_onnx.ps1)
+          patch=$(git rev-parse HEAD:tool/ohos/onnxruntime.patch)
+          rhttp=$(ruby -ryaml -e 'puts YAML.load_file("pubspec.lock").fetch("packages").fetch("rhttp").fetch("description").fetch("sha256")')
+          rust=$(git rev-parse HEAD:tool/build_ohos_rhttp.ps1)
+          wrapper=$(git rev-parse HEAD:tool/clang_ohos.sh)
+          echo "onnx=ohos-onnx-linux-$OHOS_CLI_VERSION-$ABI-$onnx-$patch" >> "$GITHUB_OUTPUT"
+          echo "rhttp=ohos-rhttp-linux-$OHOS_CLI_VERSION-$ABI-$rhttp-$rust-$wrapper" >> "$GITHUB_OUTPUT"
+      - name: Restore ONNX Runtime
+        id: onnx
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{ steps.inputs.outputs.onnx }}
+          path: |
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/libonnxruntime.so
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/src/main/resources/rawfile/onnxruntime
+      - name: Restore rhttp
+        id: rhttp
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{ steps.inputs.outputs.rhttp }}
+          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/librhttp.so
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -389,7 +429,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
-          key: harmonyos-cli-linux-x64-26.0.0.865
+          key: harmonyos-cli-linux-x64-${{ env.OHOS_CLI_VERSION }}
       - name: Download official HarmonyOS tools
         if: steps.ohos_tools.outputs.cache-hit != 'true'
         env:
@@ -401,29 +441,81 @@ jobs:
           download_url=$(printf '%s' "$DEVECO_URL" | tr -d '\r\n')
           echo "::add-mask::$download_url"
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/commandline-tools-linux.zip" "$download_url"
-      - name: Install HarmonyOS toolchains
-        run: |
-          set -euo pipefail
-          unzip -q "$RUNNER_TEMP/commandline-tools-linux.zip" -d "$RUNNER_TEMP/deveco"
-          test -d "$DEVECO_STUDIO/sdk/default/openharmony/native"
-          echo "$DEVECO_STUDIO/bin" >> "$GITHUB_PATH"
-          echo "NODE_HOME=$(dirname "$(command -v node)")" >> "$GITHUB_ENV"
-          git init "$FLUTTER_OHOS_SDK"
-          git -C "$FLUTTER_OHOS_SDK" remote add origin https://gitcode.com/CPF-Flutter/flutter_flutter.git
-          # Flutter derives its SDK version from the upstream release tag.
-          git -C "$FLUTTER_OHOS_SDK" fetch --depth 1 origin tag 3.44.9+ohos-1.0.0-beta
-          git -C "$FLUTTER_OHOS_SDK" checkout --detach 744cbb4f08e577787774c04033cc19a9d318d0d2
-          rustup toolchain install 1.95 --profile minimal
-          rustup target add --toolchain 1.95 x86_64-unknown-linux-ohos aarch64-unknown-linux-ohos
       - name: Save official HarmonyOS tool archive
         if: steps.ohos_tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
-          key: harmonyos-cli-linux-x64-26.0.0.865
+          key: harmonyos-cli-linux-x64-${{ env.OHOS_CLI_VERSION }}
+      - name: Install HarmonyOS toolchains
+        if: env.PACKAGE_HAP == 'true' || steps.onnx.outputs.cache-hit != 'true' || steps.rhttp.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get update -qq
+          sudo apt-get install -y libgl1-mesa-dev ninja-build
+          unzip -q "$RUNNER_TEMP/commandline-tools-linux.zip" -d "$RUNNER_TEMP/deveco"
+          test -d "$DEVECO_STUDIO/sdk/default/openharmony/native"
+          echo "$DEVECO_STUDIO/bin" >> "$GITHUB_PATH"
+          export NODE_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+          test -x "$NODE_HOME/bin/node"
+          echo "NODE_HOME=$NODE_HOME" >> "$GITHUB_ENV"
+          "$DEVECO_STUDIO/bin/hvigorw" --version
+      - name: Install Flutter OH
+        if: env.PACKAGE_HAP == 'true' || steps.rhttp.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git init "$FLUTTER_OHOS_SDK"
+          git -C "$FLUTTER_OHOS_SDK" remote add origin https://gitcode.com/CPF-Flutter/flutter_flutter.git
+          # Flutter derives its SDK version from the upstream release tag.
+          git -C "$FLUTTER_OHOS_SDK" fetch --depth 1 origin tag 3.44.9+ohos-1.0.0-beta
+          git -C "$FLUTTER_OHOS_SDK" checkout --detach 744cbb4f08e577787774c04033cc19a9d318d0d2
+      - name: Build rhttp on cache miss
+        if: steps.rhttp.outputs.cache-hit != 'true'
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          cd "$VENERAX_OHOS_CHECKOUT"
+          "$FLUTTER_OHOS_SDK/bin/flutter" pub get --enforce-lockfile
+          rustup toolchain install 1.95 --profile minimal
+          rustup target add --toolchain 1.95 "$RUST_TARGET"
+          pwsh -NoProfile -File tool/build_ohos_rhttp.ps1 -NativeSdk "$DEVECO_STUDIO/sdk/default/openharmony/native" -Abi "$ABI"
+      - name: Save rhttp
+        if: steps.rhttp.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.inputs.outputs.rhttp }}
+          path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/librhttp.so
+      - name: Build ONNX Runtime on cache miss
+        if: steps.onnx.outputs.cache-hit != 'true'
+        run: |
+          cd "$VENERAX_OHOS_CHECKOUT"
+          pwsh -NoProfile -File tool/build_ohos_onnx.ps1 -NativeSdk "$DEVECO_STUDIO/sdk/default/openharmony/native" -Abi "$ABI"
+      - name: Check native libraries and redistribution notices
+        run: |
+          set -euo pipefail
+          cd "$VENERAX_OHOS_CHECKOUT/ohos/entry"
+          machine='AArch64'
+          if [[ "$ABI" == x86_64 ]]; then machine='X86-64'; fi
+          for lib in libonnxruntime.so librhttp.so; do
+            readelf -h "libs/$ABI/$lib" | grep -E "Machine:.*$machine"
+          done
+          test -s src/main/resources/rawfile/onnxruntime/LICENSE
+          test -s src/main/resources/rawfile/onnxruntime/ThirdPartyNotices.txt
+      - name: Save ONNX Runtime
+        if: steps.onnx.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.inputs.outputs.onnx }}
+          path: |
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ matrix.abi }}/libonnxruntime.so
+            ${{ runner.temp }}/venerax-ohos/ohos/entry/src/main/resources/rawfile/onnxruntime
       - name: Check HarmonyOS native bridges
+        if: env.PACKAGE_HAP == 'true'
         run: node --test test/ohos/*.cjs
       - name: Build HarmonyOS release packages
+        if: env.PACKAGE_HAP == 'true'
         shell: pwsh
         run: |
           & .github/scripts/build-harmonyos.ps1 `
@@ -432,13 +524,40 @@ jobs:
             -Commit $env:GITHUB_SHA `
             -FlutterSdk $env:FLUTTER_OHOS_SDK `
             -DevEcoStudio $env:DEVECO_STUDIO `
-            -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'result')
+            -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'result') `
+            -TargetPlatform ${{ matrix.platform }} -UsePreparedNativeLibraries
       - uses: actions/upload-artifact@v7
+        if: env.PACKAGE_HAP == 'true'
         with:
-          name: harmonyos_build
+          name: harmonyos_build_${{ matrix.abi }}
           path: result/*.hap
           if-no-files-found: error
           retention-days: 7
+
+  Publish_Mobile_Preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'mobile-preview'
+    needs: [Build_Android, Build_HarmonyOS]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: apks
+          path: ${{ runner.temp }}/mobile-preview/android
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: harmonyos_build_*
+          merge-multiple: true
+          path: ${{ runner.temp }}/mobile-preview/harmonyos
+      - name: Publish validated Android and HarmonyOS packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-mobile-preview.sh
 
   Test_AppImage:
     needs: [Build_Linux, Build_Linux_ARM64]
@@ -524,7 +643,8 @@ jobs:
           path: outputs
       - uses: actions/download-artifact@v8
         with:
-          name: harmonyos_build
+          pattern: harmonyos_build_*
+          merge-multiple: true
           path: outputs
 
       - name: Validate release inputs
