@@ -33,7 +33,7 @@ Future<void> downloadAppUpdate({
   required String url,
   required File destination,
   required CancelToken cancelToken,
-  required void Function(double?) onProgress,
+  required ProgressCallback onProgress,
   Map<String, String> headers = const {},
   int expectedSize = 0,
 }) async {
@@ -61,7 +61,7 @@ Future<void> downloadAppUpdate({
           throw const HttpException('Update package exceeds expected size');
         }
         sink.add(chunk);
-        onProgress(total > 0 ? received / total : null);
+        onProgress(received, expectedSize > 0 ? expectedSize : total);
       }
       if (cancelToken.isCancelled) throw cancelToken.cancelError!;
       if ((total > 0 && received != total) ||

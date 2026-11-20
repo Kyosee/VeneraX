@@ -135,10 +135,11 @@ void main() {
     tester,
   ) async {
     final completion = Completer<PreparedAppUpdate>();
-    late ValueChanged<double?> progress;
+    late ProgressCallback progress;
     var installed = false;
     await open(
       tester,
+      downloadSize: 100 * 1024 * 1024,
       prepare: (token, onProgress) {
         progress = onProgress;
         return completion.future;
@@ -146,9 +147,11 @@ void main() {
     );
     await tester.tap(primary);
     await tester.pump();
-    progress(.42);
+    expect(find.text('0.0 MiB / 100.0 MiB'), findsOneWidget);
+    progress(42 * 1024 * 1024, 100 * 1024 * 1024);
     await tester.pump();
     expect(find.text('42%'), findsOneWidget);
+    expect(find.text('42.0 MiB / 100.0 MiB'), findsOneWidget);
     expect(find.text('取消下载'), findsOneWidget);
     expect(find.text('修复'), findsOneWidget);
     completion.complete(
@@ -157,7 +160,7 @@ void main() {
         discard: () async => fail('An installing package must not be deleted'),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('更新包已准备好'), findsOneWidget);
     expect(installed, isFalse);
     await tester.tap(primary);
@@ -165,14 +168,47 @@ void main() {
     expect(installed, isTrue);
   });
 
+  testWidgets('unknown total shows downloaded bytes without a percentage', (
+    tester,
+  ) async {
+    final completion = Completer<PreparedAppUpdate>();
+    late ProgressCallback progress;
+    await open(
+      tester,
+      prepare: (_, onProgress) {
+        progress = onProgress;
+        return completion.future;
+      },
+    );
+    await tester.tap(primary);
+    await tester.pump();
+    progress(1536 * 1024, -1);
+    await tester.pump();
+    expect(find.text('1.5 MiB'), findsOneWidget);
+    expect(
+      tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      ).value,
+      isNull,
+    );
+    expect(find.textContaining('%'), findsNothing);
+    await tester.tap(secondary);
+    await tester.pumpAndSettle();
+    completion.complete(
+      PreparedAppUpdate(install: () async {}, discard: () async {}),
+    );
+    await tester.pump();
+  });
+
   testWidgets('cancelled attempt cannot overwrite a later download', (
     tester,
   ) async {
     final attempts = <Completer<PreparedAppUpdate>>[];
     final tokens = <CancelToken>[];
-    final progresses = <ValueChanged<double?>>[];
+    final progresses = <ProgressCallback>[];
     await open(
       tester,
+      downloadSize: 40 * 1024 * 1024,
       prepare: (token, progress) {
         tokens.add(token);
         progresses.add(progress);
@@ -183,12 +219,16 @@ void main() {
     );
     await tester.tap(primary);
     await tester.pump();
+    progresses.first(30 * 1024 * 1024, 40 * 1024 * 1024);
+    await tester.pump();
+    expect(find.text('30.0 MiB / 40.0 MiB'), findsOneWidget);
     await tester.tap(secondary);
     await tester.pump();
     expect(tokens.first.isCancelled, isTrue);
     await tester.tap(primary);
     await tester.pump();
-    progresses.first(1);
+    expect(find.text('0.0 MiB / 40.0 MiB'), findsOneWidget);
+    progresses.first(40 * 1024 * 1024, 40 * 1024 * 1024);
     var discarded = 0;
     attempts.first.complete(
       PreparedAppUpdate(
@@ -196,9 +236,10 @@ void main() {
         discard: () async => discarded++,
       ),
     );
-    progresses.last(.25);
+    progresses.last(10 * 1024 * 1024, 40 * 1024 * 1024);
     await tester.pump();
     expect(find.text('25%'), findsOneWidget);
+    expect(find.text('10.0 MiB / 40.0 MiB'), findsOneWidget);
     expect(find.text('更新包已准备好'), findsNothing);
     await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
@@ -263,7 +304,7 @@ void main() {
     tester,
   ) async {
     final completion = Completer<PreparedAppUpdate>();
-    late ValueChanged<double?> progress;
+    late ProgressCallback progress;
     late VoidCallback preparing;
     var installed = false;
     await open(
@@ -281,15 +322,18 @@ void main() {
     expect(find.text('增量更新可节省 34.0 MiB'), findsOneWidget);
     await tester.tap(primary);
     await tester.pump();
-    progress(.5);
+    expect(find.text('0.0 MiB / 6.0 MiB'), findsOneWidget);
+    progress(patchBytes ~/ 2, patchBytes);
     await tester.pump();
     expect(find.text('50%'), findsOneWidget);
+    expect(find.text('3.0 MiB / 6.0 MiB'), findsOneWidget);
     expect(fullPackage, findsNothing);
     preparing();
     await tester.pump();
     expect(find.text('正在准备更新'), findsOneWidget);
     expect(find.text('取消更新'), findsOneWidget);
     expect(find.text('50%'), findsNothing);
+    expect(find.byKey(const ValueKey('update-download-bytes')), findsNothing);
     expect(
       tester
           .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
@@ -324,7 +368,10 @@ void main() {
           fullDownloads++;
           return full.future;
         },
-        prepareDelta: (_, _, _) async => throw const DeltaUpdateException(),
+        prepareDelta: (_, progress, _) async {
+          progress(patchBytes ~/ 2, patchBytes);
+          throw const DeltaUpdateException();
+        },
       );
       await tester.tap(primary);
       await tester.pumpAndSettle();
@@ -340,6 +387,8 @@ void main() {
       await tester.tap(primary);
       await tester.pump();
       expect(fullDownloads, 1);
+      expect(find.text('0.0 MiB / 40.0 MiB'), findsOneWidget);
+      expect(find.text('3.0 MiB / 6.0 MiB'), findsNothing);
       full.complete(
         PreparedAppUpdate(
           install: () async =>
@@ -395,7 +444,7 @@ void main() {
   ) async {
     final attempts = <Completer<PreparedAppUpdate>>[];
     final tokens = <CancelToken>[];
-    final progresses = <ValueChanged<double?>>[];
+    final progresses = <ProgressCallback>[];
     final preparations = <VoidCallback>[];
     var discarded = 0;
     await open(
@@ -422,8 +471,8 @@ void main() {
     expect(tokens.first.isCancelled, isTrue);
     await tester.tap(primary);
     await tester.pump();
-    progresses.last(.25);
-    progresses.first(.99);
+    progresses.last(patchBytes ~/ 4, patchBytes);
+    progresses.first(patchBytes, patchBytes);
     preparations.first();
     attempts.first.complete(
       PreparedAppUpdate(
@@ -434,6 +483,7 @@ void main() {
     await tester.pump();
     expect(discarded, 1);
     expect(find.text('25%'), findsOneWidget);
+    expect(find.text('1.5 MiB / 6.0 MiB'), findsOneWidget);
     expect(find.text('正在准备更新'), findsNothing);
     expect(find.text('更新包已准备好'), findsNothing);
     preparations.last();
@@ -459,6 +509,7 @@ void main() {
     ) async {
       final completion = Completer<PreparedAppUpdate>();
       late VoidCallback preparing;
+      late ProgressCallback progress;
       var fullDownloads = 0;
       await open(
         tester,
@@ -471,7 +522,8 @@ void main() {
           fullDownloads++;
           return PreparedAppUpdate(install: () async {}, discard: () async {});
         },
-        prepareDelta: (_, _, onPreparing) {
+        prepareDelta: (_, onProgress, onPreparing) {
+          progress = onProgress;
           preparing = onPreparing;
           return completion.future;
         },
@@ -481,6 +533,10 @@ void main() {
       expect(primary.hitTestable(), findsOneWidget);
       await tester.tap(primary);
       await tester.pump();
+      progress(patchBytes ~/ 2, patchBytes);
+      await tester.pump();
+      expect(find.text('3.0 MiB / 6.0 MiB'), findsOneWidget);
+      expect(tester.takeException(), isNull);
       preparing();
       await tester.pump();
       expect(find.text('Preparing update'.tl), findsOneWidget);

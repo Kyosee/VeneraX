@@ -32,7 +32,7 @@ void main() {
   Future<void> download(
     ResponseBody body, {
     CancelToken? token,
-    void Function(double?)? progress,
+    ProgressCallback? progress,
     int size = 0,
   }) async {
     final dio = Dio()..httpClientAdapter = _ResponseAdapter(body);
@@ -42,7 +42,7 @@ void main() {
         url: 'https://updates.invalid/package.zip',
         destination: file,
         cancelToken: token ?? CancelToken(),
-        onProgress: progress ?? (_) {},
+        onProgress: progress ?? (_, _) {},
         expectedSize: size,
       );
     } finally {
@@ -81,7 +81,7 @@ void main() {
   );
 
   test('writes complete package and reports progress', () async {
-    final progress = <double?>[];
+    final progress = <(int, int)>[];
     await download(
       ResponseBody.fromBytes(
         [1, 2, 3, 4],
@@ -90,21 +90,25 @@ void main() {
           'content-length': ['4'],
         },
       ),
-      progress: progress.add,
+      progress: (received, total) => progress.add((received, total)),
     );
     expect(await file.readAsBytes(), [1, 2, 3, 4]);
-    expect(progress.last, 1);
+    expect(progress.last, (4, 4));
   });
 
   test('unknown package length uses indeterminate progress', () async {
-    final progress = <double?>[];
-    await download(ResponseBody.fromBytes([1, 2], 200), progress: progress.add);
+    final progress = <(int, int)>[];
+    await download(
+      ResponseBody.fromBytes([1, 2], 200),
+      progress: (received, total) => progress.add((received, total)),
+    );
     expect(progress, isNotEmpty);
-    expect(progress.every((value) => value == null), isTrue);
+    expect(progress.last, (2, 0));
     expect(await file.length(), 2);
   });
 
   test('expected asset size overrides a misleading content length', () async {
+    final progress = <(int, int)>[];
     await expectLater(
       download(
         ResponseBody.fromBytes(
@@ -115,10 +119,28 @@ void main() {
           },
         ),
         size: 4,
+        progress: (received, total) => progress.add((received, total)),
       ),
       throwsA(isA<HttpException>()),
     );
     expect(file.existsSync(), isFalse);
+    expect(progress.last, (2, 4));
+  });
+
+  test('asset size supplies total bytes without a content length', () async {
+    final progress = <(int, int)>[];
+    await download(
+      ResponseBody(
+        Stream.fromIterable([
+          Uint8List.fromList([1, 2]),
+          Uint8List.fromList([3, 4]),
+        ]),
+        200,
+      ),
+      size: 4,
+      progress: (received, total) => progress.add((received, total)),
+    );
+    expect(progress, [(2, 4), (4, 4)]);
   });
 
   test('oversized responses are stopped and removed', () async {
@@ -152,7 +174,7 @@ void main() {
         200,
       );
       await expectLater(
-        download(body, token: token, size: 4, progress: (_) => token.cancel()),
+        download(body, token: token, size: 4, progress: (_, _) => token.cancel()),
         throwsA(isA<DioException>()),
       );
       expect(await file.exists(), isFalse);

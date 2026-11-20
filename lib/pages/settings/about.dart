@@ -487,7 +487,7 @@ Future<({UpdateDelta delta, _GitHubAsset asset, String sourcePath})?> _findUpdat
     try {
       final metadata = await _downloadUpdateAsset(
         _readGithubUpdateConfig(), asset,
-        cancelToken: token, onProgress: (_) {},
+        cancelToken: token, onProgress: (_, _) {},
       );
       try {
         final bytes = await File(metadata.path).readAsBytes();
@@ -588,7 +588,7 @@ Future<({String path, Directory directory})> _downloadUpdateAsset(
   _GithubUpdateConfig config,
   _GitHubAsset asset, {
   required CancelToken cancelToken,
-  required ValueChanged<double?> onProgress,
+  required ProgressCallback onProgress,
 }) async {
   var updatesDir = Directory(FilePath.join(App.cachePath, "updates"));
   if (!updatesDir.existsSync()) updatesDir.createSync(recursive: true);

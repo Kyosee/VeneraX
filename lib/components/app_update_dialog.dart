@@ -11,13 +11,13 @@ import 'package:venera/utils/translations.dart';
 typedef PrepareAppUpdate =
     Future<PreparedAppUpdate> Function(
       CancelToken cancelToken,
-      ValueChanged<double?> onProgress,
+      ProgressCallback onProgress,
     );
 
 typedef PrepareDeltaAppUpdate =
     Future<PreparedAppUpdate> Function(
       CancelToken cancelToken,
-      ValueChanged<double?> onProgress,
+      ProgressCallback onProgress,
       VoidCallback onPreparing,
     );
 
@@ -71,13 +71,17 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
   _UpdatePhase _phase = _UpdatePhase.available;
   CancelToken? _cancelToken;
   PreparedAppUpdate? _preparedUpdate;
-  double? _progress;
+  int _received = 0;
+  int _total = 0;
   String? _error;
   bool _useDelta = true;
   bool _preparing = false;
   bool _deltaFailed = false;
 
   bool get _delta => _useDelta && widget.prepareDeltaUpdate != null;
+
+  double? get _progress =>
+      _preparing || _total <= 0 ? null : (_received / _total).clamp(0, 1);
 
   @override
   void dispose() {
@@ -94,14 +98,18 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
     _cancelToken = token;
     setState(() {
       _phase = _UpdatePhase.downloading;
-      _progress = null;
+      _received = 0;
+      _total = _delta ? widget.deltaSize : widget.downloadSize;
       _error = null;
       _preparing = false;
     });
     try {
-      void onProgress(double? value) {
+      void onProgress(int received, int total) {
         if (!mounted || token.isCancelled || _cancelToken != token) return;
-        setState(() => _progress = value?.clamp(0, 1));
+        setState(() {
+          _received = received;
+          _total = total;
+        });
       }
 
       final prepared = _delta
@@ -111,7 +119,6 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
               }
               setState(() {
                 _preparing = true;
-                _progress = null;
               });
             })
           : await widget.prepareUpdate!(token, onProgress);
@@ -576,6 +583,16 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
                         ),
                     ],
                   ),
+                  if (!_preparing) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _total > 0
+                          ? '${_updateSize(_received)} / ${_updateSize(_total)}'
+                          : _updateSize(_received),
+                      key: const ValueKey('update-download-bytes'),
+                      style: TextStyle(fontSize: 11, color: colors.muted),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   LinearProgressIndicator(
                     value: _progress,
