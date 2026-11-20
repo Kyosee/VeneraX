@@ -1,4 +1,5 @@
 import 'appdata.dart';
+import 'log.dart';
 
 /// The last finished check, independent of the unread flags cleared by reading.
 class FollowUpdateResult {
@@ -30,6 +31,11 @@ class FollowUpdateResult {
       'updatedKeys': updatedKeys?.toList(),
       'failed': failed,
     };
-    await appdata.writeImplicitData();
+    try {
+      await appdata.writeImplicitData();
+    } catch (error, stack) {
+      // A widget snapshot must not interrupt task cleanup or completion callbacks.
+      Log.error('Follow update result', error, stack);
+    }
   }
 }
