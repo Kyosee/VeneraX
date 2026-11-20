@@ -22,12 +22,16 @@ typedef _ClockGettime = int Function(int clock, Pointer<_Timespec> time);
 int? bootTimeMillis() {
   try {
     final uptime = _uptimeMillis();
-    if (uptime == null) return null;
+    // A value outside any plausible uptime means the call did not do what it
+    // is assumed to do on this platform; better no answer than a wrong one.
+    if (uptime == null || uptime < 0 || uptime > _longestUptime) return null;
     return DateTime.now().millisecondsSinceEpoch - uptime;
   } catch (_) {
     return null;
   }
 }
+
+const _longestUptime = 10 * 365 * 24 * 60 * 60 * 1000;
 
 int? _uptimeMillis() {
   if (Platform.isWindows) {
