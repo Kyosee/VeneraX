@@ -285,7 +285,7 @@ jobs:
           name: appimage_build
           path: build/linux/x64/release/appimage/*.AppImage
           if-no-files-found: error
-      - run: dart run flutter_to_arch
+      - run: python3 linux/arch/build.py
       - run: |
           sudo rm -rf build/linux/arch/app.tar.gz
           sudo rm -rf build/linux/arch/pkg

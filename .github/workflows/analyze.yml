@@ -15,6 +15,7 @@ jobs:
       - name: Check AppImage packaging
         run: |
           python3 -m unittest discover -s debian -p 'test_*.py'
+          python3 -m unittest discover -s linux/arch -p 'test_*.py'
           python3 -m unittest discover -s linux/appimage -p 'test_*.py'
           bash -n linux/appimage/AppRun
           bash -n linux/appimage/smoke_test.sh
