@@ -214,13 +214,15 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return Stack(
       children: [
         Positioned.fill(
-          // Keep horizontal turns and zoomed pans protected during animations,
-          // when the content below may be absent from pointer hit tests.
+          // Keep page turns, swipe collection and zoomed pans from becoming a
+          // mid-page back gesture, including during content animations.
           child: SwipeRegionMarker(
             active: () {
               final reader = context.reader;
               return (reader.mode != ReaderMode.galleryTopToBottom &&
                       reader.mode != ReaderMode.continuousTopToBottom) ||
+                  (!reader.isOnChapterCommentsPage &&
+                      reader.effectiveSetting('quickCollectImage') == 'Swipe') ||
                   (reader._imageViewController?.isImageZoomed ?? false);
             },
             child: AbsorbPointer(

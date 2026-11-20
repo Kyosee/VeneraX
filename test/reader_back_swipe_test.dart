@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:photo_view/photo_view.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -23,7 +24,9 @@ void main() {
   const sourceKey = 'reader_back_swipe_test';
   const comicId = 'sample-comic';
   const chapterId = 'chapter';
-  final images = [for (var i = 0; i < 8; i++) 'file://back-swipe-$i.png'];
+  final images = [
+    for (var i = 0; i < 8; i++) 'https://reader.invalid/back-swipe-$i.png',
+  ];
   late Directory temp;
   late ComicSource source;
 
@@ -38,6 +41,7 @@ void main() {
     await ComicSourceManager().init();
     await LocalManager().init();
     await HistoryManager().init();
+    ImageFavoriteManager().init();
     await LocalFavoritesManager().init();
     debugDefaultTargetPlatformOverride = null;
     source = ComicSource(
@@ -93,7 +97,15 @@ void main() {
     await temp.delete(recursive: true);
   });
 
-  Future<History> openReader(WidgetTester tester, ReaderMode mode) async {
+  Future<History> openReader(
+    WidgetTester tester,
+    ReaderMode mode, {
+    String quickCollectImage = 'No',
+  }) async {
+    final favorites = ImageFavoriteManager().find(comicId, sourceKey);
+    if (favorites != null) {
+      ImageFavoriteManager().deleteImageFavorite(favorites.images.toList());
+    }
     for (final entry in <String, dynamic>{
       'language': 'en-US',
       'readerMode': mode.key,
@@ -110,6 +122,8 @@ void main() {
       'readerCenterPageOnTurn': false,
       'readerPageSpacing': 0.0,
       'preloadImageCount': 0,
+      'quickCollectImage': quickCollectImage,
+      'autoFavoriteCover': false,
     }.entries) {
       appdata.settings[entry.key] = entry.value;
     }
@@ -191,12 +205,17 @@ void main() {
     await tester.pump(const Duration(minutes: 2));
   }
 
-  Future<void> swipeRight(WidgetTester tester, {double startX = 130}) async {
-    final gesture = await tester.startGesture(Offset(startX, 450));
+  Future<void> swipe(
+    WidgetTester tester,
+    Offset start,
+    Offset distance, {
+    int steps = 4,
+  }) async {
+    final gesture = await tester.startGesture(start);
     // A fast touch event can cross the scrollable's drag threshold at once.
-    for (var i = 1; i <= 4; i++) {
+    for (var i = 1; i <= steps; i++) {
       await gesture.moveBy(
-        const Offset(55, 0),
+        distance / steps.toDouble(),
         timeStamp: Duration(milliseconds: i * 16),
       );
       await tester.pump(const Duration(milliseconds: 16));
@@ -204,12 +223,105 @@ void main() {
     await gesture.up(timeStamp: const Duration(milliseconds: 80));
   }
 
+  Future<void> swipeRight(WidgetTester tester, {double startX = 130}) async {
+    await swipe(tester, Offset(startX, 450), const Offset(220, 0));
+  }
+
+  bool isCollected(int page) =>
+      ImageFavoriteManager().has(comicId, sourceKey, chapterId, page, 1);
+
+  Future<void> checkSwipeCollection(WidgetTester tester) async {
+    for (final mode in ReaderMode.values) {
+      final vertical =
+          mode == ReaderMode.continuousTopToBottom ||
+          mode == ReaderMode.galleryTopToBottom;
+      final crossAxisSwipe = vertical
+          ? const Offset(220, 0)
+          : const Offset(0, 220);
+      final history = await openReader(
+        tester,
+        mode,
+        quickCollectImage: 'Swipe',
+      );
+      try {
+        await swipe(tester, const Offset(130, 450), crossAxisSwipe);
+        await tester.pumpAndSettle();
+        expect(find.byType(Reader), findsOneWidget);
+        expect(history.page, 3);
+        expect(isCollected(3), isTrue);
+
+        await swipe(tester, const Offset(300, 450), -crossAxisSwipe);
+        await tester.pumpAndSettle();
+        expect(find.byType(Reader), findsOneWidget);
+        expect(isCollected(3), isFalse);
+
+        await swipe(
+          tester,
+          const Offset(130, 450),
+          vertical ? const Offset(170, -400) : const Offset(-300, 100),
+        );
+        await tester.pumpAndSettle();
+        expect(ImageFavoriteManager().find(comicId, sourceKey), isNull);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await closeReader(tester, history);
+      }
+    }
+  }
+
+  Future<void> checkFastSwipeCollection(WidgetTester tester) async {
+    final history = await openReader(
+      tester,
+      ReaderMode.continuousTopToBottom,
+      quickCollectImage: 'Swipe',
+    );
+    try {
+      await swipe(
+        tester,
+        const Offset(130, 450),
+        const Offset(270, 0),
+        steps: 1,
+      );
+      await tester.pumpAndSettle();
+      expect(isCollected(3), isTrue);
+      await swipe(
+        tester,
+        const Offset(300, 450),
+        const Offset(-270, 0),
+        steps: 1,
+      );
+      await tester.pumpAndSettle();
+      expect(isCollected(3), isFalse);
+
+      final photoView = tester.widget<PhotoView>(find.byType(PhotoView));
+      photoView.controller!.scale = 1.5;
+      await tester.pumpAndSettle();
+      await swipeRight(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(Reader), findsOneWidget);
+      expect(isCollected(3), isFalse);
+      photoView.controller!.scale = 1.0;
+      await tester.pumpAndSettle();
+
+      await swipeRight(tester, startX: 5);
+      await tester.pumpAndSettle();
+      expect(isCollected(3), isFalse);
+      expect(find.byType(Reader), findsNothing);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await closeReader(tester, history);
+    }
+  }
+
   testWidgets(
-    'reader swipes respect page and back navigation (#344)',
+    'reader swipes respect navigation and image collection (#344, #349)',
     (tester) async {
       tester.view.physicalSize = const Size(430, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+
+      await checkSwipeCollection(tester);
+      await checkFastSwipeCollection(tester);
 
       for (final mode in [
         ReaderMode.galleryRightToLeft,

@@ -121,7 +121,10 @@ class _ReaderGestureDetectorState
                   _kDragStartThresholdSquared) {
             _dragInProgress = true;
             for (var dragListener in _dragListeners) {
-              dragListener.onStart?.call(event.position);
+              // Edge exclusion must use the pointer-down position.
+              dragListener.onStart?.call(
+                event.position - _lastTapMoveDistance!,
+              );
               dragListener.onMove?.call(_lastTapMoveDistance!);
             }
             // 本次事件的位移已在上面随累计值一起下发, 不再重复下发。

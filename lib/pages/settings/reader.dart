@@ -1292,7 +1292,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   widget.onChanged?.call("quickCollectImage");
                 },
                 help:
-                    "On the image browsing page, you can quickly collect images by sliding horizontally or vertically according to your reading mode"
+                    "Swipe left or right when reading vertically, or up or down when reading horizontally, to collect or uncollect the current image. Start away from the screen edges while not zoomed."
                         .tl,
                 comicId: isEnabledSpecificSettings ? widget.comicId : null,
                 comicSource: isEnabledSpecificSettings
