@@ -54,9 +54,12 @@ To update, download the new AppImage and replace the old file. Application data 
 <details open>
 <summary><b>View all features</b></summary>
 
+> This list reflects the current main branch. Incremental updates, abnormal-exit diagnostics and startup recovery were added after v3.0.0; check the release notes for the features included in each package.
+
 ### Reading
 
 - [x] Seamless continuous-chapter reading
+- [x] Adaptive reading mode: recognizes webtoons and paged comics and automatically chooses a suitable reading mode
 - [x] Chapter read-status changes
 - [x] Custom chapter order: sort chapters in bulk by name, in reverse or by folder modified time, hide duplicate chapters; the order syncs
 - [x] Auto page turning adds a steady scroll mode, plus an option to keep the screen on while reading
@@ -70,7 +73,7 @@ To update, download the new AppImage and replace the old file. Application data 
 - [x] Read-later
 - [x] Multiple library management
 - [x] Custom collections: read comics published as separate volumes or parts as one, across sources
-- [x] Reading statistics: tracks reading time, with sorting and swipe-to-delete
+- [x] Reading statistics: tracks reading time with a reading calendar and trends, monthly and custom date ranges, sorting and swipe-to-delete
 - [x] Draw a comic: pick a random comic from your favorites, with a selectable scope
 - [x] Import local PDF comics
 - [x] Custom comic cache directory
@@ -90,13 +93,18 @@ To update, download the new AppImage and replace the old file. Application data 
 
 ### Platform & interface
 
+- [x] HarmonyOS support with a dedicated installation package
+- [x] Home-screen widgets for recent reading, followed comics, available updates and local comics on Android, HarmonyOS service cards, iOS and macOS; availability on Apple platforms depends on signing and sideloading
+- [x] App icon shortcuts: long-press to open Favorites, Follow Updates, History and Search on Android, iOS and HarmonyOS
+- [x] First-use setup for language, permissions, backup restoration and WebDAV
 - [x] Task system with background execution and related views
-- [x] Android background downloads, follow-update checks, comic import/export
+- [x] Android background downloads, follow-update checks and comic import/export; HarmonyOS background follow-update checks and pre-translation
 - [x] Windows tray minimize
 - [x] Customizable desktop keyboard shortcuts: fullscreen, page turning, chapter switching, reading menu and more; Windows global shortcuts can hide the app to the tray or bring its window back
-- [x] Automatic update checks on Windows and Android APK
+- [x] Automatic update checks and incremental updates on Windows and Android APK: matching patches reduce download size, with a full-package option available
+- [x] Abnormal-exit diagnostics and startup recovery: export redacted diagnostic reports and choose safe mode after repeated startup failures
 - [x] Long-press to reorder the home screen's function modules
-- [x] Various UI & UX refinements
+- [x] Redesigned selected pages with improved layouts and interactions
 
 </details>
 
