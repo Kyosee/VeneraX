@@ -94,6 +94,24 @@ void main() {
     });
   });
 
+  test('Android links use the plugin without default route delivery', () {
+    final manifest = XmlDocument.parse(
+      File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
+    );
+    const android = 'http://schemas.android.com/apk/res/android';
+    final activity = manifest.findAllElements('activity').singleWhere(
+      (element) =>
+          element.getAttribute('name', namespace: android) == '.MainActivity',
+    );
+    final flag = activity.findElements('meta-data').where(
+      (element) =>
+          element.getAttribute('name', namespace: android) ==
+          'flutter_deeplinking_enabled',
+    );
+    expect(flag, hasLength(1));
+    expect(flag.single.getAttribute('value', namespace: android), 'false');
+  });
+
   test('Android web intent filter contains no hardcoded hosts', () {
     final manifest = XmlDocument.parse(
       File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
