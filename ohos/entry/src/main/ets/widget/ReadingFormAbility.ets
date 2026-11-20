@@ -11,12 +11,31 @@ export default class ReadingFormAbility extends FormExtensionAbility {
     const size = want.parameters?.[formInfo.FormParam.DIMENSION_KEY];
     const name = want.parameters?.[formInfo.FormParam.NAME_KEY];
     const kind = typeof name === 'string' ? name.replace(/^reading_/, '') : 'history';
-    try { store.register(id, typeof size === 'number' ? size : 2, kind); } catch (_) {}
-    const binding = store.binding(id);
+    // Some runtimes pass the location but omit its FormParam constant.
+    const locationKey = formInfo.FormParam.FORM_LOCATION_KEY ?? 'ohos.extra.param.key.form_location';
+    const location = want.parameters?.[locationKey];
+    const preview = this.isPreviewLocation(location) || want.parameters?.[formInfo.FormParam.TEMPORARY_KEY] === true;
+    try { store.register(id, typeof size === 'number' ? size : 2, kind, preview); } catch (_) {}
+    const binding = store.binding(id, preview);
     this.initialImages.get(id)?.close();
     this.initialImages.set(id, binding);
     // Keep descriptors alive until the framework has consumed the return data.
     return binding.data;
+  }
+
+  private isPreviewLocation(location: Object | undefined): boolean {
+    // API 12 location values include the home and minus-one screen galleries.
+    return location === 1 || location === 2 || location === 4 || location === 5;
+  }
+
+  onFormLocationChanged(id: string, location: formInfo.FormLocation): void {
+    new ReadingWidgetStore(this.context.filesDir).setPreview(id, this.isPreviewLocation(location));
+    this.onUpdateForm(id);
+  }
+
+  onCastToNormalForm(id: string): void {
+    new ReadingWidgetStore(this.context.filesDir).setPreview(id, false);
+    this.onUpdateForm(id);
   }
 
   onUpdateForm(id: string): void {

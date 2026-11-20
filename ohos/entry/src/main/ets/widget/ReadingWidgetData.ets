@@ -12,6 +12,7 @@ export class ReadingWidgetItem {
 }
 
 export class ReadingWidgetData {
+  preview: boolean = false;
   kind: string = 'history';
   locked: boolean = false;
   title: string = '';
@@ -43,8 +44,8 @@ export function parseReadingWidgetData(json: string): ReadingWidgetData {
   result.subtitle = typeof parsed.subtitle === 'string' ? parsed.subtitle : '';
   result.emptyText = typeof parsed.emptyText === 'string' ? parsed.emptyText : '';
   if (result.locked) return result;
-  // API 17 supports at most five transferred images. Four rows fit a 4x4 card.
-  parsed.items.slice(0, 4).forEach((item: ReadingWidgetItem) => {
+  // API 17 supports at most five transferred images.
+  parsed.items.slice(0, 5).forEach((item: ReadingWidgetItem) => {
     if (item === null || typeof item !== 'object' || typeof item.id !== 'string' ||
       item.id.length === 0 || typeof item.type !== 'number' || !Number.isSafeInteger(item.type) ||
       typeof item.title !== 'string') return;

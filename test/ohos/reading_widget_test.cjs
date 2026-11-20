@@ -36,7 +36,7 @@ function harness() {
   class FormExtensionAbility { context = { filesDir: '/private' }; }
   const context = vm.createContext({
     fs, FormExtensionAbility,
-    formInfo: { FormParam: { IDENTITY_KEY: 'id', DIMENSION_KEY: 'size', NAME_KEY: 'name' } },
+    formInfo: { FormParam: { IDENTITY_KEY: 'id', DIMENSION_KEY: 'size', NAME_KEY: 'name', FORM_LOCATION_KEY: 'location', TEMPORARY_KEY: 'temporary' } },
     formBindingData: { createFormBindingData: data => ({ data: copy(data) }) },
     formProvider: {
       async updateForm(id, binding) {
@@ -78,7 +78,7 @@ function snapshot(count = 6, kind = 'history') {
 test('bounds images for API 17 and reconstructs destinations from comic identity', () => {
   const h = harness();
   const parsed = h.context.parseReadingWidgetData(snapshot());
-  assert.equal(parsed.items.length, 4);
+  assert.equal(parsed.items.length, 5);
   const uri = new URL(parsed.items[0].uri);
   assert.equal(uri.protocol, 'venerax:');
   assert.equal(uri.hostname, 'reading-widget');
@@ -102,6 +102,24 @@ test('old snapshots and optional reading metadata remain compatible', () => {
   assert.equal(h.context.parseReadingWidgetData(JSON.stringify(data)).items[0].pageProgress, -1);
 });
 
+test('real bindings disable previews and fit one, three or five books to the form', () => {
+  const h = harness();
+  const store = new h.context.ReadingWidgetStore('/private');
+  store.save(snapshot());
+  for (const [dimension, count] of [[2, 1], [3, 3], [4, 5]]) {
+    store.register('16', dimension);
+    const binding = store.binding('16');
+    assert.equal(binding.data.data.preview, false);
+    assert.equal(binding.data.data.items.length, count);
+    binding.close();
+  }
+  h.contents.delete('/private/reading_widget_privacy.json');
+  const locked = store.binding('16');
+  assert.equal(locked.data.data.preview, false);
+  assert.equal(locked.data.data.items.length, 0);
+  locked.close();
+});
+
 test('published forms and snapshots survive a new store instance', async () => {
   const h = harness();
   const store = new h.context.ReadingWidgetStore('/private');
@@ -111,7 +129,7 @@ test('published forms and snapshots survive a new store instance', async () => {
   assert.equal(restarted.hasWidgets(), true);
   await restarted.updateAll();
   assert.equal(h.updates[0].id, '12');
-  assert.equal(h.updates[0].data.items.length, 4);
+  assert.equal(h.updates[0].data.items.length, 5);
   restarted.remove('12');
   assert.equal(store.hasWidgets(), false);
 });
@@ -152,6 +170,7 @@ test('a replaced cover receives a new memory name so ArkUI reloads the image', a
   h.contents.set('/private/reading_widget_covers/cover-0.png', 'old image');
   h.contents.set('/private/reading_widget_covers/replacement.png', 'new image');
   const store = new h.context.ReadingWidgetStore('/private');
+  store.register('16', 2);
   store.save(snapshot(1));
   await store.update('16');
   const next = JSON.parse(snapshot(1));
@@ -265,7 +284,7 @@ test('form names select independent snapshots and resizing preserves the kind', 
   ability.onSizeChanged('33', 2, {});
   await flush();
   assert.equal(h.updates.at(-1).data.kind, 'local');
-  assert.equal(h.updates.at(-1).data.items.length, 2);
+  assert.equal(h.updates.at(-1).data.items.length, 1);
   store.save(JSON.stringify({ kind: 'history', locked: true, items: [] }));
   await store.updateAll();
   assert.ok(h.updates.slice(-4).every(update => update.data.items.length === 0));
@@ -283,5 +302,66 @@ test('an interrupted lock and unlock cannot resurrect another card kind', () => 
   const data = ability.onAddForm({ parameters: { id: '39', size: 4, name: 'reading_following' } }).data;
   assert.deepEqual(copy(data.items), []);
   assert.equal(data.kind, 'following');
+  ability.onStop();
+});
+
+test('gallery forms never receive personal data, including after process restart and background updates', async () => {
+  const h = harness();
+  const store = new h.context.ReadingWidgetStore('/private');
+  store.save(snapshot());
+  h.contents.set('/private/reading_widget_covers/cover-0.png', 'image');
+  const ability = new h.context.ReadingFormAbility();
+  for (const location of [1, 2, 4, 5]) {
+    const data = ability.onAddForm({ parameters: { id: String(location), size: 3, name: 'reading_history', location } }).data;
+    assert.equal(data.preview, true);
+    assert.equal(data.dimension, 3);
+    assert.deepEqual(copy(data.items), []);
+  }
+  assert.equal(h.handles.size, 0);
+  assert.equal(store.hasWidgets(), false);
+  await new h.context.ReadingWidgetStore('/private').updateAll();
+  assert.ok(h.updates.every(update => update.data.preview && update.data.items.length === 0));
+  ability.onSizeChanged('2', 4, {});
+  await flush();
+  assert.equal(h.updates.at(-1).data.preview, true);
+  ability.onFormLocationChanged('2', 0);
+  await flush();
+  assert.equal(h.updates.at(-1).data.preview, false);
+  assert.equal(h.updates.at(-1).data.items.length, 5);
+  assert.equal(store.hasWidgets(), true);
+  ability.onFormLocationChanged('2', 2);
+  await flush();
+  assert.equal(h.updates.at(-1).data.items.length, 0);
+  ability.onStop();
+  assert.equal(h.handles.size, 0);
+});
+
+test('gallery detection works when the runtime omits the location enum constant', () => {
+  const h = harness();
+  delete h.context.formInfo.FormParam.FORM_LOCATION_KEY;
+  const store = new h.context.ReadingWidgetStore('/private');
+  store.save(snapshot());
+  const ability = new h.context.ReadingFormAbility();
+  const data = ability.onAddForm({ parameters: {
+    id: '46', size: 3, name: 'reading_history',
+    'ohos.extra.param.key.form_location': 2,
+  } }).data;
+  assert.equal(data.preview, true);
+  assert.deepEqual(copy(data.items), []);
+  assert.equal(store.hasWidgets(), false);
+  ability.onStop();
+});
+
+test('temporary previews become real cards only after casting and still obey app privacy', async () => {
+  const h = harness();
+  const store = new h.context.ReadingWidgetStore('/private');
+  store.save(snapshot());
+  const ability = new h.context.ReadingFormAbility();
+  assert.equal(ability.onAddForm({ parameters: { id: '45', size: 2, temporary: true } }).data.preview, true);
+  h.contents.delete('/private/appdata.json');
+  ability.onCastToNormalForm('45');
+  await flush();
+  assert.equal(h.updates.at(-1).data.preview, false);
+  assert.equal(h.updates.at(-1).data.items.length, 0);
   ability.onStop();
 });

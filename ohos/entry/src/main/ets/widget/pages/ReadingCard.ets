@@ -5,6 +5,7 @@ const storage = new LocalStorage();
 @Entry(storage)
 @Component
 struct ReadingCard {
+  @LocalStorageProp('preview') private preview: boolean = true;
   @LocalStorageProp('kind') private kind: string = 'history';
   @LocalStorageProp('uri') private uri: string = 'venerax://reading-widget/history';
   @LocalStorageProp('title') private title: string = '';
@@ -47,7 +48,7 @@ struct ReadingCard {
   private progress(item: ReadingWidgetItem) {
     Text(item.progress).fontSize(11).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
       .fontColor($r('app.color.reading_widget_secondary')).width('100%')
-    if (item.pageProgress >= 0 && this.dimension !== 3) {
+    if (item.pageProgress >= 0) {
       Progress({ value: item.pageProgress, total: 100, type: ProgressType.Linear })
         .color($r('app.color.reading_widget_accent'))
         .backgroundColor($r('app.color.reading_widget_placeholder'))
@@ -80,61 +81,81 @@ struct ReadingCard {
   }
 
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 6 }) {
-        Image(this.iconResource()).width(16).height(16)
-          .fillColor($r('app.color.reading_widget_accent')).accessibilityLevel('no')
-        Text(this.title.length > 0 ? this.title : this.titleResource())
-          .fontSize(14).fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.reading_widget_text'))
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-        Text('›').fontSize(20).fontColor($r('app.color.reading_widget_secondary'))
-      }.height(24).width('100%').onClick(() => this.open(this.uri))
-      if (this.items.length === 0) {
-        Column({ space: 10 }) {
-          Image(this.iconResource()).width(32).height(32)
+    if (this.preview) {
+      Image(this.dimension === 4 ? $r('app.media.reading_widget_preview_large') :
+        this.dimension === 3 ? $r('app.media.reading_widget_preview_medium') : $r('app.media.reading_widget_preview_small'))
+        .width('100%').height('100%').objectFit(ImageFit.Fill)
+    } else {
+      Column({ space: 8 }) {
+        Row({ space: 6 }) {
+          Image(this.iconResource()).width(16).height(16)
             .fillColor($r('app.color.reading_widget_accent')).accessibilityLevel('no')
-          Text(this.emptyText.length > 0 ? this.emptyText : $r('app.string.reading_widget_open'))
-            .fontSize(12).fontColor($r('app.color.reading_widget_secondary'))
-            .textAlign(TextAlign.Center).maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
-        }.justifyContent(FlexAlign.Center).width('100%').layoutWeight(1)
-        .onClick(() => this.open(this.uri))
-      } else if (this.dimension === 2) {
-        // Builders take their arguments by value and ForEach reuses a row while its
-        // key holds, so the key carries everything a row shows (#349).
-        ForEach(this.items.slice(0, 1), (item: ReadingWidgetItem) => {
-          Column({ space: 6 }) {
-            Row({ space: 10 }) {
-              this.cover(item, 52, 76)
-              this.bookTitle(item, true)
-            }.width('100%').layoutWeight(1)
-            this.progress(item)
-          }.width('100%').layoutWeight(1).onClick(() => this.open(item.uri))
-          .accessibilityText(`${item.title}, ${item.progress}, ${item.sourceName}`)
-        }, (item: ReadingWidgetItem) => this.rowKey(item))
-      } else {
-        Column({ space: 6 }) {
-          ForEach(this.items.slice(0, this.dimension === 4 ? 4 : 2), (item: ReadingWidgetItem) => {
-            Row({ space: 10 }) {
-              this.cover(item, this.dimension === 3 ? 28 : 40, this.dimension === 3 ? 40 : 58)
-              Column({ space: 4 }) {
-                Text(item.title).fontSize(13).fontWeight(FontWeight.Medium).maxLines(this.dimension === 3 ? 1 : 2).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .fontColor($r('app.color.reading_widget_text')).width('100%')
-                this.progress(item)
-                if (item.badge.length > 0 && this.dimension !== 3) {
-                  Text(item.badge).fontSize(10).fontColor($r('app.color.reading_widget_badge')).maxLines(1)
-                }
-              }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+          Text(this.title.length > 0 ? this.title : this.titleResource())
+            .fontSize(14).fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.reading_widget_text'))
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+          Text('›').fontSize(20).fontColor($r('app.color.reading_widget_secondary'))
+        }.height(24).width('100%').onClick(() => this.open(this.uri))
+        if (this.items.length === 0) {
+          Column({ space: 10 }) {
+            Image(this.iconResource()).width(32).height(32)
+              .fillColor($r('app.color.reading_widget_accent')).accessibilityLevel('no')
+            Text(this.emptyText.length > 0 ? this.emptyText : $r('app.string.reading_widget_open'))
+              .fontSize(12).fontColor($r('app.color.reading_widget_secondary'))
+              .textAlign(TextAlign.Center).maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
+          }.justifyContent(FlexAlign.Center).width('100%').layoutWeight(1)
+          .onClick(() => this.open(this.uri))
+        } else if (this.dimension === 2) {
+          // Builders take their arguments by value and ForEach reuses a row while its
+          // key holds, so the key carries everything a row shows (#349).
+          ForEach(this.items.slice(0, 1), (item: ReadingWidgetItem) => {
+            Column({ space: 6 }) {
+              Row({ space: 10 }) {
+                this.cover(item, 52, 76)
+                this.bookTitle(item, true)
+              }.width('100%').layoutWeight(1)
+              this.progress(item)
             }.width('100%').layoutWeight(1).onClick(() => this.open(item.uri))
             .accessibilityText(`${item.title}, ${item.progress}, ${item.sourceName}`)
           }, (item: ReadingWidgetItem) => this.rowKey(item))
-        }.width('100%').layoutWeight(1)
-      }
-      if (this.subtitle.length > 0 && this.dimension === 4) {
-        Text(this.subtitle).fontSize(10).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .fontColor($r('app.color.reading_widget_secondary')).width('100%')
-      }
-    }.padding(12).width('100%').height('100%')
-    .backgroundColor($r('app.color.reading_widget_background')).borderRadius(16)
+        } else if (this.dimension === 3) {
+          Row({ space: 12 }) {
+            ForEach(this.items.slice(0, 3), (item: ReadingWidgetItem) => {
+              Column({ space: 5 }) {
+                Image(item.image.length > 0 ? item.image : $r('app.media.reading_widget_placeholder'))
+                  .width('100%').layoutWeight(1).objectFit(ImageFit.Cover).borderRadius(8)
+                  .backgroundColor($r('app.color.reading_widget_placeholder'))
+                  .accessibilityText(item.title)
+                Text(item.title).fontSize(12).fontWeight(FontWeight.Medium).maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .fontColor($r('app.color.reading_widget_text')).width('100%')
+                this.progress(item)
+              }.layoutWeight(1).height('100%').alignItems(HorizontalAlign.Start)
+              .onClick(() => this.open(item.uri))
+              .accessibilityText(`${item.title}, ${item.progress}`)
+            }, (item: ReadingWidgetItem) => this.rowKey(item))
+          }.width('100%').layoutWeight(1)
+        } else {
+          Column({ space: 6 }) {
+            ForEach(this.items.slice(0, 5), (item: ReadingWidgetItem) => {
+              Row({ space: 10 }) {
+                this.cover(item, 36, 50)
+                Column({ space: 4 }) {
+                  Text(item.title).fontSize(13).fontWeight(FontWeight.Medium).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .fontColor($r('app.color.reading_widget_text')).width('100%')
+                  this.progress(item)
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+              }.width('100%').layoutWeight(1).onClick(() => this.open(item.uri))
+              .accessibilityText(`${item.title}, ${item.progress}, ${item.sourceName}`)
+            }, (item: ReadingWidgetItem) => this.rowKey(item))
+          }.width('100%').layoutWeight(1)
+        }
+        if (this.subtitle.length > 0 && (this.dimension === 4 || this.items.length === 0)) {
+          Text(this.subtitle).fontSize(10).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .fontColor($r('app.color.reading_widget_secondary')).width('100%')
+        }
+      }.padding(12).width('100%').height('100%')
+      .backgroundColor($r('app.color.reading_widget_background')).borderRadius(16)
+    }
   }
 }

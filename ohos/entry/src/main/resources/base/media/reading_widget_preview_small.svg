@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+<rect width="320" height="320" rx="28" fill="#F8F6FC"/>
+<path d="M24 24h11c5 0 8 3 8 6v22c-3-3-6-4-10-4h-9z M44 30c0-3 3-6 8-6h11v24H53c-4 0-7 1-9 4z" fill="#6750A4"/>
+<rect x="78" y="29" width="150" height="16" rx="8" fill="#25212D"/>
+<rect x="27" y="80" width="124" height="174" rx="9" fill="#DED6E8"/><rect x="24" y="76" width="124" height="174" rx="8" fill="#6750A4"/><circle cx="104.60000000000001" cy="128.2" r="27.28" fill="#F4E0BB"/><path d="M24,250 L92.2,154.3 L148,250Z" fill="#FFFFFF" fill-opacity=".24"/><rect x="42.599999999999994" y="206.5" width="86.8" height="4" rx="2" fill="#FFFFFF" fill-opacity=".7"/>
+<rect x="168" y="100" width="112" height="14" rx="5" fill="#25212D"/><rect x="168" y="125" width="85" height="14" rx="5" fill="#25212D"/><rect x="168" y="165" width="95" height="9" rx="4" fill="#8B8198"/><rect x="24" y="278" width="272" height="7" rx="3" fill="#E8E1F0"/><rect x="24" y="278" width="178" height="7" rx="3" fill="#6750A4"/>
+</svg>
+

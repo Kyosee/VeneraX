@@ -14,10 +14,12 @@ class ReadingForm {
   id: string;
   dimension: number;
   kind: string;
-  constructor(id: string, dimension: number, kind: string) {
+  preview: boolean;
+  constructor(id: string, dimension: number, kind: string, preview: boolean = false) {
     this.id = id;
     this.dimension = dimension;
     this.kind = kind;
+    this.preview = preview;
   }
 }
 
@@ -78,16 +80,24 @@ export class ReadingWidgetStore {
     } catch (_) { return []; }
   }
 
-  hasWidgets(kind?: string): boolean { return this.forms().some((form: ReadingForm) => kind === undefined || form.kind === kind); }
+  hasWidgets(kind?: string): boolean {
+    return this.forms().some((form: ReadingForm) => !form.preview && (kind === undefined || form.kind === kind));
+  }
 
-  register(id: string, dimension: number, kind?: string): void {
+  register(id: string, dimension: number, kind?: string, preview?: boolean): void {
     if (!/^-?\d+$/.test(id)) return;
     const forms = this.forms();
-    const selected = kind ?? forms.find((form: ReadingForm) => form.id === id)?.kind ?? 'history';
+    const existing = forms.find((form: ReadingForm) => form.id === id);
+    const selected = kind ?? existing?.kind ?? 'history';
     if (!isReadingWidgetKind(selected)) return;
     const retained = forms.filter((form: ReadingForm) => form.id !== id);
-    retained.push(new ReadingForm(id, dimension, selected));
+    retained.push(new ReadingForm(id, dimension, selected, preview ?? existing?.preview ?? false));
     this.write('reading_widget_forms.json', JSON.stringify(retained));
+  }
+
+  setPreview(id: string, preview: boolean): void {
+    const form = this.forms().find((item: ReadingForm) => item.id === id);
+    if (form !== undefined) this.register(id, form.dimension, form.kind, preview);
   }
 
   remove(id: string): void {
@@ -102,10 +112,17 @@ export class ReadingWidgetStore {
     } catch (_) { return false; }
   }
 
-  binding(id: string): ReadingWidgetBinding {
+  binding(id: string, preview: boolean = false): ReadingWidgetBinding {
     let snapshot = new ReadingWidgetData();
     const form = this.forms().find((item: ReadingForm) => item.id === id);
     const kind = form?.kind ?? 'history';
+    if (preview || form?.preview) {
+      snapshot.preview = true;
+      snapshot.kind = kind;
+      snapshot.dimension = form?.dimension ?? 2;
+      return new ReadingWidgetBinding(snapshot, []);
+    }
+    if (form === undefined) return new ReadingWidgetBinding(snapshot, []);
     try {
       // Settings may persist before Dart clears the last public snapshot.
       if (this.contentAllowed()) {
@@ -115,7 +132,7 @@ export class ReadingWidgetStore {
     snapshot.kind = kind;
     snapshot.uri = `venerax://reading-widget/${kind}`;
     snapshot.dimension = form?.dimension ?? 2;
-    snapshot.items = snapshot.items.slice(0, snapshot.dimension === 4 ? 4 : 2);
+    snapshot.items = snapshot.items.slice(0, snapshot.dimension === 4 ? 5 : snapshot.dimension === 3 ? 3 : 1);
     const files: fs.File[] = [];
     snapshot.items.forEach((item) => {
       const prefix = `${this.filesDir}/reading_widget_covers/`;
@@ -148,7 +165,8 @@ export class ReadingWidgetStore {
       binding.close();
     }
     // The UI and extension processes may finish updates in a different order.
-    if (binding.hasContent && !this.contentAllowed()) await this.update(id);
+    if (binding.hasContent && (this.forms().find((form: ReadingForm) => form.id === id)?.preview ||
+      !this.contentAllowed())) await this.update(id);
   }
 
   async updateAll(kind?: string): Promise<void> {
