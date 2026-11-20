@@ -164,7 +164,7 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | `-OnnxSource` | 自动准备 | ONNX 固定提交的 checkout；只允许项目规定的兼容补丁 |
 | `-EigenSource` | 自动准备 | Eigen 固定提交的干净 checkout |
 
-`-TargetPlatform` 选择最终 HAP 的 ABI；当前主脚本调用 rhttp 和 ONNX 构建时，仍各自构建 `x86_64`、`arm64-v8a` 两种库。切换到探针入口同样不会跳过这些原生构建阶段。
+`-TargetPlatform` 选择最终 HAP 的 ABI。直接运行脚本时，默认准备两种架构的原生库。发布流水线为各自的 ABI 准备库，再用 `-UsePreparedNativeLibraries` 跳过重复编译。
 
 ## 正式发布构建
 
@@ -177,9 +177,11 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | `FLUTTER_OHOS_SDK` | 流水线获取的固定提交 Flutter OH SDK |
 | `DEVECO_STUDIO` | 云端解压后的 `command-line-tools` 根目录 |
 
-先手动运行 `Build ALL`，选择 `platform=harmonyos` 验证构建；标签触发的全平台发布会等待鸿蒙产物。工具包压缩文件按版本缓存，避免重复下载；不上传本机缓存、个人配置或本机构建产物。
+手动运行 `Build ALL` 并选择 `platform=harmonyos` 可验证两份 HAP。手机 ARM64 和模拟器 x86_64 各用一台 Runner，并行构建。工具包按版本缓存，ONNX 和 rhttp 按各自的原生依赖和 ABI 缓存。缓存缺失时才编译对应的库，并在 HAP 打包前保存。
 
-流水线将独立目录检出至本次提交，复用 `tool/build_ohos.ps1` 自动获取原生依赖并构建两种架构。上传前检查 HAP 内的版本、release 模式、ABI 和原生库。临时构建产物保留 7 天，正式安装包由 Release 保存；真机签名按下节处理。构建、自动化测试和打包均在托管 Runner 执行，云端失败时也不回退到本机。
+`master` 每周一、四北京时间 10:37 自动恢复缓存并补齐缺项。需要提前预热时，在 `master` 手动运行 `platform=native-cache` 即可。它也会准备 Android、Windows、Linux 和 Apple 使用的预编译 ONNX 包。查看鸿蒙任务中的 `Restore ONNX Runtime` 和 `Restore rhttp` 可确认命中，对应的编译步骤会显示 `Skipped`。
+
+流水线在独立目录打包，上传前检查 HAP 内的版本、release 模式、ABI 和原生库。临时产物保留 7 天，发布包由 Release 保存。真机签名按下节处理。构建、自动化测试和打包均在 GitHub 托管 Runner 上执行。
 
 ## ARM64 构建、签名与安装
 

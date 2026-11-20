@@ -164,7 +164,7 @@ These parameters belong to [build_ohos.ps1](../tool/build_ohos.ps1).
 | `-OnnxSource` | automatic | ONNX checkout at the fixed revision; only the project compatibility patch is allowed |
 | `-EigenSource` | automatic | Clean Eigen checkout at the fixed revision |
 
-`-TargetPlatform` selects the final HAP ABI. The rhttp and ONNX build scripts still compile both `x86_64` and `arm64-v8a` libraries on every run, including probe builds.
+`-TargetPlatform` selects the final HAP ABI. Direct script invocation prepares both native architectures by default. The release workflow prepares libraries for each ABI and passes `-UsePreparedNativeLibraries` to skip recompilation.
 
 ## Release builds
 
@@ -177,9 +177,11 @@ The `Build_HarmonyOS` job in `Build ALL` uses GitHub-hosted `ubuntu-22.04`, with
 | `FLUTTER_OHOS_SDK` | Flutter OH SDK fetched at the pinned revision |
 | `DEVECO_STUDIO` | Extracted `command-line-tools` directory on the runner |
 
-First dispatch `Build ALL` with `platform=harmonyos` to validate the build. Tag-triggered releases wait for the HarmonyOS packages. The official archive is cached by version; local caches, personal configuration, and locally built artifacts are never uploaded as substitutes.
+Dispatch `Build ALL` with `platform=harmonyos` to validate both HAPs. The ARM64 phone and x86_64 emulator packages build in parallel on separate runners. The workflow caches the official tool archive by version and caches ONNX and rhttp separately by native inputs and ABI. Each missing library is compiled and saved before HAP packaging.
 
-The workflow checks out the requested commit in isolation and reuses `tool/build_ohos.ps1` to acquire native dependencies and build both architectures. It checks the packaged version, release mode, ABI, and native libraries before uploading. Temporary artifacts are retained for seven days; published packages remain in the Release. Builds, automated tests, and packaging run only on GitHub-hosted runners, including when diagnosing failures. Phone signing is covered below.
+`master` restores the caches and fills missing entries every Monday and Thursday at 02:37 UTC. To warm them ahead of a release, dispatch `platform=native-cache` on `master`. This also prepares the prebuilt ONNX packages for Android, Windows, Linux, and Apple. On a cache hit, `Restore ONNX Runtime` or `Restore rhttp` reports the restored key and the corresponding build step is skipped.
+
+The workflow packages from an isolated checkout and checks the version, release mode, ABI, and native libraries inside each HAP before upload. Temporary artifacts are kept for seven days. Published packages remain in the Release. Builds, automated tests, and packaging run on GitHub-hosted runners. Phone signing is covered below.
 
 ## ARM64 build, signing and installation
 
