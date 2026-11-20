@@ -103,8 +103,15 @@ node --test .github/scripts/issue-triage.test.mjs
 ```
 
 测试模拟 GitHub 和模型接口，不调用真实收费 API。部署后可查看 Actions 的
-**Issue triage** 运行记录。配置错误只写通用提示，不输出模型响应、Issue 原文或凭据。
+**Issue triage** 运行记录。失败日志仅记录固定错误类别或 HTTP 状态，不输出模型响应、Issue 原文或凭据。
+`Invalid API URL` 表示地址格式不符；`AI HTTP 401/403` 检查 Key 与权限，
+`AI HTTP 404` 检查接口路径与模型，`AI HTTP 429` 检查服务商额度/限流；
+`Invalid AI JSON/content/result` 表示返回内容不符合协议或安全校验。修正配置后，有写权限的维护者可在原单评论 `/triage retry` 验证。
 
 Tests mock GitHub and model requests without using a paid API. After deployment,
-inspect the **Issue triage** Actions runs. Failures log a generic message without
-provider responses, Issue text or credentials.
+inspect the **Issue triage** Actions runs. Failures log only fixed error categories
+or HTTP status codes, without provider responses, Issue text or credentials.
+Check the endpoint format for `Invalid API URL`, credentials/permissions for
+HTTP 401/403, path/model for 404, and provider quota/rate limits for 429. Invalid
+AI JSON/content/result means protocol or output validation failed. After fixing
+configuration, a repository writer can comment `/triage retry` on the same Issue.

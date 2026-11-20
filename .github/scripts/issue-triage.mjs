@@ -184,6 +184,18 @@ export async function askModel({ env, prompt, report, title, body, comments, con
   return answer;
 }
 
+export function failureReason(error) {
+  const message = error?.message ?? '';
+  if (/^AI HTTP [45]\d{2}$/.test(message)) return message;
+  if (['Invalid API URL', 'Invalid AI result', 'AI result too large', 'Invalid AI content'].includes(message)) return message;
+  if (error?.code === 'ERR_INVALID_URL') return 'Invalid API URL';
+  if (['TimeoutError', 'AbortError'].includes(error?.name)) return 'AI request timed out';
+  if (error?.name === 'SyntaxError') return 'Invalid AI JSON';
+  if (message === 'fetch failed') return 'AI network request failed';
+  if (error?.code === 'ENOENT') return 'Missing local prompt or documentation';
+  return 'Unexpected integration error';
+}
+
 function eventKey(context) {
   const p = context.payload;
   return p.comment ? `comment:${p.comment.id}:${p.action}:${p.comment.updated_at}` :
@@ -364,8 +376,8 @@ export async function run({ github, context, env = process.env, root = ROOT, fet
     state.ai = ai;
     state.references = documents.documents.filter(d => ai.sources.includes(d.id)).map(({ id, url }) => ({ id, url }));
     await publish(render(report, state, ai, documents.documents));
-  } catch {
+  } catch (error) {
     // Never log provider responses, report text, URLs or credentials.
-    console.log('AI triage unavailable; rule-based intake remains active. Check the API configuration and provider status.');
+    console.log(`AI triage unavailable (${failureReason(error)}); rule-based intake remains active. Check the API configuration and provider status.`);
   }
 }
