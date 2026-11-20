@@ -91,11 +91,11 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.2.3
   # 1.8.3 with the iOS minimum lowered from 16.0 to 15.1, matching ONNX Runtime 1.23.
-  # Linux can fall back to Microsoft's same-version NuGet package.
+  # Linux and Windows can fall back to Microsoft's same-version NuGet package.
   flutter_onnxruntime:
     git:
       url: https://github.com/Kyosee/flutter_onnxruntime
-      ref: aee19dda20d9a291696ca9d58f6a504b697e27c0
+      ref: 2c79916b1a1a182280fec00def15b9cf3b0ee831
   unorm_dart: ^0.3.2
   ffi: ^2.2.0
   pdfrx_engine: ^0.4.3

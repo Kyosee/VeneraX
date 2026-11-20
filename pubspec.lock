@@ -472,8 +472,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: aee19dda20d9a291696ca9d58f6a504b697e27c0
-      resolved-ref: aee19dda20d9a291696ca9d58f6a504b697e27c0
+      ref: "2c79916b1a1a182280fec00def15b9cf3b0ee831"
+      resolved-ref: "2c79916b1a1a182280fec00def15b9cf3b0ee831"
       url: "https://github.com/Kyosee/flutter_onnxruntime"
     source: git
     version: "1.8.3"
