@@ -6,6 +6,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/metrickit.dart';
 import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/session_guard.dart';
 
@@ -234,7 +235,10 @@ abstract final class DiagnosticsReport {
   }
 
   /// The report for an abnormal exit set aside earlier.
-  static Future<String> forArchived(SessionReport report) async {
+  ///
+  /// [until] is the last record of the next abnormal exit on file, if any:
+  /// system reports that arrived after it are about that one.
+  static Future<String> forArchived(SessionReport report, {int? until}) async {
     var entries = const <LogItem>[];
     // A quarter of a megabyte at most, read on a tap.
     if (report.log.existsSync()) {
@@ -252,7 +256,8 @@ abstract final class DiagnosticsReport {
       osExit: report.osExit,
       // Android's is on file from when the run was set aside. HarmonyOS
       // delivers its report some time after the next launch, so that one is
-      // asked for now.
+      // asked for now. Apple's arrive on a later launch and are kept by the
+      // host; each belongs to the last run that ended before it arrived.
       systemReport: report.trace.existsSync()
           ? report.trace.readAsStringSync()
           : App.isOhos
@@ -260,6 +265,12 @@ abstract final class DiagnosticsReport {
               await readOhosNativeRecords(),
               from: report.record.id,
               to: report.archivedAt,
+            )
+          : App.isIOS || App.isMacOS
+          ? readSystemDiagnostics(
+              Directory('${App.dataPath}/diagnostics'),
+              from: report.record.lastAt,
+              to: until,
             )
           : null,
       entries: entries,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,5 +126,63 @@ void main() {
 
     expect(find.textContaining('== Current run =='), findsOne);
     expect(find.text('This run'), findsNothing);
+  });
+
+  testWidgets('on Apple systems a run shows the system reports that arrived '
+      'before the next failure', (tester) async {
+    final reports = '${dir.path}/diagnostics';
+    final later = SessionRecord(
+      id: DateTime(2026, 11, 20, 11).millisecondsSinceEpoch,
+      version: '1.2.3',
+      presence: SessionRecord.front,
+      lastAt: DateTime(2026, 11, 20, 11, 5).millisecondsSinceEpoch,
+    );
+    File('$reports/${later.id}.json').writeAsStringSync(
+      jsonEncode({
+        ...later.toJson(),
+        'archivedAt': DateTime(2026, 11, 20, 12).millisecondsSinceEpoch,
+      }),
+    );
+    void delivery(DateTime arrived, String binary) {
+      File(
+        '$reports/system-${arrived.millisecondsSinceEpoch}-0.json',
+      ).writeAsStringSync(
+        jsonEncode({
+          'crashDiagnostics': [
+            {
+              'callStackTree': {
+                'callStacks': [
+                  {
+                    'threadAttributed': true,
+                    'callStackRootFrames': [
+                      {'binaryName': binary, 'offsetIntoBinaryTextSegment': 1},
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+    }
+
+    // Each arrives on the launch after its crash.
+    delivery(DateTime(2026, 11, 20, 10), 'FirstCrash');
+    delivery(DateTime(2026, 11, 20, 12), 'SecondCrash');
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      await open(tester);
+      expect(find.textContaining('#00 SecondCrash +1'), findsOne);
+      expect(find.textContaining('FirstCrash'), findsNothing);
+
+      await tester.tap(find.text('11-20 09:00'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('#00 FirstCrash +1'), findsOne);
+      expect(find.textContaining('SecondCrash'), findsNothing);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 }

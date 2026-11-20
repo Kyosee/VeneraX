@@ -95,9 +95,16 @@ class _DiagnosticsPageState extends State<DiagnosticsPage> {
     String text;
     try {
       Log.flush();
-      text = selected == null
-          ? await DiagnosticsReport.forCurrentRun()
-          : await DiagnosticsReport.forArchived(selected);
+      if (selected == null) {
+        text = await DiagnosticsReport.forCurrentRun();
+      } else {
+        // Newest first: the one before is the next exit after this one.
+        final index = _reports.indexOf(selected);
+        text = await DiagnosticsReport.forArchived(
+          selected,
+          until: index > 0 ? _reports[index - 1].record.lastAt : null,
+        );
+      }
     } catch (e, s) {
       Log.error('Diagnostics', e, s);
       text = '${'Failed to build the report'.tl}\n$e';

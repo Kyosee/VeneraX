@@ -1,4 +1,5 @@
 import Flutter
+import MetricKit
 import UIKit
 import UniformTypeIdentifiers
 import Foundation // 添加此行
@@ -25,11 +26,14 @@ import Foundation // 添加此行
   private var directoryPicker: DirectoryPicker?
   // Scene delegates are held weakly by the engine.
   private let appShortcuts = AppShortcutBridge()
+  // Held for the life of the app; MetricKit does not promise to retain it.
+  private let systemDiagnostics = SystemDiagnosticsKeeper()
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    MXMetricManager.shared.add(systemDiagnostics)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -231,5 +235,57 @@ final class AppShortcutBridge: NSObject, FlutterStreamHandler, FlutterSceneLifeC
     guard deliver(shortcutItem) else { return false }
     completionHandler(true)
     return true
+  }
+}
+
+/// Keeps the crash and hang reports MetricKit delivers on a later launch, as
+/// `diagnostics/system-<ms>-<n>.json` under the directory path_provider gives
+/// Dart as application support. The diagnostic report reads them from there.
+final class SystemDiagnosticsKeeper: NSObject, MXMetricManagerSubscriber {
+  private static let maxFiles = 8
+
+  // Same lookup as path_provider_foundation, which adds nothing on iOS.
+  private static var directory: URL? {
+    guard let base = NSSearchPathForDirectoriesInDomains(
+      .applicationSupportDirectory, .userDomainMask, true
+    ).first else { return nil }
+    return URL(fileURLWithPath: base).appendingPathComponent("diagnostics", isDirectory: true)
+  }
+
+  // Called on a background queue.
+  func didReceive(_ payloads: [MXDiagnosticPayload]) {
+    guard let directory = Self.directory else { return }
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    } catch {
+      return
+    }
+    let time = Int64(Date().timeIntervalSince1970 * 1000)
+    for (index, payload) in payloads.enumerated() {
+      let data = payload.jsonRepresentation()
+      // Other kinds of report would push crashes out of the few kept.
+      guard Self.hasCrashOrHang(data) else { continue }
+      try? data.write(to: directory.appendingPathComponent("system-\(time)-\(index).json"), options: .atomic)
+    }
+    Self.prune(directory)
+  }
+
+  private static func hasCrashOrHang(_ data: Data) -> Bool {
+    guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+    return (json["crashDiagnostics"] as? [Any])?.isEmpty == false
+      || (json["hangDiagnostics"] as? [Any])?.isEmpty == false
+  }
+
+  private static func prune(_ directory: URL) {
+    guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+    let kept = names.compactMap { name -> (Int64, Int, String)? in
+      guard name.hasPrefix("system-"), name.hasSuffix(".json") else { return nil }
+      let parts = name.dropFirst(7).dropLast(5).split(separator: "-")
+      guard parts.count == 2, let time = Int64(parts[0]), let index = Int(parts[1]) else { return nil }
+      return (time, index, name)
+    }.sorted { ($0.0, $0.1) > ($1.0, $1.1) }
+    for (_, _, name) in kept.dropFirst(Self.maxFiles) {
+      try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+    }
   }
 }
