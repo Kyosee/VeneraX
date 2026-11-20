@@ -9,6 +9,9 @@ The three forms stay unchanged. New Issues receive one managed triage comment.
 report to `status: triage` for maintainer review. Attachments remain optional.
 The bot never closes, locks or deletes Issues or decides priority or resolution.
 
+可打开 [流程预览页](issue-flow-preview.html) 查看各场景；下载后用浏览器打开即可，无需联网。
+Download the [flow preview](issue-flow-preview.html) and open it locally in a browser; it works offline.
+
 ## 配置 API / Configure the API
 
 打开仓库 **Settings → Secrets and variables → Actions**。
@@ -55,22 +58,40 @@ AI output fall back to rule-based intake.
 
 默认提示词在 [issue-triage-prompt.md](issue-triage-prompt.md)，**公开可见**，无需另外填写。
 它约束回复范围、语言、简洁程度及权限，并遵守项目用户协议与免责声明的原则。
-修改时保持英文指令也能生成中英文回复；不要把 Key、私有地址或账户资料写进提示词。
+AI 跟随正文叙述的主要语言，不让双语标题、选项或代码日志干扰，也不限于中英文。
+固定受理文案提供中文/英文两套。不要把 Key、私有地址或账户资料写进提示词。
 
 The default [prompt](issue-triage-prompt.md) is **public** and works without extra
 configuration. It defines scope, language, brevity and permissions consistently
 with the project's User Agreement and Disclaimer. Never put credentials or private
-account details in the prompt.
+account details in the prompt. AI follows the main narrative language, including
+languages beyond Chinese and English; bilingual headings, choices and code/log
+blocks do not determine it. Fixed intake messages are available in Chinese and English.
 
 开启 AI 后，公开 Issue 标题、限长正文、少量作者/维护者补充会发给所配置服务商。
-发送前移除链接、提及及 HTML，检测到常见密钥格式或安全问题时转人工；这不代替提交者
-自行脱敏。机器人不下载附件，不自动打开用户链接，不上传仓库密钥或私人应用数据。
+发送前移除链接、提及及 HTML。检测到常见密钥、邮箱、带标签的电话/账号、私人用户目录、
+明确源名称/地址字段或安全问题时，本次不发给 AI，提醒编辑公开原文并转人工；同时清除
+机器人评论和状态标记中缓存的旧 AI 答案。模型输出也经过同类检测。
+检测不能覆盖所有写法，且不会替用户修改原文或撤回已发给服务商的数据；提交者仍需自行脱敏。
+机器人不下载附件，不自动打开用户链接，不上传仓库密钥或读取私人应用数据。
 
 When enabled, the configured provider receives bounded public Issue text and a few
-author/maintainer updates. Links, mentions and HTML are removed; recognizable
-credentials and security reports bypass AI. This does not replace users' own
-redaction. Attachments and user links are not fetched, and repository secrets or
-private application data are never included in the model's messages.
+author/maintainer updates. Links, mentions and HTML are removed. Recognizable
+credentials, emails, labeled phone/account details, private user paths, explicit
+source-name/address fields and security reports bypass AI for that update. The bot
+asks the author to edit the public text and removes cached AI replies from both its
+comment and state marker. Model output uses the same checks. Detection cannot cover
+every spelling, edit the original report or retract data already sent to a provider;
+users must redact their own reports. Attachments and user links are not fetched.
+Repository secrets and private application files are not read into model messages.
+
+明确属于第三方源站、账号、脚本自身的问题，初审只提示支持范围；维护者确认后可说明原因并关闭。
+“源管理崩溃”“JS 引擎报错”“WebDAV 同步失败”仍可能是应用缺陷，不能按关键词自动拒绝。
+
+Reports clearly about third-party sites, accounts or scripts receive a scope reminder;
+a maintainer may explain and close them after review. Source-management crashes,
+JS-engine errors and WebDAV sync failures may still be app defects; keywords alone
+never cause automatic rejection or closure.
 
 可信上下文来自当前默认分支的 README 协议与基本信息、`doc/guide.zh.md` 或
 `doc/guide.en.md`。本地按关键词选最多 3 段相关内容，输出引用指向实际读取的提交。
@@ -86,10 +107,15 @@ The initial version does not analyze the full codebase or automatically decide d
 
 - 默认每单最多 2 次模型调用：初答及作者补充后的复查；固定缺项清楚时先不用 AI。
   最多 700 输出 token，25 秒超时；文档片段合计不超过 3,000 字符、协议片段
-  1,300 字符、正文 3,500 字符、补充 1,200 字符。Responses 的输出上限包含推理 token，
-  宜选适合简短回答的模型。字符上限不是精确 token 或费用承诺。
+  1,300 字符、正文 3,500 字符、补充 1,200 字符；另带最多 600 字符的正文语言样本。
+  Responses 的输出上限包含推理 token，宜选适合简短回答的模型。
+  字符上限不是精确 token 或费用承诺。
 - 提供商仍可能对失败请求计费。请在服务商后台设置额度；关闭 `ISSUE_AI_ENABLED`
   可立即阻止后续 AI 调用，保留基本受理。Actions 和模型服务各按自己的规则计费。
+- 自动 AI 调用前检查滚动 24 小时新单数：同一作者第 4 条或全仓第 21 条起，保留规则受理、暂不调用 AI。
+  包含当前单和已关闭单，不含 PR；查询失败或最近 100 条仍不足以判断时也降级，不消耗该单调用次数。
+  限流不拦截提交，也不永久暂停；有写权限的 `/triage retry` 可显式允许一次调用，但不能绕过隐私检查。
+  这只是批量开单节流，不是所有历史单补充、重试或总费用的硬上限，仍须设置服务商额度。
 - 维护者回复、指派或更改受管理标签后，停止自动追问及覆盖分类。
   有仓库写权限的维护者可评论 `/triage pause` 暂停、`/triage retry` 显式重审。
   重审可超出默认次数并产生一次费用，不要用机器人循环发此命令。
@@ -98,11 +124,19 @@ The initial version does not analyze the full codebase or automatically decide d
 
 - At most two model calls per Issue by default: initial response and one follow-up.
   Clear required-field gaps are handled without AI. Responses have a 700-token cap
-  and 25-second timeout; context has the character limits listed above. The Responses
+  and 25-second timeout; context has the character limits listed above, including a
+  600-character narrative sample for language detection. The Responses
   cap includes reasoning tokens, so choose a model suited to concise answers.
 - Providers may charge failed requests. Set a provider-side budget. Disabling
   `ISSUE_AI_ENABLED` stops future AI calls while preserving intake. Actions and the
   model provider apply their own billing rules.
+- Before automatic AI calls, count new Issues in a rolling 24-hour window. From
+  the author's fourth or the repository's twenty-first Issue, keep fixed intake
+  without calling AI. Count the current and closed Issues, exclude PRs. Failed or
+  incomplete queries (at most 100 records) also defer AI without spending the
+  per-Issue call budget or permanently pausing intake. A writer's explicit retry
+  permits one call beyond this throttle but never bypasses privacy checks. This is
+  not a hard daily call or billing cap covering old-Issue updates and manual retries.
 - Maintainer replies, assignment or managed-label changes stop automatic questioning
   and classification overrides. Repository writers can use `/triage pause` or
   `/triage retry`; retry explicitly permits another potentially billable call.
@@ -122,6 +156,7 @@ node --test .github/scripts/issue-triage.test.mjs
 `Invalid AI JSON/content/result` 表示返回内容不符合协议或安全校验；`AI response incomplete`
 表示模型未完成输出（可能达到 token 上限），可检查服务商状态或改用适合简短回答的模型。
 `AI triage skipped` 表示处理期间反馈发生变化，已丢弃过时分析；日志会注明发生阶段。
+`AI triage deferred` 表示近期新单限流或无法可靠计数，本次只做规则受理。
 修正配置后，有写权限的维护者可在原单评论 `/triage retry` 验证。
 
 Tests mock GitHub and model requests without using a paid API. After deployment,
@@ -132,5 +167,6 @@ HTTP 401/403, path/model for 404, and provider quota/rate limits for 429. Invali
 AI JSON/content/result means protocol or output validation failed. `AI response incomplete`
 means generation did not finish, possibly due to the token cap; check the provider
 status or use a model suited to concise answers. `AI triage skipped` identifies the
-stage where Issue changes caused stale analysis to be discarded. After fixing configuration, a
+stage where Issue changes caused stale analysis to be discarded. `AI triage deferred`
+means recent-intake throttling or uncertain counts kept this run on fixed rules. After fixing configuration, a
 repository writer can comment `/triage retry` on the same Issue.

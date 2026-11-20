@@ -21,12 +21,13 @@ function fixture(text = body()) {
   const stamp = () => new Date(Date.UTC(2026, 10, 20, 0, 0, ++time)).toISOString();
   const issue = { number: 42, title: '[Bug]: 旋转后拉伸', body: text, state: 'open', labels: [], assignees: [], user: { login: 'author' }, updated_at: stamp() };
   issue.created_at = issue.updated_at;
-  const comments = [], events = [], writes = [], requests = [];
+  const comments = [], events = [], writes = [], requests = [], intakeQueries = [], recentIssues = [issue];
   const touch = () => { issue.updated_at = stamp(); };
   const bot = { login: 'github-actions[bot]', type: 'Bot' };
   const context = { repo: { owner: 'Kyosee', repo: 'VeneraX' }, sha: 'a'.repeat(40), runId: 1, eventName: 'issues', payload: { issue: structuredClone(issue), action: 'opened', sender: { login: 'author', type: 'User' } } };
   const api = {
     get: async () => ({ data: structuredClone(issue) }),
+    listForRepo: async p => { intakeQueries.push(p); return { data: structuredClone(recentIssues) }; },
     listComments: 'comments', listEvents: 'events',
     getLabel: async () => ({ data: {} }),
     createLabel: async p => { writes.push(['createLabel', p]); return { data: p }; },
@@ -51,8 +52,8 @@ function fixture(text = body()) {
     context.payload = { issue: structuredClone(issue), action: 'created', comment: structuredClone(c), sender: c.user };
   };
   const fetchImpl = async (url, options) => { requests.push({ url, options }); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] })); };
-  return { issue, comments, events, writes, requests, context, github, reply, touch,
-    go: (env = {}, fetchOverride = fetchImpl) => run({ github, context, env, fetchImpl: fetchOverride }) };
+  return { issue, comments, events, writes, requests, context, github, reply, touch, intakeQueries, recentIssues,
+    go: (env = {}, fetchOverride = fetchImpl) => run({ github, context, env, fetchImpl: fetchOverride, now: Date.parse(issue.updated_at) }) };
 }
 
 test('parses current forms, optional attachments and multiple platforms', () => {
@@ -77,6 +78,119 @@ test('ignores bilingual headings for language and fenced headings for parsing', 
   const p = parseReport(body({ '实际发生了什么？ / What happened?': '```\n### VeneraX 版本 / App version\nfake\n```\n图片拉伸' }));
   assert.equal(p.fields.version, FIELDS['VeneraX 版本 / App version']);
   assert.equal(parseReport(`${body()}\n### App version\n1.0.0`).duplicate, true);
+});
+
+test('reply language follows narrative, ignoring titles, code and form choices', async () => {
+  const english = body({
+    '实际发生了什么？ / What happened?': 'Images stretch briefly.\n```log\n中文日志，图片被拉伸，重复很多次\n```',
+    '怎样触发？ / How can we reproduce it?': 'Rotate back to portrait.',
+    '你期望的结果 / Expected result': 'Keep the aspect ratio.',
+  });
+  assert.equal(parseReport(english, '图片拉伸的问题反馈').zh, false);
+  const flutterLogs = english.replace('Images stretch briefly.', 'Images stretch briefly.\n' + 'I/flutter (123): 读取失败请重试\n'.repeat(8));
+  assert.equal(parseReport(flutterLogs).zh, false);
+  assert.doesNotMatch(parseReport(flutterLogs).languageSample, /读取失败/);
+  const chinese = body({
+    '实际发生了什么？ / What happened?': '图片拉伸\n```\n' + 'A lengthy English log entry. '.repeat(50) + '\n```',
+    '怎样触发？ / How can we reproduce it?': '_No response_',
+  });
+  assert.equal(parseReport(chinese, 'An English title').zh, true);
+  assert.equal(parseReport(body({
+    '实际发生了什么？ / What happened?': '...', '怎样触发？ / How can we reproduce it?': '...',
+    '你期望的结果 / Expected result': '希望图片保持原来的比例',
+  }), 'English title').zh, true);
+  const japanese = '### What would you like to do?\n画像を保存するにはどうすればいいですか？\n### What have you tried?\nまだ試していません。';
+  assert.equal(parseReport(japanese, '中文标题').zh, false);
+  for (const [text, expected] of [[english, 'Images stretch briefly.'], [japanese, '画像を保存']]) {
+    const f = fixture(text); await f.go(ENV);
+    const messages = JSON.parse(f.requests[0].options.body).messages;
+    const request = JSON.parse(messages[1].content);
+    assert.equal(request.language, 'auto'); assert.ok(request.language_sample.includes(expected));
+    assert.doesNotMatch(request.language_sample, /中文日志/);
+    assert.match(messages[0].content, /language_sample/);
+  }
+});
+
+test('explicit private and source details bypass AI, including short and formatted fields', async () => {
+  const details = ['password: 123456', '密码：12345678', '**账号**：alice', '{"api_key":"abc"}',
+    '{"password":\n"private-password"}', 'Cookie:\nsession=private-cookie',
+    'Login failed (password: private-password)', '登录失败（password: private-password）', 'db_password=short',
+    'Contact: reader@example.org', '电话：+86 138 0013 8000', 'C:\\Users\\alice\\AppData\\Local',
+    '/home/alice/.config/app', '**源名称**：私人漫画站', 'Source URL: https://private.example.org',
+    '身份证号：110101199001010011'];
+  for (const detail of details) {
+    const f = fixture(`${body()}\n${detail}`); await f.go(ENV);
+    assert.equal(f.requests.length, 0, detail); assert.equal(f.intakeQueries.length, 0);
+    assert.match(f.comments[0].body, /编辑.*原文/); assert.ok(!f.comments[0].body.includes(detail));
+    assert.equal(f.issue.state, 'open');
+    assert.throws(() => validateAnswer({ ...answer, summary: detail }, []), /Invalid AI result/, detail);
+  }
+  for (const detail of ['源管理页面崩溃，JS 引擎执行失败，WebDAV 同步失败。',
+    'Source name: [redacted]', '账号：未填写', '密码：***', '电话：未填写',
+    'Source URL: [removed]', 'C:\\Users\\<redacted>\\AppData', 'Pixel 8 Android 15 version 3.0.0']) {
+    assert.equal(parseReport(`${body()}\n${detail}`).sensitive, false, detail);
+  }
+});
+
+test('sensitive supplements and cached replies are withheld even on an authorized retry', async () => {
+  for (const author of ['author', 'maintainer']) {
+    const f = fixture(); await f.go(ENV);
+    const cached = managedComment(f.comments);
+    cached.state.ai.summary = '账号：old-private-account';
+    f.comments[0].body = `${MARKER}${JSON.stringify(cached.state)} -->`;
+    f.reply('邮箱：reader@example.org', author, author === 'author' ? 'NONE' : 'COLLABORATOR');
+    await f.go(ENV);
+    assert.equal(f.requests.length, 1);
+    assert.doesNotMatch(f.comments[0].body, /old-private-account|reader@example|AI 辅助/);
+    assert.equal(managedComment(f.comments).state.ai, undefined);
+    assert.equal(managedComment(f.comments).state.references, undefined);
+    f.reply('/triage retry', 'maintainer', 'COLLABORATOR'); await f.go(ENV);
+    assert.equal(f.requests.length, 1);
+  }
+});
+
+test('automatic AI throttles new issues by author and repository without spending a call', async () => {
+  for (const [authorCount, totalCount, allowed] of [[3, 3, true], [4, 4, false], [1, 20, true], [1, 21, false]]) {
+    const f = fixture();
+    for (let i = 1; i < totalCount; i++) f.recentIssues.push({ number: 100 + i, created_at: f.issue.created_at,
+      state: 'closed', user: { login: i < authorCount ? 'author' : `other-${i}` } });
+    await f.go(ENV);
+    assert.equal(f.requests.length, allowed ? 1 : 0, `${authorCount}/${totalCount}`);
+    assert.equal(f.intakeQueries.length, 1);
+    assert.deepEqual(f.intakeQueries[0], { ...f.context.repo, state: 'all', sort: 'created', direction: 'desc', per_page: 100 });
+    if (!allowed) {
+      assert.equal(managedComment(f.comments).state.calls, 0);
+      assert.equal(managedComment(f.comments).state.paused, false);
+      assert.ok(f.issue.labels.includes(READY));
+      f.reply('更多补充'); await f.go(ENV);
+      assert.equal(managedComment(f.comments).state.followupCall, undefined);
+      assert.equal(f.requests.length, 0);
+      f.reply('/triage retry', 'maintainer', 'COLLABORATOR'); await f.go(ENV);
+      assert.equal(f.requests.length, 1);
+      assert.equal(f.intakeQueries.length, 2);
+    }
+  }
+});
+
+test('intake counting excludes PRs and old issues; uncertain counts fail closed', async () => {
+  const allowed = fixture();
+  for (let i = 0; i < 25; i++) allowed.recentIssues.push({ number: 100 + i, user: { login: 'author' },
+    created_at: allowed.issue.created_at, pull_request: {} });
+  allowed.recentIssues.push({ number: 200, user: { login: 'author' }, created_at: '2026-11-18T00:00:00Z' });
+  await allowed.go(ENV); assert.equal(allowed.requests.length, 1);
+  for (const mode of ['error', 'full', 'malformed', 'missing-current']) {
+    const f = fixture();
+    if (mode === 'error') f.github.rest.issues.listForRepo = async () => { throw new Error('private error'); };
+    if (mode === 'full') for (let i = 1; i < 100; i++) f.recentIssues.push({ number: 100 + i,
+      user: { login: 'author' }, created_at: f.issue.created_at, pull_request: {} });
+    if (mode === 'malformed') f.recentIssues.push({ number: 201 });
+    if (mode === 'missing-current') f.recentIssues.splice(0);
+    await f.go(ENV);
+    assert.equal(f.requests.length, 0, mode); assert.equal(managedComment(f.comments).state.calls, 0);
+    assert.equal(f.comments.length, 1); assert.ok(f.issue.labels.includes(READY));
+  }
+  const incomplete = fixture(body({ 'VeneraX 版本 / App version': '' }));
+  await incomplete.go(ENV); assert.equal(incomplete.intakeQueries.length, 0);
 });
 
 test('asks only for clear gaps and accepts unavailable evidence and incidental steps', () => {

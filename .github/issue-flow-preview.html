@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>VeneraX · Issue 受理流程预览</title>
+  <style>
+    :root { --paper: #f2f6fa; --white: #fff; --ink: #21354d; --muted: #607187; --line: #d7e2ec; --teal: #146c63; --tint: #e5f2ee; --amber: #89581b; --amber-tint: #fff4df; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.65 "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    button, select { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .55; }
+    button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--teal); outline-offset: 4px; }
+    main { max-width: 1120px; margin: auto; padding: 38px 32px 28px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 30px; }
+    .brand { font-size: 21px; font-weight: 750; letter-spacing: -.5px; }
+    .brand span { color: var(--teal); }
+    .local { font-size: 12px; color: var(--muted); }
+    .intro { max-width: 680px; margin-bottom: 28px; }
+    h1 { font-size: clamp(28px, 4.5vw, 42px); line-height: 1.25; letter-spacing: -.035em; margin: 0 0 14px; font-weight: 700; }
+    .intro p { color: var(--muted); margin: 0; font-size: 16px; }
+    .entries { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 30px; gap: 24px; }
+    .entry { display: grid; grid-template-columns: 28px 1fr; align-items: start; gap: 12px; }
+    .entry svg { width: 26px; height: 26px; color: var(--teal); margin-top: 3px; }
+    .entry strong { font-size: 16px; font-weight: 650; }
+    .entry span { display: block; color: var(--muted); font-size: 13px; }
+    .entry p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+    .demo { background: var(--white); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+    .demo-head { padding: 24px 26px 0; }
+    .demo-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+    .language { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    select { border: 1px solid var(--line); border-radius: 6px; padding: 4px 24px 4px 8px; color: var(--ink); background: white; font-size: 13px; }
+    .scenarios { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+    .scenarios button { border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--muted); padding: 7px 12px; font-size: 13px; min-height: 38px; }
+    .scenarios button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: white; }
+    .route { display: grid; grid-template-columns: repeat(5, 1fr); list-style: none; margin: 0; padding: 28px 26px; gap: 16px; }
+    .route li { position: relative; padding-top: 30px; }
+    .route li::before { content: ""; position: absolute; left: 0; top: 8px; width: 14px; height: 14px; border: 2px solid var(--teal); background: var(--tint); border-radius: 50%; z-index: 1; }
+    .route li:not(:last-child)::after { content: ""; position: absolute; left: 14px; right: -16px; top: 14px; height: 2px; background: var(--line); }
+    .route li[data-state="current"]::before { background: var(--teal); box-shadow: 0 0 0 4px var(--tint); }
+    .route li[data-state="skip"]::before { border-color: #9aaaba; background: white; }
+    .route li[data-state="skip"] strong { color: var(--muted); }
+    .route li[data-state="attention"]::before { border-color: var(--amber); background: var(--amber-tint); }
+    .route strong { font-size: 14px; display: block; }
+    .route span { font-size: 12px; color: var(--muted); display: block; margin-top: 4px; max-width: 17em; }
+    .stage { display: grid; grid-template-columns: .92fr 1.08fr; border-top: 1px solid var(--line); }
+    .report { background: #f8fafc; padding: 24px 26px; border-right: 1px solid var(--line); }
+    .small-label { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+    h3 { font-size: 18px; line-height: 1.5; margin: 0 0 10px; }
+    .report-text { white-space: pre-line; font-size: 14px; margin: 0 0 16px; }
+    .note { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); font-size: 13px; margin: 0; }
+    .reply { padding: 24px 26px; min-width: 0; }
+    .reply-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .reply-head strong { font-size: 14px; }
+    .badge { display: inline-block; background: var(--tint); color: var(--teal); border-radius: 5px; padding: 2px 7px; font-size: 11px; }
+    .badge[data-tone="attention"] { background: var(--amber-tint); color: var(--amber); }
+    .reply-text { white-space: pre-line; margin: 0; font-size: 14px; min-height: 106px; }
+    .basis { font-size: 12px; color: var(--teal); margin: 12px 0 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .actions button { background: white; border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 7px 11px; font-size: 12px; min-height: 38px; }
+    .status { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+    .path-note { border-top: 1px solid var(--line); padding: 12px 26px; font-size: 13px; color: var(--teal); background: #f3f9f7; }
+    .guardrails { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 28px; }
+    .guardrails h2 { font-size: 15px; margin-bottom: 8px; }
+    .guardrails p { color: var(--muted); font-size: 13px; margin: 0; }
+    .guardrails strong { color: var(--ink); font-weight: 650; }
+    footer { color: var(--muted); font-size: 11px; padding-top: 26px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 720px) {
+      main { padding: 22px 18px; }
+      header { padding-bottom: 24px; }
+      .entries { grid-template-columns: 1fr; gap: 14px; margin-bottom: 24px; }
+      .entry { grid-template-columns: 26px 1fr; }
+      .entry span { display: inline; font-size: 11px; margin-left: 7px; }
+      .entry p { margin: 0; }
+      .demo-head { padding: 20px 18px 0; }
+      .route { grid-template-columns: 1fr; padding: 24px 18px; gap: 16px; }
+      .route li { padding: 0 0 0 30px; }
+      .route li::before { top: 5px; }
+      .route li:not(:last-child)::after { left: 6px; top: 18px; bottom: -22px; width: 2px; height: auto; right: auto; }
+      .route span { max-width: none; margin: 0; }
+      .stage { grid-template-columns: 1fr; }
+      .report, .reply { padding: 20px 18px; }
+      .report { border-right: 0; border-bottom: 1px solid var(--line); }
+      .reply-text { min-height: 0; }
+      .path-note { padding: 12px 18px; }
+      .guardrails { grid-template-columns: 1fr; gap: 20px; }
+    }
+    @media (prefers-reduced-motion: no-preference) { button { transition: background-color .15s, border-color .15s; } }
+    @media print { body { background: white; } main { padding: 0; } .actions, .language { display: none; } .demo { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div class="brand">Venera<span>X</span></div><div class="local">Issue 受理流程 · 离线预览</div></header>
+    <div class="intro"><h1>把问题说清楚，<br>剩下的交给初审。</h1><p>选对入口，描述遇到的情况。需要补充时直接回复，已有反馈始终由维护者判断。</p></div>
+
+    <section class="entries" aria-label="三个提交入口">
+      <div class="entry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 5 6 3m10 2 2-2M4 9h4m8 0h4M4 15h4m8 0h4M7 20l2-3m8 3-2-3"/><rect x="8" y="5" width="8" height="14" rx="4"/><path d="M8 10h8m-4 0v9"/></svg><div><strong>故障反馈</strong><span lang="en">Bug report</span><p>出错、闪退、卡顿，已有功能不正常。</p></div></div>
+      <div class="entry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 17c0-3-3-3-3-7a7 7 0 0 1 14 0c0 4-3 4-3 7M8 17h8M9 20h6M12 7v6m-3-3h6"/></svg><div><strong>功能建议</strong><span lang="en">Feature request</span><p>新增能力，或让现有操作更顺手。</p></div></div>
+      <div class="entry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z"/><path d="M9 8a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/></svg><div><strong>使用疑问</strong><span lang="en">Usage help</span><p>某项功能怎么用，设置是什么意思。</p></div></div>
+    </section>
+
+    <section class="demo" aria-labelledby="demo-title">
+      <div class="demo-head">
+        <div class="demo-heading"><h2 id="demo-title">发出之后，会发生什么？</h2><label class="language" for="language">示例正文<select id="language"><option value="zh">中文</option><option value="en">English</option></select></label></div>
+        <div class="scenarios" role="group" aria-label="切换反馈场景">
+          <button type="button" data-scenario="normal" aria-pressed="true">信息完整</button>
+          <button type="button" data-scenario="missing" aria-pressed="false">还缺信息</button>
+          <button type="button" data-scenario="private" aria-pressed="false">敏感内容</button>
+          <button type="button" data-scenario="busy" aria-pressed="false">频繁新单</button>
+          <button type="button" data-scenario="source" aria-pressed="false">第三方源疑问</button>
+        </div>
+      </div>
+      <ol class="route" aria-label="当前场景的受理流程">
+        <li id="step-entry"><strong>选择入口</strong><span>故障、建议或使用疑问</span></li>
+        <li id="step-rules"><strong>规则初审</strong><span id="rules-text">分类并检查必要信息</span></li>
+        <li id="step-protect"><strong>隐私与频率</strong><span id="protect-text">先保护信息，再检查用量</span></li>
+        <li id="step-ai"><strong id="ai-title">AI 辅助</strong><span id="ai-text">依据正文语言与项目文档</span></li>
+        <li id="step-human"><strong>维护者复查</strong><span id="human-text">决定后续处理</span></li>
+      </ol>
+      <div class="stage">
+        <section class="report" aria-labelledby="report-title"><p class="small-label" id="report-label">故障反馈 · 示例</p><h3 id="report-title"></h3><p class="report-text" id="report-text"></p><p class="note" id="report-note"></p></section>
+        <section class="reply" aria-label="模拟初审回复" aria-live="polite" aria-atomic="true">
+          <div class="reply-head"><strong id="reply-title">自动初审</strong><span class="badge" id="mode-badge"></span><span class="badge" id="queue-badge"></span></div>
+          <p class="reply-text" id="reply-text"></p><p class="basis" id="basis"></p>
+          <div class="actions"><button type="button" id="supplement">模拟作者补充</button><button type="button" id="handover">模拟维护者接手</button><button type="button" id="reset" hidden>重置场景</button></div>
+          <p class="status" id="state-text">初次提交</p>
+        </section>
+      </div>
+      <div class="path-note" id="path-note"></div>
+    </section>
+
+    <div class="guardrails">
+      <section aria-labelledby="cost-title"><h2 id="cost-title">帮助初审，也控制用量</h2><p>每单默认最多 <strong>2 次</strong> AI 调用：首次分析和作者补充后的复查。滚动 24 小时内，同一作者第 <strong>4 条</strong>、全仓第 <strong>21 条</strong>新 Issue 起降级为规则初审，已关闭单也计入。维护者可显式重审。</p><p style="margin-top:8px">这些限制不是费用硬上限；总费用保护仍需在服务商后台设置额度。</p></section>
+      <section aria-labelledby="boundary-title"><h2 id="boundary-title">保护信息，保留人工判断</h2><p>明确的个人资料、密钥或源名称／地址／账号等详情不发送给 AI。请编辑公开原文移除；初审不回显这些内容。</p><p style="margin-top:8px">源管理、JS 引擎和同步仍可能是应用缺陷。纯第三方自身问题由维护者确认后说明并关闭，<strong>机器人绝不自动关闭 Issue</strong>。</p></section>
+    </div>
+    <footer>此页使用固定示例演示流程，不提交 Issue、不调用模型，也不产生外部网络请求。实际回复会随反馈内容变化。</footer>
+    <noscript><p>请启用 JavaScript 查看场景演示。三个入口和底部规则仍可直接阅读。</p></noscript>
+  </main>
+  <script>
+    'use strict';
+    const scenarios = {
+      normal: {
+        kind: '故障反馈', title: ['切回竖屏后，图片短暂拉伸', 'Images stretch briefly after rotating back to portrait'],
+        text: ['已填写应用版本、平台与设备。\n描述了最近一次操作、实际表现和期望结果。', 'App version, platform and device are provided.\nThe report describes the last occurrence, actual behavior and expected result.'],
+        note: '资料足够时才进入 AI 分析；日志和附件一直选填。',
+        reply: ['已收到：切回竖屏时，图片会短暂拉伸。现有信息已足够初步理解问题，等待维护者复查。', 'Received: images briefly stretch after rotating back to portrait. The report provides enough information for an initial review and is queued for a maintainer.'],
+        path: '信息足够且未触发隐私或频率限制，才会进行 AI 分析。'
+      },
+      missing: {
+        kind: '故障反馈', title: ['打开以后就闪退了', 'The app crashes after opening'],
+        text: ['填写了异常现象，但没有说明具体版本和最近一次发生时的操作。', 'The symptom is described, but the exact app version and the steps before the last crash are missing.'],
+        note: '先问最有用的信息；无法取得版本或只偶发一次，也可以直接说明。',
+        reply: ['请补充具体应用版本，以及最近一次发生时做了什么。无法取得版本时，说明情况即可。\n\n直接回复或编辑正文，无需重新填表。附件选填。', 'Please provide the app version and what you did before the last crash. If the version is unavailable, explain that here.\n\nReply or edit the description; no new form is needed. Attachments are optional.'],
+        path: '明确缺项先用固定规则提示，不为同样的问题反复调用 AI。'
+      },
+      private: {
+        kind: '故障反馈', title: ['反馈中包含个人资料或源详情', 'The report contains personal data or source details'],
+        text: ['正文出现明确的邮箱、私人用户目录，或源名称、地址、账号字段。\n本预览不展示任何具体内容。', 'The report includes an email address, a personal user directory, or explicit source name, address or account fields.\nThis preview does not display their values.'],
+        note: '这一判断针对明确详情，不会因为“源管理”“JS”或“WebDAV”几个词就拒绝应用问题。',
+        reply: ['已收到，将由维护者查看。请编辑公开正文或评论，移除个人资料、密钥和源详情后再补充问题现象。\n\n这些内容未发送给 AI；不会在初审中回显。', 'Received for maintainer review. Please edit the public description or comments to remove personal data, credentials and source details, then describe the symptom.\n\nThis content was not sent to AI or repeated in the triage reply.'],
+        path: '隐私保护优先：不发送 AI、不回显详情，并清除已有 AI 回复缓存。'
+      },
+      busy: {
+        kind: '故障反馈', title: ['同一作者在 24 小时内提交第 4 条反馈', 'A fourth new report from the same author within 24 hours'],
+        text: ['信息已经填全，但近期新单频率达到限制。\n全仓在滚动 24 小时内的第 21 条新单也采用相同处理。', 'The report is complete, but the recent new-Issue threshold has been reached.\nThe 21st new repository Issue within 24 hours is handled the same way.'],
+        note: '反馈仍然正常受理，只跳过本次 AI 分析。关闭旧单不会减少窗口内的新单计数。',
+        reply: ['已收到，已列入待处理，等待维护者查看。', 'Received and queued for maintainer review.'],
+        path: '降级为规则初审，保留反馈、分类和待处理队列。不会改用另一模型重试。'
+      },
+      source: {
+        kind: '使用疑问', title: ['第三方源自身异常，是否由应用处理？', 'Does the app handle a problem with a third-party source itself?'],
+        text: ['描述第三方源自身的问题，没有附带具体源名称、地址、账号等详情。', 'The question describes a problem with a third-party source without including its name, address or account details.'],
+        note: '这是示例场景，不代表程序能按关键词确定责任。源管理、JS 引擎或同步异常仍需排查应用本体。',
+        reply: ['这里处理 VeneraX 应用本体问题，不提供第三方源本身的支持。如果是源管理、JS 引擎或同步出现异常，仍可能是应用缺陷。\n\n请由维护者确认问题归属；确认只涉及第三方自身后，可说明原因并关闭。', 'Support covers the VeneraX app itself. Source management, the JS engine and sync can still have app defects.\n\nA maintainer will confirm the scope. If the problem belongs solely to the third party, they may explain and close the Issue.'],
+        path: '初审提示支持范围 → 维护者确认是否属于第三方自身问题 → 可说明后关闭。'
+      }
+    };
+    const $ = id => document.getElementById(id);
+    let current = 'normal';
+    let phase = 'initial';
+
+    function render() {
+      const scenario = scenarios[current];
+      const en = $('language').value === 'en';
+      const pick = values => values[en ? 1 : 0];
+      const handed = phase === 'maintainer';
+      const responded = phase === 'author';
+      const ai = !handed && ['normal', 'source'].includes(current) || !handed && responded && current === 'missing';
+      const waiting = current === 'missing' && phase === 'initial';
+      document.querySelectorAll('[data-scenario]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.scenario === current)));
+      $('report-label').textContent = scenario.kind + ' · 示例';
+      $('report-title').textContent = pick(scenario.title);
+      $('report-text').textContent = pick(scenario.text);
+      $('report-note').textContent = scenario.note;
+      $('report-title').lang = $('report-text').lang = en ? 'en' : 'zh-CN';
+      $('reply-title').textContent = en ? 'Automatic triage' : '自动初审';
+      $('mode-badge').textContent = handed ? (en ? 'Maintainer review' : '人工接手') : ai ? (en ? 'AI assisted' : 'AI 辅助') : (en ? 'Fixed rules' : '固定规则');
+      $('queue-badge').textContent = handed ? (en ? 'Maintainer decides' : '由维护者处理') : waiting ? (en ? 'Needs information' : '等待补充') : (en ? 'Ready for review' : '待处理');
+      $('queue-badge').dataset.tone = waiting ? 'attention' : 'normal';
+      let reply = pick(scenario.reply);
+      if (responded) reply = current === 'private'
+        ? pick(['已收到补充，等待维护者复查。请先编辑公开原文，移除个人资料和源详情；本次仍未发送给 AI。', 'Your update is received for maintainer review. Please remove personal data and source details from the public text; AI analysis is still skipped.'])
+        : pick(['已收到补充，已回到待处理，等待维护者复查。无需重复填表，也不会继续反复追问。', 'Your update is received and ready for maintainer review. There is no need to submit another form; automatic questions will not continue.']);
+      if (handed) reply = pick(['维护者已接手，自动追问已暂停。后续分类与处理由维护者决定。', 'A maintainer has taken over; automatic questions are paused. Further classification and handling are up to the maintainer.']);
+      $('reply-text').textContent = reply;
+      $('reply-text').lang = en ? 'en' : 'zh-CN';
+      $('basis').hidden = !ai;
+      $('basis').textContent = pick(['依据当前项目文档；没有依据时交由维护者确认。', 'Based on current project documentation; uncertain points go to a maintainer.']);
+      $('supplement').disabled = phase !== 'initial';
+      $('handover').disabled = handed;
+      $('reset').hidden = phase === 'initial';
+      $('state-text').textContent = handed ? '演示状态：维护者接手后' : responded ? '演示状态：作者补充后（即使暂时无法补齐，也回待处理）' : '演示状态：初次提交';
+      $('rules-text').textContent = waiting ? '只提示关键缺项' : '分类并检查必要信息';
+      $('protect-text').textContent = current === 'private' ? '发现明确详情，优先保护' : current === 'busy' ? '近期新单达到限制' : '未命中隐私或频率限制';
+      $('ai-title').textContent = ai ? 'AI 辅助' : '跳过 AI';
+      $('ai-text').textContent = handed ? '人工接手后停止自动追问' : ai ? '正文语言 + 可信项目文档' : current === 'private' ? '不发送详情，不回显内容' : current === 'busy' ? '规则初审继续正常受理' : '先等待作者补充';
+      $('human-text').textContent = handed ? '已接手，决定后续处理' : waiting ? '作者回应后回到待处理' : current === 'source' ? '确认范围后决定是否关闭' : '等待复查，机器人不定结论';
+      $('step-rules').dataset.state = waiting ? 'attention' : 'done';
+      $('step-protect').dataset.state = ['private', 'busy'].includes(current) ? 'attention' : 'done';
+      $('step-ai').dataset.state = ai ? 'done' : 'skip';
+      $('step-human').dataset.state = waiting ? 'skip' : 'current';
+      $('path-note').textContent = handed ? '维护者接手后停止自动追问；机器人不会自行关闭、锁定或删除反馈。' : responded ? '作者已回应就回到待处理，不以“必须补齐所有信息”阻挡维护者复查。' : scenario.path;
+    }
+
+    document.querySelectorAll('[data-scenario]').forEach(button => button.addEventListener('click', () => {
+      current = button.dataset.scenario;
+      phase = 'initial';
+      render();
+    }));
+    $('language').addEventListener('change', render);
+    $('supplement').addEventListener('click', () => { phase = 'author'; render(); });
+    $('handover').addEventListener('click', () => { phase = 'maintainer'; render(); });
+    $('reset').addEventListener('click', () => { phase = 'initial'; render(); });
+    render();
+  </script>
+</body>
+</html>
