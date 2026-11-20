@@ -1,0 +1,45 @@
+name: Issue triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: >-
+      github.event.issue.state == 'open' &&
+      !github.event.issue.pull_request &&
+      github.event.sender.type != 'Bot' &&
+      (github.event_name == 'issues' ||
+       github.event.comment.user.login == github.event.issue.user.login ||
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Classify and reply
+        uses: actions/github-script@v8
+        env:
+          ISSUE_AI_ENABLED: ${{ vars.ISSUE_AI_ENABLED }}
+          ISSUE_AI_API_URL: ${{ secrets.ISSUE_AI_API_URL }}
+          ISSUE_AI_API_KEY: ${{ secrets.ISSUE_AI_API_KEY }}
+          ISSUE_AI_MODEL: ${{ vars.ISSUE_AI_MODEL }}
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { resolve } = await import('node:path');
+            const { run } = await import(pathToFileURL(resolve('.github/scripts/issue-triage.mjs')).href);
+            await run({ github, context });

@@ -21,6 +21,9 @@ body:
         Issue 与附件公开。请移除站点名称及地址、解析代码、账号、Cookie、Token 和密钥。不要发布其他项目、其他版本或扩展仓库的地址，此类内容会被移除。
         Reports and attachments are public. Remove site names, addresses, parsing code, accounts, cookies, tokens and keys. Links to other projects, versions or extension repositories will be removed.
 
+        启用自动初审时，公开文本可能由 AI 服务辅助分析；附件不会自动读取。请勿提交密钥或私人信息。
+        When enabled, an AI service may help triage public text; attachments are not automatically read. Do not include secrets or private information.
+
         </details>
   - type: textarea
     id: what-happened
