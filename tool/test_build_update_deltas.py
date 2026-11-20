@@ -21,24 +21,42 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
 
     def build(self, policy=None):
         if policy is not None:
-            (self.notes / 'v1.0.2.update.json').write_text(json.dumps(policy), encoding='utf-8')
-        return builder.build('v1.0.2', False, 'example/app', self.root / 'previous',
+            (self.notes / 'v3.0.3.update.json').write_text(json.dumps(policy), encoding='utf-8')
+        return builder.build('v3.0.3', False, 'example/app', self.root / 'previous',
                              self.root / 'assets', self.notes)
 
     def test_history_filters_drafts_channels_current_and_duplicates(self):
         def release(tag, draft=False, prerelease=False):
             return dict(tag_name=tag, draft=draft, prerelease=prerelease)
-        pages = [[release('v1.0.2'), release('v1.0.3', draft=True),
-                  release('v1.0.3-beta.1', prerelease=True), release('../../bad'),
-                  release('v1.0.1'), release('v1.0.1')],
-                 [release('v1.0.0'), release('v0.9.0')]]
-        self.assertEqual(builder.previous_tags(pages, 'v1.0.2', False), ['v1.0.1', 'v1.0.0'])
-        self.assertEqual(builder.previous_tags(pages, 'v1.0.4-beta.1', True), ['v1.0.3-beta.1'])
+        pages = [[release('v3.0.3'), release('v3.0.4', draft=True),
+                  release('v3.0.4-beta.1', prerelease=True), release('../../bad'),
+                  release('v3.0.2'), release('v3.0.2')],
+                 [release('v3.0.1'), release('v3.0.0')]]
+        self.assertEqual(builder.previous_tags(pages, 'v3.0.3', False), ['v3.0.2', 'v3.0.1'])
+        self.assertEqual(builder.previous_tags(pages, 'v3.0.5-beta.1', True), ['v3.0.4-beta.1'])
+
+    @patch.object(builder.subprocess, 'run')
+    def test_first_delta_release_never_downloads_pre_delta_clients(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[
+            dict(tag_name=tag, draft=False, prerelease=False)
+            for tag in ['v3.0.0', 'v2.3.12']]]))
+        manifest = builder.build('v3.0.1', False, 'example/app', self.root / 'previous',
+                                 self.root / 'assets', self.notes)
+        self.assertEqual(manifest['deltas'], [])
+        self.assertEqual(run.call_count, 1, 'unsupported clients must not be downloaded')
+
+    def test_history_starts_with_first_supported_client(self):
+        pages = [[dict(tag_name=tag, draft=False, prerelease=False)
+                  for tag in ['v3.0.1', 'v3.0.0', 'v2.3.12']]]
+        self.assertEqual(builder.previous_tags(pages, 'v3.0.2', False), ['v3.0.1'])
+        beta = [[dict(tag_name=tag, draft=False, prerelease=True)
+                 for tag in ['v3.0.2-beta.1', 'v3.0.1-beta.1', 'v3.0.0-beta.1']]]
+        self.assertEqual(builder.previous_tags(beta, 'v3.0.3-beta.1', True), ['v3.0.2-beta.1'])
 
     @patch.object(builder.subprocess, 'run')
     def test_full_only_never_fetches_previous_packages(self, run):
         run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[
-            dict(tag_name='v1.0.1', draft=False, prerelease=False)]]))
+            dict(tag_name='v3.0.2', draft=False, prerelease=False)]]))
         self.assertEqual(self.build({'android': 'full', 'windows': 'full'})['deltas'], [])
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(commands), 1)
@@ -51,9 +69,9 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
             return dict(tag_name=tag, draft=draft, prerelease=False,
                         assets=[dict(id=index, name=name) for index, name in assets])
         run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[
-            release('v1.0.2', True, [(1, 'VeneraX-1.0.2.apk'), (2, 'old.patch'),
+            release('v3.0.3', True, [(1, 'VeneraX-3.0.3.apk'), (2, 'old.patch'),
                                      (3, 'update-manifest.json')]),
-            release('v1.0.1', False, [(4, 'VeneraX-1.0.0-to-1.0.1-android-x86_64.patch')])]]))
+            release('v3.0.2', False, [(4, 'VeneraX-update-3.0.1-to-3.0.2-android-x86_64.patch')])]]))
         self.build({'android': 'full', 'windows': 'full'})
         deletes = [call.args[0][-1] for call in run.call_args_list if '-X' in call.args[0]]
         self.assertEqual(deletes, ['repos/example/app/releases/assets/2',
@@ -109,7 +127,7 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         for policy in [{'andriod': 'full'}, {'windows': 'force'}, [], 'full']:
             with self.subTest(policy=policy), self.assertRaises(ValueError):
                 self.build(policy)
-        (self.notes / 'v1.0.2.update.json').write_text('null', encoding='utf-8')
+        (self.notes / 'v3.0.3.update.json').write_text('null', encoding='utf-8')
         with self.assertRaises(ValueError):
             self.build()
         run.assert_not_called()
@@ -118,7 +136,7 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
     @patch.object(builder.subprocess, 'run')
     def test_platform_policy_only_downloads_needed_assets(self, run, generate):
         run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[
-            dict(tag_name='v1.0.1', draft=False, prerelease=False)]]))
+            dict(tag_name='v3.0.2', draft=False, prerelease=False)]]))
         self.build({'android': 'full'})
         args = run.call_args_list[1].args[0]
         self.assertIn('*-windows.zip', args)
@@ -126,7 +144,7 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get('encoding') == 'utf-8'
                             for call in run.call_args_list),
                         'release notes in the API output are UTF-8 on every OS')
-        self.assertEqual(generate.call_args.args[1], [('1.0.1', self.root / 'previous/v1.0.1')])
+        self.assertEqual(generate.call_args.args[1], [('3.0.2', self.root / 'previous/v3.0.2')])
 
     @patch.object(builder.subprocess, 'run')
     def test_missing_history_preserves_full_update_release(self, run):
@@ -138,11 +156,11 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
     @patch.object(builder.subprocess, 'run')
     def test_partial_failed_download_is_never_used_as_a_base(self, run, generate):
         run.side_effect = [subprocess.CompletedProcess([], 0, json.dumps([[
-            dict(tag_name='v1.0.1', draft=False, prerelease=False),
-            dict(tag_name='v1.0.0', draft=False, prerelease=False)]])),
+            dict(tag_name='v3.0.2', draft=False, prerelease=False),
+            dict(tag_name='v3.0.1', draft=False, prerelease=False)]])),
             subprocess.CalledProcessError(1, 'gh'), subprocess.CompletedProcess([], 0)]
         self.build()
-        self.assertEqual(generate.call_args.args[1], [('1.0.0', self.root / 'previous/v1.0.0')])
+        self.assertEqual(generate.call_args.args[1], [('3.0.1', self.root / 'previous/v3.0.1')])
 
 
 if __name__ == '__main__':

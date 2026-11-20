@@ -21,9 +21,11 @@ notice explaining that patches cannot be installed manually. Patch names use the
 `update-` prefix to sort after full packages by filename.
 Clients resolve patches by the exact `patchAsset` name in the manifest.
 
-The release workflow considers the two most recent releases in the same channel
-and publishes a patch only if it saves at least 20% compared with the matching
-complete package. Clients need one full upgrade to obtain delta support. Missing,
+The release workflow considers at most the two most recent releases in the same
+channel whose clients support deltas, starting with stable v3.0.1. Older clients
+are skipped, so v3.0.1 itself ships full packages only. A patch is published only
+if it saves at least 20% compared with the matching complete package. Clients
+outside that two-release window use a full package to upgrade directly. Missing,
 unsupported or invalid manifests select the normal full update. Prereleases are
 not offered by the existing stable update checker.
 

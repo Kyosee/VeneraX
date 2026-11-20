@@ -13,6 +13,7 @@ from create_update_deltas import generate, validate_policy
 
 TAG = re.compile(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?')
 MANIFEST = 'update-manifest.json'
+FIRST_DELTA_CLIENT = (3, 0, 1)
 NOTE = '''
 ### Incremental updates / 增量更新
 The Android and Windows apps download a smaller update automatically when one matches the installed version. For new installs or manual updates, use a full package above. `.patch` files and `update-manifest.json` are only used by the app and cannot be installed.
@@ -30,6 +31,10 @@ def previous_tags(pages, current, prerelease):
                     or release.get('prerelease') is not prerelease
                     or not TAG.fullmatch(tag)
                     or ('-' in tag) != prerelease or tag == current or tag in result):
+                continue
+            version = tuple(map(int, tag[1:].split('-', 1)[0].split('.')))
+            # Delta support first shipped in stable v3.0.1.
+            if version < FIRST_DELTA_CLIENT or (version == FIRST_DELTA_CLIENT and prerelease):
                 continue
             result.append(tag)
             if len(result) == 2:
