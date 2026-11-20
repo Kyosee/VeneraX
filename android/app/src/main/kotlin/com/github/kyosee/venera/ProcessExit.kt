@@ -20,8 +20,12 @@ object ProcessExit {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return null
-        val info = manager.getHistoricalProcessExitReasons(context.packageName, 0, 8)
-            .firstOrNull { it.processName == context.packageName } ?: return null
+        val info = cause(
+            manager.getHistoricalProcessExitReasons(context.packageName, 0, 8)
+                .filter { it.processName == context.packageName }
+                .sortedByDescending { it.timestamp },
+            { it.pid },
+        ) ?: return null
         return mapOf(
             "kind" to kind(info.reason),
             "name" to name(info.reason),
@@ -31,6 +35,18 @@ object ProcessExit {
             "format" to if (info.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) "tombstone" else "text",
             "trace" to if (withTrace) trace(info) else null,
         )
+    }
+
+    /**
+     * Which of [records], newest first, says why the latest process ended. A
+     * process kept alive behind the "keeps stopping" dialog after a crash can
+     * be recorded again when the system clears it away, as excessive resource
+     * use; the first record about that process is the cause.
+     */
+    fun <T> cause(records: List<T>, pid: (T) -> Int): T? {
+        val latest = records.firstOrNull() ?: return null
+        // Only the newest run of records: an older process may have had the same pid.
+        return records.takeWhile { pid(it) == pid(latest) }.last()
     }
 
     /**
