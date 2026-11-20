@@ -69,6 +69,16 @@ final class _PausedScan extends IOOverrides {
   }
 }
 
+final class _DirectoryReads extends IOOverrides {
+  final paths = <String>[];
+
+  @override
+  Directory createDirectory(String path) {
+    paths.add(path);
+    return super.createDirectory(path);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final local = LocalManager();
@@ -217,6 +227,35 @@ void main() {
   test('local comics open details by default', () {
     expect(initialClickBehavior, 'viewDetail');
   });
+
+  test(
+    'export availability checks local folders off the calling isolate',
+    () async {
+      final reads = _DirectoryReads();
+      expect(
+        await IOOverrides.runWithIOOverrides(local.hasComicsWithImages, reads),
+        isTrue,
+      );
+      expect(
+        reads.paths.where((path) => path.startsWith('${root.path}/comics')),
+        isEmpty,
+      );
+      final available = [
+        local.find('small', ComicType.local)!,
+        local.find('large', ComicType.local)!,
+      ];
+      for (final comic in available) {
+        Directory(comic.baseDir).renameSync('${comic.baseDir}.hidden');
+      }
+      try {
+        expect(await local.hasComicsWithImages(), isFalse);
+      } finally {
+        for (final comic in available) {
+          Directory('${comic.baseDir}.hidden').renameSync(comic.baseDir);
+        }
+      }
+    },
+  );
 
   for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
     for (final width in [320.0, 1100.0]) {
@@ -435,6 +474,29 @@ void main() {
     ];
 
     await open(tester, const Scaffold(body: HomePage()));
+    await waitFor(tester, () => find.byTooltip('Export').evaluate().isNotEmpty);
+    final available = [
+      local.find('small', ComicType.local)!,
+      local.find('large', ComicType.local)!,
+    ];
+    for (final comic in available) {
+      Directory(comic.baseDir).renameSync('${comic.baseDir}.hidden');
+    }
+    try {
+      // Resizing reuses the result; a library notification invalidates it.
+      tester.view.physicalSize = const Size(900, 390);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Export'), findsOneWidget);
+      await sortBy(LocalSortType.name);
+      await waitFor(tester, () => find.byTooltip('Export').evaluate().isEmpty);
+    } finally {
+      for (final comic in available) {
+        Directory('${comic.baseDir}.hidden').renameSync(comic.baseDir);
+      }
+    }
+    tester.view.physicalSize = const Size(390, 900);
+    await sortBy(LocalSortType.defaultSort);
+    await waitFor(tester, () => find.byTooltip('Export').evaluate().isNotEmpty);
     await sortBy(LocalSortType.name);
     expect(shown(), ['large', 'missing', 'small']);
     await sortBy(LocalSortType.nameDesc);

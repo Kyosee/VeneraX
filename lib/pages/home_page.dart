@@ -1010,6 +1010,9 @@ class _LocalState extends State<_Local> {
 
   bool _sizing = false;
   bool _sizeAgain = false;
+  bool _hasImages = false;
+  bool _checkingImages = false;
+  bool _checkImagesAgain = false;
 
   /// Follows the order picked on the local comics page (#351).
   void _load() {
@@ -1030,6 +1033,27 @@ class _LocalState extends State<_Local> {
 
   void onLocalComicsChange() {
     setState(_load);
+    unawaited(_checkImages());
+  }
+
+  Future<void> _checkImages() async {
+    if (_checkingImages) {
+      _checkImagesAgain = true;
+      return;
+    }
+    _checkingImages = true;
+    try {
+      do {
+        _checkImagesAgain = false;
+        final hasImages = await LocalManager().hasComicsWithImages();
+        if (!mounted) return;
+        if (!_checkImagesAgain && _hasImages != hasImages) {
+          setState(() => _hasImages = hasImages);
+        }
+      } while (_checkImagesAgain);
+    } finally {
+      _checkingImages = false;
+    }
   }
 
   /// Page turns in the comic already in front leave the order alone.
@@ -1069,6 +1093,7 @@ class _LocalState extends State<_Local> {
   @override
   void initState() {
     _load();
+    unawaited(_checkImages());
     LocalManager().addListener(onLocalComicsChange);
     HistoryManager().addListener(_onHistoryChange);
     super.initState();
@@ -1102,7 +1127,7 @@ class _LocalState extends State<_Local> {
                     const SizedBox(width: 12),
                     _HomeSectionTitle(title: 'Local'.tl, count: count),
                     _LocalImportButton(onPressed: import),
-                    if (LocalManager().hasComicsWithImages())
+                    if (_hasImages)
                       _LocalExportButton(
                         onPressed: () {
                           context.to(() => const LocalComicsPage());

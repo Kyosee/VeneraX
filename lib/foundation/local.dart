@@ -749,10 +749,15 @@ class LocalManager with ChangeNotifier {
     return getComics(sortType).where((c) => c.status == status).toList();
   }
 
-  bool hasComicsWithImages() {
-    return getComics(LocalSortType.defaultSort).any(
-      (c) => c.status == LocalComicStatus.downloaded,
-    );
+  Future<bool> hasComicsWithImages() async {
+    final comics = getComics(LocalSortType.defaultSort);
+    for (var start = 0; start < comics.length; start += 20) {
+      final statuses = await loadLocalComicStatuses(
+        comics.skip(start).take(20).toList(),
+      );
+      if (statuses.contains(LocalComicStatus.downloaded)) return true;
+    }
+    return false;
   }
 
   List<LocalComic> _getComicsSortedByAuthor() {
