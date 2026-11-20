@@ -83,6 +83,25 @@ void main() {
       expect(Log.logs, hasLength(1));
       expect(Log.logs.first.level, LogLevel.info);
     });
+
+    test('keeps response cookies out of the log', () {
+      MyLogInterceptor().onResponse(
+        Response<dynamic>(
+          requestOptions: RequestOptions(path: 'https://example.com'),
+          statusCode: 403,
+          data: 'body',
+          headers: Headers.fromMap({
+            'Set-Cookie': ['session=secret-session; Path=/'],
+            'content-type': ['text/plain'],
+          }),
+        ),
+        ResponseInterceptorHandler(),
+      );
+      expect(Log.logs, hasLength(1));
+      expect(Log.logs.first.content, isNot(contains('secret-session')));
+      expect(Log.logs.first.content, contains('set-cookie'));
+      expect(Log.logs.first.content, contains('text/plain'));
+    });
   });
 
   group('MyLogInterceptor timeouts', () {

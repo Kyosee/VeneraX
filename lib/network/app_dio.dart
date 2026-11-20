@@ -95,6 +95,8 @@ class MyLogInterceptor extends Interceptor {
       ),
     );
     headers.remove("cookie");
+    // Session cookies arrive here, and logs end up in public bug reports.
+    if (headers.containsKey("set-cookie")) headers["set-cookie"] = "********";
     String content;
     if (response.data is List<int>) {
       try {
