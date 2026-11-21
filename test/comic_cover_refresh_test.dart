@@ -219,23 +219,28 @@ void main() {
       expect(tester.takeException(), isNull);
 
       sourceTitle = '別のタイトル';
-      final updated = Completer<void>();
-      void onHistoryChanged() {
-        if (!updated.isCompleted &&
-            HistoryManager().find(_comicId, history.type)?.title == sourceTitle) {
-          updated.complete();
-        }
-      }
-      HistoryManager().addListener(onHistoryChanged);
-      addTearDown(() => HistoryManager().removeListener(onHistoryChanged));
       final button = tester.widget<IconButton>(
         find.widgetWithIcon(IconButton, Icons.refresh),
       );
       await tester.runAsync(() async {
-        button.onPressed!();
-        await updated.future.timeout(const Duration(seconds: 5));
+        final updated = Completer<void>();
+        void onHistoryChanged() {
+          final stored = HistoryManager().find(_comicId, history.type);
+          if (!updated.isCompleted && stored?.title == sourceTitle) {
+            updated.complete();
+          }
+        }
+
+        HistoryManager().addListener(onHistoryChanged);
+        try {
+          button.onPressed!();
+          await updated.future.timeout(const Duration(seconds: 5));
+        } finally {
+          HistoryManager().removeListener(onHistoryChanged);
+        }
       });
       expect(detailRequests, 3);
+      expect(HistoryManager().find(_comicId, history.type)!.title, sourceTitle);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
