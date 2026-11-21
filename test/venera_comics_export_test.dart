@@ -142,15 +142,17 @@ void main() {
   Future<Archive> readArchive(File file) async =>
       ZipDecoder().decodeBytes(await file.readAsBytes(), verify: true);
 
-  test('selected books carry only their custom cover, separately from page images', () async {
-    final comic = await fixture();
-    final other = await fixture();
+  test('selected books retain their cover after uninstalling its source', () async {
+    const sourceKey = 'uninstalled-cover-source';
+    final type = ComicType.fromKey(sourceKey);
+    final comic = await fixture(comicType: type);
+    final other = await fixture(comicType: type);
     const ref = 'collection://selected.png';
     final file = ComicCoverStore.fileFor(ref)!;
     await file.parent.create(recursive: true);
     await file.writeAsBytes(pages.last);
     appdata.settings[ComicCoverStore.settingsKey] = {
-      'local': {comic.id: ref, other.id: 'collection://unselected.png'},
+      sourceKey: {comic.id: ref, other.id: 'collection://unselected.png'},
     };
     addTearDown(() => appdata.settings[ComicCoverStore.settingsKey] = {});
     final archive = await exportVeneraComics([comic], includeImages: false, includeTranslations: false);
@@ -160,10 +162,10 @@ void main() {
     appdata.settings[ComicCoverStore.settingsKey] = {};
     await file.delete();
     await importVeneraComics(archive, importTranslations: false, importCustomCovers: false);
-    expect(ComicCoverStore.reference('local', comic.id), isNull);
+    expect(ComicCoverStore.reference(sourceKey, comic.id), isNull);
     await importVeneraComics(archive, importTranslations: false);
     expect(await file.readAsBytes(), pages.last);
-    expect(ComicCoverStore.reference('local', comic.id), ref);
+    expect(ComicCoverStore.reference(sourceKey, comic.id), ref);
   });
 
   String addTranslation(LocalComic comic, {String sourceKey = 'local'}) {
