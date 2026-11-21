@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/export_tasks.dart';
@@ -140,6 +141,30 @@ void main() {
 
   Future<Archive> readArchive(File file) async =>
       ZipDecoder().decodeBytes(await file.readAsBytes(), verify: true);
+
+  test('selected books carry only their custom cover, separately from page images', () async {
+    final comic = await fixture();
+    final other = await fixture();
+    const ref = 'collection://selected.png';
+    final file = ComicCoverStore.fileFor(ref)!;
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(pages.last);
+    appdata.settings[ComicCoverStore.settingsKey] = {
+      'local': {comic.id: ref, other.id: 'collection://unselected.png'},
+    };
+    addTearDown(() => appdata.settings[ComicCoverStore.settingsKey] = {});
+    final archive = await exportVeneraComics([comic], includeImages: false, includeTranslations: false);
+    final zip = await readArchive(archive);
+    expect(zip.findFile('collection_covers/selected.png')!.content, pages.last);
+    expect(zip.findFile('collection_covers/unselected.png'), isNull);
+    appdata.settings[ComicCoverStore.settingsKey] = {};
+    await file.delete();
+    await importVeneraComics(archive, importTranslations: false, importCustomCovers: false);
+    expect(ComicCoverStore.reference('local', comic.id), isNull);
+    await importVeneraComics(archive, importTranslations: false);
+    expect(await file.readAsBytes(), pages.last);
+    expect(ComicCoverStore.reference('local', comic.id), ref);
+  });
 
   String addTranslation(LocalComic comic, {String sourceKey = 'local'}) {
     final chapter = TranslationChapterIdentity(

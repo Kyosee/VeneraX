@@ -15,6 +15,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/chapter_duplicates.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_details_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_source/collection_source.dart';
@@ -106,6 +107,8 @@ ImageProvider comicDetailCoverProvider({
   required String cover,
   required LocalComic? localComic,
 }) {
+  final custom = ComicCoverStore.fileFor(ComicCoverStore.reference(sourceKey, id));
+  if (custom != null) return CachedImageProvider('file://${custom.path}');
   if (ComicCollectionStore.isCollectionSourceKey(sourceKey)) {
     final current = ComicCollectionStore.find(id)?.displayCover;
     return CachedImageProvider(
@@ -313,6 +316,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     scrollController.addListener(onScroll);
     HistoryManager().addListener(_onHistoryChanged);
     ComicCollectionStore.changes.addListener(_onCollectionChanged);
+    ComicCoverStore.changes.addListener(update);
     PreTranslationTaskManager.instance.addListener(update);
     // The per-comic translation toggle lives in the service; listen so the
     // pre-translate button appears/disappears the moment it changes.
@@ -325,6 +329,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     scrollController.removeListener(onScroll);
     HistoryManager().removeListener(_onHistoryChanged);
     ComicCollectionStore.changes.removeListener(_onCollectionChanged);
+    ComicCoverStore.changes.removeListener(update);
     PreTranslationTaskManager.instance.removeListener(update);
     ImageTranslationService.instance.removeListener(update);
     super.dispose();

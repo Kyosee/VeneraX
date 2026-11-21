@@ -166,6 +166,12 @@ const syncSkipCategories = <SyncSkipCategory>[
     ],
   ),
   SyncSkipCategory(
+    'customCovers',
+    'Custom covers',
+    'Cover choices and images for comics and collections',
+    ['customComicCovers'],
+  ),
+  SyncSkipCategory(
     'searchHistory',
     "Search History",
     "Recent search keywords",

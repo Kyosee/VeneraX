@@ -1,9 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
-import 'package:venera/utils/io.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 
 /// How a collection lays out the chapters of its members.
 enum CollectionDisplayMode {
@@ -59,6 +58,9 @@ class CollectionMember {
   String get label => displayName.trim().isNotEmpty
       ? displayName.trim()
       : (cachedTitle.trim().isNotEmpty ? cachedTitle.trim() : comicId);
+
+  String get coverReference =>
+      ComicCoverStore.reference(sourceKey, comicId) ?? cachedCover.trim();
 
   /// Identity within a collection. Two different sources may well use the same
   /// comic id, so membership is keyed on the pair.
@@ -132,7 +134,8 @@ class ComicCollection {
     final c = customCover.trim();
     if (c.isNotEmpty) return ComicCollectionStore.resolveCover(c);
     for (final m in members) {
-      if (m.cachedCover.trim().isNotEmpty) return m.cachedCover.trim();
+      final cover = m.coverReference;
+      if (cover.isNotEmpty) return ComicCollectionStore.resolveCover(cover);
     }
     return '';
   }
@@ -143,7 +146,7 @@ class ComicCollection {
   CollectionMember? get coverOwner {
     if (customCover.trim().isNotEmpty) return null;
     for (final m in members) {
-      if (m.cachedCover.trim().isNotEmpty) return m;
+      if (m.coverReference.isNotEmpty) return m;
     }
     return null;
   }
@@ -258,9 +261,8 @@ abstract class ComicCollectionStore {
   /// borrowed member covers and plain URLs are unaffected.
   static String resolveCover(String stored) {
     if (!stored.startsWith(localCoverScheme)) return stored;
-    final name = stored.substring(localCoverScheme.length);
-    if (name.isEmpty) return '';
-    return 'file://${FilePath.join(App.dataPath, coverDirName, name)}';
+    final file = ComicCoverStore.fileFor(stored);
+    return file == null ? '' : 'file://${file.path}';
   }
 
   /// Whether [key] belongs to a collection. Used to hide these built-in sources

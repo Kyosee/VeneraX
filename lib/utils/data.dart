@@ -7,6 +7,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_source/source_library.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
@@ -285,12 +286,16 @@ Future<File> exportAppData({
   bool sync = true,
   bool includeLocalComics = true,
   bool includeTranslations = true,
+  bool includeCoverFiles = true,
+  Map<String, dynamic>? customCovers,
 }) => SessionGuard.during(
   'backup.export',
   () => _exportAppData(
     sync: sync,
     includeLocalComics: includeLocalComics,
     includeTranslations: includeTranslations,
+    includeCoverFiles: includeCoverFiles,
+    customCovers: customCovers,
   ),
 );
 
@@ -298,8 +303,10 @@ Future<File> _exportAppData({
   required bool sync,
   required bool includeLocalComics,
   required bool includeTranslations,
+  required bool includeCoverFiles,
+  required Map<String, dynamic>? customCovers,
 }) async {
-  var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  var time = DateTime.now().microsecondsSinceEpoch;
   var cacheFilePath = FilePath.join(App.cachePath, '$time.venera');
   var cacheFile = File(cacheFilePath);
   var dataPath = App.dataPath;
@@ -315,6 +322,7 @@ Future<File> _exportAppData({
   if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
     throw Exception('Cannot export: failed to rebuild $appdataName');
   }
+  final covers = customCovers ?? ComicCoverStore.current;
   // Serialize the export against database restores and background-isolate
   // reads: the checkpoints below open short-lived second connections, and the
   // zip step reads the database files directly — neither may overlap a
@@ -433,7 +441,9 @@ Future<File> _exportAppData({
     if (File(readLaterFile).existsSync()) {
       zipFile.addFile("read_later.db", readLaterFile);
     }
-    zipFile.addFile("appdata.json", appdataFile);
+    final appJson = jsonDecode(File(appdataFile).readAsStringSync()) as Map;
+    ComicCoverStore.applyToSettings(appJson['settings'] as Map, covers);
+    zipFile.addFileFromBytes('appdata.json', utf8.encode(jsonEncode(appJson)));
     if (File(cookies).existsSync()) {
       zipFile.addFile("cookie.db", cookies);
     }
@@ -449,15 +459,9 @@ Future<File> _exportAppData({
         }
       }
     }
-    // Covers a user picked for a collection live as files in our data
-    // directory; the collection config only stores the file name. Without the
-    // files the config restores on another device pointing at nothing.
-    var coverDir = Directory(FilePath.join(dataPath, coverDirName));
-    if (coverDir.existsSync()) {
-      for (var file in coverDir.listSync()) {
-        if (file is File) {
-          zipFile.addFile("$coverDirName/${file.name}", file.path);
-        }
+    if (includeCoverFiles) {
+      for (final name in ComicCoverStore.fileNames(covers)) {
+        zipFile.addFile('$coverDirName/$name', FilePath.join(dataPath, coverDirName, name));
       }
     }
     zipFile.close();
@@ -704,6 +708,8 @@ Future<ImportOutcome> importAppData(
   bool userRestore = false,
   bool restoreDeviceSettings = false,
   bool requireTranslationsOnly = false,
+  bool restoreCustomCovers = true,
+  Future<Map<String, dynamic>> Function(Map<String, dynamic>)? loadCustomCovers,
 }) async {
   while (_importInProgress != null) {
     // Wait for the other import to fully finish (ignore its outcome).
@@ -723,6 +729,8 @@ Future<ImportOutcome> importAppData(
       userRestore: userRestore,
       restoreDeviceSettings: restoreDeviceSettings,
       requireTranslationsOnly: requireTranslationsOnly,
+      restoreCustomCovers: restoreCustomCovers,
+      loadCustomCovers: loadCustomCovers,
     );
   } finally {
     SessionGuard.end('backup.import');
@@ -836,6 +844,8 @@ Future<ImportOutcome> _importAppDataLocked(
   bool userRestore = false,
   bool restoreDeviceSettings = false,
   bool requireTranslationsOnly = false,
+  bool restoreCustomCovers = true,
+  Future<Map<String, dynamic>> Function(Map<String, dynamic>)? loadCustomCovers,
 }) async {
   void report(ImportPhase phase, [String? message, int? bytes]) {
     onProgress?.call(phase, message, bytes);
@@ -885,6 +895,21 @@ Future<ImportOutcome> _importAppDataLocked(
         return const ImportOutcome();
       }
     }
+    Map<String, dynamic>? incomingData;
+    if (await appdataFile.exists()) {
+      incomingData = jsonDecode(await appdataFile.readAsString()) as Map<String, dynamic>;
+      final settings = incomingData['settings'];
+      if (settings is Map) {
+        var covers = ComicCoverStore.current;
+        if (restoreCustomCovers) {
+          covers = ComicCoverStore.snapshot(settings);
+          await ComicCoverStore.installFiles(covers, cacheDir, requireAll: false);
+          if (loadCustomCovers != null) covers = await loadCustomCovers(covers);
+          await ComicCoverStore.requireFiles(covers);
+        }
+        ComicCoverStore.applyToSettings(settings, covers);
+      }
+    }
     // Hold every background-isolate DB reader off while the store restores run:
     // each restore closes its connection, swaps the file, and reopens. Running
     // this inside runExclusive drains reads already dispatched to an isolate and
@@ -910,15 +935,19 @@ Future<ImportOutcome> _importAppDataLocked(
       report(ImportPhase.applying, 'Importing library');
       await App.domain.restoreFrom(domainFile.path);
     }
-    if (await appdataFile.exists()) {
+    final data = incomingData;
+    if (data != null) {
       report(ImportPhase.applying, 'Importing settings');
-      var content = await appdataFile.readAsString();
-      var data = jsonDecode(content);
       appdata.syncData(data);
+      final settings = data['settings'];
+      if (restoreCustomCovers && settings is Map && settings[ComicCoverStore.settingsKey] is Map) {
+        appdata.settings[ComicCoverStore.settingsKey] = settings[ComicCoverStore.settingsKey];
+        await appdata.saveData(false);
+      }
       // Refresh collection-backed pages immediately after a WebDAV restore;
       // collection settings, including detail display modes, live in appdata.
-      ComicCollectionStore.notifyChanged();
-      if (restoreDeviceSettings && data is Map<String, dynamic>) {
+      ComicCoverStore.notifyChanged();
+      if (restoreDeviceSettings) {
         await _restoreDeviceSettingsIfAbsent(data);
       }
       // Which library each source installs and updates from rides along in the
@@ -950,6 +979,7 @@ Future<ImportOutcome> _importAppDataLocked(
             // The unconfirmed-upload record (#133) names a file THIS device
             // PUT; a restored backup must not forge or erase it.
             'webdavPendingPublish',
+            'webdavCustomCoversSkipped',
             'hasCompletedInitialSync',
             'webdavSetupRestorePending',
             'sync_logs',
@@ -1018,45 +1048,6 @@ Future<ImportOutcome> _importAppDataLocked(
         cacheDir.joinFile("image_translation_prefs.json"),
         replace: true,
       );
-    }
-    // Cover images picked for a collection. The collection config in
-    // appdata.json only names the file, so the files have to be laid down for
-    // it to resolve here.
-    var incomingCoverDir = Directory(
-      FilePath.join(cacheDirPath, ComicCollectionStore.coverDirName),
-    );
-    if (incomingCoverDir.existsSync()) {
-      try {
-        final target = Directory(
-          FilePath.join(App.dataPath, ComicCollectionStore.coverDirName),
-        );
-        await target.create(recursive: true);
-        for (var file in incomingCoverDir.listSync()) {
-          if (file is File) {
-            await file.copy(FilePath.join(target.path, file.name));
-          }
-        }
-        // The settings just applied replaced the collection list wholesale, so
-        // any cover file no longer named by one is dead weight. Without this,
-        // every cover the user ever re-picked on another device would pile up
-        // here for good, one file per change.
-        final referenced = <String>{};
-        for (final c in ComicCollectionStore.all()) {
-          final cover = c.customCover.trim();
-          if (cover.startsWith(ComicCollectionStore.localCoverScheme)) {
-            referenced.add(
-              cover.substring(ComicCollectionStore.localCoverScheme.length),
-            );
-          }
-        }
-        for (var file in target.listSync()) {
-          if (file is File && !referenced.contains(file.name)) {
-            file.deleteIgnoreError();
-          }
-        }
-      } catch (e, s) {
-        Log.warning('Import Data', 'Failed to import collection covers: $e\n$s');
-      }
     }
     final incomingSources = Directory(FilePath.join(cacheDirPath, 'comic_source'));
     final liveDir = Directory(FilePath.join(App.dataPath, 'comic_source'));

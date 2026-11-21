@@ -601,6 +601,28 @@ abstract mixin class _ComicPageActions {
       comic.sourceKey,
     );
     showMenuX(context, Offset(context.width - 16, context.padding.top), [
+      MenuEntry(
+        icon: Icons.image_outlined,
+        text: 'Change cover'.tl,
+        onClick: () async {
+          try {
+            final selected = await selectFile(ext: ComicCoverStore.imageExtensions);
+            if (selected != null) {
+              await ComicCoverStore.setFile(comic.sourceKey, comic.id, selected);
+            }
+          } catch (e, s) {
+            Log.error('Comic cover', e, s);
+            if (context.mounted) context.showMessage(message: 'Failed to set the cover'.tl);
+          }
+        },
+      ),
+      if (ComicCoverStore.reference(comic.sourceKey, comic.id) != null ||
+          (_isCollection && ComicCollectionStore.find(comic.id)?.customCover.isNotEmpty == true))
+        MenuEntry(
+          icon: Icons.restart_alt,
+          text: 'Restore default cover'.tl,
+          onClick: () => ComicCoverStore.reset(comic.sourceKey, comic.id),
+        ),
       // Per-comic AI translation switch. Toggling notifies the service, which
       // the detail page listens to, so the pre-translate button appears/hides
       // in sync (when the engine is also ready).

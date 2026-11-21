@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/components.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/local_comic_image.dart';
@@ -28,6 +31,23 @@ void main() {
         downloadedChapters: const [],
         createdAt: DateTime(2024),
       );
+
+  test('tiles and detail give the selected local image precedence until reset', () {
+    appdata.settings[ComicCoverStore.settingsKey] = {
+      'local': {'c1': 'collection://picked.png'},
+    };
+    addTearDown(() => appdata.settings[ComicCoverStore.settingsKey] = {});
+    final comic = comicOfType(ComicType.local);
+    final tile = findImageProvider(comic) as CachedImageProvider;
+    expect(tile.url, endsWith('picked.png'));
+    final detail = comicDetailCoverProvider(
+      sourceKey: 'local', id: 'c1', cover: 'cover.jpg', localComic: comic,
+    ) as CachedImageProvider;
+    expect(detail.url, tile.url);
+    expect(ComicCoverStore.reference('another-source', 'c1'), isNull);
+    appdata.settings[ComicCoverStore.settingsKey] = {};
+    expect(findImageProvider(comic), isA<LocalComicImageProvider>());
+  });
 
   test('pure local import loads its cover from the local file', () {
     final provider = comicDetailCoverProvider(

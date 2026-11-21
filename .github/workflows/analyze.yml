@@ -46,6 +46,12 @@ jobs:
           test/photo_view_lifecycle_test.dart
           test/comic_state_repository_test.dart
           test/comic_cover_refresh_test.dart
+          test/comic_detail_cover_provider_test.dart
+          test/comic_collection_store_test.dart
+          test/export_app_data_test.dart
+          test/venera_comics_export_test.dart
+          test/webdav_custom_covers_test.dart
+          test/sync_skip_test.dart
           test/history_single_delete_test.dart
           test/reader_rotation_transition_test.dart
           test/reader_settings_search_test.dart

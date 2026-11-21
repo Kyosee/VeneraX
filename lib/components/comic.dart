@@ -84,6 +84,8 @@ void _warmCollectionCover(String collectionId) {
 
 /// Picks the loader for a comic's cover. Exposed for tests.
 ImageProvider? findImageProvider(Comic comic) {
+  final custom = ComicCoverStore.fileFor(ComicCoverStore.reference(comic.sourceKey, comic.id));
+  if (custom != null) return CachedImageProvider('file://${custom.path}');
   ImageProvider image;
   // A collection's cover is resolved from the store, not from the passed-in
   // comic: a favourite or history row froze whatever the cover was when it was
@@ -683,7 +685,10 @@ class ComicTile extends StatelessWidget {
         builder: (context, _) => _buildImageNow(context),
       );
     }
-    return _buildImageNow(context);
+    return ListenableBuilder(
+      listenable: ComicCoverStore.changes,
+      builder: (context, _) => _buildImageNow(context),
+    );
   }
 
   Widget _buildImageNow(BuildContext context) {

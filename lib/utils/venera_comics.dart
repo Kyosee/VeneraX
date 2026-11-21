@@ -3,6 +3,8 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
@@ -128,6 +130,7 @@ Future<File> exportVeneraComics(
   List<LocalComic> comics, {
   bool includeImages = true,
   bool includeTranslations = true,
+  bool includeCustomCovers = true,
   void Function(int current, int total)? onProgress,
   void Function(ExportPhase phase, String? detail)? onPhase,
 }) async {
@@ -174,6 +177,7 @@ Future<File> exportVeneraComics(
     final manifestFile = File(FilePath.join(exportDir.path, 'manifest.json'));
     manifestFile.writeAsStringSync(jsonEncode(manifest.toJson()));
 
+    final coverChoices = includeCustomCovers ? ComicCoverStore.current : const {};
     // Write each comic
     for (var i = 0; i < comics.length; i++) {
       final comic = comics[i];
@@ -187,6 +191,18 @@ Future<File> exportVeneraComics(
       );
       comicDir.createSync(recursive: true);
 
+      final sourceKey = comic.comicType.sourceKey;
+      final customCover = ComicCollectionStore.isCollectionSourceKey(sourceKey)
+          ? (coverChoices[ComicCollectionStore.settingsKey] as Map?)?[comic.id]
+          : (coverChoices[ComicCoverStore.settingsKey] as Map?)?[sourceKey]?[comic.id];
+      if (customCover is String) {
+        final file = ComicCoverStore.fileFor(customCover);
+        if (file != null) {
+          final dir = Directory(FilePath.join(exportDir.path, ComicCollectionStore.coverDirName));
+          await dir.create(recursive: true);
+          await file.copy(FilePath.join(dir.path, file.name));
+        }
+      }
       // Write meta.json
       final meta = <String, dynamic>{
         'id': comic.id,
@@ -196,6 +212,8 @@ Future<File> exportVeneraComics(
         'directory': comic.directory,
         'chapters': comic.chapters?.toJson(),
         'cover': comic.cover,
+        if (customCover is String) 'customCover': customCover,
+        if (customCover is String) 'coverSourceKey': sourceKey,
         'comicType': comic.comicType.value,
         'downloadedChapters': comic.downloadedChapters,
         'createdAt': comic.createdAt.millisecondsSinceEpoch,
@@ -207,8 +225,8 @@ Future<File> exportVeneraComics(
       // Copy cover. Use async copyMem (not copySync) so the per-image byte work
       // yields to the event loop instead of freezing the UI on a large export
       // (issue #54), and so it works for SAF-backed files.
-      final coverFile = File(_archivePath(comic.baseDir, comic.cover));
-      if (coverFile.existsSync()) {
+      final coverFile = comic.cover.isEmpty ? null : File(_archivePath(comic.baseDir, comic.cover));
+      if (coverFile != null && coverFile.existsSync()) {
         final destination = File(_archivePath(comicDir.path, comic.cover));
         await destination.parent.create(recursive: true);
         await coverFile.copyMem(destination.path);
@@ -351,6 +369,7 @@ void _moveOrCopyFile(File src, String destPath) {
 Future<int> importVeneraComics(
   File file, {
   bool importTranslations = true,
+  bool importCustomCovers = true,
   void Function(int current, int total)? onProgress,
 }) async {
   // Unique staging dir per call. importVeneraComics has two independent,
@@ -398,7 +417,17 @@ Future<int> importVeneraComics(
       if (meta['id'] != entry.id || meta['comicType'] != entry.comicType) {
         throw const FormatException('Comic archive metadata does not match');
       }
-      final coverName = (meta['cover'] as String?) ?? 'cover.jpg';
+      final ref = meta['customCover'];
+      final sourceKey = meta['coverSourceKey'];
+      final hasCustomCover = importCustomCovers && ref is String && sourceKey is String &&
+          ComicType.fromKey(sourceKey).value == entry.comicType;
+      if (hasCustomCover && ComicCoverStore.nameOf(ref) != null) {
+        final target = ComicCoverStore.fileFor(ref)!;
+        final source = File(FilePath.join(importDirPath, ComicCollectionStore.coverDirName, target.name));
+        await ComicCoverStore.installFile(target, (path) async { await source.copy(path); });
+      }
+      final storedCover = meta['cover'] as String?;
+      final coverName = storedCover == null || storedCover.isEmpty ? 'cover.jpg' : storedCover;
       final srcCover = File(_archivePath(comicDir.path, coverName));
       final destDir = Directory(
         _archivePath(LocalManager().path, comicDirName),
@@ -461,6 +490,12 @@ Future<int> importVeneraComics(
         }
       }
 
+      if (hasCustomCover &&
+          (ComicCoverStore.nameOf(ref) != null ||
+              (ComicCollectionStore.isCollectionSourceKey(sourceKey) &&
+                  ComicCollectionStore.find(entry.id)?.sourceKey == sourceKey))) {
+        await ComicCoverStore.setReference(sourceKey, entry.id, ref);
+      }
       imported++;
       onProgress?.call(i + 1, total);
     }

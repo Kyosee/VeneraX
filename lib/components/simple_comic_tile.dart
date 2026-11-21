@@ -42,15 +42,12 @@ class SimpleComicTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget cover = _buildCover();
-    // A collection's cover arrives asynchronously the first time its members
-    // load, so this tile has to rebuild when the store fills it in.
-    if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey)) {
-      cover = ListenableBuilder(
-        listenable: ComicCollectionStore.changes,
-        builder: (context, _) => _buildCover(),
-      );
-    }
+    Widget cover = ListenableBuilder(
+      listenable: ComicCollectionStore.isCollectionSourceKey(comic.sourceKey)
+          ? ComicCollectionStore.changes
+          : ComicCoverStore.changes,
+      builder: (context, _) => _buildCover(),
+    );
 
     if (showFavorite) {
       final comicType = ComicType.fromKey(comic.sourceKey);

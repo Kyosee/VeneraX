@@ -473,6 +473,7 @@ class Settings with ChangeNotifier {
     // each other's history on every upload.
     'webdavBackupRetention': 10,
     "disableSyncFields": "", // "field1, field2, ..."
+    "customComicCovers": <String, dynamic>{},
     'dataVersion': 0,
     'quickFavorite': null,
     'enableTurnPageByVolumeKey': true,
