@@ -177,7 +177,9 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | `FLUTTER_OHOS_SDK` | 流水线获取的固定提交 Flutter OH SDK |
 | `DEVECO_STUDIO` | 云端解压后的 `command-line-tools` 根目录 |
 
-手动运行 `Build ALL` 并选择 `platform=harmonyos` 会构建并验证一个未签名的 ARM64 真机 HAP。发布和定时预热均只处理鸿蒙 ARM64。工具包按版本缓存，ONNX 和 rhttp 按各自的原生依赖和 ABI 缓存。缓存缺失时才编译对应的库，并在 HAP 打包前保存。
+手动运行 `Build ALL` 并选择 `platform=harmonyos` 会构建并验证一个未签名的 ARM64 真机 HAP。发布和定时预热均只处理鸿蒙 ARM64。工具包按版本缓存，ONNX 和 rhttp 分别缓存。
+
+ONNX 缓存过期时，工作流从 [VeneraX 维护的依赖仓库](https://github.com/Kyosee/flutter_onnxruntime/releases) 下载鸿蒙 ARM64 预编译包，核对 SHA-256，再把库和许可证打进 HAP。只有 SDK、ABI、ONNX 构建脚本或补丁和已发布包不匹配时才从源码编译。更新依赖后，将新包的标签、构建输入和摘要写入 [预编译包配置](../tool/ohos/onnxruntime-prebuilt.json)。
 
 `master` 每周一、四北京时间 10:37 自动恢复缓存并补齐缺项。需要提前预热时，在 `master` 手动运行 `platform=native-cache` 即可。它也会准备 Android、Windows、Linux 和 Apple 使用的预编译 ONNX 包。查看鸿蒙任务中的 `Restore ONNX Runtime` 和 `Restore rhttp` 可确认命中，对应的编译步骤会显示 `Skipped`。
 

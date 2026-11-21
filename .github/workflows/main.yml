@@ -408,7 +408,10 @@ jobs:
           rhttp=$(ruby -ryaml -e 'puts YAML.load_file("pubspec.lock").fetch("packages").fetch("rhttp").fetch("description").fetch("sha256")')
           rust=$(git rev-parse HEAD:tool/build_ohos_rhttp.ps1)
           wrapper=$(git rev-parse HEAD:tool/clang_ohos.sh)
-          echo "onnx=ohos-onnx-linux-$OHOS_CLI_VERSION-$ABI-$onnx-$patch" >> "$GITHUB_OUTPUT"
+          onnx_key="ohos-onnx-linux-$OHOS_CLI_VERSION-$ABI-$onnx-$patch"
+          prebuilt=$(jq -r --arg key "$onnx_key" 'select(.build_key == $key) | .sha256' tool/ohos/onnxruntime-prebuilt.json)
+          echo "onnx=$onnx_key${prebuilt:+-$prebuilt}" >> "$GITHUB_OUTPUT"
+          echo "prebuilt=$prebuilt" >> "$GITHUB_OUTPUT"
           echo "rhttp=ohos-rhttp-linux-$OHOS_CLI_VERSION-$ABI-$rhttp-$rust-$wrapper" >> "$GITHUB_OUTPUT"
       - name: Restore ONNX Runtime
         id: onnx
@@ -424,6 +427,20 @@ jobs:
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
           path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
+      - name: Download published HarmonyOS ONNX Runtime
+        if: steps.onnx.outputs.cache-hit != 'true' && steps.inputs.outputs.prebuilt != ''
+        env:
+          ARCHIVE_SHA256: ${{ steps.inputs.outputs.prebuilt }}
+        run: |
+          set -euo pipefail
+          tag=$(jq -er .tag tool/ohos/onnxruntime-prebuilt.json)
+          asset=onnxruntime-ohos-arm64-v8a.tar.gz
+          archive="$RUNNER_TEMP/$asset"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/Kyosee/flutter_onnxruntime/releases/download/$tag/$asset"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$VENERAX_OHOS_CHECKOUT/ohos/entry" \
+            "libs/$ABI/libonnxruntime.so" src/main/resources/rawfile/onnxruntime/{LICENSE,ThirdPartyNotices.txt}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -455,7 +472,7 @@ jobs:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
           key: harmonyos-cli-linux-x64-${{ env.OHOS_CLI_VERSION }}
       - name: Install HarmonyOS toolchains
-        if: env.PACKAGE_HAP == 'true' || steps.onnx.outputs.cache-hit != 'true' || steps.rhttp.outputs.cache-hit != 'true'
+        if: env.PACKAGE_HAP == 'true' || steps.rhttp.outputs.cache-hit != 'true' || (steps.onnx.outputs.cache-hit != 'true' && steps.inputs.outputs.prebuilt == '')
         run: |
           set -euo pipefail
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
@@ -492,8 +509,8 @@ jobs:
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
           path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
-      - name: Build ONNX Runtime on cache miss
-        if: steps.onnx.outputs.cache-hit != 'true'
+      - name: Build ONNX Runtime from source
+        if: steps.onnx.outputs.cache-hit != 'true' && steps.inputs.outputs.prebuilt == ''
         run: |
           cd "$VENERAX_OHOS_CHECKOUT"
           pwsh -NoProfile -File tool/build_ohos_onnx.ps1 -NativeSdk "$DEVECO_STUDIO/sdk/default/openharmony/native" -Abi "$ABI"

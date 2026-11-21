@@ -177,7 +177,9 @@ The `Build_HarmonyOS` job in `Build ALL` uses GitHub-hosted `ubuntu-22.04`, with
 | `FLUTTER_OHOS_SDK` | Flutter OH SDK fetched at the pinned revision |
 | `DEVECO_STUDIO` | Extracted `command-line-tools` directory on the runner |
 
-Dispatch `Build ALL` with `platform=harmonyos` to build and verify the unsigned ARM64 device HAP. Release builds and scheduled cache warming target ARM64 only. The workflow caches the official tool archive by version and caches ONNX and rhttp separately by native inputs and ABI. Each missing library is compiled and saved before HAP packaging.
+Dispatch `Build ALL` with `platform=harmonyos` to build and verify the unsigned ARM64 device HAP. Release builds and scheduled cache warming target ARM64 only. The workflow caches the official tool archive by version and caches ONNX and rhttp separately.
+
+If the ONNX cache expires, the workflow downloads the HarmonyOS ARM64 package from [the project's dependency repository](https://github.com/Kyosee/flutter_onnxruntime/releases), verifies its SHA-256, and packages the library and license notices in the HAP. It builds from source only if the SDK, ABI, ONNX build script or patch differs from the published package. After a dependency update, record the new release tag, build inputs and digest in the [prebuilt package configuration](../tool/ohos/onnxruntime-prebuilt.json).
 
 `master` restores the caches and fills missing entries every Monday and Thursday at 02:37 UTC. To warm them ahead of a release, dispatch `platform=native-cache` on `master`. This also prepares the prebuilt ONNX packages for Android, Windows, Linux, and Apple. On a cache hit, `Restore ONNX Runtime` or `Restore rhttp` reports the restored key and the corresponding build step is skipped.
 
