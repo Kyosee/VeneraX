@@ -38,6 +38,20 @@ generated from these files by `.github/scripts/gen-changelog.mjs`, in the
 releases are listed. Edit the files here, never the generated ones; the next
 stable release rewrites both.
 
+## GitHub prerelease titles
+
+Use `VeneraX <version> <stage> <number> (<platforms>)`, for example
+`VeneraX 3.0.2 Beta 2 (Android & HarmonyOS)` or
+`VeneraX 2.3.12 Test 1 (HarmonyOS)`. Write Alpha, Beta, RC or Test as
+indicated by the version. Omit the number if the prerelease has none.
+List platforms with an installable package in the order Android, HarmonyOS,
+iOS, Windows, macOS, Linux. Both release workflows use the same formatter.
+For manual previews, pass the version and the package paths to the formatter.
+
+```sh
+node .github/scripts/prerelease-title.mjs 3.0.2-beta.2 release-assets/*
+```
+
 ## GitHub Release body
 
 The release body should link to both language files so users on the web can

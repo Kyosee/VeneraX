@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { releaseDownloads } from './release-downloads.mjs';
 
@@ -59,7 +60,7 @@ test('a new mobile draft can be used before it appears in the releases list', ()
   const setup = script.match(/^api="repos\/\$GITHUB_REPOSITORY"[\s\S]*?(?=^read_release\(\))/m);
   assert.ok(setup, 'Mobile draft setup must exist');
   const result = spawnSync(bash, ['-c', `set -euo pipefail
-    root=. version=1.0-beta.1 tag=mobile-1.0-beta.1 body_file=notes.md
+    root=. tag=mobile-1.0.0-beta.1 body_file=notes.md title='VeneraX 1.0.0 Beta 1 (Android & HarmonyOS)'
     GITHUB_REPOSITORY=test/app GITHUB_SHA=abc123
     fail() { echo "$*" >&2; exit 1; }
     gh() {
@@ -67,7 +68,7 @@ test('a new mobile draft can be used before it appears in the releases list', ()
         *'/releases?per_page='*) ;; # The list has not indexed the new draft yet.
         *'/git/matching-refs/'*) echo "refs/tags/$tag" ;;
         *'/commits/refs/tags/'*) echo "$GITHUB_SHA" ;;
-        *'POST repos/test/app/releases '*) echo 314 ;;
+        *'POST repos/test/app/releases '*"name=$title"*) echo 314 ;;
         'release create '*) echo "https://example.com/draft" ;;
         *) fail "Unexpected request: $*" ;;
       esac
@@ -77,6 +78,19 @@ test('a new mobile draft can be used before it appears in the releases list', ()
   `], { encoding: 'utf8' });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('prerelease titles describe only platforms with an installable package', () => {
+  const script = fileURLToPath(new URL('./prerelease-title.mjs', import.meta.url));
+  for (const [version, files, expected] of [
+    ['3.0.2-beta.2', ['a.hap', 'one.apk', 'two.apk'], 'VeneraX 3.0.2 Beta 2 (Android & HarmonyOS)'],
+    ['2.3.12-test.1', ['device.hap', 'HarmonyOS-TESTING.md'], 'VeneraX 2.3.12 Test 1 (HarmonyOS)'],
+    ['9.8.7-rc.10', packages, 'VeneraX 9.8.7 RC 10 (Android, HarmonyOS, iOS, Windows, macOS & Linux)'],
+  ]) {
+    const result = spawnSync(process.execPath, [script, version, ...files], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), expected);
+  }
 });
 
 function validate(t, { missing, empty } = {}) {
