@@ -35,17 +35,13 @@ body_file="$root/release-body.md"
 
 api="repos/$GITHUB_REPOSITORY"
 release_json="$root/release.json"
-# The releases list includes unpublished drafts, unlike the lookup by tag.
-release_id() {
-  gh api --paginate "$api/releases?per_page=100" \
-    --jq ".[] | select(.tag_name == \"$tag\") | .id"
-}
 verify_tag() {
   [[ "$(gh api "$api/commits/refs/tags/$tag" --jq .sha)" == "$GITHUB_SHA" ]] ||
     fail "Tag $tag does not point to the build commit."
 }
 
-id=$(release_id)
+# The releases list includes existing drafts, unlike the lookup by tag.
+id=$(gh api --paginate "$api/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | .id")
 tag_ref=$(gh api "$api/git/matching-refs/tags/$tag" --jq ".[] | select(.ref == \"refs/tags/$tag\") | .ref")
 if [[ -z "$tag_ref" ]]; then
   [[ -z "$id" ]] || fail "The existing release no longer has its tag."
@@ -53,9 +49,10 @@ if [[ -z "$tag_ref" ]]; then
 fi
 verify_tag
 if [[ -z "$id" ]]; then
-  gh release create "$tag" --verify-tag --target "$GITHUB_SHA" --title "VeneraX $version" \
-    --draft --prerelease --latest=false --notes-file "$body_file"
-  id=$(release_id)
+  # A new draft may not appear in the list immediately. Its creation returns the ID.
+  id=$(gh api --method POST "$api/releases" --jq .id \
+    -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="VeneraX $version" \
+    -F "body=@$body_file" -F draft=true -F prerelease=true -f make_latest=false)
 fi
 [[ "$id" =~ ^[0-9]+$ ]] || fail "Expected one release for $tag."
 

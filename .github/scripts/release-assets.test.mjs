@@ -53,6 +53,32 @@ test('mobile previews link only to the four APKs and the ARM64 HAP', () => {
     .map(name => name.replace('9.8.7', '9.8.7-beta.1')).sort());
 });
 
+test('a new mobile draft can be used before it appears in the releases list', () => {
+  const script = readFileSync(new URL('./publish-mobile-preview.sh', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
+  const setup = script.match(/^api="repos\/\$GITHUB_REPOSITORY"[\s\S]*?(?=^read_release\(\))/m);
+  assert.ok(setup, 'Mobile draft setup must exist');
+  const result = spawnSync(bash, ['-c', `set -euo pipefail
+    root=. version=1.0-beta.1 tag=mobile-1.0-beta.1 body_file=notes.md
+    GITHUB_REPOSITORY=test/app GITHUB_SHA=abc123
+    fail() { echo "$*" >&2; exit 1; }
+    gh() {
+      case "$*" in
+        *'/releases?per_page='*) ;; # The list has not indexed the new draft yet.
+        *'/git/matching-refs/'*) echo "refs/tags/$tag" ;;
+        *'/commits/refs/tags/'*) echo "$GITHUB_SHA" ;;
+        *'POST repos/test/app/releases '*) echo 314 ;;
+        'release create '*) echo "https://example.com/draft" ;;
+        *) fail "Unexpected request: $*" ;;
+      esac
+    }
+    ${setup[0]}
+    [[ "$id" == 314 ]]
+  `], { encoding: 'utf8' });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 function validate(t, { missing, empty } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'venera-release-assets-'));
   t.after(() => {
