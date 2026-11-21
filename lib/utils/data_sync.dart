@@ -870,15 +870,19 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         final syncCovers = !appdata.isSyncSkipped(ComicCoverStore.settingsKey);
         final coverSync = WebdavCovers(client);
         if (syncCovers && latest != null) await _restorePendingCovers(coverSync, latest);
-        final covers = syncCovers ? ComicCoverStore.current : WebdavCovers.emptyChoices;
+        final covers = syncCovers ? await ComicCoverStore.forExport() : WebdavCovers.emptyChoices;
+        final coverDirectoryExists = listing.any((e) => e.name == 'venera-covers');
         final coverToken = syncCovers
             ? await coverSync.publish(covers, latest,
-                directoryExists: listing.any((e) => e.name == 'venera-covers'))
-            : WebdavCovers.inherit(latest);
+                directoryExists: coverDirectoryExists)
+            : await coverSync.inheritForUpload(latest, directoryExists: coverDirectoryExists);
         data = await exportAppData(
           sync: true,
           includeCoverFiles: false,
-          customCovers: covers,
+          customCovers: {
+            ...covers,
+            if (!syncCovers) ComicCoverStore.inheritedWebdavKey: coverToken,
+          },
           includeLocalComics: _syncLocalComics(),
           includeTranslations: _syncTranslations(),
         );
@@ -1458,16 +1462,14 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  static const _coversPending = 'webdavCustomCoversSkipped';
-
   static Future<void> _setCoversPending(bool pending) async {
-    if ((appdata.implicitData[_coversPending] == true) == pending) return;
-    appdata.implicitData[_coversPending] = pending;
+    if ((appdata.implicitData[Appdata.pendingCoversKey] == true) == pending) return;
+    appdata.implicitData[Appdata.pendingCoversKey] = pending;
     await appdata.writeImplicitData();
   }
 
   Future<void> _restorePendingCovers(WebdavCovers sync, String backup) async {
-    if (appdata.implicitData[_coversPending] != true) return;
+    if (appdata.implicitData[Appdata.pendingCoversKey] != true) return;
     final covers = await sync.restoreLatest(backup);
     await ComicCoverStore.requireFiles(covers);
     final settings = <String, dynamic>{

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/app.dart';
@@ -40,9 +41,27 @@ class WebdavCovers {
 
   static String? legacyBackup(String? token) {
     if (token == null || !token.startsWith('b')) return null;
-    final name = utf8.decode(base64Url.decode(base64Url.normalize(token.substring(1))));
-    if (!_legacyName.hasMatch(name)) throw const FormatException('Invalid cover backup');
-    return name;
+    try {
+      final name = utf8.decode(base64Url.decode(base64Url.normalize(token.substring(1))));
+      return _legacyName.hasMatch(name) ? name : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<String> inheritForUpload(String? backup, {required bool directoryExists}) async {
+    final token = inherit(backup);
+    final legacy = legacyBackup(token);
+    if (legacy == null || tokenOf(backup) != null) return token;
+    if (!directoryExists) await client.mkdir(_directory);
+    // A legacy client may later rotate the only zip containing these images.
+    try {
+      await client.copy('/$legacy', '$_directory/$legacy', false);
+    } on DioException catch (error) {
+      // 412 means already copied. Providers without COPY keep the root backup.
+      if (![405, 412, 501].contains(error.response?.statusCode)) rethrow;
+    }
+    return token;
   }
 
   static bool _same(Map a, Map b) {
@@ -83,22 +102,32 @@ class WebdavCovers {
       }
     }
     final previous = tokenOf(previousBackup);
-    if (previous != null && previous.length == 33 && previous.startsWith('c') &&
-        _same(covers, await _manifest(previous))) return previous;
+    if (previous != null && previous.length == 33 && previous.startsWith('c')) {
+      try {
+        if (_same(covers, await _manifest(previous))) return previous;
+      } on DioException catch (error) {
+        if (error.response?.statusCode != 404) rethrow;
+      }
+    }
     final token = 'c${const Uuid().v4().replaceAll('-', '')}';
     await client.write('$_directory/$token.json', utf8.encode(jsonEncode(covers)));
     return token;
   }
 
-  /// Untagged backups carry both metadata and images inside their zip.
-  Future<Map<String, dynamic>> restore(String backup, Map<String, dynamic> embedded) async {
-    final token = tokenOf(backup);
-    if (token == null) return embedded;
+  Future<Map<String, dynamic>> restore(String backup, Map<String, dynamic> embedded, {
+    Set<String> visited = const {},
+  }) async {
+    final token = tokenOf(backup) ?? embedded[ComicCoverStore.inheritedWebdavKey];
     if (token == _unset) return ComicCoverStore.current;
     if (token == _empty) return emptyChoices;
+    if (token != null && (token is! String || tokenOf('backup.$token.venera') != token)) {
+      throw const FormatException('Invalid cover snapshot');
+    }
     final legacy = legacyBackup(token);
-    if (legacy != null) return _readLegacy(legacy);
-    final covers = await _manifest(token);
+    if (legacy != null) return _readLegacy(legacy, archived: true, visited: visited);
+    if (token != null && !token.startsWith('c')) throw const FormatException('Invalid cover snapshot');
+    // Older clients may forward the choices without having cached their images.
+    final covers = token == null ? embedded : await _manifest(token);
     for (final name in ComicCoverStore.fileNames(covers)) {
       final file = ComicCoverStore.fileFor(ComicCollectionStore.localCoverRef(name))!;
       if (await file.exists() && await file.length() > 0) continue;
@@ -110,15 +139,27 @@ class WebdavCovers {
   Future<Map<String, dynamic>> restoreLatest(String backup) =>
       tokenOf(backup) == null ? _readLegacy(backup) : restore(backup, {});
 
-  Future<Map<String, dynamic>> _readLegacy(String backup) async {
+  Future<Map<String, dynamic>> _readLegacy(String backup, {
+    bool archived = false, Set<String> visited = const {},
+  }) async {
+    if (visited.contains(backup)) throw const FormatException('Circular cover backup');
     final staging = await Directory(App.cachePath).createTemp('legacy-covers-');
     try {
       final archive = File(FilePath.join(staging.path, 'backup.zip'));
-      await client.read2File('/$backup', archive.path);
+      if (archived) {
+        try {
+          await client.read2File('$_directory/$backup', archive.path);
+        } on DioException catch (error) {
+          if (error.response?.statusCode != 404) rethrow;
+          await client.read2File('/$backup', archive.path);
+        }
+      } else {
+        await client.read2File('/$backup', archive.path);
+      }
       final root = staging.path;
       final covers = await Isolate.run(() => _extractLegacy(root));
-      await ComicCoverStore.installFiles(covers, staging);
-      return covers;
+      await ComicCoverStore.installFiles(covers, staging, requireAll: false);
+      return await restore(backup, covers, visited: {...visited, backup});
     } finally {
       await staging.deleteIgnoreError(recursive: true);
     }

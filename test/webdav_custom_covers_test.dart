@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_cover_store.dart';
@@ -7,8 +9,6 @@ import 'package:venera/utils/webdav_covers.dart';
 import 'package:webdav_client/webdav_client.dart' as dav;
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   test('skipped snapshots inherit exactly one portable cover reference', () {
     const legacy = '20500-1.android.venera';
     final token = WebdavCovers.inherit(legacy);
@@ -52,6 +52,10 @@ void main() {
         case 'PUT':
           puts.add(path);
           files[path] = body;
+          response.statusCode = 201;
+        case 'COPY':
+          final destination = Uri.parse(request.headers.value('destination')!).path;
+          files[destination] = files[path]!;
           response.statusCode = 201;
         case 'GET':
           gets.add(path);
@@ -104,6 +108,36 @@ void main() {
     expect(gets.where((p) => !p.endsWith('.json')), ['/venera-covers/B.jpg']);
     expect(await sync.restore(firstBackup, {}), one);
     expect(await sync.publish(WebdavCovers.emptyChoices, firstBackup, directoryExists: true), 'c0');
+
+    await localA.delete();
+    expect(await sync.restore('20500-4.win.venera', one), one);
+    expect(await localA.readAsBytes(), [1, 2, 3]);
+    expect(await sync.restore('20500-5.win.venera', {
+      ComicCoverStore.inheritedWebdavKey: inherited,
+    }), two);
+
+    const legacy = '20500-6.win.venera';
+    final zip = Archive()
+      ..addFile(ArchiveFile.string('appdata.json', jsonEncode({
+        'settings': {'comicCollections': [{'id': 'series', 'customCover': b}]},
+      })))
+      ..addFile(ArchiveFile('collection_covers/B.jpg', 2, [4, 5]));
+    files['/$legacy'] = ZipEncoder().encode(zip);
+    gets.clear();
+    final oldToken = await sync.inheritForUpload(legacy, directoryExists: true);
+    expect(gets, isEmpty);
+    files.remove('/$legacy');
+    await localB.delete();
+    expect(await sync.restoreLatest('20500-7.win.$oldToken.venera'), {
+      'comicCollections': {'series': b},
+    });
+    expect(await localB.readAsBytes(), [4, 5]);
+
+    files.remove('/venera-covers/$first.json');
+    puts.clear();
+    expect(await sync.publish(one, firstBackup, directoryExists: true), isNot(first));
+    expect(puts, hasLength(1));
+    expect(puts.single, endsWith('.json'));
 
     await localB.delete();
     files.remove('/venera-covers/B.jpg');

@@ -166,6 +166,7 @@ void main() {
     await importVeneraComics(archive, importTranslations: false);
     expect(await file.readAsBytes(), pages.last);
     expect(ComicCoverStore.reference(sourceKey, comic.id), ref);
+    expect(ComicCoverStore.reference(comic.sourceKey, comic.id), ref);
   });
 
   String addTranslation(LocalComic comic, {String sourceKey = 'local'}) {

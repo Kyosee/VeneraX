@@ -3,11 +3,14 @@ import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/io.dart';
 
 /// Personal cover choices. Both comic IDs and source keys are opaque strings.
 abstract final class ComicCoverStore {
   static const settingsKey = 'customComicCovers';
+  static const inheritedWebdavKey = 'webdavInheritedCustomCovers';
   static const _collections = ComicCollectionStore.settingsKey;
   static const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
   static final _fileName = RegExp(
@@ -40,29 +43,86 @@ abstract final class ComicCoverStore {
   static String? reference(String sourceKey, String comicId) {
     final sources = appdata.settings[settingsKey];
     if (sources is! Map) return null;
-    final comics = sources[sourceKey];
+    final comics = sources[_storedSource(sources, sourceKey, comicId)];
     final value = comics is Map ? comics[comicId] : null;
     return nameOf(value) != null ? value as String : null;
+  }
+
+  static ComicType sourceType(String key) {
+    final value = key.startsWith('Unknown:') ? int.tryParse(key.substring(8)) : null;
+    return value == null ? ComicType.fromKey(key) : ComicType(value);
+  }
+
+  static String _storedSource(Map sources, String key, String id) {
+    bool hasBook(String source) => sources[source] is Map && sources[source].containsKey(id);
+    if (sources.isEmpty || hasBook(key)) return key;
+    final type = sourceType(key);
+    if (key.startsWith('Unknown:')) {
+      for (final stored in sources.keys.whereType<String>()) {
+        if (hasBook(stored) && sourceType(stored) == type) return stored;
+      }
+    } else {
+      final unknown = 'Unknown:${type.value}';
+      if (hasBook(unknown)) return unknown;
+    }
+    return key;
   }
 
   static Future<void> setFile(
     String sourceKey, String comicId, FileSelectResult selected,
   ) async {
-    final ext = selected.name.split('.').last.toLowerCase();
+    final ref = await _storeImage(selected.name, selected.saveTo);
+    await setReference(sourceKey, comicId, ref);
+  }
+
+  static Future<String> _storeImage(String name, Future<void> Function(String) write) async {
+    final ext = name.split('.').last.toLowerCase();
     if (!imageExtensions.contains(ext)) {
       throw const FormatException('Invalid cover image extension');
     }
     final ref = ComicCollectionStore.localCoverRef('${const Uuid().v4()}.$ext');
     final target = fileFor(ref)!;
-    await target.parent.create(recursive: true);
-    try {
-      await selected.saveTo(target.path);
-      if (await target.length() == 0) throw const FormatException('Empty cover image');
-    } catch (_) {
-      await target.deleteIgnoreError();
-      rethrow;
+    await installFile(target, write);
+    return ref;
+  }
+
+  static Future<String?> _localMemberCover(CollectionMember member) async {
+    if (!LocalManager().isInitialized || ComicType.fromKey(member.sourceKey) != ComicType.local) {
+      return null;
     }
-    await setReference(sourceKey, comicId, ref);
+    final file = LocalManager().find(member.comicId, ComicType.local)?.coverFile;
+    if (file == null || !await file.exists()) return null;
+    return _storeImage(file.name, file.copyMem);
+  }
+
+  static Future<void> setMemberCover(ComicCollection collection, CollectionMember member) async {
+    var ref = member.coverReference;
+    if (ref.startsWith('file://')) {
+      ref = await _localMemberCover(member) ?? (throw const FormatException('Missing local cover'));
+    }
+    await setReference(collection.sourceKey, collection.id, ref);
+  }
+
+  /// Older collections could point directly at a file on the original device.
+  static Future<Map<String, dynamic>> forExport({Set<String>? collectionIds}) async {
+    final covers = current;
+    final choices = covers[_collections] as Map<String, dynamic>;
+    for (final entry in choices.entries.toList()) {
+      if (!(entry.value as String).startsWith('file://') ||
+          (collectionIds != null && !collectionIds.contains(entry.key))) continue;
+      final collection = ComicCollectionStore.find(entry.key);
+      final member = collection?.members.where((m) => m.cachedCover == entry.value).firstOrNull;
+      final ref = member == null ? null : await _localMemberCover(member);
+      if (ref == null) {
+        choices.remove(entry.key);
+      } else {
+        choices[entry.key] = ref;
+        if (ComicCollectionStore.find(entry.key)?.customCover == entry.value) {
+          ComicCollectionStore.update(entry.key, customCover: ref);
+        }
+      }
+    }
+    return covers;
   }
 
   static Future<void> reset(String sourceKey, String comicId) =>
@@ -74,6 +134,7 @@ abstract final class ComicCoverStore {
       ComicCollectionStore.update(comicId, customCover: ref);
     } else {
       final sources = Map<String, dynamic>.from(appdata.settings[settingsKey] ?? {});
+      sourceKey = _storedSource(sources, sourceKey, comicId);
       final comics = Map<String, dynamic>.from(sources[sourceKey] ?? {});
       if (ref.isEmpty) {
         comics.remove(comicId);
@@ -96,6 +157,7 @@ abstract final class ComicCoverStore {
     final sources = settings[settingsKey];
     final collections = settings[_collections];
     return {
+      if (settings[inheritedWebdavKey] is String) inheritedWebdavKey: settings[inheritedWebdavKey],
       if (sources is Map) settingsKey: {
         for (final source in sources.entries)
           if (source.key is String && source.value is Map)
@@ -124,6 +186,22 @@ abstract final class ComicCoverStore {
           ...comics.values.map(nameOf).nonNulls,
       if (collections is Map) ...collections.values.map(nameOf).nonNulls,
     };
+  }
+
+  /// At startup no in-process export or restore is still reading an old choice.
+  static Future<void> pruneUnusedAtStartup(Map settings) async {
+    final directory = Directory(FilePath.join(App.dataPath, ComicCollectionStore.coverDirName));
+    try {
+      if (!await directory.exists()) return;
+      final used = fileNames(snapshot(settings));
+      await for (final entry in directory.list(followLinks: false)) {
+        if (entry is File && _fileName.hasMatch(entry.name) && !used.contains(entry.name)) {
+          await entry.deleteIgnoreError();
+        }
+      }
+    } on FileSystemException {
+      // A busy or inaccessible cover directory can be retried on the next launch.
+    }
   }
 
   /// Installs a complete image before exposing its permanent name to readers.

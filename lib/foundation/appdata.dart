@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/log.dart';
@@ -20,8 +21,10 @@ class Appdata with Init, ChangeNotifier {
   var searchHistory = <String>[];
 
   bool _isSavingData = false;
+  static const pendingCoversKey = 'webdavCustomCoversSkipped';
 
   Future<void> saveData([bool sync = true]) async {
+    final skippedCovers = isSyncSkipped(ComicCoverStore.settingsKey);
     while (_isSavingData) {
       await Future.delayed(const Duration(milliseconds: 20));
     }
@@ -61,6 +64,10 @@ class Appdata with Init, ChangeNotifier {
       }
     } finally {
       _isSavingData = false;
+    }
+    if (skippedCovers && implicitData[pendingCoversKey] != true) {
+      implicitData[pendingCoversKey] = true;
+      await writeImplicitData();
     }
     // Collection settings can change in place without invoking Settings.[]=.
     notifyListeners();
@@ -348,14 +355,11 @@ class Appdata with Init, ChangeNotifier {
             : 'custom';
       }
       searchHistory = List.from(json['searchHistory']);
+      if (!App.isBackgroundTask) await ComicCoverStore.pruneUnusedAtStartup(loadedSettings);
     } catch (e) {
       Log.error("Appdata", "Failed to load appdata", e);
       Log.info("Appdata", "Resetting appdata");
       file.deleteIgnoreError();
-    }
-    if ((settings["deviceId"] as String).isEmpty) {
-      settings._data["deviceId"] = const Uuid().v4();
-      await saveData(false);
     }
     try {
       var implicitDataFile = File(FilePath.join(dataPath, 'implicitData.json'));
@@ -367,6 +371,10 @@ class Appdata with Init, ChangeNotifier {
       Log.info("Appdata", "Resetting implicit data");
       var implicitDataFile = File(FilePath.join(dataPath, 'implicitData.json'));
       implicitDataFile.deleteIgnoreError();
+    }
+    if ((settings["deviceId"] as String).isEmpty) {
+      settings._data["deviceId"] = const Uuid().v4();
+      await saveData(false);
     }
     _initSourceTypeRegistry();
     LlmProviderStore.migrateLegacyIfNeeded();

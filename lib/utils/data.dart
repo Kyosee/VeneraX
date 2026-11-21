@@ -322,7 +322,7 @@ Future<File> _exportAppData({
   if (!File(FilePath.join(dataPath, appdataName)).existsSync()) {
     throw Exception('Cannot export: failed to rebuild $appdataName');
   }
-  final covers = customCovers ?? ComicCoverStore.current;
+  final covers = customCovers ?? await ComicCoverStore.forExport();
   // Serialize the export against database restores and background-isolate
   // reads: the checkpoints below open short-lived second connections, and the
   // zip step reads the database files directly — neither may overlap a
@@ -442,7 +442,12 @@ Future<File> _exportAppData({
       zipFile.addFile("read_later.db", readLaterFile);
     }
     final appJson = jsonDecode(File(appdataFile).readAsStringSync()) as Map;
-    ComicCoverStore.applyToSettings(appJson['settings'] as Map, covers);
+    final exportSettings = appJson['settings'] as Map;
+    exportSettings.remove(ComicCoverStore.inheritedWebdavKey);
+    ComicCoverStore.applyToSettings(exportSettings, covers);
+    if (covers.containsKey(ComicCoverStore.inheritedWebdavKey)) {
+      exportSettings[ComicCoverStore.inheritedWebdavKey] = covers[ComicCoverStore.inheritedWebdavKey];
+    }
     zipFile.addFileFromBytes('appdata.json', utf8.encode(jsonEncode(appJson)));
     if (File(cookies).existsSync()) {
       zipFile.addFile("cookie.db", cookies);
@@ -907,6 +912,7 @@ Future<ImportOutcome> _importAppDataLocked(
           if (loadCustomCovers != null) covers = await loadCustomCovers(covers);
           await ComicCoverStore.requireFiles(covers);
         }
+        settings.remove(ComicCoverStore.inheritedWebdavKey);
         ComicCoverStore.applyToSettings(settings, covers);
       }
     }
@@ -979,7 +985,7 @@ Future<ImportOutcome> _importAppDataLocked(
             // The unconfirmed-upload record (#133) names a file THIS device
             // PUT; a restored backup must not forge or erase it.
             'webdavPendingPublish',
-            'webdavCustomCoversSkipped',
+              Appdata.pendingCoversKey,
             'hasCompletedInitialSync',
             'webdavSetupRestorePending',
             'sync_logs',

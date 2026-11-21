@@ -177,12 +177,14 @@ Future<File> exportVeneraComics(
     final manifestFile = File(FilePath.join(exportDir.path, 'manifest.json'));
     manifestFile.writeAsStringSync(jsonEncode(manifest.toJson()));
 
-    final coverChoices = includeCustomCovers ? ComicCoverStore.current : const {};
+    final coverChoices = includeCustomCovers
+        ? await ComicCoverStore.forExport(collectionIds: comics.map((c) => c.id).toSet())
+        : const {};
     final collectionCovers = coverChoices[ComicCollectionStore.settingsKey] as Map?;
     final comicCovers = coverChoices[ComicCoverStore.settingsKey] as Map?;
     final storedSources = {
       for (final key in comicCovers?.keys.whereType<String>() ?? const <String>[])
-        ComicType.fromKey(key): key,
+        ComicCoverStore.sourceType(key): key,
     };
     // Write each comic
     for (var i = 0; i < comics.length; i++) {
@@ -427,7 +429,7 @@ Future<int> importVeneraComics(
       final ref = meta['customCover'];
       final sourceKey = meta['coverSourceKey'];
       final hasCustomCover = importCustomCovers && ref is String && sourceKey is String &&
-          ComicType.fromKey(sourceKey).value == entry.comicType;
+          ComicCoverStore.sourceType(sourceKey).value == entry.comicType;
       if (hasCustomCover && ComicCoverStore.nameOf(ref) != null) {
         final target = ComicCoverStore.fileFor(ref)!;
         final source = File(FilePath.join(importDirPath, ComicCollectionStore.coverDirName, target.name));

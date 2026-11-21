@@ -146,13 +146,15 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
                           : null,
                       onTap: m.coverReference.isEmpty
                           ? null
-                          : () {
+                          : () async {
                               dialogContext.pop();
-                              ComicCollectionStore.update(
-                                c.id,
-                                customCover: m.coverReference,
-                              );
-                              _applyChange();
+                              try {
+                                await ComicCoverStore.setMemberCover(c, m);
+                                _applyChange();
+                              } catch (e, s) {
+                                Log.error('ComicCollection', e, s);
+                                if (mounted) context.showMessage(message: "Failed to set the cover".tl);
+                              }
                             },
                     ),
                 ],
