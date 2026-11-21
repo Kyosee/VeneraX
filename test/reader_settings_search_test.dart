@@ -64,6 +64,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  for (final (locale, description) in [
+    ('en-US', 'Sharpen blurry images or adjust clarity at render time'),
+    ('zh-CN', '在渲染时锐化模糊图像或调整清晰度'),
+    ('zh-TW', '在算圖時銳化模糊圖像或調整清晰度'),
+  ]) {
+    testWidgets('image enhancement shows its description in $locale', (tester) async {
+      appdata.settings['language'] = locale;
+      await open(tester);
+      final section = find.text('Image processing / enhancement'.tl);
+      await tester.ensureVisible(section);
+      await tester.pumpAndSettle();
+      await tester.tap(section);
+      await tester.pumpAndSettle();
+      expect(find.text(description), findsOneWidget);
+    });
+  }
+
   testWidgets('search stays at the top, scopes results and clears', (
     tester,
   ) async {
