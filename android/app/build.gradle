@@ -160,6 +160,31 @@ android {
 }
 
 if (tvBuild) {
+    def omittedPlugins = [
+        flutter_onnxruntime: "com.masicai.flutteronnxruntime.FlutterOnnxruntimePlugin",
+        mobile_scanner: "dev.steenbakker.mobile_scanner.MobileScannerPlugin",
+    ]
+    configurations.configureEach {
+        omittedPlugins.keySet().each { plugin -> exclude module: plugin }
+    }
+
+    // Flutter engines discover this class by name, including background engines.
+    // Compile a TV copy of the generated registrations and keep Flutter's input intact.
+    def mainJava = file("src/main/java")
+    def tvJava = tasks.register("prepareTvJavaSources", Sync) {
+        from mainJava
+        into layout.buildDirectory.dir("generated/tv/java")
+        inputs.property("omittedPlugins", omittedPlugins)
+        filteringCharset = "UTF-8"
+        filesMatching("io/flutter/plugins/GeneratedPluginRegistrant.java") {
+            filter { line -> omittedPlugins.values().any { line.contains(it) } ? null : line }
+        }
+    }
+    android.sourceSets.main.java.setSrcDirs(
+        (android.sourceSets.main.java.srcDirs - mainJava) + [tvJava.map { it.destinationDir }]
+    )
+    tasks.named("preBuild").configure { dependsOn(tvJava) }
+
     androidComponents.onVariants(androidComponents.selector().all()) { variant ->
         variant.sources.manifests.addStaticManifestFile("src/tv/AndroidManifest.xml")
         variant.sources.res.addStaticSourceDirectory("src/tv/res")
