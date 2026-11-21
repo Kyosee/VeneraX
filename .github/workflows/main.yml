@@ -182,10 +182,27 @@ jobs:
         with:
           distribution: 'oracle'
           java-version: '17'
-      - name: Check rust-toolchain.toml
-        run: rustup show
       - run: flutter pub get
+      - name: Prepare published Android rhttp
+        run: bash .github/scripts/android-rhttp.sh
       - run: flutter build apk --release
+      - name: Verify packaged rhttp libraries
+        if: env.VENERAX_ANDROID_RHTTP != ''
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$VENERAX_ANDROID_RHTTP/used" ]]; then
+            echo "CargoKit built rhttp for the configured NDK and minimum Android API."
+            exit 0
+          fi
+          libs=$(cat "$VENERAX_ANDROID_RHTTP/used")
+          version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' pubspec.yaml)
+          apk="build/app/outputs/apk/release/VeneraX-$version"
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            for file in "$apk.apk" "$apk-$abi.apk"; do
+              unzip -p "$file" "lib/$abi/librhttp.so" | cmp "$libs/$abi/librhttp.so" -
+              echo "Verified $abi in $(basename "$file")"
+            done
+          done
       - name: Verify Android signature continuity
         env:
           GH_TOKEN: ${{ github.token }}
