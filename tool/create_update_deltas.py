@@ -8,8 +8,6 @@ import tempfile
 import zipfile
 import zlib
 
-import bsdiff4
-
 MAX_FILE = 512 * 1024 * 1024
 
 
@@ -50,6 +48,8 @@ def zip_files(path):
 
 
 def verified_diff(old, new):
+    import bsdiff4
+
     patch = bsdiff4.diff(old, new)
     if bsdiff4.patch(old, patch) != new:
         raise ValueError('BSDIFF40 round trip failed')

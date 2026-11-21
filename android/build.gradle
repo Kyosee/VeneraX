@@ -37,3 +37,26 @@ subprojects {
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
+
+def publishedRhttp = System.getenv("VENERAX_ANDROID_RHTTP")
+if (publishedRhttp) {
+    gradle.projectsEvaluated {
+        def rhttp = project(":rhttp")
+        def cargo = rhttp.tasks.named("cargokitCargoBuildRhttpRelease").get()
+        def libraries = new File(publishedRhttp, "${cargo.ndkVersion}-api${cargo.minSdkVersion}")
+        if (libraries.isDirectory()) {
+            def stage = rhttp.tasks.register("stagePublishedRhttpRelease", Copy) {
+                from libraries
+                include "*/librhttp.so"
+                into cargo.outputDir
+                doLast {
+                    println "Using published rhttp libraries for Android release"
+                    new File(publishedRhttp, "used").text = libraries.absolutePath
+                }
+            }
+            cargo.dependsOn(stage)
+            rhttp.tasks.named("mergeReleaseJniLibFolders").configure { dependsOn(stage) }
+            cargo.enabled = false
+        }
+    }
+}
