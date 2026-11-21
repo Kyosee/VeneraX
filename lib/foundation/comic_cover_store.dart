@@ -109,7 +109,9 @@ abstract final class ComicCoverStore {
     final choices = covers[_collections] as Map<String, dynamic>;
     for (final entry in choices.entries.toList()) {
       if (!(entry.value as String).startsWith('file://') ||
-          (collectionIds != null && !collectionIds.contains(entry.key))) continue;
+          (collectionIds != null && !collectionIds.contains(entry.key))) {
+        continue;
+      }
       final collection = ComicCollectionStore.find(entry.key);
       final member = collection?.members.where((m) => m.cachedCover == entry.value).firstOrNull;
       final ref = member == null ? null : await _localMemberCover(member);

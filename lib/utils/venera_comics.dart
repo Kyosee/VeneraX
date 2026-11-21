@@ -220,7 +220,7 @@ Future<File> exportVeneraComics(
         'tags': comic.tags,
         'directory': comic.directory,
         'chapters': comic.chapters?.toJson(),
-        'cover': comic.cover,
+        if (comic.cover.isNotEmpty) 'cover': comic.cover,
         if (customCover is String) 'customCover': customCover,
         if (customCover is String) 'coverSourceKey': sourceKey,
         'comicType': comic.comicType.value,
@@ -436,7 +436,7 @@ Future<int> importVeneraComics(
         await ComicCoverStore.installFile(target, (path) async { await source.copy(path); });
       }
       final storedCover = meta['cover'] as String?;
-      final coverName = storedCover == null || storedCover.isEmpty ? 'cover.jpg' : storedCover;
+      final coverName = storedCover ?? 'cover.jpg';
       final srcCover = File(_archivePath(comicDir.path, coverName));
       final destDir = Directory(
         _archivePath(LocalManager().path, comicDirName),

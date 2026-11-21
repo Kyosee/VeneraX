@@ -144,7 +144,11 @@ class ComicCollection {
   /// cover is the user's own. Image loading needs it: fetching that cover may
   /// require the member source's auth headers.
   CollectionMember? get coverOwner {
-    if (customCover.trim().isNotEmpty) return null;
+    final selected = customCover.trim();
+    if (selected.isNotEmpty) {
+      if (selected.startsWith(ComicCollectionStore.localCoverScheme)) return null;
+      return members.where((member) => member.cachedCover == selected).firstOrNull;
+    }
     for (final m in members) {
       if (m.coverReference.isNotEmpty) return m;
     }

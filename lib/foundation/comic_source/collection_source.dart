@@ -475,7 +475,7 @@ Future<Map<String, dynamic>> collectionThumbnailLoadingConfig(
 ) async {
   final collection = ComicCollectionStore.find(collectionId);
   final owner = collection?.coverOwner;
-  if (owner == null) return {};
+  if (owner == null || imageKey != collection?.displayCover) return {};
   final source = ComicSource.find(owner.sourceKey);
   // The member's own id, not the collection's: the hook is the member source's
   // and only its own ids mean anything to it.

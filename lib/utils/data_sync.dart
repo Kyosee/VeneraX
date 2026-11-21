@@ -62,7 +62,9 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (App.isDesktop) {
       Future.delayed(const Duration(seconds: 1), () {
-        var controller = WindowFrame.of(App.rootContext);
+        final context = App.rootNavigatorKey.currentContext;
+        if (context == null) return;
+        final controller = WindowFrame.of(context);
         controller.addCloseListener(_handleWindowClose);
       });
     }
