@@ -122,10 +122,8 @@ class SideBarRoute<T> extends PopupRoute<T> {
                 0,
                 0,
                 MediaQuery.paddingOf(context).right,
-                addBottomPadding
-                    ? MediaQuery.paddingOf(context).bottom +
-                          MediaQuery.viewInsetsOf(context).bottom
-                    : 0,
+                MediaQuery.viewInsetsOf(context).bottom +
+                    (addBottomPadding ? MediaQuery.paddingOf(context).bottom : 0),
               ),
               color: useSurfaceTintColor
                   ? Theme.of(context).colorScheme.surfaceTint.withAlpha(20)
@@ -181,6 +179,7 @@ Future<void> showSideBar(
   bool dismissible = true,
   double width = 500,
   bool addTopPadding = false,
+  bool addBottomPadding = true,
 }) {
   return Navigator.of(context).push(
     SideBarRoute(
@@ -190,7 +189,7 @@ Future<void> showSideBar(
       dismissible: dismissible,
       width: width,
       addTopPadding: addTopPadding,
-      addBottomPadding: true,
+      addBottomPadding: addBottomPadding,
     ),
   );
 }

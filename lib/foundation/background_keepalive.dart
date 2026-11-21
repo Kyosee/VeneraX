@@ -96,7 +96,12 @@ class BackgroundKeepAlive {
 
   /// 上报某类任务的最新状态。文案没变则不打扰系统。被移除/未授权时静默降级，
   /// 任务本身不受影响，只是失去后台保活。
-  void update(String tag, String status, {int progress = 0}) {
+  void update(
+    String tag,
+    String status, {
+    int progress = 0,
+    bool quiet = false,
+  }) {
     if (!_supported) return;
     if (App.isOhos &&
         !tag.startsWith('sync_') &&
@@ -110,24 +115,30 @@ class BackgroundKeepAlive {
     if (_statuses[tag] == status && _progresses[tag] == progress) return;
     _statuses[tag] = status;
     _progresses[tag] = progress;
-    unawaited(_pushUpdate(tag, status, progress));
+    unawaited(_pushUpdate(tag, status, progress, quiet: quiet));
   }
 
   // Keep the OHOS data-transfer grant scoped to actual network IO.
   Future<T> runTransfer<T>(
     String status,
-    Future<T> Function(void Function(int, int) onProgress) transfer,
-  ) async {
+    Future<T> Function(void Function(int, int) onProgress) transfer, {
+    bool quiet = false,
+  }) async {
     if (!App.isOhos || _transferBackgroundCancelled) return transfer((_, _) {});
     final tag = 'sync_${_nextTransfer++}';
     var active = true;
     _statuses[tag] = status;
     _progresses[tag] = 0;
     try {
-      await _pushUpdate(tag, status, 0);
+      await _pushUpdate(tag, status, 0, quiet: quiet);
       return await transfer((count, total) {
         if (!active || total <= 0 || count < 0) return;
-        update(tag, status, progress: (count * 100 ~/ total).clamp(0, 100));
+        update(
+          tag,
+          status,
+          progress: (count * 100 ~/ total).clamp(0, 100),
+          quiet: quiet,
+        );
       });
     } finally {
       active = false;
@@ -172,7 +183,12 @@ class BackgroundKeepAlive {
     await _invoke('complete', {'tag': tagFollowUpdate, 'status': status});
   }
 
-  Future<void> _pushUpdate(String tag, String status, int progress) async {
+  Future<void> _pushUpdate(
+    String tag,
+    String status,
+    int progress, {
+    bool quiet = false,
+  }) async {
     if (App.isOhos && tag.startsWith('sync_') && _transferBackgroundCancelled) {
       return;
     }
@@ -195,6 +211,7 @@ class BackgroundKeepAlive {
       'tag': tag,
       'status': status,
       if (App.isOhos) 'progress': progress,
+      if (quiet) 'quiet': true,
     });
     if (ok != true &&
         _statuses[tag] == status &&

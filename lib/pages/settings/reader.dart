@@ -1205,7 +1205,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               _SwitchSetting(
                 title: "Image enhancement".tl,
                 subtitle:
-                    "Sharpen blurry images at render time without extra loading or battery cost"
+                    "Sharpen blurry images or adjust clarity at render time"
                         .tl,
                 settingKey: "enableReaderImageEnhance",
                 onChanged: () {

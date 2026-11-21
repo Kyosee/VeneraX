@@ -709,7 +709,7 @@ Widget _buildSettingsSearchResults(
     ).paddingTop(32);
   }
   return ListView.builder(
-    padding: EdgeInsets.zero,
+    padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
     itemCount: results.length,
     itemBuilder: (context, index) {
       final e = results[index];

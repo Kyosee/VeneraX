@@ -37,7 +37,7 @@ void main() {
   });
 
   test(
-    'real transfer progress is sent and its grant ends before return',
+    'a quiet transfer marks every progress update and ends its grant before return',
     () async {
       final progressSeen = Completer<void>();
       observe = (call) {
@@ -52,10 +52,12 @@ void main() {
           await progressSeen.future;
           return 42;
         },
+        quiet: true,
       );
       expect(result, 42);
       final updates = calls.where((call) => call.method == 'update').toList();
       expect(updates.map((call) => call.arguments['progress']), [0, 50]);
+      expect(updates.map((call) => call.arguments['quiet']), [true, true]);
       expect(calls.last.method, 'remove');
       expect(calls.last.arguments['tag'], updates.first.arguments['tag']);
     },

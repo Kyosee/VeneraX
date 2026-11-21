@@ -546,6 +546,12 @@ jobs:
             -DevEcoStudio $env:DEVECO_STUDIO `
             -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'result') `
             -UsePreparedNativeLibraries
+      - name: Check reader settings and sync notifications with Flutter OH
+        if: env.PACKAGE_HAP == 'true'
+        working-directory: ${{ env.VENERAX_OHOS_CHECKOUT }}
+        run: |
+          "$FLUTTER_OHOS_SDK/bin/flutter" test --no-pub \
+            test/reader_settings_search_test.dart test/ohos_transfer_keepalive_test.dart
       - uses: actions/upload-artifact@v7
         if: env.PACKAGE_HAP == 'true'
         with:
