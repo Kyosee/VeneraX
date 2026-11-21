@@ -11,7 +11,8 @@ class _GalleryModeState extends State<_GalleryMode>
     implements _ImageViewController {
   late PageController controller;
 
-  int get preCacheCount => appdata.settings["preloadImageCount"];
+  int get preCacheCount =>
+      isTvApp ? reader.tvPreloadCount : appdata.settings["preloadImageCount"];
 
   var photoViewControllers = <int, PhotoViewController>{};
 
@@ -55,6 +56,9 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void dispose() {
+    if (identical(reader._imageViewController, this)) {
+      reader._imageViewController = null;
+    }
     keyRepeatTimer?.cancel();
     _precacheTimer?.cancel();
     for (final watch in _watching.values.toList()) {
@@ -127,6 +131,10 @@ class _GalleryModeState extends State<_GalleryMode>
     // 分辨率，解码占内存较大，故解码窗口远小于下载窗口 [preCacheCount] 并封顶
     // 到 2。向后保留 1 页（返回上一页时同样流畅）。超出解码窗口的页仍只下载，
     // 由 [_cachePage] 走 _preDownloadImage。
+    if (isTvApp) {
+      if (preCacheCount > 0) _precacheImage(startPage + 1, context);
+      return;
+    }
     final decodeAhead = preCacheCount.clamp(1, 2);
     final (shownStart, shownEnd) = getPageImagesRange(startPage);
     for (var i = shownStart; i < shownEnd; i++) {
@@ -658,7 +666,10 @@ class _GalleryModeState extends State<_GalleryMode>
               controller.jumpToPage(1);
             }
           } else if (i == totalPages + 1) {
-            if (reader.isLastChapterOfGroup || !reader.toNextChapter()) {
+            if (isTvApp) {
+              controller.jumpToPage(totalPages);
+              reader.toNextChapter();
+            } else if (reader.isLastChapterOfGroup || !reader.toNextChapter()) {
               controller.jumpToPage(totalPages);
             }
           } else {
@@ -705,6 +716,14 @@ class _GalleryModeState extends State<_GalleryMode>
       context,
       imageIndex + 1,
     );
+    if (isTvApp) {
+      final size = reader.size;
+      return PhotoViewGalleryPageOptions.customChild(
+        childSize: size,
+        disableGestures: true,
+        child: _tvPageImage(provider, size, reader.tvFitWidth, imageStates),
+      );
+    }
     final fillScreen = reader.effectiveSetting('galleryFillScreen') == true;
     final initialScale = fillScreen
         ? PhotoViewComputedScale.covered
@@ -931,6 +950,22 @@ class _GalleryModeState extends State<_GalleryMode>
 
   @override
   void handleKeyEvent(KeyEvent event) {
+    if (isTvApp) {
+      if (event is KeyUpEvent || reader.isPageAnimating) return;
+      final key = event.logicalKey;
+      final down = key == LogicalKeyboardKey.arrowDown;
+      if (down || key == LogicalKeyboardKey.arrowUp) {
+        if (reader.tvFitWidth && _tvPanImage(reader, imageStates, down)) return;
+        if (reader.mode != ReaderMode.galleryTopToBottom) return;
+      }
+      final forward =
+          down ||
+          (reader.mode == ReaderMode.galleryRightToLeft
+              ? key == LogicalKeyboardKey.arrowLeft
+              : key == LogicalKeyboardKey.arrowRight);
+      _tvTurn(reader, forward, event);
+      return;
+    }
     bool? forward;
     if (reader.mode == ReaderMode.galleryLeftToRight &&
         event.logicalKey == LogicalKeyboardKey.arrowRight) {

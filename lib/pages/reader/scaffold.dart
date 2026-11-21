@@ -152,6 +152,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   void openOrClose() {
+    if (isTvApp) {
+      if (!_isOpen) _showTvControls();
+      return;
+    }
     // Keep the platform chrome stable for the whole reading session. Changing
     // it here changes Android's viewport while an image stream may still be
     // resolving, which can strand the rebuilt page in its loading state (#210).
@@ -159,6 +163,186 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       _isOpen = !_isOpen;
     });
     context.reader._onMenuToggled(_isOpen);
+  }
+
+  Future<void> _showTvControls() async {
+    final reader = context.reader;
+    _isOpen = true;
+    reader._onMenuToggled(true);
+    const modes = {
+      'galleryLeftToRight': 'Gallery (Left to Right)',
+      'galleryRightToLeft': 'Gallery (Right to Left)',
+      'galleryTopToBottom': 'Gallery (Top to Bottom)',
+      'continuousTopToBottom': 'Continuous (Top to Bottom)',
+      'continuousLeftToRight': 'Continuous (Left to Right)',
+      'continuousRightToLeft': 'Continuous (Right to Left)',
+    };
+    var changed = false;
+    void save(String key, Object value) {
+      appdata.settings.setEffectiveReaderSetting(
+        reader.cid,
+        reader.type.sourceKey,
+        key,
+        value,
+      );
+      changed = true;
+    }
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => StatefulBuilder(
+          builder: (context, refresh) {
+            final scroll =
+                reader.mode.isContinuous &&
+                reader.effectiveSetting('autoPageTurningMode') ==
+                    autoTurnModeScroll;
+            final interval = autoTurnIntervalOf(
+              reader.effectiveSetting('autoPageTurningInterval'),
+            );
+            final speed = autoScrollSpeedOf(
+              reader.effectiveSetting('autoScrollSpeed'),
+            );
+            final value = scroll ? speed : interval;
+            void adjust(int delta) {
+              save(
+                scroll ? 'autoScrollSpeed' : 'autoPageTurningInterval',
+                value + delta,
+              );
+              refresh(() {});
+            }
+
+            return AlertDialog(
+              title: Text(
+                reader.widget.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              scrollable: true,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButton<String>(
+                    autofocus: true,
+                    isExpanded: true,
+                    value: reader.mode.key,
+                    items: [
+                      for (final mode in modes.entries)
+                        DropdownMenuItem(
+                          value: mode.key,
+                          child: Text(mode.value.tl),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null || value == reader.mode.key) return;
+                      save('adaptiveReading', false);
+                      save('readerMode', value);
+                      reader._refreshReadingMode();
+                      refresh(() {});
+                    },
+                  ),
+                  SegmentedButton<bool>(
+                    segments: [
+                      ButtonSegment(value: true, label: Text('Fit width'.tl)),
+                      ButtonSegment(value: false, label: Text('Fit page'.tl)),
+                    ],
+                    selected: {reader.tvFitWidth},
+                    onSelectionChanged: (values) {
+                      save('tvFitWidth', values.single);
+                      reader._refreshReadingMode();
+                      refresh(() {});
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text('Number of images preloaded'.tl),
+                    subtitle: Text('${reader.tvPreloadCount}'),
+                    value: reader.tvPreloadCount != 0,
+                    onChanged: (on) {
+                      save('tvPreloadCount', on ? 1 : 0);
+                      reader.update();
+                      refresh(() {});
+                    },
+                  ),
+                  if (reader.mode.isContinuous)
+                    SwitchListTile(
+                      title: Text('Auto page turning mode'.tl),
+                      subtitle: Text((scroll ? 'Scroll' : 'Page').tl),
+                      value: scroll,
+                      onChanged: (on) {
+                        save(
+                          'autoPageTurningMode',
+                          on ? autoTurnModeScroll : autoTurnModePage,
+                        );
+                        refresh(() {});
+                      },
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          (scroll
+                                  ? 'Auto scroll speed'
+                                  : 'Auto page turning interval')
+                              .tl,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Decrease'.tl,
+                        onPressed:
+                            value <=
+                                (scroll
+                                    ? autoScrollSpeedMin
+                                    : autoTurnIntervalMin)
+                            ? null
+                            : () => adjust(-1),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text(scroll ? '$value' : '${value}s'),
+                      IconButton(
+                        tooltip: 'Increase'.tl,
+                        onPressed:
+                            value >=
+                                (scroll
+                                    ? autoScrollSpeedMax
+                                    : autoTurnIntervalMax)
+                            ? null
+                            : () => adjust(1),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialog),
+                  child: Text('Close'.tl),
+                ),
+                FilledButton.icon(
+                  icon: Icon(
+                    reader.autoPageTurning ? Icons.pause : Icons.play_arrow,
+                  ),
+                  onPressed: () {
+                    reader.toggleAutoPageTurning();
+                    Navigator.pop(dialog);
+                  },
+                  label: Text(
+                    (reader.autoPageTurning ? 'Stop' : 'Auto Page Turning').tl,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      if (changed) unawaited(appdata.saveData());
+      if (mounted) {
+        _isOpen = false;
+        reader._onMenuToggled(false);
+        reader.focusNode.requestFocus();
+      }
+    }
   }
 
   /// Reader-only orientation lock: null follows the device, false locks
@@ -210,6 +394,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    if (isTvApp) {
+      return Stack(children: [
+        Positioned.fill(child: widget.child),
+        if (appdata.settings['showPageNumberInReader'] == true) buildPageInfoText(),
+      ]);
+    }
     final isOnChapterCommentsPage = context.reader.isOnChapterCommentsPage;
     return Stack(
       children: [

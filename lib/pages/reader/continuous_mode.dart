@@ -71,7 +71,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
   var fingers = 0;
   bool disableScroll = false;
 
-  int get preCacheCount => appdata.settings["preloadImageCount"];
+  int get preCacheCount =>
+      isTvApp ? reader.tvPreloadCount : appdata.settings["preloadImageCount"];
 
   /// Image width as a fraction of the viewport height, applied when
   /// `limitImageWidth` is on. Replaces the old fixed 0.7 so a tall strip can be
@@ -244,6 +245,9 @@ class _ContinuousModeState extends State<_ContinuousMode>
   void dispose() {
     _autoScrollResumeTimer?.cancel();
     _autoScrollEndTimer?.cancel();
+    if (identical(reader._imageViewController, this)) {
+      reader._imageViewController = null;
+    }
     _pageTurnCoordinator.cancel();
     _scrollController.removeListener(onScroll);
     _scrollController.dispose();
@@ -264,6 +268,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
   }
 
   bool get seamlessChapterReading =>
+      !isTvApp &&
       reader.mode.isContinuous &&
       reader.widget.chapters != null &&
       reader.maxChapter > 1 &&
@@ -1130,7 +1135,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
                         return;
                       }
                     }
-                    reader.toChapter(next);
+                    if (isTvApp) {
+                      reader.toNextChapter();
+                    } else {
+                      reader.toChapter(next);
+                    }
                   }
                 : null,
             icon: Icon(
@@ -1177,6 +1186,15 @@ class _ContinuousModeState extends State<_ContinuousMode>
       entry.page,
       chapter: entry.chapter,
     );
+    if (isTvApp &&
+        (reader.mode != ReaderMode.continuousTopToBottom ||
+            !reader.tvFitWidth)) {
+      return SizedBox.fromSize(
+        key: _itemKeyFor(entry.chapter, entry.page),
+        size: reader.size,
+        child: _tvPageImage(image, reader.size, reader.tvFitWidth, imageStates),
+      );
+    }
     return KeyedSubtree(
       key: _itemKeyFor(entry.chapter, entry.page),
       child: ColoredBox(
@@ -1269,7 +1287,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     final viewExtent = _axis == Axis.vertical
         ? reader.size.height
         : reader.size.width;
-    final cacheExtent = viewExtent * preCacheCount.clamp(2, 6).toDouble();
+    final cacheExtent =
+        viewExtent * (isTvApp ? preCacheCount : preCacheCount.clamp(2, 6));
     return CustomScrollView(
       controller: _scrollController,
       center: _centerKey,
@@ -1429,7 +1448,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
         var scale = photoViewController.scale ?? 1.0;
 
-        if (!seamlessChapterReading &&
+        if (!isTvApp &&
+            !seamlessChapterReading &&
             notification is ScrollUpdateNotification &&
             (scale - 1).abs() < 0.05) {
           if (!scrollController.hasClients) return false;
@@ -1479,7 +1499,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
     // 0.7 while capping at a larger ratio would widen the image past the
     // viewport it was meant to narrow.
     final widthRatio = _imageWidthRatio;
-    if (appdata.settings.getReaderSetting(
+    if (!isTvApp &&
+        appdata.settings.getReaderSetting(
               reader.cid,
               reader.type.sourceKey,
               'limitImageWidth',
@@ -2055,6 +2076,29 @@ class _ContinuousModeState extends State<_ContinuousMode>
 
   @override
   void handleKeyEvent(KeyEvent event) {
+    if (isTvApp) {
+      if (event is KeyUpEvent || !_scrollController.hasClients) return;
+      final key = event.logicalKey;
+      final down = key == LogicalKeyboardKey.arrowDown;
+      if (down || key == LogicalKeyboardKey.arrowUp) {
+        if (_axis == Axis.horizontal) {
+          if (reader.tvFitWidth) _tvPanImage(reader, imageStates, down);
+          return;
+        }
+        if (_tvScrollStep(_scrollController.position, down)) return;
+        if (event is KeyDownEvent) {
+          down
+              ? reader.toNextChapter()
+              : reader.toPrevChapter(toLastPage: true);
+        }
+      } else {
+        final forward = _reverse
+            ? key == LogicalKeyboardKey.arrowLeft
+            : key == LogicalKeyboardKey.arrowRight;
+        _tvTurn(reader, forward, event);
+      }
+      return;
+    }
     if (event.logicalKey == LogicalKeyboardKey.controlLeft ||
         event.logicalKey == LogicalKeyboardKey.controlRight) {
       setState(() {

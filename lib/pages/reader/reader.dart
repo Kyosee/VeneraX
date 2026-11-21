@@ -47,6 +47,7 @@ import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/reading_statistics.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/shortcuts.dart';
+import 'package:venera/foundation/tv_platform.dart';
 import 'package:venera/foundation/wide_page_split.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
@@ -72,6 +73,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 part 'scaffold.dart';
+part 'tv_reader.dart';
 
 part 'images.dart';
 
@@ -298,7 +300,68 @@ class _ReaderState extends State<Reader>
   @override
   bool isLoading = false;
 
-  var focusNode = FocusNode();
+  final focusNode = FocusNode();
+  bool _tvDialogOpen = false;
+  bool _tvExiting = false;
+  int? _previousCacheBytes;
+
+  bool get tvFitWidth =>
+      effectiveSetting('tvFitWidth') as bool? ??
+      mode == ReaderMode.continuousTopToBottom;
+
+  int get tvPreloadCount => effectiveSetting('tvPreloadCount') == 0 ? 0 : 1;
+
+  Future<void> _exitTvReader() async {
+    if (_tvExiting) return;
+    _tvExiting = true;
+    stopAutoPageTurning();
+    await _flushReadingProgress(sync: false);
+    if (!mounted) return;
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.of(context).pop();
+    } else {
+      _tvExiting = false;
+    }
+  }
+
+  @override
+  bool toNextChapter() {
+    if (!isTvApp) return super.toNextChapter();
+    final next = visibleChapterFrom(chapter, 1);
+    if (next == null || isLoading || _tvExiting) return false;
+    if (!_tvDialogOpen) unawaited(_confirmTvChapter(next));
+    return true;
+  }
+
+  Future<void> _confirmTvChapter(int next) async {
+    _tvDialogOpen = true;
+    stopAutoPageTurning();
+    final from = chapter;
+    try {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: Text('Next Chapter'.tl),
+          content: Text(widget.chapters!.titles.elementAt(next - 1)),
+          actions: [
+            TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(dialog, false),
+              child: Text('Cancel'.tl),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: Text('Continue'.tl),
+            ),
+          ],
+        ),
+      );
+      if (mounted && accepted == true && chapter == from) toChapter(next);
+    } finally {
+      _tvDialogOpen = false;
+      if (mounted) focusNode.requestFocus();
+    }
+  }
 
   /// Lives here rather than in the gallery so the refresh interval keeps
   /// counting across chapters, which remount the gallery.
@@ -447,9 +510,15 @@ class _ReaderState extends State<Reader>
   }
 
   void setImageCacheSize() async {
+    final cache = PaintingBinding.instance.imageCache;
+    if (isTvApp) {
+      _previousCacheBytes = cache.maximumSizeBytes;
+      cache.maximumSizeBytes = math.min(cache.maximumSizeBytes, 64 << 20);
+      return;
+    }
     int maxImageCacheSize;
     var availableRAM = await MemoryInfo.getFreePhysicalMemorySize();
-    if (availableRAM == null) return;
+    if (!mounted || availableRAM == null) return;
     if (availableRAM < 1 << 30) {
       maxImageCacheSize = 100 << 20;
     } else if (availableRAM < 2 << 30) {
@@ -479,9 +548,12 @@ class _ReaderState extends State<Reader>
     focusNode.dispose();
     ImageTranslationService.instance.removeListener(_onPageTranslated);
     ImageTranslationService.instance.clearQueue();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setEnabledSystemUIMode(
+      isTvApp ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
     stopVolumeEvent();
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 100 << 20;
+    PaintingBinding.instance.imageCache.maximumSizeBytes =
+        _previousCacheBytes ?? (100 << 20);
     disposeReaderWindow();
     super.dispose();
   }
@@ -576,29 +648,54 @@ class _ReaderState extends State<Reader>
   @override
   Widget build(BuildContext context) {
     _checkImagesPerPageChange();
+    if (isTvApp) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) unawaited(_exitTvReader());
+        },
+        child: Focus(
+          focusNode: focusNode,
+          autofocus: true,
+          onKeyEvent: (_, event) {
+            if (_tvDialogOpen || _tvExiting || _readerMenuOpen) {
+              return KeyEventResult.ignored;
+            }
+            final key = event.logicalKey;
+            if (key == LogicalKeyboardKey.select ||
+                key == LogicalKeyboardKey.enter ||
+                key == LogicalKeyboardKey.numpadEnter) {
+              if (event is KeyDownEvent) _scaffoldState?.openOrClose();
+            } else if (_tvArrowKeys.contains(key)) {
+              if (!isLoading && images?.isNotEmpty == true) {
+                _imageViewController?.handleKeyEvent(event);
+              }
+            } else {
+              return KeyEventResult.ignored;
+            }
+            return KeyEventResult.handled;
+          },
+          child: _buildReaderContent(),
+        ),
+      );
+    }
     return KeyboardListener(
       focusNode: focusNode,
       autofocus: true,
       onKeyEvent: onKeyEvent,
-      child: Overlay(
-        initialEntries: [
-          OverlayEntry(
-            builder: (context) {
-              return _ReaderScaffold(
-                child: _ReaderGestureDetector(
-                  child: _ReaderImages(
-                    // Explicit chapter/mode changes remount once. Seamless
-                    // scrolling and initial layout detection keep this key.
-                    key: Key('reader_$chapterJumpNonce'),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+      child: _buildReaderOverlay(),
     );
   }
+
+  Widget _buildReaderOverlay() => Overlay(
+    initialEntries: [OverlayEntry(builder: (_) => _buildReaderContent())],
+  );
+
+  Widget _buildReaderContent() => _ReaderScaffold(
+    child: _ReaderGestureDetector(
+      child: _ReaderImages(key: Key('reader_$chapterJumpNonce')),
+    ),
+  );
 
   void onKeyEvent(KeyEvent event) {
     if (event is! KeyUpEvent) {
@@ -867,7 +964,7 @@ abstract mixin class _ImagePerPageHandler {
 
   /// The number of images displayed on one screen
   int get imagesPerPage {
-    if (mode.isContinuous) return 1;
+    if (isTvApp || mode.isContinuous) return 1;
     if (isPortrait) {
       return appdata.settings.getReaderSetting(
             cid,
@@ -893,7 +990,7 @@ abstract mixin class _ImagePerPageHandler {
   final _imageSizes = <int, Size>{};
 
   /// How the gallery cuts landscape images, from the comic's settings.
-  WidePageSplit get galleryWidePageSplit => mode.isGallery
+  WidePageSplit get galleryWidePageSplit => mode.isGallery && !isTvApp
       ? WidePageSplit.fromSetting(
           appdata.settings.getReaderSetting(
             cid,
@@ -1363,7 +1460,12 @@ abstract mixin class _ReaderLocation {
         return true;
       }
       chapter = c;
-      page = 1;
+      if (isTvApp) {
+        // Save only after the new chapter's images have loaded.
+        _page = 1;
+      } else {
+        page = 1;
+      }
       _jumpToLastPageOnLoad = toLastPage;
       chapterJumpNonce++;
       update();
@@ -1524,6 +1626,7 @@ abstract mixin class _AutoPageTurner {
       return;
     }
     if (toNextPage() || toNextChapter()) {
+      if (!autoPageTurning) return;
       _armAutoTurn();
     } else {
       stopAutoPageTurning(

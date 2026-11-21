@@ -272,7 +272,8 @@ ReaderImageProvider _createImageProviderFromKey(
       translationConfig.mode,
     );
   }
-  return ReaderImageProvider(
+  final create = isTvApp ? _TvReaderImageProvider.new : ReaderImageProvider.new;
+  return create(
     imageKey,
     reader.type.comicSource?.key,
     reader.cid,
