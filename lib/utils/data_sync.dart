@@ -670,6 +670,15 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     BackgroundKeepAlive.instance.update(BackgroundKeepAlive.tagSync, status);
   }
 
+  Future<T> _runSyncTransfer<T>(
+    String status,
+    Future<T> Function(void Function(int, int) onProgress) transfer,
+  ) => BackgroundKeepAlive.instance.runTransfer(
+    status,
+    transfer,
+    quiet: syncMode == WebdavSyncMode.realtime,
+  );
+
   /// 仅当再无任何同步活动（上传/下载/图片同步/排队等待）时，移除共享的同步保活通知。
   /// 各操作在 finally 里把自身标志清零后调用，最后一个收尾者才真正撤销，避免把仍在跑的
   /// 其它同步赖以不被冻结的前台服务一并撤掉。
@@ -906,7 +915,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         _setPendingPublish(filename, fileSize);
         try {
           final remotePath = serverAbsoluteWebdavPath(filename);
-          final usedBufferedFallback = await BackgroundKeepAlive.instance.runTransfer(
+          final usedBufferedFallback = await _runSyncTransfer(
             formatTaskStatus(title: 'Uploading data'.tl, detail: filename),
             (progress) => uploadWithWebdav404Fallback(
               streamUpload: () => writeFileStreamed(
@@ -1155,7 +1164,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         Log.info("Data Sync", "Downloading data from WebDAV server");
         var localFile = File(FilePath.join(App.cachePath, file.name!));
         try {
-          await BackgroundKeepAlive.instance.runTransfer(
+          await _runSyncTransfer(
             formatTaskStatus(title: 'Downloading data'.tl, detail: file.name),
             (progress) => client.read2File(
               file.name!, localFile.path, onProgress: progress,
@@ -1553,7 +1562,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         );
         // Streamed: image packs are whole comic archives (often hundreds of
         // MB) — buffering one in RAM via readAsBytes was an OOM in waiting.
-        await BackgroundKeepAlive.instance.runTransfer(
+        await _runSyncTransfer(
           formatTaskStatus(title: 'Syncing images'.tl, detail: comic.title),
           (progress) => writeFileStreamed(
             client, file!, '/venera-comics/$fileName', onProgress: progress,
@@ -1607,7 +1616,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
 
       var localFile = File(FilePath.join(App.cachePath, fileName));
       try {
-        await BackgroundKeepAlive.instance.runTransfer(
+        await _runSyncTransfer(
           formatTaskStatus(title: 'Syncing images'.tl, detail: comic.title),
           (progress) => client.read2File(
             '/venera-comics/$fileName', localFile.path, onProgress: progress,

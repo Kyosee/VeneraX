@@ -19,6 +19,7 @@ interface TransferTask {
   tag: string;
   status: string;
   progress: number;
+  quiet: boolean;
 }
 
 interface PublishedProgress {
@@ -98,12 +99,14 @@ export class BackgroundService {
         if (!this.desired.has(tag) && this.desired.size >= 32) throw new Error('Too many transfers');
         let task = this.desired.get(tag);
         if (task === undefined) {
-          task = { tag: tag, status: status as string, progress: progress };
+          const quiet = tag.startsWith('sync_') && call.argument('quiet') === true;
+          task = { tag: tag, status: status as string, progress: 0, quiet: quiet };
           this.desired.set(tag, task);
         } else {
           task.status = status as string;
-          task.progress = progress;
         }
+        // 100 marks the system live view as finished. Quiet syncs remove it when the request returns.
+        if (!task.quiet || progress < 100) task.progress = progress;
         this.replyWhen(result, this.enqueue(async (): Promise<boolean> => {
           if (!await this.reconcile(tag)) return false;
           if (LONG_TAGS.includes(tag)) return this.shownByTransfer(tag) || this.ordinaryPublished.has(tag);
@@ -311,6 +314,7 @@ export class BackgroundService {
         id: running.notificationId,
         wantAgent: agent,
         tapDismissed: false,
+        isAlertOnce: first.quiet,
         notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW,

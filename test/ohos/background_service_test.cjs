@@ -188,6 +188,33 @@ const startDownload = (h, progress = 12) => h.call(DOWNLOAD, 'start', { status: 
 const startSync = (h, tag = 'sync_1', progress = 24) => h.call(BACKGROUND, 'update', { tag, status: 'Sync', progress });
 const success = (value) => [{ kind: 'success', value }];
 
+for (const progress of [[0, 100], [0, 45, 99, 100]]) {
+  test(`quiet sync updates one live view without a completion alert (${progress.join(', ')})`, async () => {
+    const h = harness();
+    for (const value of progress) {
+      const updated = h.call(BACKGROUND, 'update', { tag: 'sync_1', status: 'Sync', progress: value, quiet: true });
+      await flush();
+      assert.deepEqual(updated, success(true));
+    }
+    assert.deepEqual(h.publishes.map((item) => item.template.data.progressValue), progress.slice(0, -1));
+    assert.ok(h.publishes.every((item) => item.isAlertOnce && item.id === h.starts[0].task.notificationId));
+    assert.equal(h.starts.length, 1);
+
+    startDownload(h, 100);
+    h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+    await flush();
+    const download = h.publishes.at(-1);
+    assert.equal(download.id, h.starts[0].task.notificationId);
+    assert.equal(download.isAlertOnce, false);
+    assert.equal(download.template.data.progressValue, 100);
+    h.call(DOWNLOAD, 'complete', { status: 'Finished' });
+    await flush();
+    assert.equal(h.publishes.at(-1).label, 'venera.download.complete');
+    assert.equal(h.publishes.at(-1).isAlertOnce, undefined);
+    assert.equal(h.active.size, 0);
+  });
+}
+
 test('both channels share one authorization request and do not reprompt after refusal', async () => {
   const wait = deferred();
   const h = harness({ granted: false, permissionWait: wait });
