@@ -74,6 +74,10 @@ jobs:
       # Step 2: Build the Flutter macOS app
       - name: Build Flutter macOS App
         run: flutter build macos --release
+      - name: Report native target timings
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python3 .github/scripts/desktop_build_timings.py
 
       # Step 3: Create the DMG file
       - name: Create DMG
@@ -834,22 +838,31 @@ jobs:
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      # Optional: any failure or timeout still publishes the full packages.
-      - name: Generate incremental update packages
+      - name: Remove obsolete patches from a previous draft attempt
         continue-on-error: true
-        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+        run: python3 tool/build_update_deltas.py clean-draft
+      - name: Download optional incremental packages
+        if: needs.Merge_Deltas.result == 'success' && needs.Merge_Deltas.outputs.available == 'true'
+        id: deltas
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: update-deltas
+          path: update-deltas
+      - name: Include verified incremental packages
+        id: include_deltas
+        if: steps.deltas.outcome == 'success'
+        continue-on-error: true
+        env:
+          TAG: ${{ github.ref_name }}
           BODY_FILE: ${{ steps.release_meta.outputs.body_file }}
-        run: |
-          python -m pip install --disable-pip-version-check bsdiff4==1.2.6
-          python tool/build_update_deltas.py
+        run: python3 tool/build_update_deltas.py publish
+      - name: Report unavailable incremental packages
+        if: needs.Merge_Deltas.outputs.complete != 'true' || steps.deltas.outcome == 'failure' || steps.include_deltas.outcome == 'failure'
+        run: echo '::warning::Incremental updates unavailable. Publishing full packages only.'
 
       - name: Create draft release and upload assets
         uses: softprops/action-gh-release@v3
