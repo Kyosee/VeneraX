@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -19,11 +18,11 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         self.notes = self.root / 'notes'
         self.notes.mkdir()
 
-    def build(self, policy=None):
+    def build(self, policy=None, platform=None):
         if policy is not None:
             (self.notes / 'v3.0.3.update.json').write_text(json.dumps(policy), encoding='utf-8')
         return builder.build('v3.0.3', False, 'example/app', self.root / 'previous',
-                             self.root / 'assets', self.notes)
+                             self.root / 'assets', self.notes, platform=platform)
 
     def test_history_filters_drafts_channels_current_and_duplicates(self):
         def release(tag, draft=False, prerelease=False):
@@ -62,9 +61,8 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0][:2], ['gh', 'api'])
 
-    @patch.object(builder, 'generate')
     @patch.object(builder.subprocess, 'run')
-    def test_rerun_removes_only_stale_delta_assets_from_its_draft(self, run, generate):
+    def test_only_final_publication_removes_its_stale_draft_deltas(self, run):
         def release(tag, draft, assets):
             return dict(tag_name=tag, draft=draft, prerelease=False,
                         assets=[dict(id=index, name=name) for index, name in assets])
@@ -72,7 +70,9 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
             release('v3.0.3', True, [(1, 'VeneraX-3.0.3.apk'), (2, 'old.patch'),
                                      (3, 'update-manifest.json')]),
             release('v3.0.2', False, [(4, 'VeneraX-update-3.0.1-to-3.0.2-android-x86_64.patch')])]]))
-        self.build({'android': 'full', 'windows': 'full'})
+        self.build({'android': 'full', 'windows': 'full'}, platform='android')
+        self.assertFalse(any('-X' in call.args[0] for call in run.call_args_list))
+        builder.clean_draft('example/app', 'v3.0.3')
         deletes = [call.args[0][-1] for call in run.call_args_list if '-X' in call.args[0]]
         self.assertEqual(deletes, ['repos/example/app/releases/assets/2',
                                    'repos/example/app/releases/assets/3'])
@@ -83,34 +83,55 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
         assets.mkdir()
         body = self.root / 'body.md'
         body.write_text('notes\n', encoding='utf-8')
-        builder.publish(dict(deltas=[]), output, assets, body)
-        self.assertEqual(list(assets.iterdir()), [])
-        self.assertEqual(body.read_text(encoding='utf-8'), 'notes\n')
         (output / 'a.patch').write_bytes(b'patch')
-        (output / 'update-manifest.json').write_text('{}', encoding='utf-8')
-        builder.publish(dict(deltas=[dict(patchAsset='a.patch')]), output, assets, body)
+        manifest = output / builder.MANIFEST
+        manifest.write_text(json.dumps({'deltas': [{'patchAsset': 'a.patch'}]}), encoding='utf-8')
+        builder.publish(output, assets, body)
         self.assertEqual(sorted(path.name for path in assets.iterdir()),
                          ['a.patch', 'update-manifest.json'])
         self.assertIn('update-manifest.json', body.read_text(encoding='utf-8'))
         (assets / 'a.patch').unlink()
         (assets / 'update-manifest.json').unlink()
+        manifest.write_text(json.dumps({'deltas': [{'patchAsset': 'a.patch'}, {'patchAsset': 'gone.patch'}]}),
+                            encoding='utf-8')
         with self.assertRaises(OSError):
-            builder.publish(dict(deltas=[dict(patchAsset='a.patch'), dict(patchAsset='gone.patch')]),
-                            output, assets, None)
+            builder.publish(output, assets, body)
         self.assertEqual(list(assets.iterdir()), [], 'a partial copy is removed')
 
-    def test_failures_never_block_the_full_release(self):
-        environment = dict(TAG='v1.0.2', PRERELEASE='false', GITHUB_REPOSITORY='example/app',
-                           RUNNER_TEMP=str(self.root))
-        for failure in [ValueError('Update policy must map android/windows to auto/full'),
-                        MemoryError(), OSError('disk full')]:
-            with self.subTest(failure=failure), patch.dict(os.environ, environment), \
-                    patch.object(builder, 'build', side_effect=failure), \
-                    patch.object(builder, 'publish') as publish, \
-                    patch('builtins.print') as output:
-                builder.main()
-                publish.assert_not_called()
-                self.assertIn('::warning::', output.call_args.args[0])
+    def test_merge_rejects_partial_or_wrong_version_then_combines_both_platforms(self):
+        parts, output = self.root / 'parts', self.root / 'combined'
+        entries = []
+        for platform, arch in [('android', 'universal'), ('windows', 'x64')]:
+            directory = parts / f'deltas-{platform}'
+            directory.mkdir(parents=True)
+            name = f'VeneraX-update-3.0.1-to-3.0.3-{platform}-{arch}.patch'
+            entry = dict(fromVersion='3.0.1', toVersion='3.0.3', platform=platform,
+                         architecture=arch, patchAsset=name, patchSize=5)
+            entries.append(entry)
+            (directory / builder.MANIFEST).write_text(
+                json.dumps(dict(schema=1, version='3.0.3', deltas=[entry])), encoding='utf-8')
+            if platform == 'windows':
+                with self.assertRaises(OSError):
+                    builder.merge(parts, output, '3.0.3')
+                self.assertFalse(output.exists())
+            (directory / name).write_bytes(b'patch')
+        with self.assertRaises(ValueError):
+            builder.merge(parts, output, '3.0.4')
+        self.assertFalse(output.exists())
+        self.assertEqual(builder.merge(parts, output, '3.0.3'), 2)
+        self.assertEqual(json.loads((output / builder.MANIFEST).read_text())['deltas'], entries)
+        for entry in entries:
+            self.assertEqual((output / entry['patchAsset']).read_bytes(), b'patch')
+
+    def test_merge_full_only_fragments_does_not_stage_release_assets(self):
+        parts, output = self.root / 'parts', self.root / 'combined'
+        for platform in ('android', 'windows'):
+            directory = parts / f'deltas-{platform}'
+            directory.mkdir(parents=True)
+            (directory / builder.MANIFEST).write_text(
+                json.dumps(dict(schema=1, version='3.0.3', deltas=[])), encoding='utf-8')
+        self.assertEqual(builder.merge(parts, output, '3.0.3'), 0)
+        self.assertFalse(output.exists())
 
     def test_repository_release_policies_are_valid(self):
         builder.check_policies(REPOSITORY_NOTES)
@@ -145,6 +166,19 @@ class ReleaseDeltaWorkflowTest(unittest.TestCase):
                             for call in run.call_args_list),
                         'release notes in the API output are UTF-8 on every OS')
         self.assertEqual(generate.call_args.args[1], [('3.0.2', self.root / 'previous/v3.0.2')])
+
+    @patch.object(builder, 'generate')
+    @patch.object(builder.subprocess, 'run')
+    def test_each_platform_job_only_fetches_its_packages(self, run, generate):
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps([[
+            dict(tag_name='v3.0.2', draft=False, prerelease=False)]]))
+        for platform, pattern, other in [('android', '*.apk', 'windows'), ('windows', '*-windows.zip', 'android')]:
+            with self.subTest(platform=platform):
+                self.build(platform=platform)
+                command = run.call_args.args[0]
+                self.assertEqual(command.count('--pattern'), 1)
+                self.assertIn(pattern, command)
+                self.assertEqual(generate.call_args.kwargs['policy'], {other: 'full'})
 
     @patch.object(builder.subprocess, 'run')
     def test_missing_history_preserves_full_update_release(self, run):

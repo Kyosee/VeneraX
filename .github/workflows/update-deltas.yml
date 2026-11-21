@@ -1,0 +1,48 @@
+name: Generate platform update deltas
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+    outputs:
+      available:
+        description: Whether the platform fragment was uploaded
+        value: ${{ jobs.build.outputs.available }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    outputs:
+      available: ${{ steps.upload.outcome == 'success' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.platform == 'android' && 'apks' || 'windows_build' }}
+          path: release-assets
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Generate and verify platform patches
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ inputs.platform }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          python -m pip install --disable-pip-version-check bsdiff4==1.2.6
+          python tool/build_update_deltas.py "$PLATFORM"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: deltas-${{ inputs.platform }}
+          path: delta-output/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0

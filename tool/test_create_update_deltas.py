@@ -5,6 +5,8 @@ import tempfile
 import unittest
 import zipfile
 
+import bsdiff4
+
 spec = importlib.util.spec_from_file_location('deltas', Path(__file__).with_name('create_update_deltas.py'))
 deltas = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deltas)
@@ -31,7 +33,7 @@ class DeltaGenerationTest(unittest.TestCase):
         entry = manifest['deltas'][0]
         self.assertEqual(entry['patchAsset'], 'VeneraX-update-1.0.0-to-1.0.1-android-arm64-v8a.patch')
         patch = (self.out / entry['patchAsset']).read_bytes()
-        self.assertEqual(deltas.bsdiff4.patch(old, patch), new)
+        self.assertEqual(bsdiff4.patch(old, patch), new)
         self.assertEqual(entry['oldSha256'], deltas.digest(old))
         self.assertEqual(entry['fullSha256'], deltas.digest(new))
         self.assertEqual(entry['patchSize'], len(patch))
@@ -91,7 +93,7 @@ class DeltaGenerationTest(unittest.TestCase):
                 if item['mode'] == 'copy':
                     data = old[name]
                 elif item['mode'] == 'bsdiff':
-                    data = deltas.bsdiff4.patch(old[name], archive.read(item['payload']))
+                    data = bsdiff4.patch(old[name], archive.read(item['payload']))
                 else:
                     data = archive.read(item['payload'])
                 self.assertEqual(deltas.digest(data), item['sha256'])

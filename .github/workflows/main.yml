@@ -272,10 +272,17 @@ jobs:
           channel: "stable"
           flutter-version: '3.44.3'
           architecture: x64
+      - name: Enable MSBuild project timings
+        continue-on-error: true
+        run: python .github/scripts/desktop_build_timings.py --prepare-windows
       - name: build
         run: |
           flutter pub get
           python windows/build.py
+      - name: Report native project timings
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python .github/scripts/desktop_build_timings.py
       - uses: actions/upload-artifact@v7
         with:
           name: windows_build
@@ -640,10 +647,68 @@ jobs:
           path: build/appimage/smoke-test/
           if-no-files-found: ignore
 
+  Android_Deltas:
+    needs: Build_Android
+    if: github.event_name == 'push' || inputs.platform == 'all'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-deltas.yml
+    with:
+      platform: android
+
+  Windows_Deltas:
+    needs: Build_Windows
+    if: github.event_name == 'push' || inputs.platform == 'all'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-deltas.yml
+    with:
+      platform: windows
+
+  Merge_Deltas:
+    needs: [Android_Deltas, Windows_Deltas]
+    if: needs.Android_Deltas.outputs.available == 'true' && needs.Windows_Deltas.outputs.available == 'true'
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    permissions:
+      contents: read
+    outputs:
+      available: ${{ steps.upload.outcome == 'success' }}
+      complete: ${{ steps.merge.outcome == 'success' && steps.upload.outcome != 'failure' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: deltas-*
+          path: delta-parts
+      - id: merge
+        name: Combine Android and Windows patches
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          python3 tool/build_update_deltas.py merge
+          if [[ -f update-deltas/update-manifest.json ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v7
+        id: upload
+        if: steps.merge.outputs.available == 'true'
+        with:
+          name: update-deltas
+          path: update-deltas/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+
   Release:
     runs-on: ubuntu-22.04
-    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64, Build_HarmonyOS, Test_AppImage]
-    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64, Build_HarmonyOS, Test_AppImage, Merge_Deltas]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+          && needs.Build_MacOS.result == 'success' && needs.Build_IOS.result == 'success'
+          && needs.Build_Android.result == 'success' && needs.Build_Windows.result == 'success'
+          && needs.Build_Linux.result == 'success' && needs.Build_Linux_ARM64.result == 'success'
+          && needs.Build_HarmonyOS.result == 'success' && needs.Test_AppImage.result == 'success' }}
     outputs:
       prerelease: ${{ steps.release_meta.outputs.prerelease }}
     steps:

@@ -2,12 +2,14 @@
 
 Deltas are optional. Any failure here leaves a release with full packages only.
 """
+import argparse
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 
 from create_update_deltas import generate, validate_policy
 
@@ -74,22 +76,31 @@ def gh(*args, timeout):
                           timeout=timeout)
 
 
+def release_history(repo):
+    return json.loads(gh('api', '--paginate', '--slurp',
+                         f'repos/{repo}/releases?per_page=100', timeout=60).stdout)
+
+
+def clean_draft(repo, tag):
+    for asset_id in stale_delta_assets(release_history(repo), tag):
+        gh('api', '-X', 'DELETE', f'repos/{repo}/releases/assets/{asset_id}', timeout=60)
+
+
 def build(tag, prerelease, repo, temporary, current=Path('release-assets'),
-          notes=Path('release-notes'), output=None):
+          notes=Path('release-notes'), output=None, platform=None):
     if not TAG.fullmatch(tag):
         raise ValueError('Invalid release tag')
     policy = read_policy(notes, tag)
     try:
-        pages = json.loads(gh('api', '--paginate', '--slurp',
-                              f'repos/{repo}/releases?per_page=100', timeout=60).stdout)
+        pages = release_history(repo)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         print('::warning::Release history unavailable; publishing full packages only', flush=True)
         pages = []
-    for asset_id in stale_delta_assets(pages, tag):
-        gh('api', '-X', 'DELETE', f'repos/{repo}/releases/assets/{asset_id}', timeout=60)
     patterns = []
-    for platform, pattern in [('android', '*.apk'), ('windows', '*-windows.zip')]:
-        if policy.get(platform, 'auto') == 'auto':
+    for target, pattern in [('android', '*.apk'), ('windows', '*-windows.zip')]:
+        if platform and platform != target:
+            policy[target] = 'full'
+        if policy.get(target, 'auto') == 'auto':
             patterns.extend(['--pattern', pattern])
     previous = []
     for old_tag in previous_tags(pages, tag, prerelease) if patterns else []:
@@ -105,38 +116,74 @@ def build(tag, prerelease, repo, temporary, current=Path('release-assets'),
     return generate(current, previous, output or current, tag[1:], policy=policy)
 
 
-def publish(manifest, output, assets, body=None):
-    """Copy deltas beside the full packages; the manifest goes last and only if used."""
-    if not manifest['deltas']:
-        return
+def merge(parts, output, version):
+    records = []
+    # Commit the directory only after both fragments and all referenced patches are intact.
+    with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
+        staged = Path(temporary) / 'combined'
+        staged.mkdir()
+        for platform in ('android', 'windows'):
+            part = parts / f'deltas-{platform}'
+            manifest = json.loads((part / MANIFEST).read_text(encoding='utf-8'))
+            if manifest['schema'] != 1 or manifest['version'] != version:
+                raise ValueError(f'Unexpected {platform} delta manifest version')
+            for entry in manifest['deltas']:
+                name = entry['patchAsset']
+                expected = f'VeneraX-update-{entry["fromVersion"]}-to-{version}-{platform}-{entry["architecture"]}.patch'
+                if (name != expected or Path(name).name != name or (staged / name).exists()
+                        or entry['platform'] != platform or entry['toVersion'] != version):
+                    raise ValueError(f'Unexpected patch in {platform} fragment: {name}')
+                source = part / name
+                if source.stat().st_size != entry['patchSize']:
+                    raise ValueError(f'Incomplete patch: {name}')
+                shutil.copyfile(source, staged / name)
+                records.append(entry)
+        if records:
+            manifest = dict(schema=1, version=version, deltas=records)
+            (staged / MANIFEST).write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+            staged.rename(output)
+    print(f'Prepared {len(records)} incremental update package(s)', flush=True)
+    return len(records)
+
+
+def publish(output, assets, body):
+    """Copy just the referenced patches; commit the manifest last."""
+    manifest = json.loads((output / MANIFEST).read_text(encoding='utf-8'))
     copied = []
     try:
         for name in [entry['patchAsset'] for entry in manifest['deltas']] + [MANIFEST]:
-            shutil.copyfile(output / name, assets / name)
-            copied.append(assets / name)
+            dest = assets / name
+            copied.append(dest)
+            shutil.copyfile(output / name, dest)
+        with body.open('a', encoding='utf-8') as notes:
+            notes.write(NOTE)
     except OSError:
         for path in copied:
             path.unlink(missing_ok=True)
         raise
-    if body is not None:
-        with body.open('a', encoding='utf-8') as notes:
-            notes.write(NOTE)
 
 
 def main():
-    temporary = Path(os.environ['RUNNER_TEMP'])
-    output = temporary / 'venera-delta-output'
-    assets = Path('release-assets')
-    try:
-        manifest = build(os.environ['TAG'], os.environ['PRERELEASE'] == 'true',
-                         os.environ['GITHUB_REPOSITORY'], temporary / 'venera-delta-previous',
-                         assets, output=output)
-        body = os.environ.get('BODY_FILE')
-        publish(manifest, output, assets, Path(body) if body else None)
-    except Exception as error:  # noqa: BLE001 - deltas must never block a release
-        print(f'::warning::Incremental updates skipped; full packages only: {error}', flush=True)
-        return
-    print(f'Published {len(manifest["deltas"])} incremental update package(s)', flush=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['android', 'windows', 'merge', 'clean-draft', 'publish'])
+    action = parser.parse_args().action
+    repo = os.environ['GITHUB_REPOSITORY']
+    tag = os.environ.get('TAG', '')
+    if not tag and action in ('android', 'windows', 'merge'):
+        # Manual build-only runs use the version embedded in the new packages.
+        version = re.search(r'^version:\s*([^\s+]+)', Path('pubspec.yaml').read_text(encoding='utf-8'), re.M)
+        tag = f'v{version[1]}' if version else ''
+    if not TAG.fullmatch(tag):
+        raise ValueError('Invalid release tag')
+    if action == 'clean-draft':
+        clean_draft(repo, tag)
+    elif action == 'merge':
+        merge(Path('delta-parts'), Path('update-deltas'), tag[1:])
+    elif action == 'publish':
+        publish(Path('update-deltas'), Path('release-assets'), Path(os.environ['BODY_FILE']))
+    else:
+        build(tag, '-' in tag, repo, Path(os.environ['RUNNER_TEMP']) / 'venera-delta-previous',
+              output=Path('delta-output'), platform=action)
 
 
 if __name__ == '__main__':
