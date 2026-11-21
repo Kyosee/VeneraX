@@ -97,7 +97,7 @@ def download_desktop(target, output, temp):
 
 def download_apple(output, temp):
     repository, revision = plugin_pin()
-    # Both Apple builds consume the same binary target from the exact Swift package.
+    # SwiftPM resolves both binary targets even when the app only links the runtime.
     pins = []
     manifest = temp / "Package.swift"
     for platform in ("ios", "macos"):
@@ -107,19 +107,22 @@ def download_apple(output, temp):
     if pins[0] != pins[1]:
         raise ValueError("The iOS and macOS ONNX package pins differ.")
     download(github_raw(*pins[0], "Package.swift"), manifest)
-    binary = field(r'(?s)Target\.binaryTarget\(name:\s*"onnxruntime",\s*(url:.*?checksum:\s*"[a-f0-9]{64}")',
-                   manifest.read_text(encoding="utf-8"))
-    url = field(r'url:\s*"(https://[^"]+)"', binary)
-    checksum = field(r'checksum:\s*"([a-f0-9]{64})"', binary)
-    # SwiftPM indexes downloaded binary artifacts by the URL as a C99 identifier.
-    file = output / re.sub(r"[^A-Za-z0-9_]", "_", url)
-    download(url, file)
-    digest = hashlib.sha256()
-    with file.open("rb") as archive:
-        for chunk in iter(lambda: archive.read(1024 * 1024), b""):
-            digest.update(chunk)
-    if digest.hexdigest() != checksum:
-        raise ValueError("Apple binary artifact failed its SwiftPM checksum.")
+    source = manifest.read_text(encoding="utf-8")
+    for name in ("onnxruntime", "onnxruntime_extensions"):
+        binary = field(rf'(?s)Target\.binaryTarget\(name:\s*"{name}",\s*(url:.*?checksum:\s*"[a-f0-9]{{64}}")',
+                       source)
+        url = field(r'url:\s*"(https://[^"]+)"', binary)
+        checksum = field(r'checksum:\s*"([a-f0-9]{64})"', binary)
+        # Use Microsoft's storage origin, retaining the manifest URL as the SwiftPM cache key.
+        origin = url.replace("https://download.onnxruntime.ai/", "https://onnxruntimepackages.z14.web.core.windows.net/", 1)
+        file = output / re.sub(r"[^A-Za-z0-9_]", "_", url)
+        download(origin, file)
+        digest = hashlib.sha256()
+        with file.open("rb") as archive:
+            for chunk in iter(lambda: archive.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != checksum:
+            raise ValueError(f"{name} failed its SwiftPM checksum.")
 
 
 def install(target, cache):
@@ -148,6 +151,8 @@ def main(command, target):
     cache = Path("build/ci-onnx") / target
     if command == "key":
         pin = android_version() if target == "android" else plugin_pin()[1]
+        if target == "apple":
+            pin += "-with-extensions"
         print(f"key=onnx-prebuilt-{target}-{pin}")
     elif command == "install":
         install(target, cache)
