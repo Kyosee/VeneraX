@@ -201,10 +201,11 @@ class _ExploreSettingsState extends State<ExploreSettings> {
                 '3': "Categories Page".tl,
               },
             ),
-            _SwitchSetting(
-              title: 'Return to Home before exiting'.tl,
-              settingKey: 'returnToHomeOnBack',
-            ),
+            if (App.isMobile)
+              _SwitchSetting(
+                title: 'Return to Home before exiting'.tl,
+                settingKey: 'returnToHomeOnBack',
+              ),
           ],
         ),
         _SettingsSection(

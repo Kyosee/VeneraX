@@ -89,6 +89,21 @@ void main() {
     expect(exitRequests, 1);
   });
 
+  testWidgets(
+    'desktop back leaves a narrow non-home tab without switching to Home',
+    (tester) async {
+      final original = appdata.settings['returnToHomeOnBack'];
+      addTearDown(() => appdata.settings['returnToHomeOnBack'] = original);
+      appdata.settings['returnToHomeOnBack'] = true;
+      await pumpTabs(tester, initialPage: 1);
+
+      await back(tester);
+      expect(find.text('Page 1'), findsOneWidget);
+      expect(exitRequests, 1);
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
   testWidgets('system back exits a non-home tab when the setting is off', (
     tester,
   ) async {

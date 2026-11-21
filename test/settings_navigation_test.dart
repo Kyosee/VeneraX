@@ -115,6 +115,25 @@ void main() {
   }
 
   testWidgets(
+    'desktop hides Back to Home in search and browsing settings at phone width',
+    (tester) async {
+      const title = 'Return to Home before exiting';
+      await open(tester, 390);
+      await tester.enterText(find.byType(TextField).first, title);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('settings-result-$title')),
+        findsNothing,
+      );
+
+      await search(tester, 'Initial Page');
+      expect(find.widgetWithText(ListTile, 'Initial Page'), findsOneWidget);
+      expect(find.text(title), findsNothing);
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
+  testWidgets(
     'wide settings starts populated and switches categories',
     (tester) async {
       await open(tester, 1100);

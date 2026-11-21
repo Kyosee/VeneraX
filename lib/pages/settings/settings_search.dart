@@ -324,6 +324,7 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     'Return to Home before exiting',
     4,
     keywords: ['back', 'exit', 'gesture'],
+    visible: () => App.isMobile,
   ),
   _SettingsSearchEntry("Display mode of comic list", 4),
   _SettingsSearchEntry("Comic Source", 4, keywords: ["source", "extension"]),
