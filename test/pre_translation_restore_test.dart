@@ -6,6 +6,8 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
+import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/utils/translations.dart';
 
 void main() {
@@ -36,6 +38,14 @@ void main() {
           title: 'Fixture',
           createdAt: DateTime(2026),
           status: PreTranslationTaskStatus.paused,
+          config: const TranslationConfig(
+            sourceLang: 'en',
+            targetLang: 'ja',
+            dialogueOnly: true,
+            mode: InpaintMode.patch,
+          ),
+          enhanceStrokes: true,
+          reuseOtherScope: false,
           chapters: [
             PreTranslationChapter(
               eid: '1',
@@ -50,14 +60,46 @@ void main() {
         ).toJson(),
         if (manual) 'keepPaused': true,
       };
-      // Older snapshots stored system-paused jobs without a pause reason.
-      appdata.implicitData[key] = [
-        snapshot('system'),
-        snapshot('manual', manual: true),
-      ];
+      // Older snapshots had neither a pause reason nor a translation scope.
+      final legacy = snapshot('system')
+        ..removeWhere(
+          (key, _) => {
+            'sourceLang',
+            'targetLang',
+            'dialogueOnly',
+            'mode',
+            'enhanceStrokes',
+            'reuseOtherScope',
+          }.contains(key),
+        );
+      final oldScope = appdata.settings[TranslationConfig.scopeKeyName];
+      addTearDown(
+        () => appdata.settings[TranslationConfig.scopeKeyName] = oldScope,
+      );
+      appdata.settings[TranslationConfig.scopeKeyName] = 'dialogue';
+      appdata.implicitData[key] = [legacy, snapshot('manual', manual: true)];
       final manager = PreTranslationTaskManager.instance;
       final resumed = manager.currentTasks.first;
       final paused = manager.currentTasks.last;
+      expect(resumed.config.dialogueOnly, isFalse);
+      expect(resumed.enhanceStrokes, isFalse);
+      expect(resumed.reuseOtherScope, isTrue);
+      expect(manager.chapterProgressFor('system', 'fixture', '1'), isNull);
+      expect(
+        manager.chapterProgressFor(
+          'system',
+          'fixture',
+          '1',
+          config: resumed.config,
+        ),
+        same(resumed.chapters.single),
+      );
+      expect(paused.config.sourceLang, 'en');
+      expect(paused.config.targetLang, 'ja');
+      expect(paused.config.mode, InpaintMode.patch);
+      expect(paused.config.dialogueOnly, isTrue);
+      expect(paused.enhanceStrokes, isTrue);
+      expect(paused.reuseOtherScope, isFalse);
       expect(resumed.isRunning, isTrue);
       expect(paused.status, PreTranslationTaskStatus.paused);
       expect(paused.chapters.single.failedPages, {3});
@@ -75,6 +117,10 @@ void main() {
       expect(entries.every((entry) => entry['keepPaused'] == true), isTrue);
       expect(entries.first['chapters'].single['done'], 7);
       expect(entries.first['chapters'].single['paused'], isTrue);
+      expect(entries.first['dialogueOnly'], isFalse);
+      expect(entries.last['enhanceStrokes'], isTrue);
+      expect(entries.first['reuseOtherScope'], isTrue);
+      expect(entries.last['reuseOtherScope'], isFalse);
     },
   );
 }

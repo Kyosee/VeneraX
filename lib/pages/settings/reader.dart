@@ -1456,6 +1456,26 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 useDeviceSettings: useDeviceSpecificSettings,
               ),
               SelectSetting(
+                title: "Translation scope".tl,
+                settingKey: TranslationConfig.scopeKeyName,
+                help:
+                    "All text includes captions and sound effects. Dialogue only translates text inside speech bubbles."
+                        .tl,
+                optionTranslation: {
+                  "all": "All text".tl,
+                  "dialogue": "Dialogue only".tl,
+                },
+                onChanged: () {
+                  setState(() {});
+                  widget.onChanged?.call(TranslationConfig.scopeKeyName);
+                },
+                comicId: isEnabledSpecificSettings ? widget.comicId : null,
+                comicSource: isEnabledSpecificSettings
+                    ? widget.comicSource
+                    : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+              SelectSetting(
                 title: "Performance mode".tl,
                 settingKey: TranslationPerformanceConfig.settingKey,
                 optionTranslation: {
@@ -1544,7 +1564,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 title: "Text removal".tl,
                 settingKey: "imageTranslationInpaintMode",
                 help:
-                    "How the original text is removed before the translation is drawn. Smart erase reconstructs the background so no solid block covers the bubble; Color patch is the old opaque block."
+                    "Smart erase reconstructs the background around the original strokes. Color patch fills those strokes with a nearby background color."
                         .tl,
                 optionTranslation: {
                   "smart": "Smart erase".tl,

@@ -3,6 +3,9 @@ part of '../tasks_page.dart';
 mixin _ModelDownloadTaskCard on _TaskCardCommon {
   TranslationModelStore get modelStore;
 
+  String translationModelName(String id) =>
+      TranslationModels.find(id)?.displayName ?? id;
+
   /// Progress card for an ongoing translation-model download. Transient (no
   /// history entry): once finished the model simply shows as installed in the
   /// model management page.
@@ -15,7 +18,7 @@ mixin _ModelDownloadTaskCard on _TaskCardCommon {
       child: ListTile(
         leading: const _RotatingIcon(icon: Icons.download),
         title: Text(
-          "${"Translation model".tl}: ${translationModelName(component.id)}",
+          "${"Translation model".tl}: ${component.displayName}",
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -38,16 +41,5 @@ mixin _ModelDownloadTaskCard on _TaskCardCommon {
         ),
       ),
     );
-  }
-
-  String translationModelName(String id) {
-    return switch (id) {
-      'text_detector' => "Text detector".tl,
-      'ocr_ja' => "Japanese OCR (manga)".tl,
-      'ocr_zh' => "Chinese / Latin OCR".tl,
-      'ocr_en' => "English OCR".tl,
-      'ocr_ko' => "Korean OCR".tl,
-      _ => id,
-    };
   }
 }

@@ -2,32 +2,48 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/painting.dart';
+import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
-/// Renders the translated page: draws [decoded] as the base, then lays each
-/// region's translated text over it. Returns PNG bytes.
-///
-/// In [InpaintMode.patch] the base is the untouched original and each region is
-/// covered with an opaque rounded plate in the sampled background colour (the
-/// legacy look). In [InpaintMode.smart] the caller has already
-/// erased the original lettering in [decoded.pixels], so the base is clean and
-/// each region only gets a backing plate where the placed text would otherwise
-/// be hard to read against the artwork.
+/// Erases source strokes on a worker isolate, then fits each translation in
+/// the independent layout rectangle. An unsafe region retains its source art.
 Future<Uint8List> renderTranslatedPage(
   Uint8List originalBytes,
   RgbaImage decoded,
   List<TranslatedRegion> regions, {
   InpaintMode mode = InpaintMode.smart,
+  StrokeMask? strokeMask,
+  void Function(List<TranslatedRegion>)? onSkipped,
 }) async {
-  var base = await _baseImage(originalBytes, decoded, mode);
+  var visible = List<int>.empty();
+  if (regions.isNotEmpty) {
+    var (cleaned, indices) = await compute(_cleanPage, (
+      decoded,
+      regions,
+      mode,
+      strokeMask,
+    ));
+    decoded = cleaned;
+    visible = indices;
+  }
+  if (onSkipped != null) {
+    var displayed = visible.toSet();
+    onSkipped([
+      for (var i = 0; i < regions.length; i++)
+        if (!displayed.contains(i)) regions[i],
+    ]);
+  }
+  var base = await _baseImage(decoded);
   try {
     var recorder = ui.PictureRecorder();
     var canvas = ui.Canvas(recorder);
     canvas.drawImage(base, ui.Offset.zero, ui.Paint());
-    for (var region in regions) {
+    for (var index in visible) {
+      var region = regions[index];
       if (mode == InpaintMode.patch) {
-        _drawPatchRegion(canvas, region);
+        _drawText(canvas, region, _rectOf(region), ui.Color(region.textColor));
       } else {
         _drawErasedRegion(canvas, decoded, region);
       }
@@ -37,9 +53,7 @@ Future<Uint8List> renderTranslatedPage(
     picture.dispose();
     try {
       var data = await rendered.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) {
-        throw Exception('Failed to encode translated page');
-      }
+      if (data == null) throw Exception('Failed to encode translated page');
       return data.buffer.asUint8List();
     } finally {
       rendered.dispose();
@@ -49,40 +63,60 @@ Future<Uint8List> renderTranslatedPage(
   }
 }
 
-/// The base image to draw under the text. patch mode re-decodes the pristine
-/// original at the working resolution; the erase modes draw [decoded] itself,
-/// whose pixels were already cleaned by the inpainter.
-Future<ui.Image> _baseImage(
-  Uint8List originalBytes,
-  RgbaImage decoded,
-  InpaintMode mode,
-) async {
-  if (mode != InpaintMode.patch) {
-    var buffer = await ui.ImmutableBuffer.fromUint8List(decoded.pixels);
-    var descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: decoded.width,
-      height: decoded.height,
-      pixelFormat: ui.PixelFormat.rgba8888,
-    );
-    var codec = await descriptor.instantiateCodec();
-    var frame = await codec.getNextFrame();
+(RgbaImage, List<int>) _cleanPage(
+  (RgbaImage, List<TranslatedRegion>, InpaintMode, StrokeMask?) work,
+) {
+  var (image, regions, mode, strokeMask) = work;
+  var visible = <int>[];
+  for (var index = 0; index < regions.length; index++) {
+    var region = regions[index];
+    if (region.text.trim().isEmpty ||
+        region.rect.width <= 4 ||
+        region.rect.height <= 4) {
+      continue;
+    }
+    var masks = <TextMask>[];
+    for (var line in region.eraseRects) {
+      var mask = TextInpainter.computeMask(
+        image,
+        line,
+        strokeMask: strokeMask,
+        flatFill: mode == InpaintMode.patch,
+      );
+      if (mask == null) break;
+      masks.add(mask);
+    }
+    // Erase and typeset a whole block atomically. A rejected line otherwise
+    // leaves the original text under its translation, even when its peers are clear.
+    if (masks.isEmpty || masks.length != region.eraseRects.length) continue;
+    for (var mask in masks) {
+      if (mode == InpaintMode.patch) {
+        TextInpainter.fillWithBackground(image, mask);
+      } else {
+        TextInpainter.eraseWithMask(image, mask);
+      }
+    }
+    visible.add(index);
+  }
+  return (image, visible);
+}
+
+Future<ui.Image> _baseImage(RgbaImage decoded) async {
+  var buffer = await ui.ImmutableBuffer.fromUint8List(decoded.pixels);
+  var descriptor = ui.ImageDescriptor.raw(
+    buffer,
+    width: decoded.width,
+    height: decoded.height,
+    pixelFormat: ui.PixelFormat.rgba8888,
+  );
+  var codec = await descriptor.instantiateCodec();
+  try {
+    return (await codec.getNextFrame()).image;
+  } finally {
     codec.dispose();
     descriptor.dispose();
     buffer.dispose();
-    return frame.image;
   }
-  var buffer = await ui.ImmutableBuffer.fromUint8List(originalBytes);
-  var descriptor = await ui.ImageDescriptor.encoded(buffer);
-  var codec = await descriptor.instantiateCodec(
-    targetWidth: decoded.width,
-    targetHeight: decoded.height,
-  );
-  var frame = await codec.getNextFrame();
-  codec.dispose();
-  descriptor.dispose();
-  buffer.dispose();
-  return frame.image;
 }
 
 ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
@@ -91,35 +125,6 @@ ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
   region.rect.right.toDouble(),
   region.rect.bottom.toDouble(),
 );
-
-/// Legacy patch mode: opaque rounded plate + feathered halo, then the text.
-void _drawPatchRegion(ui.Canvas canvas, TranslatedRegion region) {
-  var rect = _rectOf(region);
-  var background = ui.Color(region.backgroundColor);
-
-  // Coverage margin scales with the region so original text bleeding past the
-  // detected box is still hidden instead of leaving edges poking out.
-  var minSide = math.min(rect.width, rect.height);
-  var margin = math.max(3.0, minSide * 0.14);
-  var core = rect.inflate(margin);
-  var radius = ui.Radius.circular(math.min(margin, 4.0));
-
-  // Feathered halo blends the fill into textured/translucent bubbles; the
-  // opaque core on top still guarantees the original text is covered.
-  var sigma = math.max(1.5, margin * 0.6);
-  canvas.drawRRect(
-    ui.RRect.fromRectAndRadius(core.inflate(sigma * 0.5), radius),
-    ui.Paint()
-      ..color = background
-      ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, sigma),
-  );
-  canvas.drawRRect(
-    ui.RRect.fromRectAndRadius(core, radius),
-    ui.Paint()..color = background,
-  );
-
-  _drawText(canvas, region, rect, ui.Color(region.textColor));
-}
 
 /// Erase mode: the base is already clean, so the text only needs a contrast
 /// outline (never an opaque plate) to stay readable over minor screentone or

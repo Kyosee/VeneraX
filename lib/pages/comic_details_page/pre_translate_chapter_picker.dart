@@ -4,12 +4,14 @@ void openTranslatedChaptersPage(
   BuildContext context,
   StoredTranslationComic comic,
 ) {
+  final config = comic.config;
   Future<void> open({ComicDetails? details}) async {
     var stored = TranslationStore().chaptersFor(
       comic.sourceKey,
       comic.comicId,
       sourceLang: comic.sourceLang,
       targetLang: comic.targetLang,
+      dialogueOnly: comic.dialogueOnly,
     );
 
     var title = comic.title.isEmpty ? comic.comicId : comic.title;
@@ -31,6 +33,7 @@ void openTranslatedChaptersPage(
         comic.comicId,
         sourceLang: comic.sourceLang,
         targetLang: comic.targetLang,
+        dialogueOnly: comic.dialogueOnly,
       );
     }
 
@@ -79,6 +82,7 @@ void openTranslatedChaptersPage(
         comic.comicId,
         comic.sourceKey,
         entry.$1,
+        config: config,
         comicTitle: title,
         comicCover: cover,
         chapterTitle: entry.$2,
@@ -90,6 +94,7 @@ void openTranslatedChaptersPage(
       comic.comicId,
       sourceLang: comic.sourceLang,
       targetLang: comic.targetLang,
+      dialogueOnly: comic.dialogueOnly,
     );
     translatedIds.addAll(stored.map((chapter) => chapter.identity.chapterId));
 
@@ -118,11 +123,13 @@ void openTranslatedChaptersPage(
       groups = grouped.isEmpty ? null : grouped;
     }
 
-    void startJob(List<int> selected) {
+    PreTranslationTask? startJob(List<int> selected, {bool replace = false}) {
       var task = PreTranslationTaskManager.instance.start(
         cid: comic.comicId,
         sourceKey: comic.sourceKey,
         comicType: ComicType.fromKey(comic.sourceKey),
+        config: config,
+        reuseOtherScope: !replace,
         title: title,
         cover: cover,
         chapters: [
@@ -135,14 +142,12 @@ void openTranslatedChaptersPage(
       );
       App.rootContext.showMessage(
         message: task == null
-            ? (ImageTranslationService.isReadyForComic(
-                    comic.comicId,
-                    comic.sourceKey,
-                  )
+            ? (ImageTranslationService.isReadyForLang(config.sourceLang)
                   ? 'A pre-translation task is already running'.tl
                   : 'Configure AI translation first'.tl)
             : 'Pre-translation started'.tl,
       );
+      return task;
     }
 
     context.to(
@@ -150,6 +155,7 @@ void openTranslatedChaptersPage(
         cid: comic.comicId,
         sourceKey: comic.sourceKey,
         comicType: ComicType.fromKey(comic.sourceKey),
+        config: config,
         title: title,
         cover: cover,
         entries: entries,
@@ -191,6 +197,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
     required this.cid,
     required this.sourceKey,
     required this.comicType,
+    required this.config,
     required this.title,
     required this.cover,
     required this.entries,
@@ -204,6 +211,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
   final String cid;
   final String sourceKey;
   final ComicType comicType;
+  final TranslationConfig config;
   final String title;
   final String cover;
   final String? author;
@@ -222,7 +230,7 @@ class _SelectPreTranslateChapter extends StatefulWidget {
 
   final bool translatedView;
 
-  final void Function(List<int>) finishSelect;
+  final PreTranslationTask? Function(List<int>, {bool replace}) finishSelect;
 
   @override
   State<_SelectPreTranslateChapter> createState() =>

@@ -546,6 +546,77 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     );
   }
 
+  bool _visiblePageHasTranslation() {
+    final reader = context.reader;
+    if (!ImageTranslationService.isEnabledForComic(
+      reader.cid,
+      reader.type.sourceKey,
+    )) {
+      return false;
+    }
+    final images = reader.images;
+    if (images == null) return false;
+    final (first, end) = reader.pageImageRange;
+    for (var i = first; i < end && i < images.length; i++) {
+      final source = reader.type.comicSource?.key;
+      final key = ImageTranslationService.cacheKeyFor(
+        source,
+        reader.cid,
+        reader.eid,
+        i + 1,
+      );
+      final legacyKey = ImageTranslationService.legacyCacheKeyFor(
+        images[i],
+        source,
+        reader.cid,
+        reader.eid,
+      );
+      if (ImageTranslationService.pageTranslation(key, legacyKey).isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _viewPageTranslation() async {
+    final reader = context.reader;
+    final images = reader.images, eid = reader.eid;
+    if (images == null) return;
+    final index = await selectImage();
+    if (!mounted ||
+        index == null ||
+        index < 0 ||
+        index >= images.length ||
+        reader.eid != eid ||
+        !identical(reader.images, images)) {
+      return;
+    }
+    final provider = _createImageProviderFromKey(
+      images[index],
+      context,
+      index + 1,
+    );
+    final key = provider.translationKey;
+    if (key == null) return;
+    final regions = ImageTranslationService.pageTranslation(
+      key,
+      provider.legacyTranslationKey,
+    );
+    if (regions.isEmpty) {
+      context.showMessage(
+        message: 'No translatable text found on this page'.tl,
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ContentDialog(
+        title: 'View page translation'.tl,
+        content: SelectableText(regions.map((r) => r.text).join('\n\n')),
+      ),
+    );
+  }
+
   void _retryTranslation(List<String> cacheKeys, InpaintMode mode) {
     final service = ImageTranslationService.instance;
     var error = service.errorOf(cacheKeys.first, mode);
@@ -839,6 +910,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   /// short: chapter download, desktop fullscreen and share.
   List<MenuEntry> buildMoreMenuEntries() {
     return [
+      if (!context.reader.showOriginalPages && _visiblePageHasTranslation())
+        MenuEntry(
+          icon: Icons.article_outlined,
+          text: 'View page translation'.tl,
+          onClick: _viewPageTranslation,
+        ),
       if (!context.reader.showOriginalPages &&
           _currentTranslationTargets() != null)
         MenuEntry(
@@ -1354,6 +1431,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             // would keep showing the render made with the previous settings.
             if (key == "imageTranslationSource" ||
                 key == "imageTranslationTarget" ||
+                key == TranslationConfig.scopeKeyName ||
                 key == "imageTranslationInpaintMode" ||
                 key == "enableImageTranslation" ||
                 scopeChanged) {

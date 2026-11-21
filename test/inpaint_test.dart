@@ -182,6 +182,129 @@ void main() {
     });
   });
 
+  group('stroke boundaries', () {
+    test(
+      'erases 120 glyph pixels and preserves a separate 50 pixel line inside the OCR box',
+      () {
+        var img = _solid(144, 96, 245, 245, 245);
+        for (var x in [35, 47, 59, 71, 83]) {
+          for (var dx = 0; dx < 3; dx++) {
+            for (var y = 30; y < 38; y++) {
+              var i = (y * 144 + x + dx) * 4;
+              img.pixels.fillRange(i, i + 3, 20);
+            }
+          }
+        }
+        for (var x = 37; x < 87; x++) {
+          var i = (43 * 144 + x) * 4;
+          img.pixels.fillRange(i, i + 3, 20);
+        }
+        TextInpainter.erase(img, [IntRect(30, 27, 94, 47)]);
+        for (var x = 37; x < 87; x++) {
+          expect(_lum(img, x, 43), 20);
+        }
+        for (var x in [35, 47, 59, 71, 83]) {
+          for (var dx = 0; dx < 3; dx++) {
+            for (var y = 30; y < 38; y++) {
+              expect(_lum(img, x + dx, y), greaterThan(200));
+            }
+          }
+        }
+      },
+    );
+
+    test(
+      'a matching compact CTD mask can exclude artwork inside the OCR box',
+      () {
+        var img = _solid(100, 64, 245, 245, 245);
+        var bytes = Uint8List(50 * 32);
+        for (var x in [26, 38, 50, 62, 74, 82]) {
+          for (var dx = 0; dx < 4; dx++) {
+            for (var y = 24; y < 36; y++) {
+              var i = (y * 100 + x + dx) * 4;
+              img.pixels.fillRange(i, i + 3, 20);
+              if (x != 82) bytes[(y ~/ 2) * 50 + (x + dx) ~/ 2] = 255;
+            }
+          }
+        }
+        var roi = IntRect(24, 20, 90, 40);
+        var rules = TextInpainter.computeMask(img, roi)!;
+        var enhanced = TextInpainter.computeMask(
+          img,
+          roi,
+          strokeMask: StrokeMask(50, 32, bytes),
+        )!;
+        int at(TextMask m, int x) => m.mask[(28 - m.top) * m.rw + x - m.left];
+        expect(at(rules, 83), 1);
+        expect(at(enhanced, 83), 0);
+        expect(at(enhanced, 39), 1);
+      },
+    );
+
+    for (var vertical in [false, true]) {
+      test('keeps a thin line through glyphs (vertical=$vertical)', () {
+        var image = _solid(144, 144, 245, 245, 245);
+        int offset(int x, int y) => (vertical ? x * 144 + y : y * 144 + x) * 4;
+        void ink(int x, int y) {
+          var i = offset(x, y);
+          image.pixels.fillRange(i, i + 3, 20);
+        }
+
+        for (var x in [35, 47, 59, 71, 83]) {
+          for (var dx = 0; dx < 3; dx++) {
+            for (var y = 30; y < 38; y++) {
+              ink(x + dx, y);
+            }
+          }
+        }
+        // A disconnected line inside the box and another crossing the glyphs.
+        for (var x = 37; x < 87; x++) {
+          ink(x, 43);
+          ink(x, 34);
+        }
+        var line = vertical ? IntRect(27, 30, 47, 94) : IntRect(30, 27, 94, 47);
+        TextInpainter.erase(image, [line]);
+        for (var x = 37; x < 87; x++) {
+          expect(image.pixels[offset(x, 43)], 20);
+          expect(image.pixels[offset(x, 34)], 20);
+        }
+        // The intersection is ambiguous, so the whole line stays as drawn.
+        expect(image.pixels[offset(60, 30)], 20);
+      });
+    }
+
+    test('retains glyph-length vowel marks in the erase mask on dark paper', () {
+      var img = _solid(120, 60, 25, 25, 25);
+      for (var y = 23; y < 34; y++) {
+        for (var x in [31, 32, 33, 56, 57, 58]) {
+          var i = (y * img.width + x) * 4;
+          img.pixels.fillRange(i, i + 3, 238);
+        }
+      }
+      for (var y = 27; y < 30; y++) {
+        for (var x = 40; x < 50; x++) {
+          var i = (y * img.width + x) * 4;
+          img.pixels.fillRange(i, i + 3, 238);
+        }
+      }
+      // A useless optional mask must fall back to the local light-on-dark split.
+      for (var value in [0, 255]) {
+        var mask = StrokeMask(1, 1, Uint8List.fromList([value]));
+        var candidate = TextInpainter.computeMask(
+          img,
+          IntRect(26, 20, 65, 38),
+          strokeMask: mask,
+        )!;
+        expect(
+          candidate.mask[(28 - candidate.top) * candidate.rw +
+              45 -
+              candidate.left],
+          1,
+        );
+      }
+    });
+  });
+
   group('InpaintMode', () {
     test('fromSettings maps values and defaults to smart', () {
       expect(InpaintMode.fromSettings('patch'), InpaintMode.patch);

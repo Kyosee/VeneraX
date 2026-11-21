@@ -9,6 +9,22 @@ class RgbaImage {
   final Uint8List pixels;
 }
 
+/// Quantized stroke probabilities in normalized page coordinates.
+class StrokeMask {
+  StrokeMask(this.width, this.height, this.pixels)
+    : assert(width > 0 && height > 0 && pixels.length == width * height);
+
+  final int width;
+  final int height;
+  final Uint8List pixels;
+
+  bool contains(int x, int y, int pageWidth, int pageHeight) {
+    final mx = (x * width ~/ pageWidth).clamp(0, width - 1);
+    final my = (y * height ~/ pageHeight).clamp(0, height - 1);
+    return pixels[my * width + mx] >= 128;
+  }
+}
+
 /// Integer rectangle (isolate-friendly, no dart:ui types).
 class IntRect {
   IntRect(this.left, this.top, this.right, this.bottom);
@@ -83,6 +99,7 @@ class TranslatedRegion {
     IntRect? eraseRect,
     List<IntRect>? eraseRects,
     required this.text,
+    this.sourceText,
     required this.backgroundColor,
     required this.textColor,
     this.lineHeight = 0,
@@ -100,6 +117,7 @@ class TranslatedRegion {
   /// the backward-compatible union for older cached results.
   final List<IntRect> eraseRects;
   final String text;
+  final String? sourceText;
   final int backgroundColor;
   final int textColor;
 
@@ -117,6 +135,7 @@ class TranslatedRegion {
     'r': rect.right,
     'b': rect.bottom,
     'text': text,
+    if (sourceText != null) 'source': sourceText,
     'bg': backgroundColor,
     'fg': textColor,
     if (!_sameRect(eraseRect, rect)) ...{
@@ -162,6 +181,7 @@ class TranslatedRegion {
       eraseRect: eraseRect,
       eraseRects: eraseRects.isEmpty ? null : eraseRects,
       text: json['text'],
+      sourceText: json['source'] as String?,
       backgroundColor: json['bg'],
       textColor: json['fg'],
       lineHeight: json['lh'] ?? 0,

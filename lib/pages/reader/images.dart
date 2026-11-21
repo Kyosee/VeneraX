@@ -251,21 +251,23 @@ ReaderImageProvider _createImageProviderFromKey(
         reader.cid,
         reader.type.sourceKey,
       )) {
+    translationConfig = TranslationConfig.of(
+      reader.cid,
+      reader.type.comicSource?.key,
+    );
     translationKey = ImageTranslationService.cacheKeyFor(
       reader.type.comicSource?.key,
       reader.cid,
       eid,
       page,
+      config: translationConfig,
     );
     legacyTranslationKey = ImageTranslationService.legacyCacheKeyFor(
       imageKey,
       reader.type.comicSource?.key,
       reader.cid,
       eid,
-    );
-    translationConfig = TranslationConfig.of(
-      reader.cid,
-      reader.type.comicSource?.key,
+      config: translationConfig,
     );
     translated = ImageTranslationService.instance.isTranslated(
       translationKey,

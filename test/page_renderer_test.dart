@@ -28,6 +28,21 @@ Future<Uint8List> _decodeRgba(Uint8List png) async {
   }
 }
 
+void _gray(RgbaImage page, int x, int y, int value) {
+  var i = (y * page.width + x) * 4;
+  page.pixels.fillRange(i, i + 3, value);
+}
+
+void _letters(RgbaImage page, int top) {
+  for (var x in [35, 47, 59, 71, 83]) {
+    for (var dx = 0; dx < 3; dx++) {
+      for (var y = top; y < top + 8; y++) {
+        _gray(page, x + dx, y, 20);
+      }
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -77,4 +92,147 @@ void main() {
     var png = await renderTranslatedPage(Uint8List(0), decoded, [region]);
     expect(await _decodeRgba(png), decoded.pixels);
   });
+
+  for (var mode in InpaintMode.values) {
+    test(
+      '${mode.name} erases the source strokes and keeps the interline art',
+      () async {
+        var page = _whiteImage(144, 96);
+        _letters(page, 30);
+        _letters(page, 54);
+        for (var x = 0; x < page.width; x++) {
+          _gray(page, x, 46, 20);
+        }
+        var source = Uint8List.fromList(page.pixels);
+        var region = TranslatedRegion(
+          rect: IntRect(16, 70, 112, 95),
+          eraseRects: [IntRect(32, 29, 88, 39), IntRect(32, 53, 88, 63)],
+          text: 'Translated',
+          backgroundColor: 0xffffffff,
+          textColor: 0xff141414,
+          lineHeight: 10,
+        );
+        var skipped = <TranslatedRegion>[];
+        var output = await _decodeRgba(
+          await renderTranslatedPage(
+            Uint8List(0),
+            page,
+            [region],
+            mode: mode,
+            onSkipped: skipped.addAll,
+          ),
+        );
+        expect(skipped, isEmpty);
+        expect(page.pixels, source);
+        for (var x = 0; x < 144; x++) {
+          expect(output[(46 * 144 + x) * 4], 20);
+        }
+        for (var row in [30, 54]) {
+          for (var x in [35, 47, 59, 71, 83]) {
+            for (var dx = 0; dx < 3; dx++) {
+              for (var y = row; y < row + 8; y++) {
+                expect(output[(y * 144 + x + dx) * 4], greaterThan(220));
+              }
+            }
+          }
+        }
+        var translated = false;
+        for (var y = 70; y < 95; y++) {
+          for (var x = 16; x < 112; x++) {
+            if (output[(y * 144 + x) * 4] < 128) translated = true;
+          }
+        }
+        expect(translated, isTrue);
+      },
+    );
+
+    test(
+      '${mode.name} leaves a block intact if one line crosses dense artwork',
+      () async {
+        var page = _whiteImage(144, 96);
+        _letters(page, 30);
+        for (var y = 51; y < 84; y++) {
+          for (var x = 20; x < 115; x++) {
+            _gray(page, x, y, (x + y).isOdd ? 15 : 240);
+          }
+        }
+        var region = TranslatedRegion(
+          rect: IntRect(26, 20, 101, 83),
+          eraseRects: [IntRect(32, 29, 88, 39), IntRect(33, 59, 93, 75)],
+          text: 'translation',
+          backgroundColor: 0xffffffff,
+          textColor: 0xff111111,
+        );
+        var skipped = <TranslatedRegion>[];
+        var output = await _decodeRgba(
+          await renderTranslatedPage(
+            Uint8List(0),
+            page,
+            [region],
+            mode: mode,
+            onSkipped: skipped.addAll,
+          ),
+        );
+        expect(skipped, [region]);
+        expect(output, page.pixels);
+      },
+    );
+    for (final curved in [false, true]) {
+      test(
+        '${mode.name} preserves ${curved ? 'curved' : 'diagonal'} artwork',
+        () async {
+          for (final crossing in [false, true]) {
+            final page = _whiteImage(144, 96);
+            _letters(page, 30);
+            int lineY(int x) =>
+                (crossing ? 30 : 42) +
+                (curved ? (x - 60) * (x - 60) ~/ 130 : (x - 30) ~/ 8);
+            for (var x = 30; x < 93; x++) {
+              _gray(page, x, lineY(x), 20);
+            }
+            final region = TranslatedRegion(
+              rect: IntRect(16, 70, 112, 95),
+              eraseRects: [IntRect(25, 24, 100, 53)],
+              text: 'Translated',
+              backgroundColor: 0xffffffff,
+              textColor: 0xff141414,
+            );
+            final skipped = <TranslatedRegion>[];
+            final output = await _decodeRgba(
+              await renderTranslatedPage(
+                Uint8List(0),
+                page,
+                [region],
+                mode: mode,
+                onSkipped: skipped.addAll,
+              ),
+            );
+            for (var x = 30; x < 93; x++) {
+              expect(
+                output[(lineY(x) * page.width + x) * 4],
+                20,
+                reason: 'drawing at $x with crossing=$crossing',
+              );
+            }
+            if (crossing) {
+              expect(skipped, [region]);
+              expect(output, page.pixels);
+            } else {
+              expect(skipped, isEmpty);
+              for (final x in [35, 47, 59, 71, 83]) {
+                for (var dx = 0; dx < 3; dx++) {
+                  for (var y = 30; y < 38; y++) {
+                    expect(
+                      output[(y * page.width + x + dx) * 4],
+                      greaterThan(220),
+                    );
+                  }
+                }
+              }
+            }
+          }
+        },
+      );
+    }
+  }
 }

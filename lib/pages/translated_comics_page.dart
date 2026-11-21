@@ -43,6 +43,7 @@ Future<void> hydrateTranslatedComicMetadata() async {
       item.comicId,
       sourceLang: item.sourceLang,
       targetLang: item.targetLang,
+      dialogueOnly: item.dialogueOnly,
     );
     var needsChapterNames = storedChapters.any(
       (chapter) => chapter.identity.chapterTitle.isEmpty,
@@ -245,26 +246,28 @@ class _TranslatedComicsPageState extends State<TranslatedComicsPage>
   void _delete(StoredTranslationComic comic) {
     showConfirmDialog(
       context: context,
-      title: 'Delete all translations for this comic?'.tl,
+      title: 'Delete these translations for this comic?'.tl,
       content:
-          'This removes every stored translation and rendered page of this comic. The original images are unaffected.'
+          'This deletes this comic’s translated text and rendered pages for the selected languages and text scope, and resets its glossary.'
               .tl,
       btnColor: context.colorScheme.error,
       onConfirm: () async {
-        var running = PreTranslationTaskManager.instance.runningTaskFor(
-          comic.comicId,
-          comic.sourceKey,
-        );
-        if (running != null) {
-          PreTranslationTaskManager.instance.cancel(running.id);
+        final config = comic.config;
+        final manager = PreTranslationTaskManager.instance;
+        for (final task in manager.currentTasks.toList()) {
+          if (task.matchesScope(comic.comicId, comic.sourceKey, config)) {
+            manager.cancel(task.id);
+          }
         }
         await ImageTranslationService.instance.retranslate(
           comic.comicId,
           comic.sourceKey,
+          config: config,
         );
-        PreTranslationTaskManager.instance.resetComicStatus(
+        manager.resetComicStatus(
           comic.comicId,
           comic.sourceKey,
+          config: config,
         );
         if (mounted) {
           setState(() {});

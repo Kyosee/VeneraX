@@ -5,6 +5,7 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/common.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/source_platform.dart';
@@ -48,6 +49,8 @@ class TranslationChapterIdentity {
   });
 
   final String scopePrefix;
+  bool get dialogueOnly =>
+      scopePrefix.startsWith('pageTranslation@2@dialogue@');
   final String sourceKey;
   final String comicId;
   final String chapterId;
@@ -81,6 +84,7 @@ class StoredTranslationComic {
     required this.chapterCount,
     required this.pageCount,
     required this.updatedAt,
+    this.dialogueOnly = false,
   });
 
   final String sourceKey;
@@ -90,8 +94,16 @@ class StoredTranslationComic {
   final String title;
   final String cover;
   final int chapterCount;
+  final bool dialogueOnly;
   final int pageCount;
   final DateTime updatedAt;
+
+  TranslationConfig get config => TranslationConfig(
+    sourceLang: sourceLang,
+    targetLang: targetLang,
+    dialogueOnly: dialogueOnly,
+    mode: TranslationConfig.of(comicId, sourceKey).mode,
+  );
 }
 
 class TranslationMergeResult {
@@ -184,10 +196,9 @@ class TranslationStore with ChangeNotifier {
         () => languageFor(match.group(3)!, match.group(4)!),
       );
       var from = match.group(1)!;
-      var to = match.group(2)!;
       if (language == from) return key;
-      var pair = _currentPrefix.length + from.length + 1 + to.length + 1;
-      return '$_currentPrefix$language>$to@${key.substring(pair)}';
+      final end = key.indexOf('>');
+      return key.replaceRange(end - from.length, end, language);
     }
 
     try {
@@ -586,7 +597,7 @@ class TranslationStore with ChangeNotifier {
       "cache_key like '$_keyPrefix%' and $_generation glob '*[^0-9]*'";
 
   static final _currentKeyPattern = RegExp(
-    r'^pageTranslation@2@([^@>]+)>([^@]+)@([^@]+)@([^@]+)@([^@]+)@',
+    r'^pageTranslation@2@(?:dialogue@)?([^@>]+)>([^@]+)@([^@]+)@([^@]+)@([^@]+)@',
   );
 
   static const Map<String, String> _expectedColumns = {
@@ -861,12 +872,14 @@ class TranslationStore with ChangeNotifier {
     String comicId, {
     String? sourceLang,
     String? targetLang,
+    bool? dialogueOnly,
   }) {
     return chapters.where((chapter) {
       var identity = chapter.identity;
       return identity.sourceKey == sourceKey &&
           identity.comicId == comicId &&
           (sourceLang == null || identity.sourceLang == sourceLang) &&
+          (dialogueOnly == null || identity.dialogueOnly == dialogueOnly) &&
           (targetLang == null || identity.targetLang == targetLang);
     }).toList();
   }
@@ -876,7 +889,7 @@ class TranslationStore with ChangeNotifier {
     for (var chapter in chapters) {
       var identity = chapter.identity;
       var key =
-          '${identity.sourceLang}\u0000${identity.targetLang}\u0000'
+          '${identity.dialogueOnly}\u0000${identity.sourceLang}\u0000${identity.targetLang}\u0000'
           '${identity.sourceKey}\u0000${identity.comicId}';
       grouped.putIfAbsent(key, () => []).add(chapter);
     }
@@ -890,6 +903,7 @@ class TranslationStore with ChangeNotifier {
           comicId: identity.comicId,
           sourceLang: identity.sourceLang,
           targetLang: identity.targetLang,
+          dialogueOnly: identity.dialogueOnly,
           title: values
               .map((e) => e.identity.comicTitle)
               .firstWhere((value) => value.isNotEmpty, orElse: () => ''),

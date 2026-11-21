@@ -28,6 +28,7 @@ class OrtRuntime {
   // ONNXTensorElementDataType
   static const typeFloat32 = 1;
   static const typeInt64 = 7;
+  static const typeFloat16 = 10;
 
   static OrtRuntime open() {
     if (_instance != null) {
@@ -42,9 +43,7 @@ class OrtRuntime {
         >('OrtGetApiBase');
     var apiBase = getApiBase();
     var getApi = apiBase[0]
-        .cast<
-          NativeFunction<Pointer<Pointer<Void>> Function(Uint32)>
-        >()
+        .cast<NativeFunction<Pointer<Pointer<Void>> Function(Uint32)>>()
         .asFunction<Pointer<Pointer<Void>> Function(int)>();
     var api = getApi(_ortApiVersion);
     if (api == nullptr) {
@@ -91,6 +90,8 @@ class OrtRuntime {
   static const _iCreateSession = 7;
   static const _iRun = 9;
   static const _iCreateSessionOptions = 10;
+  static const _iDisableMemPattern = 17;
+  static const _iDisableCpuMemArena = 19;
   static const _iSetIntraOpNumThreads = 24;
   static const _iSessionGetInputCount = 30;
   static const _iSessionGetOutputCount = 31;
@@ -98,6 +99,7 @@ class OrtRuntime {
   static const _iSessionGetOutputName = 37;
   static const _iCreateTensorWithDataAsOrtValue = 49;
   static const _iGetTensorMutableData = 51;
+  static const _iGetTensorElementType = 60;
   static const _iGetDimensionsCount = 61;
   static const _iGetDimensions = 62;
   static const _iGetTensorShapeElementCount = 64;
@@ -188,7 +190,9 @@ class OrtRuntime {
   Pointer<Void> get allocator {
     if (_allocator == null) {
       var get = _api[_iGetAllocatorWithDefaultOptions]
-          .cast<NativeFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>>()
+          .cast<
+            NativeFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>
+          >()
           .asFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>();
       var out = calloc<Pointer<Void>>();
       try {
@@ -211,12 +215,20 @@ class OrtRuntime {
   }
 }
 
-/// A float32 or int64 input tensor description.
+/// A typed input tensor. Float16 data contains IEEE 754 binary16 bit patterns.
 class OrtInput {
-  OrtInput.float32(Float32List this.f32Data, this.shape) : i64Data = null;
-  OrtInput.int64(Int64List this.i64Data, this.shape) : f32Data = null;
+  OrtInput.float32(Float32List this.f32Data, this.shape)
+    : f16Data = null,
+      i64Data = null;
+  OrtInput.float16(Uint16List this.f16Data, this.shape)
+    : f32Data = null,
+      i64Data = null;
+  OrtInput.int64(Int64List this.i64Data, this.shape)
+    : f32Data = null,
+      f16Data = null;
 
   final Float32List? f32Data;
+  final Uint16List? f16Data;
   final Int64List? i64Data;
   final List<int> shape;
 }
@@ -232,29 +244,40 @@ class OrtOutput {
 
 /// Synchronous inference session. Only use inside a worker isolate.
 class OrtFfiSession {
-  OrtFfiSession._(
-    this._rt,
-    this._session,
-    this.inputNames,
-    this.outputNames,
-  );
+  OrtFfiSession._(this._rt, this._session, this.inputNames, this.outputNames);
 
   final OrtRuntime _rt;
   final Pointer<Void> _session;
   final List<String> inputNames;
   final List<String> outputNames;
 
-  static OrtFfiSession open(String modelPath, {int? intraOpThreads}) {
+  static OrtFfiSession open(
+    String modelPath, {
+    int? intraOpThreads,
+    bool disableMemPattern = false,
+    bool disableCpuMemArena = false,
+  }) {
     var rt = OrtRuntime.open();
     var optionsOut = calloc<Pointer<Void>>();
     var sessionOut = calloc<Pointer<Void>>();
     Pointer<Void>? options;
     try {
       var createOptions = rt._api[OrtRuntime._iCreateSessionOptions]
-          .cast<NativeFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>>()
+          .cast<
+            NativeFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>
+          >()
           .asFunction<Pointer<Void> Function(Pointer<Pointer<Void>>)>();
       rt._check(createOptions(optionsOut));
       options = optionsOut.value;
+      for (final index in [
+        if (disableMemPattern) OrtRuntime._iDisableMemPattern,
+        if (disableCpuMemArena) OrtRuntime._iDisableCpuMemArena,
+      ]) {
+        final disable = rt._api[index]
+            .cast<NativeFunction<Pointer<Void> Function(Pointer<Void>)>>()
+            .asFunction<Pointer<Void> Function(Pointer<Void>)>();
+        rt._check(disable(options));
+      }
       if (intraOpThreads != null) {
         var setThreads = rt._api[OrtRuntime._iSetIntraOpNumThreads]
             .cast<
@@ -313,8 +336,13 @@ class OrtFfiSession {
         OrtRuntime._iSessionGetOutputCount,
         OrtRuntime._iSessionGetOutputName,
       );
-      return OrtFfiSession._(rt, session, inputNames, outputNames);
+      var result = OrtFfiSession._(rt, session, inputNames, outputNames);
+      sessionOut.value = nullptr;
+      return result;
     } finally {
+      if (sessionOut.value != nullptr) {
+        rt._releaser(OrtRuntime._iReleaseSession)(sessionOut.value);
+      }
       if (options != null) {
         rt._releaser(OrtRuntime._iReleaseSessionOptions)(options);
       }
@@ -331,9 +359,7 @@ class OrtFfiSession {
   ) {
     var getCount = rt._api[countIndex]
         .cast<
-          NativeFunction<
-            Pointer<Void> Function(Pointer<Void>, Pointer<Size>)
-          >
+          NativeFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>
         >()
         .asFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>();
     var getName = rt._api[nameIndex]
@@ -382,11 +408,24 @@ class OrtFfiSession {
     return _execute(inputs, outputs, (values) {
       var result = <String, OrtOutput>{};
       for (var i = 0; i < outputs.length; i++) {
-        result[outputs[i]] = _readOutput(values[i]);
+        result[outputs[i]] = _mapOutput(values[i], (data, shape) {
+          if (data is! Float32List) throw StateError('Expected float32 output');
+          return OrtOutput(Float32List.fromList(data), shape);
+        });
       }
       return result;
     });
   }
+
+  /// Reads a single native tensor before ORT releases it. The callback must
+  /// return owned data and must not retain the view.
+  T runMapped<T>(
+    Map<String, OrtInput> inputs,
+    String outputName,
+    T Function(TypedData data, List<int> shape) read,
+  ) => _execute(inputs, [
+    outputName,
+  ], (values) => _mapOutput(values.single, read));
 
   /// Runs the session and returns the argmax over the LAST row of a
   /// [rows, vocab]-shaped output, reading native memory directly. This is the
@@ -395,7 +434,10 @@ class OrtFfiSession {
   int runArgmaxLastRow(Map<String, OrtInput> inputs, String outputName) {
     return _execute(inputs, [outputName], (values) {
       var value = values[0];
-      var (shape, elementCount) = _readShape(value);
+      var (shape, elementCount, type) = _readShape(value);
+      if (type != OrtRuntime.typeFloat32) {
+        throw StateError('Expected float32 logits');
+      }
       var vocab = shape.last;
       var dataOut = calloc<Pointer<Void>>();
       try {
@@ -480,6 +522,13 @@ class OrtFfiSession {
             dataPtr = p.cast();
             byteLength = data.length * 4;
             elementType = OrtRuntime.typeFloat32;
+          } else if (input.f16Data != null) {
+            var data = input.f16Data!;
+            var p = calloc<Uint16>(data.length);
+            p.asTypedList(data.length).setAll(0, data);
+            dataPtr = p.cast();
+            byteLength = data.length * 2;
+            elementType = OrtRuntime.typeFloat16;
           } else {
             var data = input.i64Data!;
             var p = calloc<Int64>(data.length);
@@ -490,9 +539,7 @@ class OrtFfiSession {
           }
           nativeBuffers.add(dataPtr);
           var shapePtr = calloc<Int64>(input.shape.length);
-          shapePtr
-              .asTypedList(input.shape.length)
-              .setAll(0, input.shape);
+          shapePtr.asTypedList(input.shape.length).setAll(0, input.shape);
           nativeBuffers.add(shapePtr.cast());
           rt._check(
             createTensor(
@@ -583,8 +630,7 @@ class OrtFfiSession {
     }
   }
 
-  /// Reads a tensor's shape and total element count.
-  (List<int>, int) _readShape(Pointer<Void> value) {
+  (List<int>, int, int) _readShape(Pointer<Void> value) {
     var rt = _rt;
     var infoOut = calloc<Pointer<Void>>();
     Pointer<Void>? info;
@@ -603,10 +649,23 @@ class OrtFfiSession {
 
       var dimCountOut = calloc<Size>();
       var elementCountOut = calloc<Size>();
+      var typeOut = calloc<Int32>();
       try {
+        var getType = rt._api[OrtRuntime._iGetTensorElementType]
+            .cast<
+              NativeFunction<
+                Pointer<Void> Function(Pointer<Void>, Pointer<Int32>)
+              >
+            >()
+            .asFunction<
+              Pointer<Void> Function(Pointer<Void>, Pointer<Int32>)
+            >();
+        rt._check(getType(info, typeOut));
         var getDimCount = rt._api[OrtRuntime._iGetDimensionsCount]
             .cast<
-              NativeFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>
+              NativeFunction<
+                Pointer<Void> Function(Pointer<Void>, Pointer<Size>)
+              >
             >()
             .asFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>();
         rt._check(getDimCount(info, dimCountOut));
@@ -624,20 +683,24 @@ class OrtFfiSession {
           rt._check(getDims(info, dims, dimCountOut.value));
           var shape = List<int>.generate(dimCountOut.value, (i) => dims[i]);
 
-          var getElementCount = rt
-              ._api[OrtRuntime._iGetTensorShapeElementCount]
+          var getElementCount = rt._api[OrtRuntime._iGetTensorShapeElementCount]
               .cast<
-                NativeFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>
+                NativeFunction<
+                  Pointer<Void> Function(Pointer<Void>, Pointer<Size>)
+                >
               >()
-              .asFunction<Pointer<Void> Function(Pointer<Void>, Pointer<Size>)>();
+              .asFunction<
+                Pointer<Void> Function(Pointer<Void>, Pointer<Size>)
+              >();
           rt._check(getElementCount(info, elementCountOut));
-          return (shape, elementCountOut.value);
+          return (shape, elementCountOut.value, typeOut.value);
         } finally {
           calloc.free(dims);
         }
       } finally {
         calloc.free(dimCountOut);
         calloc.free(elementCountOut);
+        calloc.free(typeOut);
       }
     } finally {
       if (info != null) {
@@ -647,9 +710,12 @@ class OrtFfiSession {
     }
   }
 
-  OrtOutput _readOutput(Pointer<Void> value) {
+  T _mapOutput<T>(
+    Pointer<Void> value,
+    T Function(TypedData data, List<int> shape) read,
+  ) {
     var rt = _rt;
-    var (shape, elementCount) = _readShape(value);
+    var (shape, elementCount, type) = _readShape(value);
     var dataOut = calloc<Pointer<Void>>();
     try {
       var getData = rt._api[OrtRuntime._iGetTensorMutableData]
@@ -662,9 +728,17 @@ class OrtFfiSession {
             Pointer<Void> Function(Pointer<Void>, Pointer<Pointer<Void>>)
           >();
       rt._check(getData(value, dataOut));
-      // Copy out: the OrtValue is released right after this call.
-      var view = dataOut.value.cast<Float>().asTypedList(elementCount);
-      return OrtOutput(Float32List.fromList(view), shape);
+      return switch (type) {
+        OrtRuntime.typeFloat16 => read(
+          dataOut.value.cast<Uint16>().asTypedList(elementCount),
+          shape,
+        ),
+        OrtRuntime.typeFloat32 => read(
+          dataOut.value.cast<Float>().asTypedList(elementCount),
+          shape,
+        ),
+        _ => throw StateError('Unexpected ONNX tensor element type $type'),
+      };
     } finally {
       calloc.free(dataOut);
     }

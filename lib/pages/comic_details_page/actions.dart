@@ -198,7 +198,7 @@ abstract mixin class _ComicPageActions {
 
   /// Queues selected chapters for background pre-translation so their pages are
   /// rendered and cached before the user opens the reader (no in-reader wait).
-  void preTranslate() {
+  void preTranslate({bool retranslate = false}) {
     if (!ImageTranslationService.isEnabledForComic(comic.id, comic.sourceKey)) {
       App.rootContext.showMessage(
         message: "Enable AI translation in the reader for this comic first".tl,
@@ -249,8 +249,9 @@ abstract mixin class _ComicPageActions {
       }
     }
 
-    void startJob(List<int> selected) {
-      if (selected.isEmpty) return;
+    final config = TranslationConfig.of(comic.id, comic.sourceKey);
+    PreTranslationTask? startJob(List<int> selected, {bool replace = false}) {
+      if (selected.isEmpty) return null;
       var picked = [
         for (var i in selected)
           PreTranslationChapter(eid: entries[i].$1, title: entries[i].$2),
@@ -259,6 +260,8 @@ abstract mixin class _ComicPageActions {
         cid: comic.id,
         sourceKey: comic.sourceKey,
         comicType: comic.comicType,
+        config: config,
+        reuseOtherScope: !retranslate && !replace,
         title: comic.title,
         cover: comic.cover,
         chapters: picked,
@@ -268,6 +271,7 @@ abstract mixin class _ComicPageActions {
             ? "A pre-translation task is already running".tl
             : "Pre-translation started".tl,
       );
+      return task;
     }
 
     // A chapter-less comic has no picker to open, but pre-translation still
@@ -280,7 +284,9 @@ abstract mixin class _ComicPageActions {
         content:
             "Pages are translated in the background. If your configured AI endpoint is paid this may cost money; the offline engine is free."
                 .tl,
-        onConfirm: () => startJob([0]),
+        onConfirm: () {
+          startJob([0]);
+        },
       );
       return;
     }
@@ -289,6 +295,7 @@ abstract mixin class _ComicPageActions {
         cid: comic.id,
         sourceKey: comic.sourceKey,
         comicType: comic.comicType,
+        config: config,
         title: comic.title,
         cover: comic.cover,
         entries: entries,
@@ -308,7 +315,7 @@ abstract mixin class _ComicPageActions {
       context: App.rootContext,
       title: "Re-translate this comic?".tl,
       content:
-          "This clears all translations and the learned glossary for this comic, then translates again."
+          "This clears translations for the selected languages and text scope, resets the comic’s glossary, and lets you translate again."
               .tl,
       onConfirm: () async {
         await ImageTranslationService.instance.retranslate(
@@ -327,7 +334,7 @@ abstract mixin class _ComicPageActions {
           comic.id,
           comic.sourceKey,
         )) {
-          preTranslate();
+          preTranslate(retranslate: true);
         }
       },
     );

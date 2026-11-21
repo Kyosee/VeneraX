@@ -31,26 +31,14 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     if (mounted) setState(() {});
   }
 
-  static String _componentName(String id) {
-    return switch (id) {
-      'text_detector' => "Text detector".tl,
-      'ocr_ja' => "Japanese OCR (manga)".tl,
-      'ocr_zh_v5' => "Chinese OCR (Simplified + Traditional)".tl,
-      'ocr_zh' => "Chinese / Latin OCR".tl,
-      'ocr_en' => "English OCR".tl,
-      'ocr_ko' => "Korean OCR".tl,
-      _ => id,
-    };
-  }
-
   static String _formatSize(int bytes) {
-    if (bytes >= 1 << 30) {
-      return "${(bytes / (1 << 30)).toStringAsFixed(2)} GB";
+    if (bytes >= 1000000000) {
+      return "${(bytes / 1000000000).toStringAsFixed(2)} GB";
     }
-    if (bytes >= 1 << 20) {
-      return "${(bytes / (1 << 20)).toStringAsFixed(1)} MB";
+    if (bytes >= 1000000) {
+      return "${(bytes / 1000000).toStringAsFixed(1)} MB";
     }
-    return "${(bytes / (1 << 10)).toStringAsFixed(0)} KB";
+    return "${(bytes / 1000).toStringAsFixed(0)} KB";
   }
 
   @override
@@ -64,7 +52,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         slivers: [
           SliverAppbar(title: Text("Translation models".tl)),
           SelectSetting(
-            title: "Model download source".tl,
+            title: "Hugging Face download source".tl,
             settingKey: "imageTranslationHfEndpoint",
             optionTranslation: const {
               'https://huggingface.co': "HuggingFace",
@@ -78,13 +66,27 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
             ),
           ).toSliver(),
           _buildSectionHeader(context, "Text detection".tl).toSliver(),
-          for (var component in TranslationModels.all)
-            if (component.id == 'text_detector')
-              _buildComponent(context, component, requiredIds).toSliver(),
+          _buildComponent(
+            context,
+            TranslationModels.detector,
+            requiredIds,
+          ).toSliver(),
           _buildSectionHeader(context, "Text recognition".tl).toSliver(),
-          for (var component in TranslationModels.all)
-            if (component.id != 'text_detector')
-              _buildComponent(context, component, requiredIds).toSliver(),
+          for (var component in TranslationModels.recognizers)
+            _buildComponent(context, component, requiredIds).toSliver(),
+          _buildSectionHeader(context, "Optional enhancements".tl).toSliver(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              "Download either model separately. Standard text removal works without them."
+                  .tl,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ).toSliver(),
+          for (final component in TranslationModels.enhancements) ...[
+            _buildComponent(context, component, requiredIds).toSliver(),
+            _buildEnhancementDetails(context, component).toSliver(),
+          ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
         ],
       ),
@@ -96,9 +98,9 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: context.colorScheme.primary,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(color: context.colorScheme.primary),
       ),
     );
   }
@@ -167,10 +169,61 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       subtitle += "\n${"Download failed".tl}: ${state.error}";
     }
     return ListTile(
-      title: Text(_componentName(component.id)),
+      title: Text(component.displayName),
       subtitle: Text(subtitle),
       isThreeLine: state.error != null,
       trailing: trailing,
+    );
+  }
+
+  Widget _buildEnhancementDetails(
+    BuildContext context,
+    ModelComponent component,
+  ) {
+    final bubble = component == TranslationModels.bubblePop;
+    const bubbleSource = 'https://github.com/letmutex/bubble-pop';
+    const strokeSource = 'https://github.com/dmMaze/comic-text-detector';
+    const strokeRevision = '440b978563c71b758e31aaa315d100faba1efa2f';
+    final description = bubble
+        ? "Helps Dialogue only find speech bubbles. VeneraX keeps letmutex’s original weights and adjusts the input and decoder to 576 × 768 on this device."
+              .tl
+        : "Locates original text strokes in both scopes during page retries and chapter pre-translation. Uses more memory. The training images and fonts belong to their respective owners."
+              .tl;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(description, style: Theme.of(context).textTheme.bodySmall),
+          Wrap(
+            children: [
+              TextButton(
+                onPressed: () => launchUrlString(
+                  bubble
+                      ? '$bubbleSource/tree/${TranslationModels.bubblePopRevision}'
+                      : '$strokeSource/tree/$strokeRevision',
+                ),
+                child: Text(bubble ? 'letmutex/BubblePop' : 'dmMaze/CTD'),
+              ),
+              TextButton(
+                onPressed: () => launchUrlString(
+                  bubble
+                      ? '$bubbleSource/blob/${TranslationModels.bubblePopRevision}/LICENSE'
+                      : '$strokeSource/blob/$strokeRevision/LICENSE',
+                ),
+                child: Text(bubble ? 'Apache-2.0' : 'GPL-3.0'),
+              ),
+              if (!bubble)
+                TextButton(
+                  onPressed: () => launchUrlString(
+                    'https://github.com/zyddnys/manga-image-translator/releases/tag/beta-0.3',
+                  ),
+                  child: Text("Model release".tl),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

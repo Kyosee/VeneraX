@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
+import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/image_translation/model_file_download.dart';
 import 'package:venera/foundation/image_translation/translation_sources.dart';
 import 'package:venera/foundation/image_translation/translation_worker.dart';
@@ -13,11 +15,14 @@ import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
+Future<String> _modelDigest(String path) async =>
+    (await sha256.bind(File(path).openRead()).first).toString();
+
 /// A single downloadable file of a model component. [urls] is a fallback
 /// chain: mirrors are tried in order, so a blocked host does not make the
 /// component impossible to install.
 class ModelFile {
-  const ModelFile(this.name, this.urls);
+  const ModelFile(this.name, this.urls, {this.size, this.sha256Digest});
 
   /// File name inside the component directory.
   final String name;
@@ -25,6 +30,14 @@ class ModelFile {
   /// Candidate URLs. `{hf}` is replaced with the configured HuggingFace
   /// endpoint (official or mirror) at download time.
   final List<String> urls;
+
+  final int? size;
+  final String? sha256Digest;
+
+  bool isComplete(FileStat stat) =>
+      stat.type == FileSystemEntityType.file &&
+      stat.size > 0 &&
+      (size == null || stat.size == size);
 }
 
 /// A downloadable model component (detector / OCR / translator).
@@ -34,6 +47,7 @@ class ModelComponent {
     required this.files,
     required this.approxSizeBytes,
     this.marker = false,
+    this.preparedFile,
   });
 
   final String id;
@@ -42,9 +56,21 @@ class ModelComponent {
   /// Rough total download size, for display before downloading.
   final int approxSizeBytes;
 
-  /// User-supplied models count as installed only after a check run wrote
-  /// [markerName], so a file that downloaded but cannot be used never does.
+  /// Mark the component installed after its validation or preparation succeeds.
   final bool marker;
+  final String? preparedFile;
+
+  String get displayName => switch (id) {
+    'text_detector' => "Text detector".tl,
+    'ocr_ja' => "Japanese OCR (manga)".tl,
+    'ocr_zh_v5' => "Chinese OCR (Simplified + Traditional)".tl,
+    'ocr_zh' => "Chinese / Latin OCR".tl,
+    'ocr_en' => "English OCR".tl,
+    'ocr_ko' => "Korean OCR".tl,
+    'bubble_pop' => "BubblePop · Speech bubbles".tl,
+    'comic_text_detector' => "CTD · Text strokes".tl,
+    _ => id,
+  };
 
   static const markerName = 'verified';
 
@@ -52,8 +78,14 @@ class ModelComponent {
 
   bool get isInstalled {
     for (var file in files) {
-      var f = File(FilePath.join(directory, file.name));
-      if (!f.existsSync() || f.lengthSync() == 0) {
+      if (!file.isComplete(File(filePath(file.name)).statSync())) {
+        return false;
+      }
+    }
+    final prepared = preparedFile;
+    if (prepared != null) {
+      final stat = File(filePath(prepared)).statSync();
+      if (stat.type != FileSystemEntityType.file || stat.size <= 0) {
         return false;
       }
     }
@@ -65,9 +97,7 @@ class ModelComponent {
 
 /// Registry of every component the local translation pipeline can use.
 ///
-/// All models are public, permissively licensed releases fetched directly
-/// from their official repositories; nothing is bundled into the app so the
-/// install stays lightweight until the user opts in.
+/// The app downloads model files when the reader chooses to install them.
 abstract class TranslationModels {
   /// Text region detector (PP-OCRv4 mobile, DBNet). Language independent.
   static const detector = ModelComponent(
@@ -161,7 +191,47 @@ abstract class TranslationModels {
     ],
   );
 
-  static const all = [detector, ocrJa, ocrZhV5, ocrZh, ocrEn, ocrKo];
+  static const bubblePopRevision = 'c8f207e98fc39065096e2ff602b65045051c447b';
+  static const bubblePop = ModelComponent(
+    id: 'bubble_pop',
+    approxSizeBytes: 1904999,
+    marker: true,
+    preparedFile: bubblePopRuntimeFileName,
+    files: [
+      ModelFile(
+        'model_fp16.onnx',
+        [
+          'https://raw.githubusercontent.com/letmutex/bubble-pop/$bubblePopRevision/model_fp16.onnx',
+        ],
+        size: 1904999,
+        sha256Digest:
+            '2c1a2cec608ba68ed1e2326570d47622db5920127bf53a80e713d393c74192d7',
+      ),
+    ],
+  );
+  static const comicTextDetector = ModelComponent(
+    id: 'comic_text_detector',
+    approxSizeBytes: 94669756,
+    marker: true,
+    files: [
+      ModelFile(
+        'comictextdetector.pt.onnx',
+        [
+          'https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx',
+        ],
+        size: 94669756,
+        sha256Digest:
+            '1a86ace74961413cbd650002e7bb4dcec4980ffa21b2f19b86933372071d718f',
+      ),
+    ],
+  );
+  static const recognizers = [ocrJa, ocrZhV5, ocrZh, ocrEn, ocrKo];
+  static const enhancements = [bubblePop, comicTextDetector];
+  static const all = [detector, ...recognizers, ...enhancements];
+
+  static String? get strokeModelPath => comicTextDetector.isInstalled
+      ? comicTextDetector.filePath(comicTextDetector.files.single.name)
+      : null;
 
   static ModelComponent? find(String id) {
     for (var c in all) {
@@ -209,6 +279,9 @@ abstract class TranslationModels {
     var hasJa = ocrJa.isInstalled;
     return WorkerModelPaths(
       detector: activeDetector.filePath('det.onnx'),
+      bubbleModel: bubblePop.isInstalled
+          ? bubblePop.filePath(bubblePopRuntimeFileName)
+          : null,
       jaEncoder: hasJa ? ocrJa.filePath('encoder.onnx') : null,
       jaDecoder: hasJa ? ocrJa.filePath('decoder.onnx') : null,
       jaVocab: hasJa ? ocrJa.filePath('vocab.txt') : null,
@@ -415,22 +488,29 @@ class TranslationModelStore with ChangeNotifier {
     var dio = _createDio();
     try {
       Directory(component.directory).createSync(recursive: true);
+      if (component.marker) {
+        await File(
+          component.filePath(ModelComponent.markerName),
+        ).deleteIfExists();
+      }
       // Progress is reported across the whole component, weighted by each
       // file's share of the approximate total.
       var finishedBytes = 0;
       for (var file in component.files) {
         var target = File(component.filePath(file.name));
-        if (target.existsSync() && target.lengthSync() > 0) {
-          finishedBytes += target.lengthSync();
+        final stat = target.statSync();
+        if (file.isComplete(stat)) {
+          finishedBytes += stat.size;
           continue;
         }
+        if (stat.type == FileSystemEntityType.file) await target.delete();
         Object? lastError;
         var ok = false;
         for (var url in file.urls) {
           url = url.replaceFirst('{hf}', hfEndpoint);
           try {
             await BackgroundKeepAlive.instance.runTransfer(
-              '${"Translation model".tl}: ${component.id}',
+              '${"Translation model".tl}: ${component.displayName}',
               (onProgress) => downloadModelFile(
                 dio: dio,
                 url: url,
@@ -449,6 +529,10 @@ class TranslationModelStore with ChangeNotifier {
                 },
               ),
             );
+            if (!file.isComplete(target.statSync())) {
+              await target.delete();
+              throw FormatException('Incomplete model download'.tl);
+            }
             ok = true;
             break;
           } catch (e) {
@@ -467,9 +551,24 @@ class TranslationModelStore with ChangeNotifier {
         }
         finishedBytes += target.lengthSync();
       }
-      if (verify != null) {
+      if (component.marker || verify != null) {
         try {
-          await verify();
+          for (final file in component.files) {
+            final expected = file.sha256Digest;
+            if (expected == null) continue;
+            // Validate the downloaded bytes once, off the reader's UI isolate.
+            final path = component.filePath(file.name);
+            final actual = await compute(_modelDigest, path);
+            if (actual != expected) {
+              throw FormatException(
+                'Model file differs from the official release'.tl,
+              );
+            }
+          }
+          if (component == TranslationModels.bubblePop) {
+            await prepareBubblePopModel(component.filePath('model_fp16.onnx'));
+          }
+          await verify?.call();
         } catch (_) {
           // Gone so a retry downloads fresh files instead of re-checking bad
           // ones.
@@ -479,6 +578,7 @@ class TranslationModelStore with ChangeNotifier {
           rethrow;
         }
       }
+      if (cancelToken.isCancelled) return;
       if (component.marker) {
         File(
           component.filePath(ModelComponent.markerName),
