@@ -40,9 +40,9 @@ stable release rewrites both.
 
 ## GitHub prerelease titles
 
-Use `VeneraX <version> <stage> <number> (<platforms>)`, for example
-`VeneraX 3.0.2 Beta 2 (Android & HarmonyOS)` or
-`VeneraX 2.3.12 Test 1 (HarmonyOS)`. Write Alpha, Beta, RC or Test as
+Use `v<version> <stage> <number> (<platforms>)`, for example
+`v3.0.2 Beta 2 (Android & HarmonyOS)` or
+`v2.3.12 Test 1 (HarmonyOS)`. Write Alpha, Beta, RC or Test as
 indicated by the version. Omit the number if the prerelease has none.
 List platforms with an installable package in the order Android, HarmonyOS,
 iOS, Windows, macOS, Linux. Both release workflows use the same formatter.

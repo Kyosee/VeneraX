@@ -60,7 +60,7 @@ test('a new mobile draft can be used before it appears in the releases list', ()
   const setup = script.match(/^api="repos\/\$GITHUB_REPOSITORY"[\s\S]*?(?=^read_release\(\))/m);
   assert.ok(setup, 'Mobile draft setup must exist');
   const result = spawnSync(bash, ['-c', `set -euo pipefail
-    root=. tag=mobile-1.0.0-beta.1 body_file=notes.md title='VeneraX 1.0.0 Beta 1 (Android & HarmonyOS)'
+    root=. tag=mobile-1.0.0-beta.1 body_file=notes.md title='v1.0.0 Beta 1 (Android & HarmonyOS)'
     GITHUB_REPOSITORY=test/app GITHUB_SHA=abc123
     fail() { echo "$*" >&2; exit 1; }
     gh() {
@@ -83,9 +83,9 @@ test('a new mobile draft can be used before it appears in the releases list', ()
 test('prerelease titles describe only platforms with an installable package', () => {
   const script = fileURLToPath(new URL('./prerelease-title.mjs', import.meta.url));
   for (const [version, files, expected] of [
-    ['3.0.2-beta.2', ['a.hap', 'one.apk', 'two.apk'], 'VeneraX 3.0.2 Beta 2 (Android & HarmonyOS)'],
-    ['2.3.12-test.1', ['device.hap', 'HarmonyOS-TESTING.md'], 'VeneraX 2.3.12 Test 1 (HarmonyOS)'],
-    ['9.8.7-rc.10', packages, 'VeneraX 9.8.7 RC 10 (Android, HarmonyOS, iOS, Windows, macOS & Linux)'],
+    ['3.0.2-beta.2', ['a.hap', 'one.apk', 'two.apk'], 'v3.0.2 Beta 2 (Android & HarmonyOS)'],
+    ['2.3.12-test.1', ['device.hap', 'HarmonyOS-TESTING.md'], 'v2.3.12 Test 1 (HarmonyOS)'],
+    ['9.8.7-rc.10', packages, 'v9.8.7 RC 10 (Android, HarmonyOS, iOS, Windows, macOS & Linux)'],
   ]) {
     const result = spawnSync(process.execPath, [script, version, ...files], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);

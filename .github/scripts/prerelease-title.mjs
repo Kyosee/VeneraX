@@ -19,4 +19,4 @@ const platforms = formats
 const last = platforms.pop();
 if (!last) throw new Error('No supported platform packages found');
 const scope = platforms.length ? `${platforms.join(', ')} & ${last}` : last;
-console.log(`VeneraX ${[number, stage, sequence].filter(Boolean).join(' ')} (${scope})`);
+console.log(`v${[number, stage, sequence].filter(Boolean).join(' ')} (${scope})`);
