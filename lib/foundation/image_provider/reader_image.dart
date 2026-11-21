@@ -46,6 +46,7 @@ class ReaderImageProvider
     this.translationConfig,
     this.translated = false,
     this.translationRevision = 0,
+    this.strokeEnhancement = true,
     this.comicTitle = '',
     this.comicCover = '',
     this.chapterTitle = '',
@@ -80,6 +81,9 @@ class ReaderImageProvider
   /// once a background translation completes.
   final bool translated;
   final int translationRevision;
+
+  /// Snapshot of the render preference, so existing image keys stay immutable.
+  final bool strokeEnhancement;
 
   final String comicTitle;
   final String comicCover;
@@ -274,7 +278,7 @@ class ReaderImageProvider
   @override
   String get key =>
       "$imageKey@$sourceKey@$cid@$eid@$enableResize"
-      "${translationKey == null ? '' : '@tr:$translationKey:${translationConfig?.mode.token}:$translated:$translationRevision'}";
+      "${translationKey == null ? '' : '@tr:$translationKey:${translationConfig?.mode.token}:$translated:$translationRevision:$strokeEnhancement'}";
 
   /// [key] carries resize/translation state that never reaches the disk entry,
   /// so it cannot double as the eviction key.

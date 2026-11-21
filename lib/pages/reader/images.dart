@@ -287,7 +287,10 @@ ReaderImageProvider _createImageProviderFromKey(
     legacyTranslationKey: legacyTranslationKey,
     translationConfig: translationConfig,
     translated: translated,
-    translationRevision: ImageTranslationService.instance.revisionOf(translationKey),
+    translationRevision: ImageTranslationService.instance.revisionOf(
+      translationKey,
+    ),
+    strokeEnhancement: TranslationConfig.strokeEnhancementEnabled,
     comicTitle: reader.widget.name,
     comicCover: reader.widget.history.cover,
     chapterTitle:

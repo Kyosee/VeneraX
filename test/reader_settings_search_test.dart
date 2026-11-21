@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -194,6 +195,38 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets('model management reports a CTD change on return', (
+    tester,
+  ) async {
+    const key = TranslationConfig.strokeEnhancementKey;
+    final previous = appdata.settings[key];
+    addTearDown(() => appdata.settings[key] = previous);
+    final changed = <String>[];
+    await open(tester, onChanged: changed.add);
+    await search(tester, 'AI Translation');
+    await select(tester, 'AI Translation');
+    await tester.tap(find.text('AI Translation'));
+    await tester.pumpAndSettle();
+    final section = find.text('Models & languages');
+    await tester.ensureVisible(section);
+    await tester.pumpAndSettle();
+    await tester.tap(section);
+    await tester.pumpAndSettle();
+    final models = find.widgetWithText(ListTile, 'Translation models');
+    await tester.ensureVisible(models);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: models, matching: find.text('Manage')));
+    await tester.pumpAndSettle();
+    expect(find.byType(TranslationModelsPage), findsOneWidget);
+    appdata.settings[key] = !TranslationConfig.strokeEnhancementEnabled;
+    expect(changed, isEmpty);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(TranslationModelsPage), findsNothing);
+    expect(changed, [key]);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'sidebar search fits above the keyboard and back closes only the sidebar',

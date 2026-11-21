@@ -1539,10 +1539,23 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     ? "Models ready".tl
                     : "Models not downloaded".tl,
                 actionTitle: "Manage".tl,
-                callback: () => context.to(
-                  () =>
-                      TranslationModelsPage(sourceLang: _effectiveSourceLang()),
-                ),
+                callback: () async {
+                  final strokes = TranslationConfig.strokeEnhancementEnabled;
+                  final bubbles = TranslationConfig.bubbleEnhancementEnabled;
+                  await context.to(
+                    () => TranslationModelsPage(
+                      sourceLang: _effectiveSourceLang(),
+                    ),
+                  );
+                  if (!mounted) return;
+                  if (strokes != TranslationConfig.strokeEnhancementEnabled) {
+                    widget.onChanged?.call(TranslationConfig.strokeEnhancementKey);
+                  }
+                  if (bubbles != TranslationConfig.bubbleEnhancementEnabled) {
+                    widget.onChanged?.call(TranslationConfig.bubbleEnhancementKey);
+                  }
+                  setState(() {});
+                },
               ),
               _CallbackSetting(
                 title: "Translation prompt".tl,

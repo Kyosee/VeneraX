@@ -38,6 +38,72 @@ void _letters(RgbaImage page, IntRect box, int color) {
 }
 
 void main() {
+  test('inside text survives a missing bubble detection', () {
+    final page = _canvas(120, 100);
+    final line = IntRect(35, 40, 80, 55);
+    expect(
+      groupDetectedDialogue(
+        page,
+        [line],
+        [],
+        [(rect: IntRect(30, 35, 85, 60), inside: true, score: .8)],
+      ),
+      [
+        [line],
+      ],
+    );
+  });
+
+  test('partial model results retain default-confirmed dialogue lines', () {
+    final page = _canvas(240, 170);
+    final bubble = IntRect(10, 10, 111, 79);
+    _bubble(page, bubble, 0xfff2da);
+    _bubble(page, IntRect(112, 12, 223, 80), 0x21334a);
+    final a = IntRect(28, 26, 88, 37), b = IntRect(24, 43, 98, 53);
+    final c = IntRect(138, 32, 201, 48);
+    final effect = IntRect(134, 110, 202, 130);
+    for (final line in [a, b, c, effect]) {
+      _letters(page, line, 0x888888);
+    }
+    expect(
+      groupDetectedDialogue(page, [a, b, c, effect], [bubble], [
+        (rect: a, inside: true, score: .9),
+        (rect: b, inside: false, score: .8),
+        (rect: effect, inside: false, score: .9),
+      ]),
+      [
+        [a, b],
+        [c],
+      ],
+    );
+  });
+
+  test('a bubble with no model text candidates uses the default check', () {
+    final page = _canvas(120, 100);
+    final bubble = IntRect(10, 10, 110, 85);
+    _bubble(page, bubble, 0xffeedd);
+    final line = IntRect(35, 40, 80, 55);
+    _letters(page, line, 0x111111);
+    expect(groupDetectedDialogue(page, [line], [bubble], []), [
+      [line],
+    ]);
+  });
+
+  test('boxed narration remains excluded with inside text evidence', () {
+    final page = _canvas(120, 100);
+    final line = IntRect(35, 40, 80, 55);
+    expect(
+      groupDetectedDialogue(
+        page,
+        [line],
+        [],
+        [(rect: line, inside: true, score: .9)],
+        captions: [IntRect(10, 10, 110, 85)],
+      ),
+      isEmpty,
+    );
+  });
+
   test(
     'groups lines by closed bubble and drops captions and floating text',
     () {

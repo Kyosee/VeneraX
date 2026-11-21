@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
@@ -45,6 +46,41 @@ void _letters(RgbaImage page, int top) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'patch falls back to local repair on a smooth shaded background',
+    () async {
+      final page = _whiteImage(144, 100);
+      for (var y = 0; y < 60; y++) {
+        for (var x = 0; x < page.width; x++) {
+          _gray(page, x, y, (140 + x).clamp(0, 255));
+        }
+      }
+      _letters(page, 30);
+      final line = IntRect(30, 27, 94, 42);
+      final region = TranslatedRegion(
+        rect: IntRect(16, 70, 112, 98),
+        eraseRects: [line],
+        text: 'Translated',
+        backgroundColor: 0xffffffff,
+        textColor: 0xff141414,
+      );
+      expect(TextInpainter.computeMask(page, line, flatFill: true), isNull);
+      expect(TextInpainter.computeMask(page, line), isNotNull);
+      final output = await _decodeRgba(
+        await renderTranslatedPage(Uint8List(0), page, [
+          region,
+        ], mode: InpaintMode.patch),
+      );
+      for (final x in [35, 47, 59, 71, 83]) {
+        expect(output[(34 * page.width + x + 1) * 4], greaterThan(150));
+      }
+      expect(
+        output[(50 * page.width + 40) * 4],
+        page.pixels[(50 * page.width + 40) * 4],
+      );
+    },
+  );
 
   test('long translation never paints outside its region', () async {
     const width = 80;
@@ -94,6 +130,44 @@ void main() {
   });
 
   for (var mode in InpaintMode.values) {
+    test(
+      '${mode.name} erases closely spaced lines without mistaking them for texture',
+      () async {
+        final page = _whiteImage(144, 124);
+        final lines = <IntRect>[];
+        for (final y in [18, 30, 42, 54, 66, 78]) {
+          _letters(page, y);
+          lines.add(IntRect(32, y - 1, 88, y + 9));
+        }
+        final region = TranslatedRegion(
+          rect: IntRect(16, 99, 112, 123),
+          eraseRects: lines,
+          text: 'Translated',
+          backgroundColor: 0xffffffff,
+          textColor: 0xff141414,
+          lineHeight: 10,
+        );
+        final output = await _decodeRgba(
+          await renderTranslatedPage(Uint8List(0), page, [region], mode: mode),
+        );
+        for (final y in [18, 30, 42, 54, 66, 78]) {
+          for (final x in [35, 47, 59, 71, 83]) {
+            expect(
+              output[((y + 3) * page.width + x + 1) * 4],
+              greaterThan(220),
+            );
+          }
+        }
+        var ink = 0;
+        for (var y = 99; y < 123; y++) {
+          for (var x = 16; x < 112; x++) {
+            if (output[(y * page.width + x) * 4] < 128) ink++;
+          }
+        }
+        expect(ink, greaterThan(10));
+      },
+    );
+
     test(
       '${mode.name} erases the source strokes and keeps the interline art',
       () async {
@@ -147,7 +221,7 @@ void main() {
     );
 
     test(
-      '${mode.name} leaves a block intact if one line crosses dense artwork',
+      '${mode.name} keeps the translation visible when a line crosses artwork',
       () async {
         var page = _whiteImage(144, 96);
         _letters(page, 30);
@@ -173,8 +247,22 @@ void main() {
             onSkipped: skipped.addAll,
           ),
         );
-        expect(skipped, [region]);
-        expect(output, page.pixels);
+        expect(skipped, isEmpty);
+        var changedInside = 0;
+        for (var y = 0; y < page.height; y++) {
+          for (var x = 0; x < page.width; x++) {
+            final i = (y * page.width + x) * 4;
+            if (x >= region.rect.left &&
+                x < region.rect.right &&
+                y >= region.rect.top &&
+                y < region.rect.bottom) {
+              if (output[i] != page.pixels[i]) changedInside++;
+            } else {
+              expect(output.sublist(i, i + 4), page.pixels.sublist(i, i + 4));
+            }
+          }
+        }
+        expect(changedInside, greaterThan(10));
       },
     );
     for (final curved in [false, true]) {
@@ -215,8 +303,8 @@ void main() {
               );
             }
             if (crossing) {
-              expect(skipped, [region]);
-              expect(output, page.pixels);
+              expect(skipped, isEmpty);
+              expect(output, isNot(page.pixels));
             } else {
               expect(skipped, isEmpty);
               for (final x in [35, 47, 59, 71, 83]) {

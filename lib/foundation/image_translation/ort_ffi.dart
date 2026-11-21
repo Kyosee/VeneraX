@@ -427,6 +427,20 @@ class OrtFfiSession {
     outputName,
   ], (values) => _mapOutput(values.single, read));
 
+  /// Reads several tensors from one inference. Views are valid inside [read].
+  T runMappedOutputs<T>(
+    Map<String, OrtInput> inputs,
+    List<String> names,
+    T Function(List<(TypedData, List<int>)> tensors) read,
+  ) => _execute(
+    inputs,
+    names,
+    (values) => read([
+      for (var value in values)
+        _mapOutput(value, (data, shape) => (data, shape)),
+    ]),
+  );
+
   /// Runs the session and returns the argmax over the LAST row of a
   /// [rows, vocab]-shaped output, reading native memory directly. This is the
   /// hot path of greedy decoding: the full logits tensor (dozens of MB per
@@ -729,6 +743,10 @@ class OrtFfiSession {
           >();
       rt._check(getData(value, dataOut));
       return switch (type) {
+        OrtRuntime.typeInt64 => read(
+          dataOut.value.cast<Int64>().asTypedList(elementCount),
+          shape,
+        ),
         OrtRuntime.typeFloat16 => read(
           dataOut.value.cast<Uint16>().asTypedList(elementCount),
           shape,
