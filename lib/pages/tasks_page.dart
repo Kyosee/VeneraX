@@ -198,6 +198,7 @@ class _TasksPageState extends State<TasksPage>
       case 'follow_update':
         followUpdateManager.removeTask(id);
       case 'history_refresh':
+      case 'favorite_refresh':
         historyRefreshManager.removeTask(id);
       case 'related_source':
         relatedSourceManager.removeTask(id);
@@ -343,8 +344,10 @@ class _TasksPageState extends State<TasksPage>
               : historyRefreshManager.currentTasks)
         TaskListEntry(
           id: 'history_refresh:${task.id}',
-          title: '',
-          category: 'History Refresh',
+          title: task.favoriteFolder ?? '',
+          category: task.favoriteFolder == null
+              ? 'History Refresh'
+              : 'Update Comics Info',
           status: task.status.name,
           time: history ? task.finishedAt ?? task.createdAt : task.createdAt,
           builder: (_) => buildHistoryRefreshTaskCard(task, expanded: false),

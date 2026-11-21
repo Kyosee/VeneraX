@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 
 enum HistoryRefreshTaskStatus { running, completed, canceled, failed }
@@ -57,6 +58,7 @@ class HistoryRefreshTask {
     required this.id,
     required this.createdAt,
     required this.sources,
+    this.favoriteFolder,
     this.status = HistoryRefreshTaskStatus.running,
     this.total = 0,
     this.checked = 0,
@@ -70,6 +72,7 @@ class HistoryRefreshTask {
   final String id;
   final DateTime createdAt;
   final Map<String, HistoryRefreshSourceProgress> sources;
+  final String? favoriteFolder;
   HistoryRefreshTaskStatus status;
   int total;
   int checked;
@@ -81,7 +84,10 @@ class HistoryRefreshTask {
 
   bool get isRunning => status == HistoryRefreshTaskStatus.running;
 
-  double get progress => total == 0 ? 0 : checked / total;
+  double get progress {
+    if (total > 0) return checked / total;
+    return status == HistoryRefreshTaskStatus.completed ? 1 : 0;
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -95,12 +101,14 @@ class HistoryRefreshTask {
     'skipped': skipped,
     'errors': errors,
     'sources': sources.map((key, value) => MapEntry(key, value.toJson())),
+    if (favoriteFolder != null) 'favoriteFolder': favoriteFolder,
   };
 
   factory HistoryRefreshTask.fromJson(Map<String, dynamic> json) {
     var sourceData = Map<String, dynamic>.from(json['sources'] ?? {});
     return HistoryRefreshTask(
       id: json['id'] ?? '',
+      favoriteFolder: json['favoriteFolder'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] ?? ''),
       status: HistoryRefreshTaskStatus.values.firstWhere(
@@ -138,7 +146,9 @@ class HistoryRefreshTaskManager with ChangeNotifier {
   final _canceledIds = <String>{};
 
   HistoryRefreshTask? startRefreshAll() {
-    var existing = currentTasks.where((task) => task.isRunning).firstOrNull;
+    var existing = currentTasks
+        .where((task) => task.isRunning && task.favoriteFolder == null)
+        .firstOrNull;
     if (existing != null) {
       return existing;
     }
@@ -158,8 +168,114 @@ class HistoryRefreshTaskManager with ChangeNotifier {
     return task;
   }
 
+  HistoryRefreshTask startFavoriteFolder(String folder) {
+    final existing = currentTasks
+        .where((task) => task.favoriteFolder == folder)
+        .firstOrNull;
+    if (existing != null) return existing;
+
+    final now = DateTime.now();
+    final task = HistoryRefreshTask(
+      id: 'favorites:${now.microsecondsSinceEpoch}:$folder',
+      createdAt: now,
+      favoriteFolder: folder,
+      sources: {},
+    );
+    currentTasks.insert(0, task);
+    notifyListeners();
+    unawaited(_runFavorites(task, folder));
+    return task;
+  }
+
   void cancel(String id) {
-    _canceledIds.add(id);
+    final task = currentTasks.where((task) => task.id == id).firstOrNull;
+    if (task == null) return;
+    if (task.favoriteFolder == null) {
+      _canceledIds.add(id);
+      notifyListeners();
+    } else {
+      task.status = HistoryRefreshTaskStatus.canceled;
+      _finish(task);
+    }
+  }
+
+  Future<void> _runFavorites(HistoryRefreshTask task, String folder) async {
+    final favorites = LocalFavoritesManager();
+    try {
+      final comics = await favorites.getFolderComicsAsync(folder);
+      if (!task.isRunning) return;
+      task.total = comics.length;
+      final sourcesByType = <int, HistoryRefreshSourceProgress>{};
+      for (final comic in comics) {
+        final source = sourcesByType.putIfAbsent(comic.type.value, () {
+          final key = comic.sourceKey;
+          return task.sources[key] ??= HistoryRefreshSourceProgress(
+            sourceKey: key,
+            sourceName:
+                comic.type.comicSource?.name ?? (key == 'local' ? 'Local' : key),
+          );
+        });
+        source.total++;
+      }
+      notifyListeners();
+
+      const batchSize = 4;
+      for (var i = 0; i < comics.length && task.isRunning; i += batchSize) {
+        await Future.wait(
+          comics.skip(i).take(batchSize).map(
+            (comic) => _refreshFavorite(
+              task,
+              folder,
+              comic,
+              sourcesByType[comic.type.value]!,
+            ),
+          ),
+        );
+      }
+      if (!task.isRunning) return;
+      task.status = task.success == 0 && task.failed > 0
+          ? HistoryRefreshTaskStatus.failed
+          : HistoryRefreshTaskStatus.completed;
+    } catch (error) {
+      if (!task.isRunning) return;
+      task.errors.add(error.toString());
+      task.status = HistoryRefreshTaskStatus.failed;
+    } finally {
+      if (task.finishedAt == null) _finish(task);
+    }
+  }
+
+  Future<void> _refreshFavorite(
+    HistoryRefreshTask task,
+    String folder,
+    FavoriteItem comic,
+    HistoryRefreshSourceProgress source,
+  ) async {
+    if (!task.isRunning) return;
+    try {
+      final updated = await LocalFavoritesManager().refreshComicInfo(
+        folder,
+        comic,
+        isCanceled: () => !task.isRunning,
+      );
+      if (!task.isRunning) return;
+      if (updated) {
+        task.success++;
+        source.success++;
+      } else {
+        task.skipped++;
+        source.skipped++;
+      }
+    } catch (error) {
+      if (!task.isRunning) return;
+      task.failed++;
+      source.failed++;
+      final message = '${comic.name}: $error';
+      source.errors.add(message);
+      task.errors.add('${source.sourceName} / $message');
+    }
+    task.checked++;
+    source.checked++;
     notifyListeners();
   }
 
@@ -213,16 +329,20 @@ class HistoryRefreshTaskManager with ChangeNotifier {
     } catch (_) {
       task.status = HistoryRefreshTaskStatus.failed;
     } finally {
-      task.finishedAt = DateTime.now();
-      _canceledIds.remove(task.id);
-      currentTasks.remove(task);
-      historyTasks.insert(0, task);
-      if (historyTasks.length > 50) {
-        historyTasks.removeRange(50, historyTasks.length);
-      }
-      _saveHistory();
-      notifyListeners();
+      _finish(task);
     }
+  }
+
+  void _finish(HistoryRefreshTask task) {
+    task.finishedAt = DateTime.now();
+    _canceledIds.remove(task.id);
+    currentTasks.remove(task);
+    historyTasks.insert(0, task);
+    if (historyTasks.length > 50) {
+      historyTasks.removeRange(50, historyTasks.length);
+    }
+    _saveHistory();
+    notifyListeners();
   }
 
   Map<String, HistoryRefreshSourceProgress> _buildInitialSources() {

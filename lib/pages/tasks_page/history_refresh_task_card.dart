@@ -7,9 +7,10 @@ mixin _HistoryRefreshTaskCard on _TaskCardCommon {
     HistoryRefreshTask task, {
     required bool expanded,
   }) {
-    var progressText = task.total == 0
-        ? "0%"
-        : "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
+    final folder = task.favoriteFolder;
+    final taskType = folder == null ? 'history_refresh' : 'favorite_refresh';
+    final progressText =
+        "${(task.progress * 100).clamp(0, 100).toStringAsFixed(0)}%";
     final card = Card(
       elevation: 0,
       color: context.colorScheme.surface,
@@ -17,13 +18,13 @@ mixin _HistoryRefreshTaskCard on _TaskCardCommon {
       child: _TaskExpansionTile(
         initiallyExpanded: expanded,
         leading: _wrapIconWithRotation(
-          getTaskIcon('history_refresh', task.isRunning, status: task.status.name),
+          getTaskIcon(taskType, task.isRunning, status: task.status.name),
           task.isRunning,
           task.status.name,
         ),
-        title: Text(getTaskTitle('history_refresh', {})),
+        title: Text(getTaskTitle(taskType, {})),
         subtitle: buildTaskSubtitle(
-          [historyRefreshStatusText(task), progressText],
+          [historyRefreshStatusText(task), progressText, ?folder],
           task.createdAt,
           task.finishedAt,
         ),
@@ -41,13 +42,20 @@ mixin _HistoryRefreshTaskCard on _TaskCardCommon {
             ),
           ),
           const SizedBox(height: 8),
+          if (folder != null)
+            Text('Folder: @folder'.tlParams({'folder': folder})),
           buildHistoryRefreshSummary(task),
-          buildHistoryRefreshSourceDetails(task),
+          if (task.sources.isNotEmpty) buildHistoryRefreshSourceDetails(task),
+          if (task.sources.isEmpty && task.errors.isNotEmpty)
+            Text(
+              task.errors.first,
+              style: ts.s14.withColor(context.colorScheme.error),
+            ),
         ],
       ),
     );
 
-    return _wrapHistoryCard(card, 'history_refresh', task.id, task.isRunning);
+    return _wrapHistoryCard(card, taskType, task.id, task.isRunning);
   }
 
   Widget buildHistoryRefreshSummary(HistoryRefreshTask task) {

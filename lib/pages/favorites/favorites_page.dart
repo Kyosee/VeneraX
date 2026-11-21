@@ -15,6 +15,7 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/favorites_meta.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/history_tasks.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/related_source_tasks.dart';

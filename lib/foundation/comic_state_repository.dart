@@ -253,8 +253,8 @@ class ComicStateRepository {
       // (issue #135), so it must not override the local title/cover.
       title:
           _pick([
-            // Search results and refreshed records carry their source title.
-            if (!identity.isLocal && comic is! FavoriteItem) comic.title,
+            // A refreshed source title can be newer than the linked work.
+            if (!identity.isLocal) comic.title,
             localComic?.title,
             domain?.title,
             updateInfo?.title,

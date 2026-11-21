@@ -1974,6 +1974,43 @@ class LocalFavoritesManager with ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  Future<bool> refreshComicInfo(
+    String folder,
+    FavoriteItem comic, {
+    required bool Function() isCanceled,
+  }) async {
+    final load = comic.type.comicSource?.loadComicInfo;
+    if (load == null) return false;
+    for (var attempt = 1; !isCanceled(); attempt++) {
+      final ComicDetails details;
+      try {
+        details = (await load(comic.id)).data;
+      } catch (_) {
+        if (attempt == 3) rethrow;
+        continue;
+      }
+      if (isCanceled() ||
+          !existsFolder(folder) ||
+          !comicExists(folder, comic.id, comic.type)) {
+        return false;
+      }
+      if (details.title.trim().isNotEmpty) comic.name = details.title;
+      comic.coverPath = details.cover;
+      comic.author =
+          details.subTitle ?? details.tags['author']?.firstOrNull ?? comic.author;
+      comic.tags = [
+        for (final group in details.tags.entries)
+          if (!const {'author', 'artist', 'time'}.contains(
+            group.key.toLowerCase(),
+          ))
+            for (final tag in group.value) '${group.key}:$tag',
+      ];
+      updateInfo(folder, comic);
+      return true;
+    }
+    return false;
+  }
+
   void updateInfo(
     String folder,
     FavoriteItem comic, [

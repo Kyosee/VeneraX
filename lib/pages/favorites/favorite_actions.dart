@@ -279,127 +279,51 @@ void addFavorite(List<Comic> comics) {
   );
 }
 
-Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
-  var comics = LocalFavoritesManager().getFolderComics(folder);
-
-  Future<void> updateSingleComic(int index) async {
-    int retry = 3;
-
-    while (true) {
-      try {
-        var c = comics[index];
-        var comicSource = c.type.comicSource;
-        if (comicSource == null) return;
-
-        var newInfo = (await comicSource.loadComicInfo!(c.id)).data;
-
-        var newTags = <String>[];
-        for (var entry in newInfo.tags.entries) {
-          const shouldIgnore = ['author', 'artist', 'time'];
-          var namespace = entry.key;
-          if (shouldIgnore.contains(namespace.toLowerCase())) {
-            continue;
-          }
-          for (var tag in entry.value) {
-            newTags.add("$namespace:$tag");
-          }
-        }
-
-        comics[index] = FavoriteItem(
-          id: c.id,
-          name: newInfo.title,
-          coverPath: newInfo.cover,
-          author: newInfo.subTitle ??
-              newInfo.tags['author']?.firstOrNull ??
-              c.author,
-          type: c.type,
-          tags: newTags,
-        );
-
-        LocalFavoritesManager().updateInfo(folder, comics[index]);
-        return;
-      } catch (e) {
-        retry--;
-        if (retry == 0) {
-          rethrow;
-        }
-        continue;
-      }
-    }
-  }
-
-  var finished = ValueNotifier(0);
-
-  var errors = 0;
-
-  var index = 0;
-
-  bool isCanceled = false;
-
-  showDialog(
-    context: App.rootContext,
-    builder: (context) {
-      return ValueListenableBuilder(
-        valueListenable: finished,
-        builder: (context, value, child) {
-          var isFinished = value == comics.length;
-          return ContentDialog(
-            title: isFinished ? "Finished".tl : "Updating".tl,
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                LinearProgressIndicator(
-                  value: value / comics.length,
-                ),
-                const SizedBox(height: 4),
-                Text("$value/${comics.length}"),
-                const SizedBox(height: 4),
-                if (errors > 0) Text("Errors: $errors"),
-              ],
-            ).paddingHorizontal(16),
-            actions: [
-              Button.filled(
-                color: isFinished ? null : context.colorScheme.error,
-                onPressed: () {
-                  isCanceled = true;
-                  context.pop();
-                },
-                child: isFinished ? Text("OK".tl) : Text("Cancel".tl),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  ).then((_) {
-    isCanceled = true;
-  });
-
-  while (index < comics.length) {
-    var futures = <Future>[];
-    const maxConcurrency = 4;
-
-    if (isCanceled) {
-      return comics;
-    }
-
-    for (var i = 0; i < maxConcurrency; i++) {
-      if (index + i >= comics.length) break;
-      futures.add(updateSingleComic(index + i).then((v) {
-        finished.value++;
-      }, onError: (_) {
-        errors++;
-        finished.value++;
-      }));
-    }
-
-    await Future.wait(futures);
-    index += maxConcurrency;
-  }
-
-  return comics;
+Future<void> updateComicsInfo(BuildContext context, String folder) {
+  final manager = HistoryRefreshTaskManager.instance;
+  final task = manager.startFavoriteFolder(folder);
+  return showDialog<void>(
+    context: context,
+    builder: (context) => ListenableBuilder(
+      listenable: manager,
+      builder: (context, _) => ContentDialog(
+        title: "Update Comics Info".tl,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LinearProgressIndicator(
+              value: task.isRunning && task.total == 0 ? null : task.progress,
+            ),
+            const SizedBox(height: 8),
+            Text("${task.checked}/${task.total}"),
+            if (task.failed > 0) Text("${'Failed'.tl} · ${task.failed}"),
+            if (task.errors.isNotEmpty && task.checked == 0)
+              Text(task.errors.first),
+          ],
+        ).paddingHorizontal(16),
+        actions: [
+          if (task.isRunning) ...[
+            TextButton(
+              onPressed: () {
+                manager.cancel(task.id);
+                Navigator.pop(context);
+              },
+              child: Text("Cancel".tl),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Background".tl),
+            ),
+          ] else
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("OK".tl),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Reorders the subfolders of [parent] (null for the top level).
