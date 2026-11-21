@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
@@ -61,11 +60,15 @@ class PageTranslationPipeline {
     required String sourceLang,
     required String targetLang,
     Map<String, String> glossary = const {},
+    bool dialogueOnly = false,
+    List<TranslatedRegion> previous = const [],
   }) async {
     var ocr = await ocrPage(
       imageBytes,
       sourceLang: sourceLang,
       targetLang: targetLang,
+      dialogueOnly: dialogueOnly,
+      previous: previous,
     );
     if (ocr.pending.isEmpty) {
       return PageAnalysis(ocr.ready, ocr.languageVotes, const {});
@@ -97,6 +100,8 @@ class PageTranslationPipeline {
     Uint8List imageBytes, {
     required String sourceLang,
     required String targetLang,
+    bool dialogueOnly = false,
+    List<TranslatedRegion> previous = const [],
   }) async {
     var image = await _decode(imageBytes);
     var paths = TranslationModels.workerPaths(sourceLang);
@@ -104,6 +109,7 @@ class PageTranslationPipeline {
       image,
       sourceLang: sourceLang,
       paths: paths,
+      dialogueOnly: dialogueOnly,
     );
     blocks = blocks.where((b) => _isTranslatable(b.text)).toList();
     // The worker labels all Han text 'zh'; tell Traditional apart so it is
@@ -119,17 +125,18 @@ class PageTranslationPipeline {
     for (var lang in langs) {
       votes[lang] = (votes[lang] ?? 0) + 1;
     }
-    if (blocks.isEmpty) {
-      return PageOcr(const [], const [], votes);
-    }
-
     var ready = <TranslatedRegion>[];
     var pending = <OcrBlock>[];
     for (var i = 0; i < blocks.length; i++) {
       var block = blocks[i];
       switch (sameLanguageAction(langs[i], targetLang)) {
         case SameLanguageAction.translate:
-          pending.add(block);
+          final cached = matchingTranslation(block, previous);
+          if (cached == null) {
+            pending.add(block);
+          } else {
+            ready.add(_region(block, cached.text));
+          }
         case SameLanguageAction.toTraditional:
           var converted = OpenCC.simplifiedToTraditional(block.text);
           if (converted != block.text) {
@@ -140,6 +147,33 @@ class PageTranslationPipeline {
       }
     }
     return PageOcr(ready, pending, votes);
+  }
+
+  /// Reuses the text only for the same OCR lines at the same page position.
+  /// Older rows have no source string, but still carry the exact line boxes.
+  static TranslatedRegion? matchingTranslation(
+    OcrBlock block,
+    List<TranslatedRegion> previous,
+  ) {
+    for (final region in previous) {
+      if (region.sourceText != null && region.sourceText != block.text) {
+        continue;
+      }
+      if (region.eraseRects.length != block.eraseRects.length) continue;
+      var matches = true;
+      for (var i = 0; i < block.eraseRects.length; i++) {
+        final a = block.eraseRects[i], b = region.eraseRects[i];
+        if (a.left != b.left ||
+            a.top != b.top ||
+            a.right != b.right ||
+            a.bottom != b.bottom) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return region;
+    }
+    return null;
   }
 
   /// Turns [pending] blocks and their aligned [texts] into render-ready
@@ -162,22 +196,39 @@ class PageTranslationPipeline {
   }
 
   /// Renders [regions] over the page. Split from [analyzePage] so a page
-  /// whose rendered image was evicted can be rebuilt from the cached text
-  /// results alone. In [InpaintMode.smart] the original lettering is removed
-  /// from the decoded pixels first with the pure-Dart eraser, so the renderer
-  /// draws over a clean background.
+  /// whose rendered image was evicted can be rebuilt from cached text alone.
   Future<Uint8List> renderPage(
     Uint8List imageBytes,
     List<TranslatedRegion> regions, {
     InpaintMode mode = InpaintMode.smart,
+    bool enhanceStrokes = false,
+    VoidCallback? onStrokeMask,
   }) async {
     var image = await _decode(imageBytes);
-    if (mode != InpaintMode.patch && regions.isNotEmpty) {
-      TextInpainter.erase(image, [
-        for (var region in regions) ...region.eraseRects,
-      ]);
+    StrokeMask? mask;
+    if (enhanceStrokes && regions.isNotEmpty) {
+      final path = TranslationModels.strokeModelPath;
+      if (path != null) {
+        try {
+          mask = await TranslationWorker.instance.strokeMask(image, path);
+        } on Exception catch (e) {
+          Log.warning(
+            'Image Translation',
+            'Stroke enhancement unavailable: $e',
+          );
+        } on OutOfMemoryError {
+          mask = null;
+        }
+      }
     }
-    return await renderTranslatedPage(imageBytes, image, regions, mode: mode);
+    if (mask != null) onStrokeMask?.call();
+    return renderTranslatedPage(
+      imageBytes,
+      image,
+      regions,
+      mode: mode,
+      strokeMask: mask,
+    );
   }
 
   TranslatedRegion _region(OcrBlock block, String text) {
@@ -186,6 +237,7 @@ class PageTranslationPipeline {
       eraseRect: block.eraseRect,
       eraseRects: block.eraseRects,
       text: text,
+      sourceText: block.text,
       backgroundColor: block.backgroundColor,
       textColor: block.textColor,
       lineHeight: block.lineHeight,

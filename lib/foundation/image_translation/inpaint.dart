@@ -44,7 +44,12 @@ abstract final class TextInpainter {
   /// plausible should be erased (too small, or the "text" class swallows the
   /// window — a near-uniform crop or heavy screentone the threshold misread).
   /// Shared by the Dart fill and the AI model path so both agree on what is text.
-  static TextMask? computeMask(RgbaImage image, IntRect region) {
+  static TextMask? computeMask(
+    RgbaImage image,
+    IntRect region, {
+    StrokeMask? strokeMask,
+    bool flatFill = false,
+  }) {
     var w = image.width;
     var h = image.height;
     // Region plus a border: the fill needs known pixels to borrow, and the ring
@@ -59,7 +64,9 @@ abstract final class TextInpainter {
     var bottom = (region.bottom + pad).clamp(1, h);
     var rw = right - left;
     var rh = bottom - top;
-    if (rw < 6 || rh < 6) return null;
+    // Distance, colour and component buffers all scale with the window. A
+    // corrupted or page-sized cached OCR box must not allocate them.
+    if (rw < 6 || rh < 6 || rw * rh > 768 * 1024) return null;
 
     var pixels = image.pixels;
     var n = rw * rh;
@@ -87,6 +94,7 @@ abstract final class TextInpainter {
     var (lowMean, highMean) = _classMeans(lum, threshold);
     var bgIsHigh = (highMean - bgLum).abs() <= (lowMean - bgLum).abs();
     var textMean = bgIsHigh ? lowMean : highMean;
+    var unstableRing = _ringDeviation(lum, rw, rh, bgLum, flatFill);
 
     // A contrast margin keeps low-contrast noise from being erased.
     const minMargin = 24;
@@ -103,6 +111,8 @@ abstract final class TextInpainter {
     var allowedTop = (region.top - guard - top).clamp(0, rh);
     var allowedRight = (region.right + guard - left).clamp(0, rw);
     var allowedBottom = (region.bottom + guard - top).clamp(0, rh);
+    var model = strokeMask;
+    var modelCount = 0, overlap = 0;
     for (var y = allowedTop; y < allowedBottom; y++) {
       for (var x = allowedLeft; x < allowedRight; x++) {
         var i = y * rw + x;
@@ -113,6 +123,10 @@ abstract final class TextInpainter {
         if (isText) {
           mask[i] = 1;
           maskCount++;
+        }
+        if (model != null && model.contains(left + x, top + y, w, h)) {
+          modelCount++;
+          if (isText) overlap++;
         }
       }
     }
@@ -128,12 +142,38 @@ abstract final class TextInpainter {
     );
     if (maskCount == 0 || maskCount > allowedArea * 0.85) return null;
 
-    // Drop isolated speck components (threshold noise) before erasing: an
-    // erased+filled speck becomes a faint smudge on otherwise clean art. Only
-    // size is used — see [_filterComponents] for why a solid/large component is
-    // never rejected (it would erase bold lettering).
-    maskCount = _filterComponents(mask, rw, rh);
-    if (maskCount == 0) return null;
+    // A missed reverse-colour line or a mask covering the whole box should
+    // never replace the local detector. A credible mask can isolate text
+    // even when the surrounding artwork has two strongly contrasting colours.
+    var useModel =
+        model != null &&
+        overlap >= maskCount * .65 &&
+        overlap >= modelCount * .45 &&
+        modelCount < allowedArea * .65;
+    if (unstableRing && (flatFill || !useModel || overlap > maskCount * .90)) {
+      return null;
+    }
+    final (kept, protected) = _filterComponents(
+      mask,
+      rw,
+      math.min(allowedRight - allowedLeft, allowedBottom - allowedTop),
+    );
+    if (kept == 0) return null;
+    if (useModel) {
+      var supported = 0;
+      for (var y = allowedTop; y < allowedBottom; y++) {
+        for (var x = allowedLeft; x < allowedRight; x++) {
+          var i = y * rw + x;
+          if (mask[i] == 0) continue;
+          if (model.contains(left + x, top + y, w, h)) {
+            supported++;
+          } else {
+            mask[i] = 0;
+          }
+        }
+      }
+      if (supported == 0) return null;
+    }
 
     // Dilate to swallow the anti-aliased halo around each stroke — leftover
     // grey fringe reads as "text not fully erased". The radius scales with the
@@ -148,12 +188,85 @@ abstract final class TextInpainter {
         if (x < allowedLeft ||
             x >= allowedRight ||
             y < allowedTop ||
-            y >= allowedBottom) {
+            y >= allowedBottom ||
+            protected?[y * rw + x] == 1) {
           mask[y * rw + x] = 0;
         }
       }
     }
     return TextMask(left, top, rw, rh, mask);
+  }
+
+  static bool _ringDeviation(
+    Uint8List values,
+    int w,
+    int h,
+    int mean,
+    bool flatFill,
+  ) {
+    var tolerance = flatFill ? 24 : 35;
+    var varied = 0;
+    var abrupt = 0;
+    for (var x = 0; x < w; x++) {
+      if ((values[x] - mean).abs() > tolerance) varied++;
+      if ((values[(h - 1) * w + x] - mean).abs() > tolerance) varied++;
+      if (x > 0) {
+        if ((values[x] - values[x - 1]).abs() > tolerance) abrupt++;
+        if ((values[(h - 1) * w + x] - values[(h - 1) * w + x - 1]).abs() >
+            tolerance) {
+          abrupt++;
+        }
+      }
+    }
+    for (var y = 1; y < h - 1; y++) {
+      if ((values[y * w] - mean).abs() > tolerance) varied++;
+      if ((values[y * w + w - 1] - mean).abs() > tolerance) varied++;
+      if ((values[y * w] - values[(y - 1) * w]).abs() > tolerance) abrupt++;
+      if ((values[y * w + w - 1] - values[y * w - 1]).abs() > tolerance) {
+        abrupt++;
+      }
+    }
+    var perimeter = 2 * w + 2 * h - 4;
+    return varied > perimeter * .33 && (flatFill || abrupt > perimeter * .10);
+  }
+
+  static void fillWithBackground(RgbaImage image, TextMask mask) {
+    var colors = <int, int>{};
+    var best = 0, occurrences = 0;
+    void sample(int x, int y) {
+      var i = ((mask.top + y) * image.width + mask.left + x) * 4;
+      var color =
+          (image.pixels[i] << 16) |
+          (image.pixels[i + 1] << 8) |
+          image.pixels[i + 2];
+      var bucket = color & 0xf8f8f8;
+      var count = (colors[bucket] ?? 0) + 1;
+      colors[bucket] = count;
+      if (count > occurrences) {
+        best = color;
+        occurrences = count;
+      }
+    }
+
+    for (var x = 0; x < mask.rw; x++) {
+      sample(x, 0);
+      sample(x, mask.rh - 1);
+    }
+    for (var y = 1; y < mask.rh - 1; y++) {
+      sample(0, y);
+      sample(mask.rw - 1, y);
+    }
+    var red = (best >> 16) & 255, green = (best >> 8) & 255, blue = best & 255;
+    for (var y = 0; y < mask.rh; y++) {
+      var offset = ((y + mask.top) * image.width + mask.left) * 4;
+      for (var x = 0; x < mask.rw; x++) {
+        if (mask.mask[y * mask.rw + x] == 0) continue;
+        var i = offset + x * 4;
+        image.pixels[i] = red;
+        image.pixels[i + 1] = green;
+        image.pixels[i + 2] = blue;
+      }
+    }
   }
 
   static int _ringMeanLuminance(Uint8List lum, int rw, int rh) {
@@ -221,62 +334,85 @@ abstract final class TextInpainter {
     return (lo, hi);
   }
 
-  /// Removes mask components that are not text strokes, in place, and returns
-  /// the surviving on-pixel count. Two rejects: a speck too small to be a glyph
-  /// (threshold noise), and a component that fills a large fraction of its own
-  /// bounding box (a solid blob — bubble edge or artwork the contrast test
-  /// caught — rather than thin lettering). 4-connected flood fill per component.
-  static int _filterComponents(Uint8List mask, int rw, int rh) {
-    var n = rw * rh;
-    var seen = Uint8List(n);
-    var stack = <int>[];
-    // Specks below this many pixels are threshold noise (isolated dust that
-    // would otherwise be erased+filled into a faint smudge), scaled to the
-    // region so a large crop tolerates larger dust without dropping real
-    // punctuation. Deliberately does NOT reject large/solid components: a bold
-    // stroke or a bar is solid within its own bounding box and is
-    // indistinguishable from artwork by fill-ratio, so a fill test would erase
-    // real lettering. The "text class swallowed the window" case is already
-    // guarded by the maskCount ceiling in computeMask.
-    var minPixels = math.max(6, (n * 0.0008).round());
+  /// Checks 8-connected components so a diagonal or curved line stays whole.
+  /// A thin run several glyphs long is artwork. If it joins a thick stroke,
+  /// keeping the original block avoids cutting the line where they meet.
+  static (int, Uint8List?) _filterComponents(
+    Uint8List mask,
+    int width,
+    int shortSide,
+  ) {
+    final n = mask.length;
+    final minimumPixels = math.max(6, (n * .0008).round());
+    final minimumSpan = math.max(16, (shortSide * 1.65).ceil());
+    final thinWidth = (shortSide * .08).round().clamp(2, 4);
+    final seen = Uint8List(n);
+    final members = <int>[];
+    final profile = Int32List(math.max(width, n ~/ width));
+    Uint8List? protected;
     var kept = 0;
     for (var start = 0; start < n; start++) {
       if (mask[start] == 0 || seen[start] != 0) continue;
-      var count = 0;
-      var members = <int>[];
-      stack.add(start);
+      members
+        ..clear()
+        ..add(start);
       seen[start] = 1;
-      while (stack.isNotEmpty) {
-        var i = stack.removeLast();
-        members.add(i);
-        var x = i % rw;
-        count++;
-        if (x > 0 && mask[i - 1] == 1 && seen[i - 1] == 0) {
-          seen[i - 1] = 1;
-          stack.add(i - 1);
-        }
-        if (x < rw - 1 && mask[i + 1] == 1 && seen[i + 1] == 0) {
-          seen[i + 1] = 1;
-          stack.add(i + 1);
-        }
-        if (i - rw >= 0 && mask[i - rw] == 1 && seen[i - rw] == 0) {
-          seen[i - rw] = 1;
-          stack.add(i - rw);
-        }
-        if (i + rw < n && mask[i + rw] == 1 && seen[i + rw] == 0) {
-          seen[i + rw] = 1;
-          stack.add(i + rw);
+      var minX = start % width, maxX = minX;
+      var minY = start ~/ width, maxY = minY;
+      for (var pos = 0; pos < members.length; pos++) {
+        final i = members[pos];
+        final x = i % width, y = i ~/ width;
+        minX = math.min(minX, x);
+        maxX = math.max(maxX, x);
+        minY = math.min(minY, y);
+        maxY = math.max(maxY, y);
+        final firstX = math.max(0, x - 1), lastX = math.min(width - 1, x + 1);
+        for (
+          var row = math.max(0, i - x - width);
+          row < n && row <= i - x + width;
+          row += width
+        ) {
+          for (var next = row + firstX; next <= row + lastX; next++) {
+            if (mask[next] == 0 || seen[next] != 0) continue;
+            seen[next] = 1;
+            members.add(next);
+          }
         }
       }
-      if (count < minPixels) {
-        for (var i in members) {
+
+      // Remove isolated dust but retain solid bold lettering and punctuation.
+      if (members.length < minimumPixels) {
+        for (final i in members) {
           mask[i] = 0;
         }
-      } else {
-        kept += count;
+        continue;
       }
+      final horizontal = maxX - minX >= maxY - minY;
+      final span = horizontal ? maxX - minX + 1 : maxY - minY + 1;
+      if (span >= minimumSpan) {
+        profile.fillRange(0, span, 0);
+        for (final i in members) {
+          final at = horizontal ? i % width - minX : i ~/ width - minY;
+          profile[at]++;
+        }
+        var thin = 0, thick = 0;
+        for (var j = 0; j < span; j++) {
+          if (profile[j] <= thinWidth) thin++;
+          if (profile[j] > thinWidth + 2) thick++;
+        }
+        if (thin >= span * .55) {
+          if (thick >= 2) return (0, null);
+          final keep = protected ??= Uint8List(n);
+          for (final i in members) {
+            mask[i] = 0;
+            keep[i] = 1;
+          }
+          continue;
+        }
+      }
+      kept += members.length;
     }
-    return kept;
+    return (kept, protected);
   }
 
   /// Separable box dilation (two 1-D passes).

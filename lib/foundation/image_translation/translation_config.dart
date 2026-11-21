@@ -16,6 +16,7 @@ class TranslationConfig {
     required this.sourceLang,
     required this.targetLang,
     required this.mode,
+    this.dialogueOnly = false,
   });
 
   /// 'auto', or a concrete source language ('ja', 'zh', 'en', 'ko').
@@ -26,11 +27,14 @@ class TranslationConfig {
   /// Text-removal / render mode.
   final InpaintMode mode;
 
+  final bool dialogueOnly;
+
   /// The settings keys backing this config, exposed so callers that mirror
   /// reader settings (the settings page, the sync opt-out list) stay in step.
   static const sourceKeyName = 'imageTranslationSource';
   static const targetKeyName = 'imageTranslationTarget';
   static const inpaintKeyName = 'imageTranslationInpaintMode';
+  static const scopeKeyName = 'imageTranslationScope';
 
   /// Resolves the config for one comic.
   ///
@@ -47,6 +51,7 @@ class TranslationConfig {
     return TranslationConfig(
       sourceLang: read(sourceKeyName, 'auto'),
       targetLang: read(targetKeyName, 'zh'),
+      dialogueOnly: read(scopeKeyName, 'all') == 'dialogue',
       mode: InpaintMode.fromSettings(
         appdata.settings.getReaderSetting(cid, key, inpaintKeyName),
       ),
@@ -59,6 +64,7 @@ class TranslationConfig {
     return TranslationConfig(
       sourceLang: appdata.settings[sourceKeyName] as String? ?? 'auto',
       targetLang: appdata.settings[targetKeyName] as String? ?? 'zh',
+      dialogueOnly: appdata.settings[scopeKeyName] == 'dialogue',
       mode: InpaintMode.fromSettings(appdata.settings[inpaintKeyName]),
     );
   }
@@ -73,6 +79,7 @@ class TranslationConfig {
     return TranslationConfig(
       sourceLang: read(sourceKeyName, 'auto'),
       targetLang: read(targetKeyName, 'zh'),
+      dialogueOnly: read(scopeKeyName, 'all') == 'dialogue',
       mode: InpaintMode.fromSettings(
         appdata.settings.getDeviceReaderSetting(inpaintKeyName),
       ),
@@ -86,5 +93,13 @@ class TranslationConfig {
   // Generation 2 stores per-line erase rectangles and uses stricter OCR block
   // grouping. Reusing generation-1 rows would keep their broad erase boxes and
   // could still remove artwork even though the renderer itself was fixed.
-  String get cachePrefix => 'pageTranslation@2@$sourceLang>$targetLang@';
+  String get cachePrefix => _prefix(dialogueOnly);
+
+  String _prefix(bool dialogue) =>
+      'pageTranslation@2@${dialogue ? 'dialogue@' : ''}$sourceLang>$targetLang@';
+
+  /// Finds paid translations for the same page under the other text scope.
+  String? alternateScopeKey(String key) => key.startsWith(cachePrefix)
+      ? '${_prefix(!dialogueOnly)}${key.substring(cachePrefix.length)}'
+      : null;
 }

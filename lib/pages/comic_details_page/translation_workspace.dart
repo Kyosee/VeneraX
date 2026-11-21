@@ -114,13 +114,14 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
       widget.sourceKey,
       widget.cid,
     );
-    final config = TranslationConfig.of(widget.cid, widget.sourceKey);
+    final config = widget.config;
     _saved = {
       for (final chapter in TranslationStore().chaptersFor(
         widget.sourceKey,
         widget.cid,
         sourceLang: config.sourceLang,
         targetLang: config.targetLang,
+        dialogueOnly: config.dialogueOnly,
       ))
         chapter.identity.chapterId: chapter.pageCount,
     };
@@ -227,7 +228,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     _taskFor.clear();
     _chapterFor.clear();
     for (final task in [..._manager.currentTasks, ..._manager.historyTasks]) {
-      if (task.cid != widget.cid || task.sourceKey != widget.sourceKey) {
+      if (!task.matchesScope(widget.cid, widget.sourceKey, widget.config)) {
         continue;
       }
       for (final chapter in task.chapters) {
@@ -357,6 +358,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
     widget.cid,
     widget.sourceKey,
     widget.entries[index].$1,
+    config: widget.config,
   );
 
   void _pruneSelection() =>
@@ -454,7 +456,7 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   }
 
   bool _ready() {
-    if (ImageTranslationService.isReadyForComic(widget.cid, widget.sourceKey)) {
+    if (ImageTranslationService.isReadyForLang(widget.config.sourceLang)) {
       return true;
     }
     context.showMessage(message: 'Configure AI translation first'.tl);
@@ -490,20 +492,15 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
               widget.cid,
               widget.sourceKey,
               eid: widget.entries[index].$1,
+              config: widget.config,
             );
           }
           _manager.resetChapterStatus(widget.cid, widget.sourceKey, {
             for (final i in picked) widget.entries[i].$1,
-          });
+          }, config: widget.config);
         }
         if (!mounted) return;
-        widget.finishSelect(picked);
-        final task = _manager.currentTasks
-            .where(
-              (task) =>
-                  task.cid == widget.cid && task.sourceKey == widget.sourceKey,
-            )
-            .firstOrNull;
+        final task = widget.finishSelect(picked, replace: replace);
         if (task?.status == PreTranslationTaskStatus.paused) {
           for (final index in picked) {
             _manager.resumeChapter(task!.id, widget.entries[index].$1);
@@ -535,6 +532,8 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
           cid: widget.cid,
           sourceKey: widget.sourceKey,
           comicType: widget.comicType,
+          config: current?.config ?? widget.config,
+          enhanceStrokes: current?.enhanceStrokes,
           title: widget.title,
           cover: widget.cover,
           chapters: [
@@ -575,10 +574,11 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
             widget.cid,
             widget.sourceKey,
             eid: widget.entries[index].$1,
+            config: widget.config,
           );
           _manager.resetChapterStatus(widget.cid, widget.sourceKey, {
             widget.entries[index].$1,
-          });
+          }, config: widget.config);
         }
         if (mounted) {
           setState(() {
@@ -593,21 +593,26 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
   void _deleteComicTranslation() {
     showConfirmDialog(
       context: _contentContext,
-      title: 'Delete all translations for this comic?'.tl,
+      title: 'Delete these translations for this comic?'.tl,
       content:
-          'This removes every stored translation and rendered page of this comic. The original images are unaffected.'
+          'This deletes this comic’s translated text and rendered pages for the selected languages and text scope, and resets its glossary.'
               .tl,
       onConfirm: () async {
         for (final task in _manager.currentTasks.toList()) {
-          if (task.cid == widget.cid && task.sourceKey == widget.sourceKey) {
+          if (task.matchesScope(widget.cid, widget.sourceKey, widget.config)) {
             _manager.cancel(task.id);
           }
         }
         await ImageTranslationService.instance.retranslate(
           widget.cid,
           widget.sourceKey,
+          config: widget.config,
         );
-        _manager.resetComicStatus(widget.cid, widget.sourceKey);
+        _manager.resetComicStatus(
+          widget.cid,
+          widget.sourceKey,
+          config: widget.config,
+        );
         if (mounted) {
           setState(() {
             _loadStore();

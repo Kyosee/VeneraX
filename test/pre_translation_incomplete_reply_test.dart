@@ -22,21 +22,30 @@ class _PageFixture extends PageTranslationPipeline {
     Uint8List bytes, {
     required String sourceLang,
     required String targetLang,
-  }) async => PageOcr([], [
-    if (bytes.first != 0)
-      OcrBlock(
-        rect: IntRect(0, 0, 1, 1),
-        text: 'line ${bytes.first}',
-        language: 'en',
-        backgroundColor: 0,
-        textColor: 0,
-      ),
-  ], {});
+    bool dialogueOnly = false,
+    List<TranslatedRegion> previous = const [],
+  }) async {
+    if (bytes.first == 0) return PageOcr([], [], {});
+    final block = OcrBlock(
+      rect: IntRect(0, 0, 1, 1),
+      text: 'line ${bytes.first}',
+      language: 'en',
+      backgroundColor: 0,
+      textColor: 0,
+    );
+    final cached = PageTranslationPipeline.matchingTranslation(block, previous);
+    return cached == null
+        ? PageOcr([], [block], {})
+        : PageOcr([cached], [], {});
+  }
+
   @override
   Future<Uint8List> renderPage(
     Uint8List bytes,
     List<TranslatedRegion> regions, {
     InpaintMode mode = InpaintMode.smart,
+    bool enhanceStrokes = false,
+    void Function()? onStrokeMask,
   }) async => Uint8List.fromList([42]);
 }
 
@@ -150,6 +159,45 @@ void main() {
       expect(service.isTranslated(pages[1].cacheKey, config.mode), isTrue);
       expect(TranslationStore().get(pages[0].cacheKey)!.single.text, '译文');
       expect(TranslationStore().get(pages[1].cacheKey)!.single.text, '补译');
+
+      // Both pages have the same stale translation in the other text scope.
+      for (final reuse in [true, false]) {
+        final page = (
+          cacheKey: ImageTranslationService.cacheKeyFor(
+            'source',
+            'book',
+            '34.2',
+            reuse ? 5 : 6,
+          ),
+          legacyCacheKey: null as String?,
+          imageBytes: Uint8List.fromList([1]),
+        );
+        final otherKey = config.alternateScopeKey(page.cacheKey)!;
+        TranslationStore().put(otherKey, [
+          TranslatedRegion(
+            rect: IntRect(0, 0, 1, 1),
+            sourceText: 'line 1',
+            text: '旧译文',
+            backgroundColor: 0,
+            textColor: 0,
+          ),
+        ]);
+        expect(
+          await service.translatePageGroup(
+            [page],
+            'book@source',
+            config,
+            chapter: chapter,
+            reuseOtherScope: reuse,
+          ),
+          [true],
+        );
+        expect(
+          TranslationStore().get(page.cacheKey)!.single.text,
+          reuse ? '旧译文' : '补译',
+        );
+        expect(TranslationStore().get(otherKey)!.single.text, '旧译文');
+      }
 
       final switchingPage = (
         cacheKey: ImageTranslationService.cacheKeyFor(

@@ -274,7 +274,7 @@ class ReaderImageProvider
   @override
   String get key =>
       "$imageKey@$sourceKey@$cid@$eid@$enableResize"
-      "${translationKey == null ? '' : '@tr:$translationKey:$translated:$translationRevision'}";
+      "${translationKey == null ? '' : '@tr:$translationKey:${translationConfig?.mode.token}:$translated:$translationRevision'}";
 
   /// [key] carries resize/translation state that never reaches the disk entry,
   /// so it cannot double as the eviction key.

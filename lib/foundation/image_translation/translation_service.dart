@@ -92,7 +92,7 @@ class ImageTranslationService with ChangeNotifier {
 
   @visibleForTesting
   ImageTranslationService.withPipeline(PageTranslationPipeline pipeline)
-      : _pipeline = pipeline;
+    : _pipeline = pipeline;
 
   static final instance = ImageTranslationService._();
 
@@ -104,6 +104,37 @@ class ImageTranslationService with ChangeNotifier {
   final _queue = <_TranslationTask>[];
   final _active = <_TranslationTask>{};
   final _retranslating = <String>{};
+  final _pendingText = <String, Future<void>>{};
+
+  /// Reserve the pages together so overlapping chapter groups cannot deadlock.
+  /// Callers re-read stored text after waiting and release before rendering.
+  Future<T> _withTextPages<T>(
+    Iterable<String> pages,
+    Future<T> Function() action,
+  ) async {
+    final keys = pages.toSet();
+    while (true) {
+      final pending = keys
+          .map((key) => _pendingText[key])
+          .whereType<Future<void>>()
+          .toSet();
+      if (pending.isEmpty) break;
+      await Future.wait(pending);
+    }
+    final done = Completer<void>();
+    for (final key in keys) {
+      _pendingText[key] = done.future;
+    }
+    try {
+      return await action();
+    } finally {
+      for (final key in keys) {
+        _pendingText.remove(key);
+      }
+      done.complete();
+    }
+  }
+
   // Flutter's memory image cache outlives a reader route.
   final _pageRevisions = <String, int>{};
   int revisionOf(String? cacheKey) => _pageRevisions[cacheKey] ?? 0;
@@ -138,7 +169,8 @@ class ImageTranslationService with ChangeNotifier {
   /// Current per-page translation state, for the reader status badge.
   PageTranslationStatus statusOf(String cacheKey, InpaintMode mode) {
     var renderKey = renderedKey(cacheKey, mode);
-    if (_retranslating.contains(cacheKey)) {
+    if (_retranslating.contains(cacheKey) ||
+        _pendingText.containsKey(cacheKey)) {
       return PageTranslationStatus.translating;
     }
     if (_completed.contains(renderKey)) return PageTranslationStatus.translated;
@@ -181,8 +213,11 @@ class ImageTranslationService with ChangeNotifier {
   /// same stored text, and switching back reuses the earlier render. The token
   /// is a suffix, so the comic/chapter scope prefixes still match it for
   /// deletion.
-  static String renderedKey(String cacheKey, InpaintMode mode) =>
-      '$cacheKey#${mode.token}';
+  static String renderedKey(
+    String cacheKey,
+    InpaintMode mode, {
+    bool enhanceStrokes = false,
+  }) => '$cacheKey#2${mode.token}${enhanceStrokes ? '+ctd' : ''}';
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
@@ -281,14 +316,23 @@ class ImageTranslationService with ChangeNotifier {
   /// language pair. The comic/chapter identity comes BEFORE the per-image part
   /// so a whole comic — or a single chapter — can be invalidated with one prefix
   /// delete (see [CacheManager.deleteByPrefix]).
-  static String comicScopePrefix(String? sourceKey, String cid) {
-    var prefix = TranslationConfig.of(cid, sourceKey).cachePrefix;
+  static String comicScopePrefix(
+    String? sourceKey,
+    String cid, {
+    TranslationConfig? config,
+  }) {
+    var prefix = (config ?? TranslationConfig.of(cid, sourceKey)).cachePrefix;
     return '$prefix$sourceKey@$cid@';
   }
 
   /// Prefix covering every cached page of one chapter.
-  static String chapterScopePrefix(String? sourceKey, String cid, String eid) {
-    return '${comicScopePrefix(sourceKey, cid)}$eid@';
+  static String chapterScopePrefix(
+    String? sourceKey,
+    String cid,
+    String eid, {
+    TranslationConfig? config,
+  }) {
+    return '${comicScopePrefix(sourceKey, cid, config: config)}$eid@';
   }
 
   static TranslationChapterIdentity chapterIdentity({
@@ -301,7 +345,7 @@ class ImageTranslationService with ChangeNotifier {
     String chapterTitle = '',
   }) {
     return TranslationChapterIdentity(
-      scopePrefix: chapterScopePrefix(sourceKey, cid, eid),
+      scopePrefix: chapterScopePrefix(sourceKey, cid, eid, config: config),
       sourceKey: sourceKey ?? SourcePlatformResolver.localCanonicalKey,
       comicId: cid,
       chapterId: eid,
@@ -335,9 +379,10 @@ class ImageTranslationService with ChangeNotifier {
     String? sourceKey,
     String cid,
     String eid,
-    int page,
-  ) {
-    return '${chapterScopePrefix(sourceKey, cid, eid)}p$page@';
+    int page, {
+    TranslationConfig? config,
+  }) {
+    return '${chapterScopePrefix(sourceKey, cid, eid, config: config)}p$page@';
   }
 
   /// The key a page was stored under before [cacheKeyFor] switched to the page
@@ -348,9 +393,10 @@ class ImageTranslationService with ChangeNotifier {
     String imageKey,
     String? sourceKey,
     String cid,
-    String eid,
-  ) {
-    return '${chapterScopePrefix(sourceKey, cid, eid)}$imageKey';
+    String eid, {
+    TranslationConfig? config,
+  }) {
+    return '${chapterScopePrefix(sourceKey, cid, eid, config: config)}$imageKey';
   }
 
   /// Stored regions for a page, adopting a legacy transport-keyed row when the
@@ -362,6 +408,27 @@ class ImageTranslationService with ChangeNotifier {
     var regions = TranslationStore().get(cacheKey);
     if (regions != null || legacyCacheKey == null) return regions;
     return TranslationStore().adoptLegacyKey(legacyCacheKey, cacheKey);
+  }
+
+  static List<TranslatedRegion> pageTranslation(
+    String cacheKey,
+    String? legacyCacheKey,
+  ) => _storedRegions(cacheKey, legacyCacheKey) ?? const [];
+
+  static List<TranslatedRegion> _otherScopeRegions(
+    TranslationConfig config,
+    String cacheKey,
+    String? legacyCacheKey,
+  ) {
+    final other = config.alternateScopeKey(cacheKey);
+    if (other == null) return const [];
+    return _storedRegions(
+          other,
+          legacyCacheKey == null
+              ? null
+              : config.alternateScopeKey(legacyCacheKey),
+        ) ??
+        const [];
   }
 
   /// Removes the rendered-image cache AND the durable stored text for every
@@ -419,6 +486,9 @@ class ImageTranslationService with ChangeNotifier {
         for (var mode in InpaintMode.values) {
           var renderKey = renderedKey(key, mode);
           await CacheManager().delete(renderKey);
+          await CacheManager().delete(
+            renderedKey(key, mode, enhanceStrokes: true),
+          );
           _completed.remove(renderKey);
           _failures.remove(renderKey);
           _errors.remove(renderKey);
@@ -436,11 +506,18 @@ class ImageTranslationService with ChangeNotifier {
   /// the current language pair AND the comic's learned glossary, so the next
   /// read / pre-translate starts clean. [eid] limits it to one chapter, in
   /// which case the glossary is kept (other chapters still rely on it).
-  Future<void> retranslate(String cid, String sourceKey, {String? eid}) async {
+  Future<void> retranslate(
+    String cid,
+    String sourceKey, {
+    String? eid,
+    TranslationConfig? config,
+  }) async {
     if (eid != null) {
-      await invalidateScope(chapterScopePrefix(sourceKey, cid, eid));
+      await invalidateScope(
+        chapterScopePrefix(sourceKey, cid, eid, config: config),
+      );
     } else {
-      await invalidateScope(comicScopePrefix(sourceKey, cid));
+      await invalidateScope(comicScopePrefix(sourceKey, cid, config: config));
       _clearGlossary('$cid@$sourceKey');
     }
     notifyListeners();
@@ -460,15 +537,26 @@ class ImageTranslationService with ChangeNotifier {
     return removed;
   }
 
-  Future<File?> findTranslated(String cacheKey, InpaintMode mode) {
-    return CacheManager().findCache(renderedKey(cacheKey, mode));
+  Future<File?> findTranslated(String cacheKey, InpaintMode mode) async {
+    return await CacheManager().findCache(
+          renderedKey(cacheKey, mode, enhanceStrokes: true),
+        ) ??
+        await CacheManager().findCache(renderedKey(cacheKey, mode));
   }
 
   /// Whether a fully rendered translated page (not just the text result) is
   /// already cached. Used by the pre-translation task manager to skip pages
   /// that were done in an earlier run or read online.
-  Future<bool> hasRenderedPage(String cacheKey, InpaintMode mode) async {
-    return await CacheManager().findCache(renderedKey(cacheKey, mode)) != null;
+  Future<bool> hasRenderedPage(
+    String cacheKey,
+    InpaintMode mode, {
+    bool enhanceStrokes = false,
+  }) async {
+    if (!enhanceStrokes) return await findTranslated(cacheKey, mode) != null;
+    return await CacheManager().findCache(
+          renderedKey(cacheKey, mode, enhanceStrokes: true),
+        ) !=
+        null;
   }
 
   /// How many pages of one chapter already have a stored text result — the
@@ -480,17 +568,17 @@ class ImageTranslationService with ChangeNotifier {
     String cid,
     String sourceKey,
     String eid, {
+    TranslationConfig? config,
     String comicTitle = '',
     String comicCover = '',
     String chapterTitle = '',
   }) {
-    var config = TranslationConfig.of(cid, sourceKey);
     return TranslationStore().recordExistingChapter(
       chapterIdentity(
         cid: cid,
         sourceKey: sourceKey,
         eid: eid,
-        config: config,
+        config: config ?? TranslationConfig.of(cid, sourceKey),
         comicTitle: comicTitle,
         comicCover: comicCover,
         chapterTitle: chapterTitle,
@@ -505,7 +593,8 @@ class ImageTranslationService with ChangeNotifier {
     return TranslationStore().comics.where((comic) {
       var config = TranslationConfig.of(comic.comicId, comic.sourceKey);
       return comic.sourceLang == config.sourceLang &&
-          comic.targetLang == config.targetLang;
+          comic.targetLang == config.targetLang &&
+          comic.dialogueOnly == config.dialogueOnly;
     }).toList();
   }
 
@@ -529,7 +618,7 @@ class ImageTranslationService with ChangeNotifier {
   }) async {
     TranslationStore().recordExistingChapter(chapter);
     var renderKey = renderedKey(cacheKey, mode);
-    var cached = await CacheManager().findCache(renderKey);
+    var cached = await findTranslated(cacheKey, mode);
     if (cached != null) {
       _completed.add(renderKey);
       return await cached.readAsBytes();
@@ -593,47 +682,61 @@ class ImageTranslationService with ChangeNotifier {
     required TranslationChapterIdentity chapter,
     String? legacyCacheKey,
   }) async {
-    if (_queue.any((task) => task.cacheKey == cacheKey) ||
+    if (_pendingText.containsKey(cacheKey) ||
+        _queue.any((task) => task.cacheKey == cacheKey) ||
         !_retranslating.add(cacheKey)) {
       throw StateError('Page translation already in progress');
     }
     _releaseTimer?.cancel();
     notifyListeners();
     try {
-      final pipeline = _pipeline ??= PageTranslationPipeline();
-      final analysis = await pipeline.analyzePage(
-        imageBytes,
-        sourceLang: _effectiveSourceFor(comicKey, config),
-        targetLang: config.targetLang,
-        glossary: _glossaryFor(comicKey),
-      );
-      if (analysis.regions.isEmpty) return false;
-      final bytes = await pipeline.renderPage(
-        imageBytes,
-        analysis.regions,
-        mode: config.mode,
-      );
-      final store = TranslationStore();
-      if (legacyCacheKey != null) {
-        store.adoptLegacyKey(legacyCacheKey, cacheKey);
-      }
-      for (final mode in InpaintMode.values) {
-        final key = renderedKey(cacheKey, mode);
-        if (mode != config.mode) await CacheManager().delete(key);
-        _completed.remove(key);
-        _errors.remove(key);
-        _failures.remove(key);
-      }
-      final key = renderedKey(cacheKey, config.mode);
-      await CacheManager().writeCache(key, bytes, _imageCacheDuration);
-      store.put(cacheKey, analysis.regions, chapter: chapter);
-      _pageRevisions[cacheKey] = revisionOf(cacheKey) + 1;
-      _completed.add(key);
-      _noContent.remove(cacheKey);
-      _updateLanguageLock(comicKey, analysis.languageVotes, config);
-      _mergeGlossary(comicKey, analysis.newGlossary);
-      DataSync().onTranslationsChanged();
-      return true;
+      return await _withTextPages([cacheKey], () async {
+        final pipeline = _pipeline ??= PageTranslationPipeline();
+        final analysis = await pipeline.analyzePage(
+          imageBytes,
+          sourceLang: _effectiveSourceFor(comicKey, config),
+          targetLang: config.targetLang,
+          dialogueOnly: config.dialogueOnly,
+          glossary: _glossaryFor(comicKey),
+        );
+        if (analysis.regions.isEmpty) return false;
+        var enhanced = false;
+        final bytes = await pipeline.renderPage(
+          imageBytes,
+          analysis.regions,
+          mode: config.mode,
+          enhanceStrokes: true,
+          onStrokeMask: () => enhanced = true,
+        );
+        final store = TranslationStore();
+        if (legacyCacheKey != null) {
+          store.adoptLegacyKey(legacyCacheKey, cacheKey);
+        }
+        final writeKey = renderedKey(
+          cacheKey,
+          config.mode,
+          enhanceStrokes: enhanced,
+        );
+        await CacheManager().writeCache(writeKey, bytes, _imageCacheDuration);
+        for (final mode in InpaintMode.values) {
+          final key = renderedKey(cacheKey, mode);
+          final ctdKey = renderedKey(cacheKey, mode, enhanceStrokes: true);
+          if (key != writeKey) await CacheManager().delete(key);
+          if (ctdKey != writeKey) await CacheManager().delete(ctdKey);
+          _completed.remove(key);
+          _errors.remove(key);
+          _failures.remove(key);
+        }
+        final key = renderedKey(cacheKey, config.mode);
+        store.put(cacheKey, analysis.regions, chapter: chapter);
+        _pageRevisions[cacheKey] = revisionOf(cacheKey) + 1;
+        _completed.add(key);
+        _noContent.remove(cacheKey);
+        _updateLanguageLock(comicKey, analysis.languageVotes, config);
+        _mergeGlossary(comicKey, analysis.newGlossary);
+        DataSync().onTranslationsChanged();
+        return true;
+      });
     } finally {
       _retranslating.remove(cacheKey);
       notifyListeners();
@@ -658,25 +761,31 @@ class ImageTranslationService with ChangeNotifier {
   }) async {
     TranslationStore().recordExistingChapter(chapter);
     var renderKey = renderedKey(cacheKey, config.mode);
-    if (await CacheManager().findCache(renderKey) != null) {
+    if (await findTranslated(cacheKey, config.mode) != null) {
       return _TranslateOutcome.alreadyCached;
     }
     var pipeline = _pipeline ??= PageTranslationPipeline();
     // The store is the durable source of truth: a hit (local, or merged from
     // another device via WebDAV) skips OCR and the paid LLM request entirely.
-    var regions = _storedRegions(cacheKey, legacyCacheKey);
-    if (regions == null) {
-      var analysis = await pipeline.analyzePage(
-        imageBytes,
-        sourceLang: _effectiveSourceFor(comicKey, config),
-        targetLang: config.targetLang,
-        glossary: _glossaryFor(comicKey),
-      );
-      _updateLanguageLock(comicKey, analysis.languageVotes, config);
-      _mergeGlossary(comicKey, analysis.newGlossary);
-      regions = analysis.regions;
-      TranslationStore().put(cacheKey, regions, chapter: chapter);
-    }
+    final regions =
+        _storedRegions(cacheKey, legacyCacheKey) ??
+        await _withTextPages<List<TranslatedRegion>>([cacheKey], () async {
+          final existing = _storedRegions(cacheKey, legacyCacheKey);
+          if (existing != null) return existing;
+          if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+          final analysis = await pipeline.analyzePage(
+            imageBytes,
+            sourceLang: _effectiveSourceFor(comicKey, config),
+            targetLang: config.targetLang,
+            dialogueOnly: config.dialogueOnly,
+            previous: _otherScopeRegions(config, cacheKey, legacyCacheKey),
+            glossary: _glossaryFor(comicKey),
+          );
+          _updateLanguageLock(comicKey, analysis.languageVotes, config);
+          _mergeGlossary(comicKey, analysis.newGlossary);
+          TranslationStore().put(cacheKey, analysis.regions, chapter: chapter);
+          return analysis.regions;
+        });
     if (shouldCancel?.call() ?? false) {
       throw const PipelineCanceled();
     }
@@ -719,6 +828,8 @@ class ImageTranslationService with ChangeNotifier {
     bool Function()? shouldCancel,
     Future<void> Function()? waitUntilResumed,
     void Function(TranslationStage stage, double completedPages)? onStage,
+    bool enhanceStrokes = true,
+    bool reuseOtherScope = true,
   }) async {
     var success = List.filled(pages.length, false);
     if (pages.isEmpty) return success;
@@ -768,7 +879,12 @@ class ImageTranslationService with ChangeNotifier {
       var p = pages[i];
       try {
         var renderKey = renderedKey(p.cacheKey, config.mode);
-        if (await CacheManager().findCache(renderKey) != null) {
+        if (await hasRenderedPage(
+          p.cacheKey,
+          config.mode,
+          enhanceStrokes:
+              enhanceStrokes && TranslationModels.strokeModelPath != null,
+        )) {
           _completed.add(renderKey);
           success[i] = true;
           settled[i] = true;
@@ -790,6 +906,10 @@ class ImageTranslationService with ChangeNotifier {
           p.imageBytes,
           sourceLang: sourceLang,
           targetLang: config.targetLang,
+          dialogueOnly: config.dialogueOnly,
+          previous: reuseOtherScope
+              ? _otherScopeRegions(config, p.cacheKey, p.legacyCacheKey)
+              : const [],
         );
       } on PipelineCanceled {
         rethrow;
@@ -808,63 +928,83 @@ class ImageTranslationService with ChangeNotifier {
     }
     _updateLanguageLock(comicKey, votes, config);
 
-    var texts = <String>[];
-    var sliceAt = List<int>.filled(pages.length, 0);
-    for (var i = 0; i < pages.length; i++) {
-      var po = pendingOcr[i];
-      if (po == null) continue;
-      sliceAt[i] = texts.length;
-      texts.addAll(po.pending.map((b) => b.text));
-    }
-
-    var batchOk = true;
-    var translated = const <String>[];
-    if (texts.isNotEmpty) {
-      onStage?.call(TranslationStage.translating, completedPages());
+    final unresolved = [
+      for (var i = 0; i < pages.length; i++)
+        if (pendingOcr[i] != null) i,
+    ];
+    if (unresolved.isNotEmpty) {
       await waitForResume();
-      try {
-        var result = await LlmTranslator.translateBatch(
-          texts,
-          config.targetLang,
-          glossary: _glossaryFor(comicKey),
-          sourceLang: _effectiveSourceFor(comicKey, config),
-        );
-        _mergeGlossary(comicKey, result.glossary);
-        translated = result.texts;
-      } catch (e, s) {
-        Log.warning('Image Translation', 'Batch translate failed: $e\n$s');
-        batchOk = false;
-      }
-    }
+      await _withTextPages(unresolved.map((i) => pages[i].cacheKey), () async {
+        if (shouldCancel?.call() ?? false) throw const PipelineCanceled();
+        for (final i in unresolved) {
+          final page = pages[i];
+          final stored = _storedRegions(page.cacheKey, page.legacyCacheKey);
+          if (stored != null) {
+            regionsOf[i] = stored;
+            pendingOcr[i] = null;
+          }
+        }
+        var texts = <String>[];
+        var sliceAt = List<int>.filled(pages.length, 0);
+        for (var i = 0; i < pages.length; i++) {
+          var po = pendingOcr[i];
+          if (po == null) continue;
+          sliceAt[i] = texts.length;
+          texts.addAll(po.pending.map((b) => b.text));
+        }
 
-    for (var i = 0; i < pages.length; i++) {
-      var po = pendingOcr[i];
-      if (po == null) continue;
-      if (!batchOk && po.pending.isNotEmpty) {
-        settled[i] = true; // request failed; retry this page on a later run
-        continue;
-      }
-      var slice = po.pending.isEmpty || !batchOk
-          ? const <String>[]
-          : translated.sublist(
-              sliceAt[i].clamp(0, translated.length),
-              (sliceAt[i] + po.pending.length).clamp(0, translated.length),
+        var batchOk = true;
+        var translated = const <String>[];
+        if (texts.isNotEmpty) {
+          onStage?.call(TranslationStage.translating, completedPages());
+          try {
+            var result = await LlmTranslator.translateBatch(
+              texts,
+              config.targetLang,
+              glossary: _glossaryFor(comicKey),
+              sourceLang: _effectiveSourceFor(comicKey, config),
             );
-      try {
-        regionsOf[i] = [
-          ...po.ready,
-          ...pipeline.regionsFromTranslation(po.pending, slice),
-        ];
-        // Keep paid results before a chapter pause can interrupt rendering.
-        TranslationStore().put(
-          pages[i].cacheKey,
-          regionsOf[i]!,
-          chapter: chapter,
-        );
-      } on FormatException catch (error) {
-        Log.warning('Image Translation', 'Incomplete page translation: $error');
-        settled[i] = true;
-      }
+            _mergeGlossary(comicKey, result.glossary);
+            translated = result.texts;
+          } catch (e, s) {
+            Log.warning('Image Translation', 'Batch translate failed: $e\n$s');
+            batchOk = false;
+          }
+        }
+
+        for (var i = 0; i < pages.length; i++) {
+          var po = pendingOcr[i];
+          if (po == null) continue;
+          if (!batchOk && po.pending.isNotEmpty) {
+            settled[i] = true; // request failed; retry this page on a later run
+            continue;
+          }
+          var slice = po.pending.isEmpty || !batchOk
+              ? const <String>[]
+              : translated.sublist(
+                  sliceAt[i].clamp(0, translated.length),
+                  (sliceAt[i] + po.pending.length).clamp(0, translated.length),
+                );
+          try {
+            regionsOf[i] = [
+              ...po.ready,
+              ...pipeline.regionsFromTranslation(po.pending, slice),
+            ];
+            // Keep paid results before a chapter pause can interrupt rendering.
+            TranslationStore().put(
+              pages[i].cacheKey,
+              regionsOf[i]!,
+              chapter: chapter,
+            );
+          } on FormatException catch (error) {
+            Log.warning(
+              'Image Translation',
+              'Incomplete page translation: $error',
+            );
+            settled[i] = true;
+          }
+        }
+      });
     }
 
     // Stage 3 — render + cache each resolved page.
@@ -881,18 +1021,22 @@ class ImageTranslationService with ChangeNotifier {
           success[i] = true; // no translatable text still counts as handled
           continue;
         }
+        var enhanced = false;
         var rendered = await pipeline.renderPage(
           p.imageBytes,
           regions,
           mode: config.mode,
+          enhanceStrokes: enhanceStrokes,
+          onStrokeMask: () => enhanced = true,
         );
         var renderKey = renderedKey(p.cacheKey, config.mode);
         await CacheManager().writeCache(
-          renderKey,
+          renderedKey(p.cacheKey, config.mode, enhanceStrokes: enhanced),
           rendered,
           _imageCacheDuration,
         );
         _completed.add(renderKey);
+        if (enhanced) _pageRevisions[p.cacheKey] = revisionOf(p.cacheKey) + 1;
         success[i] = true;
       } catch (e, s) {
         Log.warning('Image Translation', 'Batch render failed: $e\n$s');
@@ -902,6 +1046,7 @@ class ImageTranslationService with ChangeNotifier {
       }
     }
     onStage?.call(TranslationStage.rendering, completedPages());
+    if (success.contains(true)) notifyListeners();
     return success;
   }
 
@@ -937,7 +1082,9 @@ class ImageTranslationService with ChangeNotifier {
       }
       _failures.remove(renderKey);
     }
-    var existing = _queue.where((t) => t.cacheKey == cacheKey).firstOrNull;
+    var existing = _queue
+        .where((t) => t.cacheKey == cacheKey && t.config.mode == config.mode)
+        .firstOrNull;
     if (existing != null) {
       existing.listeners.add(onTranslated);
       return;
@@ -968,7 +1115,14 @@ class ImageTranslationService with ChangeNotifier {
 
   void _pump() {
     while (_active.length < _maxConcurrent) {
-      var next = _queue.where((t) => !_active.contains(t)).firstOrNull;
+      // Different render modes can share the just-translated text, once the
+      // first request for this page finishes.
+      var next = _queue
+          .where(
+            (task) =>
+                !_active.any((active) => active.cacheKey == task.cacheKey),
+          )
+          .firstOrNull;
       if (next == null) break;
       _active.add(next);
       unawaited(_process(next));
@@ -1308,7 +1462,9 @@ class ImageTranslationService with ChangeNotifier {
   void _scheduleRelease() {
     _releaseTimer?.cancel();
     _releaseTimer = Timer(_idleReleaseDelay, () {
-      if (_active.isNotEmpty || _queue.isNotEmpty || _retranslating.isNotEmpty) {
+      if (_active.isNotEmpty ||
+          _queue.isNotEmpty ||
+          _retranslating.isNotEmpty) {
         return;
       }
       var pipeline = _pipeline;

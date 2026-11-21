@@ -111,10 +111,13 @@ class PreTranslationTask {
     required this.title,
     required this.chapters,
     required this.createdAt,
+    TranslationConfig? config,
+    this.enhanceStrokes = false,
+    this.reuseOtherScope = true,
     this.cover = '',
     this.status = PreTranslationTaskStatus.running,
     this.finishedAt,
-  });
+  }) : config = config ?? TranslationConfig.of(cid, sourceKey);
 
   final String id;
   final String cid;
@@ -129,10 +132,17 @@ class PreTranslationTask {
 
   String get comicKey => '$cid@$sourceKey';
 
-  /// This comic's own language pair + text-removal mode. Resolved live, exactly
-  /// like [ImageTranslationService.cacheKeyFor] does, so the config and the
-  /// cache keys a job writes to always describe the same generation.
-  TranslationConfig get config => TranslationConfig.of(cid, sourceKey);
+  /// Captured at enqueue time so settings changes cannot redirect later pages.
+  final TranslationConfig config;
+  final bool enhanceStrokes;
+  final bool reuseOtherScope;
+
+  bool matchesScope(String cid, String sourceKey, TranslationConfig scope) =>
+      this.cid == cid &&
+      this.sourceKey == sourceKey &&
+      config.sourceLang == scope.sourceLang &&
+      config.targetLang == scope.targetLang &&
+      config.dialogueOnly == scope.dialogueOnly;
 
   bool get isRunning => status == PreTranslationTaskStatus.running;
 
@@ -169,6 +179,12 @@ class PreTranslationTask {
     'cid': cid,
     'sourceKey': sourceKey,
     'comicType': comicType.value,
+    'sourceLang': config.sourceLang,
+    'targetLang': config.targetLang,
+    'dialogueOnly': config.dialogueOnly,
+    'mode': config.mode.name,
+    'enhanceStrokes': enhanceStrokes,
+    'reuseOtherScope': reuseOtherScope,
     'title': title,
     'cover': cover,
     'createdAt': createdAt.toIso8601String(),
@@ -178,10 +194,22 @@ class PreTranslationTask {
   };
 
   factory PreTranslationTask.fromJson(Map<String, dynamic> json) {
+    final cid = json['cid']?.toString() ?? '';
+    final sourceKey = json['sourceKey']?.toString() ?? '';
+    late final previous = TranslationConfig.of(cid, sourceKey);
     return PreTranslationTask(
       id: json['id']?.toString() ?? '',
-      cid: json['cid']?.toString() ?? '',
-      sourceKey: json['sourceKey']?.toString() ?? '',
+      cid: cid,
+      sourceKey: sourceKey,
+      config: TranslationConfig(
+        sourceLang: json['sourceLang'] as String? ?? previous.sourceLang,
+        targetLang: json['targetLang'] as String? ?? previous.targetLang,
+        mode: InpaintMode.fromSettings(json['mode'] ?? previous.mode.name),
+        // Jobs written before scope selection always processed all text.
+        dialogueOnly: json['dialogueOnly'] == true,
+      ),
+      enhanceStrokes: json['enhanceStrokes'] == true,
+      reuseOtherScope: json['reuseOtherScope'] != false,
       comicType: ComicType(json['comicType'] ?? 0),
       title: json['title']?.toString() ?? '',
       cover: json['cover']?.toString() ?? '',
@@ -340,6 +368,7 @@ class PreTranslationTaskManager with ChangeNotifier {
             task.cid,
             chapter.eid,
             index + 1,
+            config: task.config,
           );
           final status = service.statusOf(key, task.config.mode);
           if (status == PageTranslationStatus.translated ||
@@ -406,15 +435,24 @@ class PreTranslationTaskManager with ChangeNotifier {
     required String title,
     required List<PreTranslationChapter> chapters,
     String cover = '',
+    TranslationConfig? config,
+    bool? enhanceStrokes,
+    bool reuseOtherScope = true,
   }) {
-    if (!ImageTranslationService.isReadyForComic(cid, sourceKey) ||
-        chapters.isEmpty) {
+    final scope = config ?? TranslationConfig.of(cid, sourceKey);
+    if (chapters.isEmpty ||
+        !ImageTranslationService.isReadyForLang(scope.sourceLang)) {
       return null;
     }
+    final useStrokes =
+        enhanceStrokes ?? (TranslationModels.strokeModelPath != null);
     var existing = currentTasks
         .where(
           (t) =>
-              t.comicKey == '$cid@$sourceKey' &&
+              t.matchesScope(cid, sourceKey, scope) &&
+              t.config.mode == scope.mode &&
+              t.enhanceStrokes == useStrokes &&
+              t.reuseOtherScope == reuseOtherScope &&
               (t.isRunning || t.status == PreTranslationTaskStatus.paused),
         )
         .firstOrNull;
@@ -440,6 +478,9 @@ class PreTranslationTaskManager with ChangeNotifier {
       comicType: comicType,
       title: title,
       cover: cover,
+      config: scope,
+      enhanceStrokes: useStrokes,
+      reuseOtherScope: reuseOtherScope,
       chapters: chapters,
       createdAt: DateTime.now(),
     );
@@ -452,8 +493,9 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   /// Whether a running job exists for the comic (detail page badge).
   PreTranslationTask? runningTaskFor(String cid, String sourceKey) {
+    final scope = TranslationConfig.of(cid, sourceKey);
     return currentTasks
-        .where((t) => t.comicKey == '$cid@$sourceKey' && t.isRunning)
+        .where((t) => t.matchesScope(cid, sourceKey, scope) && t.isRunning)
         .firstOrNull;
   }
 
@@ -465,14 +507,15 @@ class PreTranslationTaskManager with ChangeNotifier {
   PreTranslationChapter? chapterProgressFor(
     String cid,
     String sourceKey,
-    String eid,
-  ) {
-    var comicKey = '$cid@$sourceKey';
+    String eid, {
+    TranslationConfig? config,
+  }) {
+    final scope = config ?? TranslationConfig.of(cid, sourceKey);
     // A running/paused job owns the chapter: return it even before its page
     // count is known (total == 0) so the picker can show a "waiting" state for
     // queued-but-not-started chapters, not just active ones.
     for (var task in currentTasks) {
-      if (task.comicKey != comicKey) continue;
+      if (!task.matchesScope(cid, sourceKey, scope)) continue;
       var chapter = task.chapters
           .where((c) => c.eid == eid && !c.canceled)
           .firstOrNull;
@@ -484,7 +527,7 @@ class PreTranslationTaskManager with ChangeNotifier {
     // Otherwise only report a finished chapter (all pages accounted for) so a
     // canceled/failed run does not masquerade as in-progress after restart.
     for (var task in historyTasks) {
-      if (task.comicKey != comicKey) continue;
+      if (!task.matchesScope(cid, sourceKey, scope)) continue;
       var chapter = task.chapters.where((c) => c.eid == eid).firstOrNull;
       if (chapter != null &&
           chapter.total > 0 &&
@@ -546,10 +589,15 @@ class PreTranslationTaskManager with ChangeNotifier {
 
   /// Whether a chapter belongs to a currently running/paused job (so the picker
   /// can distinguish "queued/among this run" from a finished-in-history one).
-  bool isChapterActive(String cid, String sourceKey, String eid) {
-    var comicKey = '$cid@$sourceKey';
+  bool isChapterActive(
+    String cid,
+    String sourceKey,
+    String eid, {
+    TranslationConfig? config,
+  }) {
+    final scope = config ?? TranslationConfig.of(cid, sourceKey);
     for (var task in currentTasks) {
-      if (task.comicKey != comicKey) continue;
+      if (!task.matchesScope(cid, sourceKey, scope)) continue;
       if (task.chapters.any((c) => c.eid == eid && !c.canceled)) return true;
     }
     return false;
@@ -1140,6 +1188,9 @@ class PreTranslationTaskManager with ChangeNotifier {
   ) async {
     var service = ImageTranslationService.instance;
     var settledBeforeBatch = 0;
+    final config = task.config;
+    final enhanceStrokes =
+        task.enhanceStrokes && TranslationModels.strokeModelPath != null;
     var pending =
         <
           ({
@@ -1166,15 +1217,21 @@ class PreTranslationTaskManager with ChangeNotifier {
         task.cid,
         chapter.eid,
         i + 1,
+        config: config,
       );
       var legacyCacheKey = ImageTranslationService.legacyCacheKeyFor(
         imageKey,
         task.sourceKey,
         task.cid,
         chapter.eid,
+        config: config,
       );
       try {
-        if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
+        if (await service.hasRenderedPage(
+          cacheKey,
+          config.mode,
+          enhanceStrokes: enhanceStrokes,
+        )) {
           _markRetrySuccess(chapter, i);
           settledBeforeBatch++;
           reportFetchPhase();
@@ -1199,7 +1256,6 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
     if (pending.isEmpty) return true;
     try {
-      var config = task.config;
       var results = await service.translatePageGroup(
         pending
             .map(
@@ -1212,6 +1268,8 @@ class PreTranslationTaskManager with ChangeNotifier {
             .toList(),
         task.comicKey,
         config,
+        enhanceStrokes: enhanceStrokes,
+        reuseOtherScope: task.reuseOtherScope,
         chapter: ImageTranslationService.chapterIdentity(
           cid: task.cid,
           sourceKey: task.sourceKey,
@@ -1273,6 +1331,9 @@ class PreTranslationTaskManager with ChangeNotifier {
     PreTranslationGroupActivity activity,
   ) async {
     var service = ImageTranslationService.instance;
+    final config = task.config;
+    final enhanceStrokes =
+        task.enhanceStrokes && TranslationModels.strokeModelPath != null;
     var pending =
         <
           ({
@@ -1313,15 +1374,21 @@ class PreTranslationTaskManager with ChangeNotifier {
         task.cid,
         chapter.eid,
         i + 1,
+        config: config,
       );
       var legacyCacheKey = ImageTranslationService.legacyCacheKeyFor(
         imageKey,
         task.sourceKey,
         task.cid,
         chapter.eid,
+        config: config,
       );
       try {
-        if (await service.hasRenderedPage(cacheKey, task.config.mode)) {
+        if (await service.hasRenderedPage(
+          cacheKey,
+          config.mode,
+          enhanceStrokes: enhanceStrokes,
+        )) {
           done++;
           preSettled++;
           reportFetchPhase();
@@ -1347,7 +1414,6 @@ class PreTranslationTaskManager with ChangeNotifier {
     }
     if (pending.isNotEmpty) {
       try {
-        var config = task.config;
         var results = await service.translatePageGroup(
           pending
               .map(
@@ -1360,6 +1426,8 @@ class PreTranslationTaskManager with ChangeNotifier {
               .toList(),
           task.comicKey,
           config,
+          enhanceStrokes: enhanceStrokes,
+          reuseOtherScope: task.reuseOtherScope,
           chapter: ImageTranslationService.chapterIdentity(
             cid: task.cid,
             sourceKey: task.sourceKey,
@@ -1414,8 +1482,10 @@ class PreTranslationTaskManager with ChangeNotifier {
     PreTranslationChapter chapter,
   ) async {
     final local = LocalManager().find(task.cid, task.comicType);
-    final downloaded = local != null &&
-        (local.chapters == null || local.downloadedChapters.contains(chapter.eid));
+    final downloaded =
+        local != null &&
+        (local.chapters == null ||
+            local.downloadedChapters.contains(chapter.eid));
     if (downloaded) {
       return await LocalManager().getImages(
         task.cid,
@@ -1623,11 +1693,16 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// in both history and any running job so the picker stops showing them as
   /// "translated" and a fresh run re-counts them from scratch against the now
   /// cleared cache.
-  void resetChapterStatus(String cid, String sourceKey, Set<String> eids) {
+  void resetChapterStatus(
+    String cid,
+    String sourceKey,
+    Set<String> eids, {
+    TranslationConfig? config,
+  }) {
     if (eids.isEmpty) return;
-    var comicKey = '$cid@$sourceKey';
+    final scope = config ?? TranslationConfig.of(cid, sourceKey);
     for (var task in [...historyTasks, ...currentTasks]) {
-      if (task.comicKey != comicKey) continue;
+      if (!task.matchesScope(cid, sourceKey, scope)) continue;
       for (var c in task.chapters) {
         if (eids.contains(c.eid)) {
           c.done = 0;
@@ -1647,11 +1722,15 @@ class PreTranslationTaskManager with ChangeNotifier {
   /// (used by the detail page's whole-comic re-translate). Drops that comic's
   /// finished history entries and zeroes any running job's counters so the
   /// picker's "translated" ticks for it clear, leaving other comics untouched.
-  void resetComicStatus(String cid, String sourceKey) {
-    var comicKey = '$cid@$sourceKey';
-    historyTasks.removeWhere((t) => t.comicKey == comicKey);
+  void resetComicStatus(
+    String cid,
+    String sourceKey, {
+    TranslationConfig? config,
+  }) {
+    final scope = config ?? TranslationConfig.of(cid, sourceKey);
+    historyTasks.removeWhere((t) => t.matchesScope(cid, sourceKey, scope));
     for (var task in currentTasks) {
-      if (task.comicKey != comicKey) continue;
+      if (!task.matchesScope(cid, sourceKey, scope)) continue;
       for (var c in task.chapters) {
         c.done = 0;
         c.failed = 0;

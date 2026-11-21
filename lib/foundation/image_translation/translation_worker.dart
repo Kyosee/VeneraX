@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
@@ -12,11 +14,14 @@ import 'package:venera/foundation/image_translation/translation_performance_conf
 import 'package:venera/foundation/image_translation/worker_pool_selection.dart';
 import 'package:venera/utils/io.dart';
 
+part 'translation_enhancement.dart';
+
 /// Model file paths handed to the worker with each request; the worker has no
 /// access to appdata/settings singletons.
 class WorkerModelPaths {
   WorkerModelPaths({
     required this.detector,
+    this.bubbleModel,
     this.jaEncoder,
     this.jaDecoder,
     this.jaVocab,
@@ -28,6 +33,7 @@ class WorkerModelPaths {
   });
 
   final String detector;
+  final String? bubbleModel;
   final String? jaEncoder;
   final String? jaDecoder;
   final String? jaVocab;
@@ -78,12 +84,15 @@ Future<void> checkRecognitionModel(String model, String dict, int height) {
       throw const ModelCheckException(ModelCheckFailure.cannotRun);
     }
     try {
-      output = session.run({
-        session.inputNames.first: OrtInput.float32(
-          Float32List(3 * height * 160),
-          [1, 3, height, 160],
-        ),
-      }).values.first;
+      output = session
+          .run({
+            session.inputNames.first: OrtInput.float32(
+              Float32List(3 * height * 160),
+              [1, 3, height, 160],
+            ),
+          })
+          .values
+          .first;
     } catch (_) {
       throw const ModelCheckException(ModelCheckFailure.cannotRun);
     } finally {
@@ -116,12 +125,15 @@ Future<void> checkDetectionModel(String model) {
       throw const ModelCheckException(ModelCheckFailure.cannotRun);
     }
     try {
-      output = session.run({
-        session.inputNames.first: OrtInput.float32(
-          Float32List(3 * 64 * 64),
-          const [1, 3, 64, 64],
-        ),
-      }).values.first;
+      output = session
+          .run({
+            session.inputNames.first: OrtInput.float32(
+              Float32List(3 * 64 * 64),
+              const [1, 3, 64, 64],
+            ),
+          })
+          .values
+          .first;
     } catch (_) {
       throw const ModelCheckException(ModelCheckFailure.cannotRun);
     } finally {
@@ -178,6 +190,7 @@ class _OcrPageRequest {
     this.sourceLang,
     this.paths,
     this.intraThreads,
+    this.dialogueOnly,
   );
 
   final int id;
@@ -189,10 +202,27 @@ class _OcrPageRequest {
   final String sourceLang;
   final WorkerModelPaths paths;
   final int intraThreads;
+  final bool dialogueOnly;
+}
+
+class _StrokeRequest {
+  _StrokeRequest(
+    this.id,
+    this.pixels,
+    this.width,
+    this.height,
+    this.path,
+    this.threads,
+  );
+
+  final int id, width, height, threads;
+  final TransferableTypedData pixels;
+  final String path;
 }
 
 class _ReleaseRequest {
-  const _ReleaseRequest();
+  const _ReleaseRequest({this.stop = false});
+  final bool stop;
 }
 
 class _WorkerResponse {
@@ -315,6 +345,7 @@ class TranslationWorker {
   static final instance = TranslationWorker._();
 
   final _workers = <_IsolateWorker>[];
+  Future<void> _lastStroke = Future.value();
 
   bool _isWarm = false;
 
@@ -340,21 +371,35 @@ class TranslationWorker {
     RgbaImage image, {
     required String sourceLang,
     required WorkerModelPaths paths,
+    bool dialogueOnly = false,
   }) {
     var poolSize = _poolSize(sourceLang, paths);
     _trimIdleWorkers(poolSize);
     // Keep total ONNX intra-op threads ~= cores: dividing by the pool size
     // avoids oversubscribing the CPU (which would make more workers slower).
+    var useBubble =
+        dialogueOnly && paths.bubbleModel != null && _fitsBubbleModel(image);
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
-    var worker = _pickWorker(poolSize);
+    var worker = _pickWorker(useBubble ? 1 : poolSize);
     return worker
         .ocrPage(
           image,
           sourceLang: sourceLang,
           paths: paths,
           intraThreads: intraThreads,
+          dialogueOnly: dialogueOnly,
         )
         .whenComplete(() => _isWarm = true);
+  }
+
+  /// Only one full-page CTD session and one input transfer can be active.
+  Future<StrokeMask?> strokeMask(RgbaImage image, String modelPath) {
+    var request = _lastStroke.then((_) async {
+      if (!await _hasStrokeMemory(image.pixels.length)) return null;
+      return _pickWorker(1).strokeMask(image, modelPath);
+    });
+    _lastStroke = request.then<void>((_) {}, onError: (Object _) {});
+    return request;
   }
 
   _IsolateWorker _pickWorker(int poolSize) {
@@ -405,16 +450,17 @@ class TranslationWorker {
 /// A single OCR worker isolate. Owns its ONNX sessions (lazily loaded on first
 /// request, so an unused worker costs no model memory).
 class _IsolateWorker {
-  Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _starting;
   ReceivePort? _receivePort;
   final _pending = <int, Completer<Object?>>{};
   int _nextId = 0;
+  bool _disposed = false;
 
   int get pendingCount => _pending.length;
 
   Future<void> _ensureStarted() async {
+    if (_disposed) throw StateError('Translation worker disposed');
     if (_sendPort != null) return;
     if (_starting != null) return _starting;
     var completer = Completer<void>();
@@ -423,6 +469,12 @@ class _IsolateWorker {
     _receivePort = port;
     port.listen((message) {
       if (message is SendPort) {
+        if (_disposed) {
+          message.send(const _ReleaseRequest(stop: true));
+          port.close();
+          completer.completeError(StateError('Translation worker disposed'));
+          return;
+        }
         _sendPort = message;
         completer.complete();
       } else if (message is _WorkerResponse) {
@@ -437,26 +489,29 @@ class _IsolateWorker {
     });
     try {
       SessionGuard.step('translate.worker');
-      _isolate = await Isolate.spawn(
+      await Isolate.spawn(
         _workerMain,
         port.sendPort,
         debugName: 'imageTranslationWorker',
       );
-    } catch (e) {
-      _starting = null;
-      completer.completeError(e);
-      rethrow;
+    } catch (e, stack) {
+      port.close();
+      completer.completeError(e, stack);
     }
-    await completer.future;
-    _starting = null;
+    try {
+      await completer.future;
+    } finally {
+      _starting = null;
+    }
   }
 
   Future<T> _request<T>(Object Function(int id) build) async {
     await _ensureStarted();
     var id = _nextId++;
+    var message = build(id);
     var completer = Completer<Object?>();
     _pending[id] = completer;
-    _sendPort!.send(build(id));
+    _sendPort!.send(message);
     return await completer.future as T;
   }
 
@@ -465,6 +520,7 @@ class _IsolateWorker {
     required String sourceLang,
     required WorkerModelPaths paths,
     required int intraThreads,
+    required bool dialogueOnly,
   }) {
     return _request<List<OcrBlock>>(
       (id) => _OcrPageRequest(
@@ -475,20 +531,33 @@ class _IsolateWorker {
         sourceLang,
         paths,
         intraThreads,
+        dialogueOnly,
       ),
     );
   }
+
+  Future<StrokeMask?> strokeMask(RgbaImage image, String path) =>
+      _request<StrokeMask?>(
+        (id) => _StrokeRequest(
+          id,
+          TransferableTypedData.fromList([image.pixels]),
+          image.width,
+          image.height,
+          path,
+          Platform.numberOfProcessors.clamp(1, 3),
+        ),
+      );
 
   void release() {
     _sendPort?.send(const _ReleaseRequest());
   }
 
   void dispose() {
-    _isolate?.kill(priority: Isolate.immediate);
-    _isolate = null;
+    _disposed = true;
+    _sendPort?.send(const _ReleaseRequest(stop: true));
+    if (_sendPort != null || _starting == null) _receivePort?.close();
     _sendPort = null;
     _starting = null;
-    _receivePort?.close();
     _receivePort = null;
     for (var pending in _pending.values) {
       pending.completeError(Exception('Translation worker disposed'));
@@ -513,14 +582,34 @@ void _workerMain(SendPort mainPort) {
       } catch (e, s) {
         mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
       }
+    } else if (message is _StrokeRequest) {
+      try {
+        var image = RgbaImage(
+          message.width,
+          message.height,
+          message.pixels.materialize().asUint8List(),
+        );
+        state._intraThreads = message.threads;
+        var mask = state._optional(
+          message.path,
+          (session) => _ctdMask(image, session),
+          stroke: true,
+        );
+        mainPort.send(_WorkerResponse(message.id, mask, null));
+      } catch (e, s) {
+        mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
+      }
     } else if (message is _ReleaseRequest) {
       state.release();
+      if (message.stop) port.close();
     }
   });
 }
 
 class _WorkerState {
   final _sessions = <String, OrtFfiSession>{};
+  final _failedModels = <String, ({int size, DateTime modified})>{};
+  final _idleTimers = <String, Timer>{};
   final _charsets = <String, List<String>>{};
   WordPieceVocab? _jaVocab;
   int _intraThreads = 2;
@@ -532,7 +621,55 @@ class _WorkerState {
     );
   }
 
+  T? _optional<T>(
+    String path,
+    T Function(OrtFfiSession) run, {
+    bool stroke = false,
+  }) {
+    var failed = _failedModels[path];
+    if (failed != null) {
+      var stat = File(path).statSync();
+      if (stat.size == failed.size && stat.modified == failed.modified) {
+        return null;
+      }
+      _failedModels.remove(path);
+    }
+    _idleTimers.remove(path)?.cancel();
+    try {
+      final session = _sessions.putIfAbsent(
+        path,
+        () => OrtFfiSession.open(
+          path,
+          intraOpThreads: _intraThreads,
+          disableMemPattern: true,
+          disableCpuMemArena: stroke,
+        ),
+      );
+      var result = run(session);
+      _idleTimers[path] = Timer(const Duration(seconds: 30), () {
+        _sessions.remove(path)?.close();
+        _idleTimers.remove(path);
+      });
+      return result;
+    } on Exception {
+      _sessions.remove(path)?.close();
+    } on StateError {
+      _sessions.remove(path)?.close();
+    } on OutOfMemoryError {
+      _sessions.remove(path)?.close();
+      return null;
+    }
+    var stat = File(path).statSync();
+    _failedModels[path] = (size: stat.size, modified: stat.modified);
+    return null;
+  }
+
   void release() {
+    for (var timer in _idleTimers.values) {
+      timer.cancel();
+    }
+    _idleTimers.clear();
+    _failedModels.clear();
     for (var session in _sessions.values) {
       session.close();
     }
@@ -553,7 +690,21 @@ class _WorkerState {
     );
     var boxes = _detectBoxes(image, req.paths);
     if (boxes.isEmpty) return const [];
-    var clusters = clusterOcrBoxes(boxes, image.width, image.height);
+    List<List<IntRect>>? groups;
+    if (req.dialogueOnly) {
+      var path = req.paths.bubbleModel;
+      if (path != null && _fitsBubbleModel(image)) {
+        groups = _optional(
+          path,
+          (session) => modelDialogueGroups(image, boxes, session),
+        );
+      }
+      groups ??= dialogueGroups(image, boxes);
+    }
+    var clusters = [
+      for (var group in groups ?? [boxes])
+        ...clusterOcrBoxes(group, image.width, image.height),
+    ];
     clusters.sort((a, b) => _boundsOf(a).top.compareTo(_boundsOf(b).top));
     const maxBlocks = 32;
     if (clusters.length > maxBlocks) {
@@ -826,9 +977,8 @@ class _WorkerState {
     var vertical = lines.any(_isVerticalLine);
     var sorted = [...lines]
       ..sort(
-        (a, b) => vertical
-            ? b.right.compareTo(a.right)
-            : a.top.compareTo(b.top),
+        (a, b) =>
+            vertical ? b.right.compareTo(a.right) : a.top.compareTo(b.top),
       );
     var parts = <String>[];
     for (var line in sorted) {

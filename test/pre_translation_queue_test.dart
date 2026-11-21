@@ -167,11 +167,15 @@ void main() {
     final manager = PreTranslationTaskManager.instance;
     manager.onTaskFinished = finished.complete;
     try {
-      PreTranslationTask? queue(List<String> chapters) => manager.start(
+      PreTranslationTask? queue(
+        List<String> chapters, [
+        TranslationConfig? config,
+      ]) => manager.start(
         cid: 'book',
         sourceKey: sourceKey,
         comicType: ComicType.fromKey(sourceKey),
         title: 'Book',
+        config: config,
         chapters: chapters
             .map((eid) => PreTranslationChapter(eid: eid, title: eid))
             .toList(),
@@ -184,6 +188,57 @@ void main() {
       expect(queue(['b']), same(first));
       expect(first.status, PreTranslationTaskStatus.paused);
       expect(manager.currentTasks, [first]);
+      appdata.settings[TranslationConfig.scopeKeyName] = 'dialogue';
+      final dialogue = TranslationConfig.of('book', sourceKey);
+      final dialogueKey = ImageTranslationService.cacheKeyFor(
+        sourceKey,
+        'book',
+        'b',
+        1,
+        config: dialogue,
+      );
+      final oldDialogueKey = ImageTranslationService.legacyCacheKeyFor(
+        'file://${image.path}',
+        sourceKey,
+        'book',
+        'b',
+        config: dialogue,
+      );
+      TranslationStore().put(
+        oldDialogueKey,
+        [],
+        chapter: ImageTranslationService.chapterIdentity(
+          cid: 'book',
+          sourceKey: sourceKey,
+          eid: 'b',
+          config: dialogue,
+        ),
+      );
+      final dialogueFinished = Completer<PreTranslationTask>();
+      manager.onTaskFinished = dialogueFinished.complete;
+      final dialogueTask = queue(['b'])!;
+      expect(dialogueTask, isNot(same(first)));
+      expect(first.config.dialogueOnly, isFalse);
+      expect(
+        manager.chapterProgressFor('book', sourceKey, 'b'),
+        same(dialogueTask.chapters.single),
+      );
+      expect(
+        manager.chapterProgressFor('book', sourceKey, 'b', config: config),
+        same(first.chapters.last),
+      );
+      await dialogueFinished.future.timeout(const Duration(seconds: 5));
+      expect(dialogueTask.done, 1);
+      expect(TranslationStore().get(dialogueKey), isEmpty);
+      expect(TranslationStore().get(oldDialogueKey), isNull);
+      expect(manager.isChapterActive('book', sourceKey, 'b'), isFalse);
+      expect(
+        manager.isChapterActive('book', sourceKey, 'b', config: config),
+        isTrue,
+      );
+      manager.resetComicStatus('book', sourceKey, config: dialogue);
+      expect(manager.chapterProgressFor('book', sourceKey, 'b'), isNull);
+      manager.onTaskFinished = finished.complete;
       manager.activityOf(first.id)!.bufferedDone = 1;
       expect(
         manager.livePagesOf('book', sourceKey, first.chapters.first).done,
@@ -192,22 +247,23 @@ void main() {
       manager.activityOf(first.id)!.bufferedDone = 0;
       manager.resume(first.id);
       manager.cancelChapter(first.id, 'b');
-      expect(queue(['b']), same(first));
+      expect(queue(['b'], config), same(first));
       final requeued = first.chapters.last;
       expect(
-        manager.chapterProgressFor('book', sourceKey, 'b'),
+        manager.chapterProgressFor('book', sourceKey, 'b', config: config),
         same(requeued),
       );
       expect(requeued.canceled, isFalse);
       manager.cancelChapter(first.id, 'b');
       expect(requeued.canceled, isTrue);
-      expect(queue(['b']), same(first));
+      expect(queue(['b'], config), same(first));
       release.complete();
       final done = await finished.future.timeout(const Duration(seconds: 5));
       expect(done.status, PreTranslationTaskStatus.completed);
-      expect(requested, ['a', 'b']);
+      expect(requested, ['a', 'b', 'b']);
       expect(done.done, 2);
       expect(done.failed, 0);
+      appdata.settings[TranslationConfig.scopeKeyName] = 'all';
 
       requested.clear();
       final retryFinished = Completer<PreTranslationTask>();

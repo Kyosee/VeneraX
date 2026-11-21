@@ -22,6 +22,7 @@ void main() {
     appdata.settings['imageTranslationSource'] = 'auto';
     appdata.settings['imageTranslationTarget'] = 'zh';
     appdata.settings['imageTranslationInpaintMode'] = 'smart';
+    appdata.settings[TranslationConfig.scopeKeyName] = 'all';
   });
 
   void enableFor(String cid) {
@@ -105,6 +106,22 @@ void main() {
     expect(TranslationConfig.of(cidB, sourceKey).mode, InpaintMode.smart);
   });
 
+  test('text scope follows comic, device and global reader settings', () {
+    const key = TranslationConfig.scopeKeyName;
+    final allPrefix = TranslationConfig.of(cidB, sourceKey).cachePrefix;
+    expect(TranslationConfig.global.dialogueOnly, isFalse);
+    appdata.settings['deviceId'] = 'scope-test';
+    appdata.settings.setEnabledDeviceSpecificSettings(true);
+    appdata.settings.setDeviceReaderSetting(key, 'dialogue');
+    expect(TranslationConfig.device.dialogueOnly, isTrue);
+    expect(TranslationConfig.of(cidB, sourceKey).dialogueOnly, isTrue);
+    expect(TranslationConfig.of(cidB, sourceKey).cachePrefix, isNot(allPrefix));
+    enableFor(cidA);
+    appdata.settings.setReaderSetting(cidA, sourceKey, key, 'all');
+    expect(TranslationConfig.of(cidA, sourceKey).cachePrefix, allPrefix);
+    expect(TranslationConfig.global.dialogueOnly, isFalse);
+  });
+
   test('the cache prefix separates comics reading different languages', () {
     enableFor(cidA);
     appdata.settings.setReaderSetting(
@@ -171,7 +188,12 @@ void main() {
     });
 
     test('distinct pages, chapters and comics stay distinct', () {
-      var page3 = ImageTranslationService.cacheKeyFor(sourceKey, cidA, 'ch1', 3);
+      var page3 = ImageTranslationService.cacheKeyFor(
+        sourceKey,
+        cidA,
+        'ch1',
+        3,
+      );
       expect(
         page3,
         isNot(ImageTranslationService.cacheKeyFor(sourceKey, cidA, 'ch1', 4)),
