@@ -2,7 +2,7 @@ name: venera
 description: "A comic app."
 publish_to: 'none'
 
-version: 3.0.2-beta.1+261
+version: 3.0.2-beta.2+262
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
@@ -68,7 +68,7 @@ dependencies:
   flutter_saf:
     git: 
       url: https://github.com/Kyosee/flutter_saf
-      ref: fe182cdf40e5fa6230f451bc1d643b860f610d13
+      ref: dfd72930223e2dc191e40ab4fc2cce58aa85d545
   dynamic_color: ^1.8.1
   shimmer_animation: ^2.1.0
   flutter_memory_info: ^0.0.3

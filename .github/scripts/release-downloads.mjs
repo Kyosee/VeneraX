@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export function releaseDownloads(repositoryUrl, tag, appVersion) {
+export function releaseDownloads(repositoryUrl, tag, appVersion, scope = 'all') {
   const [version, build] = appVersion.split('+');
   const base = `${repositoryUrl}/releases/download/${encodeURIComponent(tag)}`;
   const link = (label, name) => `[${label}](${base}/${encodeURIComponent(name)})`;
@@ -23,9 +23,20 @@ export function releaseDownloads(repositoryUrl, tag, appVersion) {
       link('Debian ARM64', `VeneraX-${version}-arm64.deb`),
       link('Arch x86_64', `VeneraX-${version}-${build}-x86_64.pkg.tar.zst`),
     ].join(' · ')],
-    ['HarmonyOS', link('未签名 HAP / Unsigned', `VeneraX-${appVersion}-harmonyos-unsigned.hap`),
-      link('x64 模拟器 / Emulator', `VeneraX-${appVersion}-harmonyos-emulator-x64-unsigned.hap`)],
+    ['HarmonyOS', link('ARM64 真机 / Unsigned HAP', `VeneraX-${appVersion}-harmonyos-unsigned.hap`), '—'],
   ];
+  if (scope === 'mobile') {
+    return [
+      '## 下载安装 / Downloads', '',
+      '本次预览版提供 Android 和鸿蒙安装包。 / This preview includes Android and HarmonyOS.', '',
+      '| 平台 / Platform | 安装包 / Package | 其他版本 / Alternatives |',
+      '| --- | --- | --- |',
+      ...rows.filter(([platform]) => platform === 'Android' || platform === 'HarmonyOS')
+        .map(row => `| ${row.join(' | ')} |`), '',
+      '不确定 Android 架构时选通用 APK。鸿蒙真机安装前需自行签名。',
+      'Use the universal APK if unsure of your Android architecture. Sign the HarmonyOS HAP before installing it on a device.', '',
+    ].join('\n');
+  }
   return [
     '## 下载安装 / Downloads',
     '',

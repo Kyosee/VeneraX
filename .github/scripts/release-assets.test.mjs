@@ -28,7 +28,6 @@ const packages = [
   'VeneraX-9.8.7-x86_64.AppImage',
   'VeneraX-9.8.7-aarch64.AppImage',
   'VeneraX-9.8.7+654-harmonyos-unsigned.hap',
-  'VeneraX-9.8.7+654-harmonyos-emulator-x64-unsigned.hap',
 ];
 
 test('manual download links cover exactly the required full packages', () => {
@@ -44,6 +43,40 @@ test('manual download links cover exactly the required full packages', () => {
     assert.match(body, /无需手动下载/);
     assert.match(body, /cannot be installed manually/);
   }
+});
+
+test('mobile previews link only to the four APKs and the ARM64 HAP', () => {
+  const body = releaseDownloads('https://github.com/Kyosee/VeneraX', 'mobile-9.8.7-beta.1', '9.8.7-beta.1+654', 'mobile');
+  const assets = [...body.matchAll(/\]\((https:[^)]+)\)/g)]
+    .map(match => decodeURIComponent(new URL(match[1]).pathname.split('/').at(-1))).sort();
+  assert.deepEqual(assets, packages.filter(name => /\.(apk|hap)$/.test(name))
+    .map(name => name.replace('9.8.7', '9.8.7-beta.1')).sort());
+});
+
+test('a new mobile draft can be used before it appears in the releases list', () => {
+  const script = readFileSync(new URL('./publish-mobile-preview.sh', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
+  const setup = script.match(/^api="repos\/\$GITHUB_REPOSITORY"[\s\S]*?(?=^read_release\(\))/m);
+  assert.ok(setup, 'Mobile draft setup must exist');
+  const result = spawnSync(bash, ['-c', `set -euo pipefail
+    root=. version=1.0-beta.1 tag=mobile-1.0-beta.1 body_file=notes.md
+    GITHUB_REPOSITORY=test/app GITHUB_SHA=abc123
+    fail() { echo "$*" >&2; exit 1; }
+    gh() {
+      case "$*" in
+        *'/releases?per_page='*) ;; # The list has not indexed the new draft yet.
+        *'/git/matching-refs/'*) echo "refs/tags/$tag" ;;
+        *'/commits/refs/tags/'*) echo "$GITHUB_SHA" ;;
+        *'POST repos/test/app/releases '*) echo 314 ;;
+        'release create '*) echo "https://example.com/draft" ;;
+        *) fail "Unexpected request: $*" ;;
+      esac
+    }
+    ${setup[0]}
+    [[ "$id" == 314 ]]
+  `], { encoding: 'utf8' });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
 function validate(t, { missing, empty } = {}) {

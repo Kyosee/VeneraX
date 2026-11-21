@@ -514,8 +514,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: fe182cdf40e5fa6230f451bc1d643b860f610d13
-      resolved-ref: fe182cdf40e5fa6230f451bc1d643b860f610d13
+      ref: dfd72930223e2dc191e40ab4fc2cce58aa85d545
+      resolved-ref: dfd72930223e2dc191e40ab4fc2cce58aa85d545
       url: "https://github.com/Kyosee/flutter_saf"
     source: git
     version: "0.0.1"

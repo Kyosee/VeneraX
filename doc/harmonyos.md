@@ -2,7 +2,7 @@
 
 中文 | [English](harmonyos.en.md)
 
-本手册用于在 **Windows x64** 上从源码构建和验证 VeneraX 鸿蒙版。只想安装已发布的包，请看 [安装与签名说明](harmonyos-testing.md)；本页只记录 VeneraX 自身的鸿蒙构建、签名、探针和设备验证。
+本手册记录 VeneraX 鸿蒙版的云端构建、签名、探针和设备验证。正式构建使用 GitHub 托管 Ubuntu；Windows 示例保留用于说明现有工具调用。只想安装已发布的包，请看 [安装与签名说明](harmonyos-testing.md)。
 
 当前为实验性适配：完整应用可构建为 x64 和 ARM64 HAP，运行记录来自官方 x64 手机模拟器。ARM64 真机签名安装与运行、持久目录授权、认证成功及原生 PDF 渲染仍需设备验证。本页保留既有验证记录，文档更新不代表重新完成了运行测试。
 
@@ -24,11 +24,11 @@
 
 | 项目 | 要求或记录 |
 |---|---|
-| 宿主 | Windows x64、PowerShell、Git；项目脚本使用 `.bat` / `.exe`，ONNX 脚本检查 x64 宿主架构 |
+| 宿主 | 正式构建使用 GitHub 托管 Ubuntu x64、PowerShell 7 和 Git；脚本也保留 Windows x64 兼容 |
 | OH Flutter | CPF-Flutter `3.44.9+ohos-1.0.0-beta`，提交 `744cbb4f08e577787774c04033cc19a9d318d0d2`，Dart 3.12.2 |
 | DevEco | DevEco Studio 26.0.0.865，API 26 SDK |
 | SDK 组件 | JBR、Node、ohpm、hvigor、`hdc`，以及 native SDK 中的 Clang、CMake 和 Ninja |
-| Rust | Rust 1.95；同时安装 `x86_64-unknown-linux-ohos` 和 `aarch64-unknown-linux-ohos` targets |
+| Rust | Rust 1.95；发布使用 `aarch64-unknown-linux-ohos`，模拟器开发使用 `x86_64-unknown-linux-ohos` |
 | 运行环境 | 官方 HarmonyOS 7 / API 26 x86_64 手机模拟器；ARM64 真机运行未验证 |
 | 应用声明 | 最低 HarmonyOS 5.0.5 / API 17，目标 API 26；最低版本声明不等于最低版本验收 |
 | 其他平台 | 现有标准 Flutter 环境使用 3.44.3，与 OH SDK 及项目目录分开 |
@@ -70,7 +70,7 @@ rustup target list --installed --toolchain 1.95
 
 这些环境变量只影响当前终端及其子进程，关闭窗口后结束；不要把 OH 下载源和 SDK 路径覆盖到标准 Flutter 开发终端。下载源来自该版本 SDK 的 README，升级 SDK 时应重新核对官方说明。
 
-`--version` 应对应表中的 OH SDK / Dart 版本；`doctor -v` 中与 OHOS 工具链相关的错误应先解决。Rust targets 列表必须同时含有上表两项。主构建脚本也会检查原生组件和固定源码要求。
+`--version` 应对应表中的 OH SDK / Dart 版本；`doctor -v` 中与 OHOS 工具链相关的错误应先解决。Rust targets 列表须包含目标设备对应的架构。主构建脚本也会检查原生组件和固定源码要求。
 
 ## 快速开始：x64 模拟器
 
@@ -90,11 +90,11 @@ VeneraX 已包含 `ohos/` 工程，无需对本项目重新运行 `flutter creat
 ### 2. 构建完整应用
 
 ```powershell
-./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio
+./tool/build_ohos.ps1 -FlutterSdk $flutterOhSdk -DevEcoStudio $devEcoStudio -TargetPlatform ohos-x64
 Get-ChildItem build/ohos/hap/*.hap
 ```
 
-默认构建入口为 `lib/main.dart`，平台为 `ohos-x64`，模式为 `debug`，不签名。首次构建会下载部分源码并编译原生库，耗时取决于网络和主机；各阶段见 [构建阶段与参数](#构建阶段与参数)。
+默认构建入口为 `lib/main.dart`，平台默认为 `ohos-arm64`（上例显式指定模拟器 `ohos-x64`），模式为 `debug`，不签名。首次构建会下载部分源码并编译原生库，耗时取决于网络和主机；各阶段见 [构建阶段与参数](#构建阶段与参数)。
 
 构建成功输出会打印实际 HAP 路径。当前验证过的工具链将 HAP 复制到 `build/ohos/hap/`，未签名包通常为 `entry-default-unsigned.hap`。切换架构或模式后仍可能使用相同文件名，应以本次成功构建的参数和输出为准；该目录也可能留下先前构建的文件。
 
@@ -140,8 +140,8 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | 1 | OH Flutter `pub get --enforce-lockfile` | 从 `pubspec.lock` 解析依赖；依赖获取或 SDK 版本错误先在这里解决 |
 | 2 | [prepare_ohos.dart](../tool/prepare_ohos.dart) | 准备图标、OHOS 依赖副本、WebView 补丁、包配置和 native 源码映射 |
 | 3 | `refresh_plugins.dart` | 使用当前 OH SDK 的插件生成器注册适配器；模板在 [tool/ohos](../tool/ohos/refresh_plugins.dart.template) |
-| 4 | [build_ohos_rhttp.ps1](../tool/build_ohos_rhttp.ps1) | 从锁定 Rust 源码构建两种 OHOS ABI |
-| 5 | [build_ohos_onnx.ps1](../tool/build_ohos_onnx.ps1) | 获取指定 ONNX/Eigen 源码、应用项目补丁、构建两种 OHOS ABI |
+| 4 | [build_ohos_rhttp.ps1](../tool/build_ohos_rhttp.ps1) | 从锁定 Rust 源码构建所选 OHOS ABI |
+| 5 | [build_ohos_onnx.ps1](../tool/build_ohos_onnx.ps1) | 获取指定 ONNX/Eigen 源码、应用项目补丁、构建所选 OHOS ABI |
 | 6 | OH Flutter `build hap --no-pub` | 按模式、入口和 HAP ABI 编译打包；原生 CMake 还会构建 SQLite、QuickJS、ZIP、7z 和 PNG |
 
 网络需能访问 Pub/Cargo 依赖、GitCode 的 WebView、GitHub 的 ONNX、GitLab 的 Eigen、SQLite 官方源码及 CMake 依赖下载地址。`-WebViewSource`、`-OnnxSource`、`-EigenSource` 可复用对应源码 checkout，但不代表整个构建可以离线。
@@ -156,7 +156,7 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 |---|---|---|
 | `-FlutterSdk` | 必填 | OH Flutter SDK 根目录 |
 | `-DevEcoStudio` | 必填 | DevEco Studio 根目录 |
-| `-TargetPlatform` | `ohos-x64` | `ohos-x64` 或 `ohos-arm64`，决定最终 HAP ABI |
+| `-TargetPlatform` | `ohos-arm64` | `ohos-x64` 或 `ohos-arm64`，决定最终 HAP ABI |
 | `-Target` | `lib/main.dart` | 完整应用或某个探针的 Dart 入口 |
 | `-BuildMode` | `debug` | `debug`、`profile`、`release` |
 | `-CodeSign` | 关闭 | 启用前必须在 DevEco 配好自己的有效签名身份 |
@@ -164,21 +164,24 @@ $hap = 'build/ohos/hap/entry-default-unsigned.hap'
 | `-OnnxSource` | 自动准备 | ONNX 固定提交的 checkout；只允许项目规定的兼容补丁 |
 | `-EigenSource` | 自动准备 | Eigen 固定提交的干净 checkout |
 
-`-TargetPlatform` 选择最终 HAP 的 ABI；当前主脚本调用 rhttp 和 ONNX 构建时，仍各自构建 `x86_64`、`arm64-v8a` 两种库。切换到探针入口同样不会跳过这些原生构建阶段。
+`-TargetPlatform` 选择最终 HAP 的 ABI。脚本仅准备所选架构的原生库。发布流水线准备 ARM64 原生库，再用 `-UsePreparedNativeLibraries` 跳过重复编译。
 
 ## 正式发布构建
 
-`Build ALL` 的 `Build_HarmonyOS` 使用带 `venerax-harmonyos` 标签的 Windows 临时 runner。注册时使用 `--ephemeral --no-default-labels --labels venerax-harmonyos`，每次只接收一个任务；在该 runner 进程中设置：
+`Build ALL` 的 `Build_HarmonyOS` 使用 GitHub 托管的 `ubuntu-22.04`，不依赖开发者电脑或 self-hosted runner。云端从华为官方链接下载 Command Line Tools 26.0.0.865（包含 API 26 SDK），安装 JDK 21、Node 22、固定版本的 Flutter OH 与 Rust。
 
-| 环境变量 | 内容 |
+| 配置 | 内容 |
 |---|---|
-| `VENERAX_OHOS_CHECKOUT` | 已初始化的独立 Flutter OH 项目目录 |
-| `FLUTTER_OHOS_SDK` | 本手册指定的 Flutter OH SDK 目录 |
-| `DEVECO_STUDIO` | DevEco Studio 安装目录 |
+| Actions secret `DEVECO_COMMAND_LINE_TOOLS_URL` | 华为下载中心提供的 Linux x64 26.0.0.865 工具包下载链接；链接失效时更新此项 |
+| `VENERAX_OHOS_CHECKOUT` | 流水线在 Runner 临时目录创建的独立 Flutter OH 项目检出 |
+| `FLUTTER_OHOS_SDK` | 流水线获取的固定提交 Flutter OH SDK |
+| `DEVECO_STUDIO` | 云端解压后的 `command-line-tools` 根目录 |
 
-先手动运行 `Build ALL`，选择 `platform=harmonyos` 验证构建。正式打版本标签前重新注册并启动一次性 runner；标签触发的全平台发布会等待鸿蒙产物。
+手动运行 `Build ALL` 并选择 `platform=harmonyos` 会构建并验证一个未签名的 ARM64 真机 HAP。发布和定时预热均只处理鸿蒙 ARM64。工具包按版本缓存，ONNX 和 rhttp 按各自的原生依赖和 ABI 缓存。缓存缺失时才编译对应的库，并在 HAP 打包前保存。
 
-流水线将独立目录快进至本次提交，遇到已跟踪文件的本地修改或无法快进时停止。它复用 `tool/build_ohos.ps1` 构建两种架构，并检查 HAP 内的版本、release 模式、ABI 和原生库，再上传带架构和 `unsigned` 标识的包。runner 完成任务后自动注销，真机签名按下节处理。
+`master` 每周一、四北京时间 10:37 自动恢复缓存并补齐缺项。需要提前预热时，在 `master` 手动运行 `platform=native-cache` 即可。它也会准备 Android、Windows、Linux 和 Apple 使用的预编译 ONNX 包。查看鸿蒙任务中的 `Restore ONNX Runtime` 和 `Restore rhttp` 可确认命中，对应的编译步骤会显示 `Skipped`。
+
+流水线在独立目录打包，上传前检查 HAP 内的版本、release 模式、ABI 和原生库。临时产物保留 7 天，发布包由 Release 保存。真机签名按下节处理。构建、自动化测试和打包均在 GitHub 托管 Runner 上执行。
 
 ## ARM64 构建、签名与安装
 
@@ -280,12 +283,12 @@ node --test test/ohos/pdf_bridge_test.cjs
 
 | 现象 | 下一步 |
 |---|---|
-| 找不到 `flutter.bat`、JBR、Node、Clang、CMake 或 Ninja | 核对传入的 SDK 根目录及 DevEco SDK 组件；主脚本是 Windows 构建入口 |
+| 找不到 Flutter、JDK、Node、Clang、CMake 或 Ninja | 核对 SDK 根目录、命令行工具组件，以及 Runner 的 JAVA_HOME、NODE_HOME 和 PATH |
 | `Flutter dependency resolution failed.` | 使用同一个 OH SDK 检查版本、网络和锁文件要求；不以随意升级锁文件绕过问题 |
 | `Run flutter pub get --enforce-lockfile before preparing OHOS again.` | 准备脚本检测到已改写的包配置；从主构建脚本重新开始，让其按顺序解析、准备并注册 |
 | `WebView requires official commit` 或 `Cannot apply the OHOS loader patch` | 核对固定源码提交与锁定依赖；准备脚本依赖指定源码形态，不能手改共享缓存来绕过 |
-| `Missing OHOS Rust targets` | 安装两个 targets，并确认 `rustup run 1.95 rustc --version` 成功 |
-| `The OHOS ONNX build requires an x64 Windows host.` | 在 Windows x64 主机构建；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
+| `Missing OHOS Rust targets` | 安装目标设备对应的 Rust target，并确认 `rustup run 1.95 rustc --version` 成功 |
+| `The OHOS ONNX build requires an x64 host.` | 使用 Ubuntu 或 Windows x64 宿主；选择 ARM64 HAP 不等于支持 ARM64 宿主构建 |
 | ONNX/Eigen 下载、提交或源码修改检查失败 | 检查官方仓库访问及要求的提交；复用 checkout 时保留项目规定的补丁状态，其他修改先另存 |
 | `HarmonyOS plugin registration failed.` / `HarmonyOS HAP build failed.` | 检查前面的 Dart、hvigor 或 CMake 原始错误，以及生成配置是否被后续 `pub get` 覆盖 |
 | `00801017`、缺少 `x86_64` ABI、`install parse native so failed` | 对照设备 `uname -m`、本次目标参数与实际 HAP；排除误装另一个架构的旧产物 |
@@ -329,6 +332,6 @@ QuickJS、ZIP、7z 和 PNG 使用锁定依赖中已有的源码。`prepare_ohos.
 
 `build_ohos_rhttp.ps1` 使用 Cargo 的 `--locked` 参数及官方 SDK 的 Clang，将锁定的 rhttp 包内 Rust 源码编译为两个 OHOS 目标。HTTP/3 保持启用。生成的库仅复制到 `ohos/entry/libs`，不修改共享 Pub 缓存或 Cargo.lock。OHOS 加载器会显式打开此库，其他平台保持原有初始化流程。
 
-`build_ohos_onnx.ps1` 使用微软提交 `f217402897f40ebba457e2421bc0a4702771968e` 构建 ONNX Runtime 1.22.0，并使用 Eigen 官方 GitLab 仓库锁定的提交 `1d8b82b0740839c0de7f1242a3585e3390ff5f33`。首次构建会将这些 Git 源码获取到 `.dart_tool/ohos/sources`。可以在主构建脚本中通过 `-OnnxSource` 和 `-EigenSource` 提供现有检出目录。除 `tool/ohos/onnxruntime.patch` 外的源码修改会被拒绝。该补丁处理缺失的 pthread 亲和性及编译器特性声明；CPUINFO 被禁用，完整 CPU 算子集保持启用。上游依赖下载检查和 TLS 验证保持启用。相关库及其许可证说明仅打包到 OHOS 目标中。
+`build_ohos_onnx.ps1` 使用微软提交 `f217402897f40ebba457e2421bc0a4702771968e` 构建 ONNX Runtime 1.22.0，并使用 Eigen 官方 GitLab 仓库锁定的提交 `1d8b82b0740839c0de7f1242a3585e3390ff5f33`。首次构建会将这些 Git 源码获取到 `.dart_tool/ohos/sources`。微软仓库不可用时，从 Intel 的 fork 获取同一个固定提交，不使用 Intel 后续改动或预编译库。可以在主构建脚本中通过 `-OnnxSource` 和 `-EigenSource` 提供现有检出目录。除 `tool/ohos/onnxruntime.patch` 外的源码修改会被拒绝。该补丁处理缺失的 pthread 亲和性及编译器特性声明；CPUINFO 被禁用，完整 CPU 算子集保持启用。上游依赖下载检查和 TLS 验证保持启用。相关库及其许可证说明仅打包到 OHOS 目标中。
 
 脚本严格使用 `pubspec.lock`，仅修改进程环境变量，并在结束后恢复。每次 `pub get` 后都需要运行准备步骤；构建脚本会依次执行这两步。上游 Dart 原生钩子目前会将 OHOS 识别为 Linux；实验性构建会禁用这些代码资源，改用鸿蒙工具链构建支持的库。PDF 在支持的设备上使用官方系统 Kit，不使用 Linux PDFium 二进制库。不得通过关闭 TLS 验证、应用锁检查或签名要求来绕过缺失的平台实现。

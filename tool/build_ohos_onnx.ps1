@@ -7,9 +7,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$executableSuffix = if ($env:OS -eq 'Windows_NT') { '.exe' } else { '' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 
-function Get-PinnedSource([string]$Path, [string]$DefaultPath, [string]$Remote, [string]$Revision) {
+function Get-PinnedSource([string]$Path, [string]$DefaultPath, [string]$Remote, [string]$Revision, [string]$FallbackRemote = '') {
     if ([string]::IsNullOrWhiteSpace($Path)) {
         $Path = $DefaultPath
         if (-not (Test-Path -LiteralPath $Path)) {
@@ -18,7 +19,11 @@ function Get-PinnedSource([string]$Path, [string]$DefaultPath, [string]$Remote, 
             & git -C $Path remote add origin $Remote | Out-Host
             if ($LASTEXITCODE -ne 0) { throw "Cannot configure official source remote: $Remote" }
             & git -C $Path fetch --depth 1 origin $Revision | Out-Host
-            if ($LASTEXITCODE -ne 0) { throw "Cannot fetch official source: $Remote at $Revision" }
+            if ($LASTEXITCODE -ne 0 -and $FallbackRemote) {
+                Write-Warning "Official source unavailable; fetching the same pinned commit from $FallbackRemote."
+                & git -C $Path fetch --depth 1 $FallbackRemote $Revision | Out-Host
+            }
+            if ($LASTEXITCODE -ne 0) { throw "Cannot fetch pinned source: $Remote at $Revision" }
             & git -C $Path checkout --detach FETCH_HEAD | Out-Host
             if ($LASTEXITCODE -ne 0) { throw "Cannot check out source: $Revision" }
         }
@@ -31,7 +36,8 @@ function Get-PinnedSource([string]$Path, [string]$DefaultPath, [string]$Remote, 
 }
 
 $SourceRoot = Get-PinnedSource $SourceRoot (Join-Path $projectRoot '.dart_tool/ohos/sources/onnxruntime') `
-    'https://github.com/microsoft/onnxruntime.git' 'f217402897f40ebba457e2421bc0a4702771968e'
+    'https://github.com/microsoft/onnxruntime.git' 'f217402897f40ebba457e2421bc0a4702771968e' `
+    'https://github.com/intel/onnxruntime.git'
 $EigenRoot = Get-PinnedSource $EigenRoot (Join-Path $projectRoot '.dart_tool/ohos/sources/eigen') `
     'https://gitlab.com/libeigen/eigen.git' '1d8b82b0740839c0de7f1242a3585e3390ff5f33'
 $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
@@ -47,15 +53,15 @@ foreach ($source in @($SourceRoot, $EigenRoot)) {
 }
 
 if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) {
-    throw 'The OHOS ONNX build requires an x64 Windows host.'
+    throw 'The OHOS ONNX build requires an x64 host.'
 }
 foreach ($path in @(
     (Join-Path $SourceRoot 'VERSION_NUMBER'),
     (Join-Path $SourceRoot 'cmake/CMakeLists.txt'),
     (Join-Path $EigenRoot 'CMakeLists.txt'),
     (Join-Path $EigenRoot 'Eigen/Core'),
-    (Join-Path $NativeSdk 'build-tools/cmake/bin/cmake.exe'),
-    (Join-Path $NativeSdk 'build-tools/cmake/bin/ninja.exe'),
+    (Join-Path $NativeSdk "build-tools/cmake/bin/cmake$executableSuffix"),
+    (Join-Path $NativeSdk "build-tools/cmake/bin/ninja$executableSuffix"),
     (Join-Path $NativeSdk 'build/cmake/ohos.toolchain.cmake'),
     $patchPath
 )) {
@@ -129,12 +135,12 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows" AND NOT CMAKE_HOST_SYSTEM_PROCESSOR
 endif()
 '@
     [IO.File]::WriteAllText($hostPlatformPath, $hostPlatform, [Text.UTF8Encoding]::new($false))
-    $cmake = Join-Path $NativeSdk 'build-tools/cmake/bin/cmake.exe'
+    $cmake = Join-Path $NativeSdk "build-tools/cmake/bin/cmake$executableSuffix"
     $cmakeArgs = @(
         '-S', (Join-Path $SourceRoot 'cmake'),
         '-B', $buildRoot,
         '-G', 'Ninja',
-        "-DCMAKE_MAKE_PROGRAM=$(Join-Path $NativeSdk 'build-tools/cmake/bin/ninja.exe')",
+        "-DCMAKE_MAKE_PROGRAM=$(Join-Path $NativeSdk "build-tools/cmake/bin/ninja$executableSuffix")",
         "-DCMAKE_TOOLCHAIN_FILE=$(Join-Path $NativeSdk 'build/cmake/ohos.toolchain.cmake')",
         "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$hostPlatformPath",
         '-DCMAKE_BUILD_TYPE=Release',
