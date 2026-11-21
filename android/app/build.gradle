@@ -7,6 +7,15 @@ plugins {
 
 ext.abiCodes = ["armeabi-v7a": 1, "arm64-v8a": 2, "x86_64": 3]
 
+// Flutter forwards the selected Dart entry point as the Gradle target.
+def flutterRoot = rootProject.projectDir.parentFile
+def targetFile = new File(project.findProperty("target") ?: "lib/main.dart")
+if (!targetFile.isAbsolute()) {
+    targetFile = new File(flutterRoot, targetFile.path)
+}
+def tvBuild = targetFile.canonicalFile == new File(flutterRoot, "lib/main_tv.dart").canonicalFile
+def apkName = tvBuild ? "VeneraX-TV" : "VeneraX"
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -27,19 +36,24 @@ if (flutterVersionName == null) {
 
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
-if (!keystorePropertiesFile.exists()) {
-    throw new GradleException("Missing android/key.properties for release signing")
-}
-keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
-    def value = keystoreProperties[key]
-    if (value == null || value.toString().trim().isEmpty()) {
-        throw new GradleException("Missing android/key.properties value: ${key}")
+def releaseStoreFile
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    ["storeFile", "storePassword", "keyAlias", "keyPassword"].each { key ->
+        def value = keystoreProperties[key]
+        if (value == null || value.toString().trim().isEmpty()) {
+            throw new GradleException("Missing android/key.properties value: ${key}")
+        }
     }
-}
-def releaseStoreFile = rootProject.file(keystoreProperties["storeFile"])
-if (!releaseStoreFile.exists()) {
-    throw new GradleException("Missing Android release keystore file: ${releaseStoreFile}")
+    releaseStoreFile = rootProject.file(keystoreProperties["storeFile"])
+    if (!releaseStoreFile.isFile()) {
+        throw new GradleException("Missing Android release keystore file: ${releaseStoreFile}")
+    }
+} else {
+    // Both APK and bundle packaging depend on the release pre-build task.
+    tasks.matching { it.name in ["preReleaseBuild", "validateSigningRelease"] }.configureEach {
+        doFirst { throw new GradleException("Missing android/key.properties for release signing") }
+    }
 }
 
 android {
@@ -75,22 +89,21 @@ android {
     }
 
     signingConfigs {
-        debug {
-            storeFile releaseStoreFile
-            storePassword keystoreProperties['storePassword']
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-        }
         release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile releaseStoreFile
-            storePassword keystoreProperties['storePassword']
+            if (releaseStoreFile) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile releaseStoreFile
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+        if (releaseStoreFile) {
+            debug.initWith(release)
         }
     }
 
     defaultConfig {
-        applicationId = "io.github.kyosee.venera"
+        applicationId = tvBuild ? "io.github.kyosee.venera.tv" : "io.github.kyosee.venera"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdk = flutter.minSdkVersion
@@ -123,13 +136,13 @@ android {
             def abi = output.getFilter(com.android.build.OutputFile.ABI)
             if (variant.buildType.name == "release") {
                 if (abi != null) {
-                    outputFileName = "VeneraX-${variant.versionName}-${abi}.apk"
+                    outputFileName = "${apkName}-${variant.versionName}-${abi}.apk"
                     def abiVersionCode = project.ext.abiCodes.get(abi)
                     if (abiVersionCode != null) {
                         versionCodeOverride = variant.versionCode * 10 + abiVersionCode
                     }
                 } else {
-                    outputFileName = "VeneraX-${variant.versionName}.apk"
+                    outputFileName = "${apkName}-${variant.versionName}.apk"
                     versionCodeOverride = variant.versionCode * 10
                 }
             } else if (variant.buildType.name == "debug") {
@@ -143,6 +156,13 @@ android {
         includeInApk = false
         // Disables dependency metadata when building Android App Bundles.
         includeInBundle = false
+    }
+}
+
+if (tvBuild) {
+    androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+        variant.sources.manifests.addStaticManifestFile("src/tv/AndroidManifest.xml")
+        variant.sources.res.addStaticSourceDirectory("src/tv/res")
     }
 }
 

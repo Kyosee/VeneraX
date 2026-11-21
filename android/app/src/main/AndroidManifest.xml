@@ -64,7 +64,7 @@
              is an alias too: plugin can't restore via null, so always switch by
              name. -->
         <activity-alias
-            android:name=".IconDefault"
+            android:name="${applicationId}.IconDefault"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="true"
@@ -79,7 +79,7 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".IconOrig"
+            android:name="${applicationId}.IconOrig"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
@@ -94,7 +94,7 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".IconFlat"
+            android:name="${applicationId}.IconFlat"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
@@ -109,7 +109,7 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".IconMono"
+            android:name="${applicationId}.IconMono"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
@@ -124,7 +124,7 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".IconIllust"
+            android:name="${applicationId}.IconIllust"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
