@@ -88,6 +88,30 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
+
+    testWidgets('Back to Home can be found and turned off in $locale', (
+      tester,
+    ) async {
+      const title = 'Return to Home before exiting';
+      const key = 'returnToHomeOnBack';
+      final original = appdata.settings[key];
+      addTearDown(() => appdata.settings[key] = original);
+      appdata.settings['language'] = locale;
+      await open(tester, 390);
+      await search(tester, title);
+
+      final toggle = find.descendant(
+        of: find.widgetWithText(ListTile, title.tl),
+        matching: find.byType(Switch),
+      );
+      expect(tester.widget<Switch>(toggle).value, isTrue);
+      await tester.runAsync(() async {
+        await tester.tap(toggle);
+        await appdata.saveData(false);
+      });
+      await tester.pumpAndSettle();
+      expect(appdata.settings[key], isFalse);
+    });
   }
 
   testWidgets(

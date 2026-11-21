@@ -200,7 +200,8 @@ class _SettingsSearchEntry {
         'Explore Pages' ||
         'Category Pages' ||
         'Network Favorite Pages' ||
-        'Initial Page' => 'Browsing pages',
+        'Initial Page' ||
+        'Return to Home before exiting' => 'Browsing pages',
         'Keyword blocking' ||
         'Tag blocking' ||
         'Comment keyword blocking' => 'Content filters',
@@ -319,6 +320,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ["language", "source"],
   ),
   _SettingsSearchEntry("Initial Page", 4),
+  _SettingsSearchEntry(
+    'Return to Home before exiting',
+    4,
+    keywords: ['back', 'exit', 'gesture'],
+  ),
   _SettingsSearchEntry("Display mode of comic list", 4),
   _SettingsSearchEntry("Comic Source", 4, keywords: ["source", "extension"]),
   _SettingsSearchEntry(

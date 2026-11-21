@@ -78,6 +78,9 @@ class NaviPaneState extends State<NaviPane>
     widget.onPageChanged?.call(value);
   }
 
+  bool get _shouldReturnHome =>
+      currentPage != 0 && appdata.settings['returnToHomeOnBack'] == true;
+
   void Function()? mainViewUpdateHandler;
 
   late AnimationController controller;
@@ -194,11 +197,9 @@ class NaviPaneState extends State<NaviPane>
           )
         : EdgeInsets.zero;
     return _NaviPopScope(
-      action: () {
-        if (App.mainNavigatorKey!.currentState!.canPop()) {
-          App.mainNavigatorKey!.currentState!.maybePop();
-        } else {
-          SystemNavigator.pop();
+      action: () async {
+        if (!await Navigator.of(context).maybePop() && mounted) {
+          await SystemNavigator.pop();
         }
       },
       popGesture: App.isIOS && context.width >= changePoint,
@@ -247,14 +248,21 @@ class NaviPaneState extends State<NaviPane>
   Widget buildMainView() {
     return HeroControllerScope(
       controller: MaterialApp.createMaterialHeroController(),
-      child: PopScope(
-        canPop: _canPop,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop) {
-            return;
-          }
-          widget.navigatorKey.currentState?.maybePop(result);
-        },
+      child: ListenableBuilder(
+        listenable: appdata.settings,
+        builder: (context, child) => PopScope<Object?>(
+          canPop: _canPop && !_shouldReturnHome,
+          onPopInvokedWithResult: (didPop, result) async {
+            if (didPop) return;
+            final handled = await widget.navigatorKey.currentState?.maybePop(
+              result,
+            );
+            if (handled == false && mounted && _shouldReturnHome) {
+              updatePage(0);
+            }
+          },
+          child: child!,
+        ),
         child: NotificationListener<NavigationNotification>(
           onNotification: (NavigationNotification notification) {
             final bool nextCanPop = !notification.canHandlePop;
@@ -263,7 +271,8 @@ class NaviPaneState extends State<NaviPane>
                 _canPop = nextCanPop;
               });
             }
-            return false;
+            // The outer route reports whether the nested page or tab handles Back.
+            return true;
           },
           child: Navigator(
             observers: [widget.observer],

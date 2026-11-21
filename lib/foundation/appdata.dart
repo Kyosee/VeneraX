@@ -530,6 +530,7 @@ class Settings with ChangeNotifier {
     'followUpdatesCheckOnStart': true,
     'followUpdatesFixedTime': '',
     'initialPage': '0',
+    'returnToHomeOnBack': true,
     'comicListDisplayMode': 'paging', // paging, continuous
     'showPageNumberInReader': true,
     'showSingleImageOnFirstPage': false,
