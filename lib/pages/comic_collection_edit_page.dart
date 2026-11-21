@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -138,20 +139,22 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      enabled: m.cachedCover.trim().isNotEmpty,
-                      subtitle: m.cachedCover.trim().isEmpty
+                      enabled: m.coverReference.isNotEmpty,
+                      subtitle: m.coverReference.isEmpty
                           ? Text("Open it once to load its cover".tl,
                               style: ts.s12)
                           : null,
-                      onTap: m.cachedCover.trim().isEmpty
+                      onTap: m.coverReference.isEmpty
                           ? null
-                          : () {
+                          : () async {
                               dialogContext.pop();
-                              ComicCollectionStore.update(
-                                c.id,
-                                customCover: m.cachedCover,
-                              );
-                              _applyChange();
+                              try {
+                                await ComicCoverStore.setMemberCover(c, m);
+                                _applyChange();
+                              } catch (e, s) {
+                                Log.error('ComicCollection', e, s);
+                                if (mounted) context.showMessage(message: "Failed to set the cover".tl);
+                              }
                             },
                     ),
                 ],
@@ -168,31 +171,10 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
   void _pickCoverFile() async {
     final c = collection;
     if (c == null) return;
-    final file = await selectFile(ext: ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+    final file = await selectFile(ext: ComicCoverStore.imageExtensions);
     if (file == null) return;
     try {
-      final dir = Directory(
-        FilePath.join(App.dataPath, ComicCollectionStore.coverDirName),
-      );
-      await dir.create(recursive: true);
-      final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
-      // Named per collection and replaced in place, so re-picking doesn't leave
-      // the previous file behind. The timestamp busts the image cache, which
-      // keys on the path.
-      final name = '${c.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final target = FilePath.join(dir.path, name);
-      await file.saveTo(target);
-      // Drop any earlier cover of this collection now the new one is written.
-      for (final e in dir.listSync()) {
-        if (e is File && e.path != target && e.name.startsWith('${c.id}_')) {
-          e.deleteIgnoreError();
-        }
-      }
-      // Only the file name is persisted — see localCoverRef.
-      ComicCollectionStore.update(
-        c.id,
-        customCover: ComicCollectionStore.localCoverRef(name),
-      );
+      await ComicCoverStore.setFile(c.sourceKey, c.id, file);
       _applyChange();
     } catch (e, s) {
       Log.error('ComicCollection', e, s);
@@ -474,7 +456,8 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
   }
 
   Widget _buildMemberCover(CollectionMember member, ComicType type) {
-    final cover = member.cachedCover.trim();
+    final ref = ComicCoverStore.reference(member.sourceKey, member.comicId);
+    final cover = ref == null ? member.cachedCover.trim() : ComicCollectionStore.resolveCover(ref);
     if (cover.isEmpty) {
       return Container(
         decoration: BoxDecoration(
@@ -484,7 +467,7 @@ class _ComicCollectionEditPageState extends State<ComicCollectionEditPage> {
       );
     }
     ImageProvider? provider;
-    if (type == ComicType.local) {
+    if (type == ComicType.local && ref == null) {
       final local = LocalManager().find(member.comicId, ComicType.local);
       provider = local == null ? null : LocalComicImageProvider(local);
     } else {

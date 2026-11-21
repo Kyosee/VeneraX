@@ -9,6 +9,8 @@ import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/data_sync_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
@@ -26,6 +28,7 @@ import 'package:venera/utils/sync_protocol.dart';
 import 'package:venera/utils/sync_skip.dart' show translationResultsField;
 import 'package:venera/utils/venera_comics.dart';
 import 'package:venera/utils/webdav_upload.dart';
+import 'package:venera/utils/webdav_covers.dart';
 import 'package:webdav_client/webdav_client.dart' hide File;
 import 'package:venera/utils/translations.dart';
 
@@ -59,7 +62,9 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (App.isDesktop) {
       Future.delayed(const Duration(seconds: 1), () {
-        var controller = WindowFrame.of(App.rootContext);
+        final context = App.rootNavigatorKey.currentContext;
+        if (context == null) return;
+        final controller = WindowFrame.of(context);
         controller.addCloseListener(_handleWindowClose);
       });
     }
@@ -797,8 +802,8 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // or one that just imported a foreign archive whose dataVersion is
         // unrelated and lower) upload a backup other devices treated as "older"
         // and never auto-pulled (#80).
-        var files = await client.readDir('/');
-        files = files.where((e) => e.name!.endsWith('.venera')).toList();
+        final listing = await client.readDir('/');
+        final files = listing.where((e) => e.name?.endsWith('.venera') == true).toList();
         final remoteMax = maxBackupVersion(files.map((e) => e.name));
 
         // Fall-behind guard (auto uploads only). If the server already holds a
@@ -863,8 +868,23 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // snapshot may be marked as settled. Anything landing between here
         // and completion bumps the epoch and keeps the account open (#114).
         final pendingEpochAtExport = _pendingChangesEpoch;
+        final latest = _latestBackup(files, (e) => e.name)?.name;
+        final syncCovers = !appdata.isSyncSkipped(ComicCoverStore.settingsKey);
+        final coverSync = WebdavCovers(client);
+        if (syncCovers && latest != null) await _restorePendingCovers(coverSync, latest);
+        final covers = syncCovers ? await ComicCoverStore.forExport() : WebdavCovers.emptyChoices;
+        final coverDirectoryExists = listing.any((e) => e.name == 'venera-covers');
+        final coverToken = syncCovers
+            ? await coverSync.publish(covers, latest,
+                directoryExists: coverDirectoryExists)
+            : await coverSync.inheritForUpload(latest, directoryExists: coverDirectoryExists);
         data = await exportAppData(
           sync: true,
+          includeCoverFiles: false,
+          customCovers: {
+            ...covers,
+            if (!syncCovers) ComicCoverStore.inheritedWebdavKey: coverToken,
+          },
           includeLocalComics: _syncLocalComics(),
           includeTranslations: _syncTranslations(),
         );
@@ -875,7 +895,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         var filename = time;
         filename += '-';
         filename += nextVersion.toString();
-        filename += '.${_platformTag()}.venera';
+        filename += '.${_platformTag()}.$coverToken.venera';
 
         taskManager.updateTask(
           task.id,
@@ -951,6 +971,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // The backup is on the server — only now adopt the version locally.
         appdata.settings['dataVersion'] = nextVersion;
         await appdata.saveData(false);
+        if (!syncCovers) await _setCoversPending(true);
         if (initialRestoreDeferred) await _markInitialSyncCompleted();
         _clearPendingPublish();
         // The published snapshot covers every change up to the export —
@@ -966,6 +987,10 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         // (which pruned by lowest version fleet-wide and could starve an
         // inactive platform of its only backups). The count is the synced
         // 'webdavBackupRetention' setting, sanitized (#114).
+        final inheritedBackups = {
+          for (final name in [...files.map((e) => e.name), filename])
+            WebdavCovers.legacyBackup(WebdavCovers.tokenOf(name)),
+        };
         for (final stale in backupsBeyondPlatformRetention(
           fileNames: files.map((e) => e.name),
           newFileName: filename,
@@ -973,6 +998,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             appdata.settings['webdavBackupRetention'],
           ),
         )) {
+          if (inheritedBackups.contains(stale)) continue;
           try {
             await client.remove(stale);
           } catch (e) {
@@ -1140,6 +1166,9 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
         var remoteVersion = _versionOfFileName(file.name!);
         var currentVersion = _dataVersion();
         if (!userRestore && remoteVersion <= currentVersion) {
+          if (!appdata.isSyncSkipped(ComicCoverStore.settingsKey)) {
+            await _restorePendingCovers(WebdavCovers(client), file.name!);
+          }
           Log.info("Data Sync", 'No new data to download');
           if (!_hasCompletedInitialSync()) {
             await _markInitialSyncCompleted();
@@ -1192,15 +1221,19 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           // label equals ours, the internal gate returns, and the whole import
           // is skipped: the download logs success yet history/favorites/follow
           // marks never apply. Trusting the filename gate fixes it.
+          final syncCovers = !appdata.isSyncSkipped(ComicCoverStore.settingsKey);
           await applyBackup(
             () => importAppData(
               localFile,
               checkVersion: false,
+              restoreCustomCovers: syncCovers,
+              loadCustomCovers: (embedded) => WebdavCovers(client).restore(file.name!, embedded),
               restoreLocalComics: userRestore || _syncLocalComics(),
               mergeTranslations: userRestore || _syncTranslations(),
               userRestore: userRestore,
             ),
           );
+          await _setCoversPending(!syncCovers);
           // Align the local version with the backup we just imported. Without
           // this, the downloading device keeps its old (lower) dataVersion and
           // can later be treated as "newer" than the remote, reversing the sync
@@ -1370,15 +1403,19 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             ),
           );
           // Suppress the echo upload the manager re-inits would fire.
+          final syncCovers = !appdata.isSyncSkipped(ComicCoverStore.settingsKey);
           await applyBackup(
             () => importAppData(
               localFile,
               checkVersion: false,
+              restoreCustomCovers: syncCovers,
+              loadCustomCovers: (embedded) => WebdavCovers(client).restore(fileName, embedded),
               restoreLocalComics: initialRestore || _syncLocalComics(),
               mergeTranslations: initialRestore || _syncTranslations(),
               userRestore: true,
             ),
           );
+          await _setCoversPending(!syncCovers);
         } finally {
           localFile.deleteIgnoreError();
         }
@@ -1425,6 +1462,28 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
       _maybeStopSyncKeepAlive();
       notifyListeners();
     }
+  }
+
+  static Future<void> _setCoversPending(bool pending) async {
+    if ((appdata.implicitData[Appdata.pendingCoversKey] == true) == pending) return;
+    appdata.implicitData[Appdata.pendingCoversKey] = pending;
+    await appdata.writeImplicitData();
+  }
+
+  Future<void> _restorePendingCovers(WebdavCovers sync, String backup) async {
+    if (appdata.implicitData[Appdata.pendingCoversKey] != true) return;
+    final covers = await sync.restoreLatest(backup);
+    await ComicCoverStore.requireFiles(covers);
+    final settings = <String, dynamic>{
+      ComicCollectionStore.settingsKey: appdata.settings[ComicCollectionStore.settingsKey],
+    };
+    ComicCoverStore.applyToSettings(settings, covers);
+    for (final entry in settings.entries) {
+      if (entry.value != null) appdata.settings[entry.key] = entry.value;
+    }
+    await appdata.saveData(false);
+    ComicCoverStore.notifyChanged();
+    await _setCoversPending(false);
   }
 
   /// Whether this device participates in local-comic-library (local.db) sync.
@@ -1559,6 +1618,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
           [comic],
           includeImages: true,
           includeTranslations: false,
+          includeCustomCovers: false,
         );
         // Streamed: image packs are whole comic archives (often hundreds of
         // MB) — buffering one in RAM via readAsBytes was an OOM in waiting.
@@ -1622,7 +1682,7 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
             '/venera-comics/$fileName', localFile.path, onProgress: progress,
           ),
         );
-        await importVeneraComics(localFile, importTranslations: false);
+        await importVeneraComics(localFile, importTranslations: false, importCustomCovers: false);
         Log.info("Image Sync", "Downloaded: ${comic.title}");
       } catch (e, s) {
         failures++;

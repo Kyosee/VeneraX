@@ -13,6 +13,8 @@ import 'package:venera/utils/translations.dart';
 
 import 'app.dart';
 import 'appdata.dart';
+import 'comic_collection_store.dart';
+import 'comic_cover_store.dart';
 import 'comic_source/comic_source.dart';
 import 'comic_state_repository.dart';
 import 'comic_type.dart';
@@ -477,7 +479,15 @@ class ReadingWidgetService with WidgetsBindingObserver {
   }
 
   String _coverKey(Comic comic) =>
-      jsonEncode([readingWidgetComicType(comic).value, comic.id, comic.cover]);
+      jsonEncode([
+        readingWidgetComicType(comic).value,
+        comic.id,
+        ComicCoverStore.reference(comic.sourceKey, comic.id) ??
+            (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey)
+                ? ComicCollectionStore.find(comic.id)?.displayCover
+                : null) ??
+            comic.cover,
+      ]);
 
   Directory get _directory =>
       Directory(FilePath.join(App.dataPath, 'reading_widget_covers'));

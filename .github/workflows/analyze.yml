@@ -38,6 +38,19 @@ jobs:
           node --test .github/scripts/release-assets.test.mjs
           flutter test --no-pub test/update_bsdiff_test.dart test/update_delta_test.dart test/app_update_download_test.dart test/app_update_dialog_test.dart test/windows_update_install_test.dart test/windows_updater_test.dart
       - uses: invertase/github-action-dart-analyzer@v3
+      - name: Prepare native libraries for Flutter tests
+        run: |
+          plugin_path() {
+            jq -er --arg name "$1" '.plugins.linux[] | select(.name == $name) | .path' .flutter-plugins-dependencies
+          }
+          native_dir="$RUNNER_TEMP/venera-test-libs"
+          cmake -S "$(plugin_path zip_flutter)/src" -B "$native_dir/zip"
+          cmake --build "$native_dir/zip" --target zip_flutter --parallel
+          cmake -S "$(plugin_path flutter_qjs)/test" -B "$native_dir/qjs"
+          cmake --build "$native_dir/qjs" --target ffiquickjs --parallel
+          # The headless target exposes the same FFI symbols under its test name.
+          ln -s libffiquickjs.so "$native_dir/qjs/libflutter_qjs_plugin.so"
+          echo "LD_LIBRARY_PATH=$native_dir/zip:$native_dir/qjs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
       - name: Check maintained packages and reader integration
         run: >-
           flutter test --no-pub
@@ -46,6 +59,12 @@ jobs:
           test/photo_view_lifecycle_test.dart
           test/comic_state_repository_test.dart
           test/comic_cover_refresh_test.dart
+          test/comic_detail_cover_provider_test.dart
+          test/comic_collection_store_test.dart
+          test/export_app_data_test.dart
+          test/venera_comics_export_test.dart
+          test/webdav_custom_covers_test.dart
+          test/sync_skip_test.dart
           test/history_single_delete_test.dart
           test/reader_rotation_transition_test.dart
           test/reader_settings_search_test.dart

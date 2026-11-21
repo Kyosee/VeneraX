@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_collection_store.dart';
+import 'package:venera/foundation/comic_cover_store.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -66,6 +68,81 @@ void main() {
     SingleInstanceCookieJar.instance = null;
     JsEngine().dispose();
     root.deleteSync(recursive: true);
+  });
+
+  test('manual backups restore comic and collection covers even on a skipping device', () async {
+    const ref = 'collection://picked.png';
+    const remote = 'collection://other.jpg';
+    final file = ComicCoverStore.fileFor(ref)!;
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes([1, 2, 3]);
+    appdata.settings['disableSyncFields'] = '@customCovers';
+    appdata.settings[ComicCoverStore.settingsKey] = {'a': {'same': ref}};
+    appdata.settings[ComicCollectionStore.settingsKey] = [
+      {'id': 'album', 'name': 'Series', 'customCover': ref},
+    ];
+    addTearDown(() async {
+      appdata.settings['disableSyncFields'] = '';
+      appdata.settings[ComicCoverStore.settingsKey] = {};
+      appdata.settings[ComicCollectionStore.settingsKey] = [];
+      await appdata.saveData(false);
+    });
+
+    final backup = await exportAppData(sync: false);
+    expect(appdata.implicitData[Appdata.pendingCoversKey], isTrue);
+    final zip = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    expect(zip.findFile('collection_covers/picked.png')!.content, [1, 2, 3]);
+    final compact = await exportAppData(includeCoverFiles: false, customCovers: ComicCoverStore.current);
+    expect(ZipDecoder().decodeBytes(await compact.readAsBytes()).findFile('collection_covers/picked.png'), isNull);
+
+    appdata.settings[ComicCoverStore.settingsKey] = {'b': {'same': remote}};
+    appdata.settings[ComicCollectionStore.settingsKey] = [
+      {'id': 'album', 'name': 'Local', 'customCover': remote},
+    ];
+    await file.delete();
+    await importAppData(backup, restoreCustomCovers: false,
+        loadCustomCovers: (_) => throw StateError('skipped device fetched images'));
+    expect(ComicCoverStore.reference('b', 'same'), remote);
+    expect(ComicCollectionStore.find('album')!.customCover, remote);
+    expect(ComicCollectionStore.find('album')!.name, 'Series');
+    expect(await file.exists(), isFalse);
+
+    await expectLater(importAppData(compact,
+        loadCustomCovers: (_) => throw StateError('download interrupted')), throwsStateError);
+    expect(ComicCoverStore.reference('b', 'same'), remote);
+    await importAppData(backup);
+    expect(await file.readAsBytes(), [1, 2, 3]);
+    expect(ComicCoverStore.reference('a', 'same'), ref);
+    expect(ComicCoverStore.reference('b', 'same'), isNull);
+    expect(ComicCollectionStore.find('album')!.customCover, ref);
+  });
+
+  test('a collection using an older local member cover exports a portable image', () async {
+    final directory = await Directory('${root.path}/member-cover').create();
+    final image = File('${directory.path}/cover.png');
+    await image.writeAsBytes([7, 8, 9]);
+    final member = LocalComic(
+      id: 'cover-member', title: 'Member', subtitle: '', tags: const [],
+      directory: directory.path, chapters: null, cover: 'cover.png',
+      comicType: ComicType.local, downloadedChapters: const [], createdAt: DateTime.utc(2026),
+    );
+    await LocalManager().add(member, member.id);
+    final collection = ComicCollectionStore.create(name: 'Album', members: [
+      CollectionMember(sourceKey: 'local', comicId: member.id, cachedCover: 'file://${image.path}'),
+    ]);
+    ComicCollectionStore.update(collection.id, customCover: 'file://${image.path}');
+    addTearDown(() => appdata.settings[ComicCollectionStore.settingsKey] = []);
+    final backup = await exportAppData(sync: false);
+    final ref = ComicCollectionStore.find(collection.id)!.customCover;
+    final name = ComicCoverStore.nameOf(ref)!;
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    expect(archive.findFile('collection_covers/$name')!.content, [7, 8, 9]);
+    expect((await ComicCoverStore.forExport())['comicCollections'][collection.id], ref);
+    final old = File('${ComicCoverStore.fileFor(ref)!.parent.path}/unused.png');
+    await old.writeAsBytes([8]);
+    await ComicCoverStore.pruneUnusedAtStartup(appdata.toJson()['settings']);
+    expect(await old.exists(), isFalse);
+    expect(await ComicCoverStore.fileFor(ref)!.readAsBytes(), [7, 8, 9]);
   });
 
   test('backups exclude atomic write files and keep saved data', () async {

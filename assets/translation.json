@@ -1,5 +1,9 @@
 {
   "zh_CN": {
+    "Custom covers": "自定义封面",
+    "Cover choices and images for comics and collections": "单本漫画和合集的封面选择及图片",
+    "Change cover": "更换封面",
+    "Restore default cover": "恢复默认封面",
     "Adaptive reading mode": "自适应阅读模式",
     "Paged comic reading mode": "页漫阅读模式",
     "Detect page layout from several body images. Strips scroll vertically; uncertain layouts keep the selected mode. Selecting a mode manually turns this off.": "根据多张正文图片识别版式。条漫上下连续阅读，无法确定时沿用所选模式；手动选择阅读模式会关闭自适应。",
@@ -2034,6 +2038,10 @@
     "Safe mode: automatic sync, update checks and unfinished tasks are off for this run": "安全模式：本次运行已关闭自动同步、更新检查和未完成任务的续传"
   },
   "zh_TW": {
+    "Custom covers": "自訂封面",
+    "Cover choices and images for comics and collections": "單本漫畫與合集的封面設定及圖片",
+    "Change cover": "更換封面",
+    "Restore default cover": "還原預設封面",
     "Adaptive reading mode": "自適應閱讀模式",
     "Paged comic reading mode": "頁漫閱讀模式",
     "Detect page layout from several body images. Strips scroll vertically; uncertain layouts keep the selected mode. Selecting a mode manually turns this off.": "根據多張正文圖片識別版式。條漫上下連續閱讀，無法確定時沿用所選模式；手動選擇閱讀模式會關閉自適應。",

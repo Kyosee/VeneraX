@@ -208,6 +208,15 @@ void main() {
       expect(c.coverOwner, isNull);
     });
 
+    test('a selected member cover keeps the source that loads it', () {
+      const cover = 'https://example.org/library/2/cover';
+      final c = build(cover: cover, members: [
+        {'sourceKey': 'a', 'comicId': '1', 'cachedCover': 'first'},
+        {'sourceKey': 'b', 'comicId': '2', 'cachedCover': cover},
+      ]);
+      expect(c.coverOwner?.sourceKey, 'b');
+    });
+
     test('an empty collection still renders', () {
       final c = build();
       expect(c.displayName, 'x');
