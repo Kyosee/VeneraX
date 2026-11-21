@@ -48,6 +48,10 @@ void main() {
     final skipped = Appdata.syncDisabledFields(const ['@reading']);
     expect(skipped, contains('chapterOrderOverrides'));
     expect(skipped, contains('imageWidthPercent'));
+    expect(
+      Appdata.syncDisabledFields(const ['@appearance']),
+      contains('returnToHomeOnBack'),
+    );
   });
 
   test('pre-token selections upgrade to the whole category', () {

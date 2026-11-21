@@ -48,6 +48,7 @@ const syncSkipCategories = <SyncSkipCategory>[
       "comicDisplayMode",
       "comicTileScale",
       "initialPage",
+      "returnToHomeOnBack",
       "homeSections",
       "imageFavoritesTabs",
       "comicCollectionDetailDisplayMode",
