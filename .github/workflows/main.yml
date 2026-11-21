@@ -760,7 +760,12 @@ jobs:
           } > "$body_file"
 
           prerelease=false
-          if [[ "$TAG" == *-* ]]; then prerelease=true; fi
+          title="$TAG"
+          if [[ "$TAG" == *-* ]]; then
+            prerelease=true
+            title=$(node .github/scripts/prerelease-title.mjs "$version" release-assets/*)
+          fi
+          echo "title=$title" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
@@ -785,7 +790,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: ${{ steps.release_meta.outputs.title }}
           draft: true
           prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
           body_path: ${{ steps.release_meta.outputs.body_file }}
@@ -797,6 +802,7 @@ jobs:
       - name: Verify draft release assets
         id: release_gate
         env:
+          TITLE: ${{ steps.release_meta.outputs.title }}
           BODY_FILE: ${{ steps.release_meta.outputs.body_file }}
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
@@ -812,8 +818,8 @@ jobs:
           test -n "$release_id" || { echo "No release found for $TAG"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > "$release_json"
           jq -e '.draft == true' "$release_json" > /dev/null
-          jq -e --arg tag "$TAG" --argjson prerelease "$PRERELEASE" \
-            '.tag_name == $tag and .prerelease == $prerelease and (.body | type == "string" and length > 0)' \
+          jq -e --arg tag "$TAG" --arg title "$TITLE" --argjson prerelease "$PRERELEASE" \
+            '.tag_name == $tag and .name == $title and .prerelease == $prerelease and (.body | type == "string" and length > 0)' \
             "$release_json" > /dev/null
           jq -e '.assets | length > 0 and all(.[]; .state == "uploaded" and .size > 0)' \
             "$release_json" > /dev/null

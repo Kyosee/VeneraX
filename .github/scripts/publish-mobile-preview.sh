@@ -25,6 +25,7 @@ count=$(find "$root/android" "$root/harmonyos" -type f \( -iname '*.apk' -o -ina
 (( count == ${#assets[@]} )) || fail "Unexpected additional packages in the downloaded artifacts."
 
 repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+title=$(node .github/scripts/prerelease-title.mjs "$version" "${assets[@]}")
 body_file="$root/release-body.md"
 {
   node .github/scripts/release-downloads.mjs "$repo_url" "$tag" "$app_version" mobile
@@ -51,7 +52,7 @@ verify_tag
 if [[ -z "$id" ]]; then
   # A new draft may not appear in the list immediately. Its creation returns the ID.
   id=$(gh api --method POST "$api/releases" --jq .id \
-    -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="VeneraX $version" \
+    -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$title" \
     -F "body=@$body_file" -F draft=true -F prerelease=true -f make_latest=false)
 fi
 [[ "$id" =~ ^[0-9]+$ ]] || fail "Expected one release for $tag."
@@ -77,10 +78,10 @@ if jq -e '.draft' "$release_json" >/dev/null; then
   read_release
   verify_assets
   verify_tag
-  gh api --method PATCH "$api/releases/$id" -F draft=false -f make_latest=false --silent
+  gh api --method PATCH "$api/releases/$id" -f name="$title" -F draft=false -f make_latest=false --silent
 fi
 read_release
-jq -e '.draft == false and .published_at != null' "$release_json" >/dev/null
+jq -e --arg title "$title" '.draft == false and .published_at != null and .name == $title' "$release_json" >/dev/null
 verify_tag
 verify_assets
 jq -r '.html_url' "$release_json"
