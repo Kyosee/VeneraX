@@ -240,58 +240,72 @@ void main() {
     },
   );
 
-  test('source title updates preserve downloads and hidden reading progress', () async {
-    final type = ComicType.fromKey(_sourceKey);
-    const id = 'downloaded-title';
-    final created = DateTime(2024);
-    final local = LocalManager();
-    final history = HistoryManager();
-    LocalComic download(ComicType type) => LocalComic(
-      id: id,
-      title: 'Old title',
-      subtitle: 'Author',
-      tags: const ['tag'],
-      directory: 'original-directory',
-      chapters: const ComicChapters({'one': 'Chapter one'}),
-      cover: 'cover.jpg',
-      comicType: type,
-      downloadedChapters: const ['one'],
-      createdAt: created,
-    );
-    await local.add(download(type));
-    await local.add(download(ComicType.local));
-    final record = History.fromModel(
-      model: download(type),
-      ep: 1,
-      page: 23,
-      readChapters: {'one'},
-      time: created,
-    );
-    history.addHistory(record);
-    history.hide(id, type);
-    const repository = ComicStateRepository();
-    await repository.updateStoredSourceMetadata(id, type, _details(title: '新題'));
-    await repository.updateStoredSourceMetadata(id, type, _details(title: ' '));
-    await repository.updateStoredSourceMetadata('absent', type, _details());
+  test(
+    'source title updates preserve downloads and hidden reading progress',
+    () async {
+      final type = ComicType.fromKey(_sourceKey);
+      const id = 'downloaded-title';
+      final created = DateTime(2024);
+      final local = LocalManager();
+      final history = HistoryManager();
+      LocalComic download(ComicType type) => LocalComic(
+        id: id,
+        title: 'Old title',
+        subtitle: 'Author',
+        tags: const ['tag'],
+        directory: 'original-directory',
+        chapters: const ComicChapters({'one': 'Chapter one'}),
+        cover: 'cover.jpg',
+        comicType: type,
+        downloadedChapters: const ['one'],
+        createdAt: created,
+      );
+      await local.add(download(type));
+      await local.add(download(ComicType.local));
+      final record = History.fromModel(
+        model: download(type),
+        ep: 1,
+        page: 23,
+        readChapters: {'one'},
+        time: created,
+      );
+      final save = history.addHistoryAsync(record);
+      const repository = ComicStateRepository();
+      final rename = repository.updateStoredSourceMetadata(
+        id,
+        type,
+        _details(title: '新題'),
+      );
+      await Future.wait([save, rename]);
+      expect(history.find(id, type)!.title, '新題');
+      history.hide(id, type);
+      await repository.updateStoredSourceMetadata(
+        id,
+        type,
+        _details(title: '更新後'),
+      );
+      await repository.updateStoredSourceMetadata(id, type, _details(title: ' '));
+      await repository.updateStoredSourceMetadata('absent', type, _details());
 
-    final saved = local.find(id, type)!;
-    expect(saved.title, '新題');
-    expect(saved.directory, 'original-directory');
-    expect(saved.cover, 'cover.jpg');
-    expect(saved.chapters!.allChapters, {'one': 'Chapter one'});
-    expect(saved.downloadedChapters, ['one']);
-    expect(saved.createdAt, created);
-    expect(local.search('新題').map((comic) => comic.id), contains(id));
-    expect(local.find(id, ComicType.local)!.title, 'Old title');
-    expect(local.find('absent', type), isNull);
-    final stored = history.find(id, type)!;
-    expect(stored.title, '新題');
-    expect(stored.page, 23);
-    expect(stored.readEpisode, {'one'});
-    expect(stored.time, created);
-    expect(history.getAll(), isNot(contains(stored)));
-    expect(history.find('absent', type), isNull);
-  });
+      final saved = local.find(id, type)!;
+      expect(saved.title, '更新後');
+      expect(saved.directory, 'original-directory');
+      expect(saved.cover, 'cover.jpg');
+      expect(saved.chapters!.allChapters, {'one': 'Chapter one'});
+      expect(saved.downloadedChapters, ['one']);
+      expect(saved.createdAt, created);
+      expect(local.search('更新後').map((comic) => comic.id), contains(id));
+      expect(local.find(id, ComicType.local)!.title, 'Old title');
+      expect(local.find('absent', type), isNull);
+      final stored = history.find(id, type)!;
+      expect(stored.title, '更新後');
+      expect(stored.page, 23);
+      expect(stored.readEpisode, {'one'});
+      expect(stored.time, created);
+      expect(history.getAll(), isNot(contains(stored)));
+      expect(history.find('absent', type), isNull);
+    },
+  );
 
   for (final grouped in [false, true]) {
     testWidgets(

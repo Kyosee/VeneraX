@@ -612,13 +612,21 @@ class HistoryManager with ChangeNotifier {
     cachedHistories.clear();
   }
 
-  Future<void> _pendingHistoryWrite = Future.value();
+  Future<void>? _pendingHistoryWrite;
 
-  Future<T> _queueHistoryWrite<T>(FutureOr<T> Function() action) {
-    final write = _pendingHistoryWrite.then((_) => action());
-    // Report errors to the caller without blocking later writes or deletions.
-    _pendingHistoryWrite = write.then<void>((_) {}, onError: (Object _) {});
-    return write;
+  Future<T> _queueHistoryWrite<T>(FutureOr<T> Function() action) async {
+    final previous = _pendingHistoryWrite;
+    final done = Completer<void>();
+    _pendingHistoryWrite = done.future;
+    try {
+      if (previous != null) await previous;
+      return await action();
+    } finally {
+      if (identical(_pendingHistoryWrite, done.future)) {
+        _pendingHistoryWrite = null;
+      }
+      done.complete();
+    }
   }
 
   /// Create a isolate to add history to prevent blocking the UI thread.
