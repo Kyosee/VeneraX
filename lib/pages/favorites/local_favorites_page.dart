@@ -181,6 +181,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
   }
 
   bool isLoading = false;
+  bool _reloadAfterLoad = false;
 
   late String readFilterSelect;
   late String downloadFilterSelect;
@@ -203,7 +204,10 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
 
   @override
   void updateComics() {
-    if (isLoading) return;
+    if (isLoading) {
+      _reloadAfterLoad = true;
+      return;
+    }
     if (!isAllFolder && !manager.existsFolder(widget.folder)) {
       // Gone through a sync or a restore. A rename or delete made here moves
       // the page itself first, so only leave if nothing else did.
@@ -235,15 +239,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
         manager
             .getComicsInAsync(folders)
             .minTime(const Duration(milliseconds: 200))
-            .then((value) {
-              if (mounted) {
-                setState(() {
-                  isLoading = false;
-                  comics = value;
-                  updateFilteredComics();
-                });
-              }
-            });
+            .then(_finishLoadingComics);
       }
     } else {
       var folderComics = manager.folderComics(widget.folder);
@@ -255,18 +251,24 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage>
         manager
             .getFolderComicsAsync(widget.folder)
             .minTime(const Duration(milliseconds: 200))
-            .then((value) {
-              if (mounted) {
-                setState(() {
-                  isLoading = false;
-                  comics = value;
-                  updateFilteredComics();
-                });
-              }
-            });
+            .then(_finishLoadingComics);
       }
     }
     setState(() {});
+  }
+
+  void _finishLoadingComics(List<FavoriteItem> value) {
+    if (!mounted) return;
+    isLoading = false;
+    if (_reloadAfterLoad) {
+      _reloadAfterLoad = false;
+      updateComics();
+      return;
+    }
+    setState(() {
+      comics = value;
+      updateFilteredComics();
+    });
   }
 
   @override

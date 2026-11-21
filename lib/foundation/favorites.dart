@@ -1953,6 +1953,27 @@ class LocalFavoritesManager with ChangeNotifier {
     return _hashedIds.containsKey(hash);
   }
 
+  void updateTitle(String id, ComicType type, String title) {
+    final folders = find(id, type);
+    if (folders.isEmpty) return;
+    var changed = false;
+    _db.execute('BEGIN TRANSACTION');
+    try {
+      for (final folder in folders) {
+        _db.execute(
+          'UPDATE "$folder" SET name = ? WHERE id = ? AND type = ? AND name IS NOT ?',
+          [title, id, type.value, title],
+        );
+        if (_db.updatedRows > 0) changed = true;
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    if (changed) notifyListeners();
+  }
+
   void updateInfo(
     String folder,
     FavoriteItem comic, [

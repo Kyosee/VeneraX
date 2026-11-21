@@ -124,10 +124,12 @@ void main() {
       final background = Completer<Res<ComicDetails>>();
       var detailRequests = 0;
       var sourceTitle = '日本語タイトル';
+      var sourceFails = false;
       ComicSourceManager().add(
         _source((id) async {
           expect(id, _comicId);
           detailRequests++;
+          if (sourceFails) return const Res.error('offline');
           return detailRequests == 1
               ? background.future
               : Res(_details(title: sourceTitle));
@@ -136,6 +138,40 @@ void main() {
       final history = History.fromModel(model: _details(), ep: 1, page: 7);
       HistoryManager().addHistory(history);
       addTearDown(() => HistoryManager().remove(_comicId, history.type));
+      final favorites = LocalFavoritesManager();
+      final folders = [
+        favorites.createFolder('A'),
+        favorites.createFolder('B'),
+      ];
+      for (final folder in folders) {
+        for (final type in [history.type, ComicType.local]) {
+          favorites.addComic(
+            folder,
+            FavoriteItem(
+              id: _comicId,
+              name: 'Saved title',
+              type: type,
+              coverPath: 'saved-cover',
+              author: 'Saved author',
+              tags: const [],
+              favoriteTime: DateTime(2024),
+            ),
+          );
+        }
+      }
+      void checkFavorites(String expectedTitle) {
+        for (final folder in folders) {
+          final item = favorites.getComic(folder, _comicId, history.type);
+          expect(item.name, expectedTitle);
+          expect(item.coverPath, 'saved-cover');
+          expect(item.time, '2024-01-01 00:00:00');
+          expect(
+            favorites.getComic(folder, _comicId, ComicType.local).name,
+            'Saved title',
+          );
+        }
+      }
+
       ComicDetailsCache().update(_sourceKey, _comicId, _details());
       final diskKey = ImageDownloader.thumbnailCacheKey(
         _coverUrl,
@@ -190,6 +226,7 @@ void main() {
       await tester.pump();
       await tester.runAsync(() => refresh.timeout(const Duration(seconds: 5)));
       expect(detailRequests, 2);
+      checkFavorites(sourceTitle);
       expect(HistoryManager().find(_comicId, history.type)!.title, sourceTitle);
       expect(HistoryManager().find(_comicId, history.type)!.page, 7);
       expect(await tester.runAsync(() => cache.findCache(diskKey)), isNull);
@@ -241,6 +278,15 @@ void main() {
       });
       expect(detailRequests, 3);
       expect(HistoryManager().find(_comicId, history.type)!.title, sourceTitle);
+      checkFavorites(sourceTitle);
+
+      sourceFails = true;
+      await tester.runAsync(
+        tester
+            .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+            .onRefresh,
+      );
+      checkFavorites(sourceTitle);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

@@ -493,7 +493,10 @@ class ComicStateRepository {
   }) async {
     if (type == ComicType.local) return;
     final title = details.title.trim().isEmpty ? null : details.title;
-    if (title != null) _local.updateDownloadedTitle(id, type, title);
+    if (title != null) {
+      _local.updateDownloadedTitle(id, type, title);
+      _favorites.updateTitle(id, type, title);
+    }
     await _history.updateSourceMetadata(
       id,
       type,
