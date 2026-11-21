@@ -78,14 +78,41 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              "Download either model separately. Standard text removal works without them."
+              "Models are optional. Turn an enhancement off to use the default processing and keep its files."
                   .tl,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ).toSliver(),
-          for (final component in TranslationModels.enhancements) ...[
+          for (final component in [
+            ...TranslationModels.enhancements,
+            if (TranslationModelStore.instance
+                    .stateOf(TranslationModels.bubblePop)
+                    .downloading ||
+                TranslationModels.bubblePop.isInstalled)
+              TranslationModels.bubblePop,
+          ]) ...[
             _buildComponent(context, component, requiredIds).toSliver(),
             _buildEnhancementDetails(context, component).toSliver(),
+            if (component.isInstalled &&
+                (component == TranslationModels.rtDetr ||
+                    (component == TranslationModels.bubblePop &&
+                        !TranslationModels.rtDetr.isInstalled)))
+              _SwitchSetting(
+                title: "Use dialogue detection enhancement".tl,
+                settingKey: TranslationConfig.bubbleEnhancementKey,
+                subtitle:
+                    "Saved translations are kept. Retranslate a page to apply the new dialogue detection setting."
+                        .tl,
+              ).toSliver(),
+            if (component == TranslationModels.comicTextDetector &&
+                component.isInstalled)
+              _SwitchSetting(
+                title: "Use text stroke enhancement".tl,
+                settingKey: TranslationConfig.strokeEnhancementKey,
+                subtitle:
+                    "Applies when retranslating a page or pre-translating a chapter."
+                        .tl,
+              ).toSliver(),
           ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
         ],
@@ -180,15 +207,43 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     BuildContext context,
     ModelComponent component,
   ) {
-    final bubble = component == TranslationModels.bubblePop;
     const bubbleSource = 'https://github.com/letmutex/bubble-pop';
     const strokeSource = 'https://github.com/dmMaze/comic-text-detector';
     const strokeRevision = '440b978563c71b758e31aaa315d100faba1efa2f';
-    final description = bubble
-        ? "Helps Dialogue only find speech bubbles. VeneraX keeps letmutex’s original weights and adjusts the input and decoder to 576 × 768 on this device."
-              .tl
-        : "Locates original text strokes in both scopes during page retries and chapter pre-translation. Uses more memory. The training images and fonts belong to their respective owners."
-              .tl;
+    const rtDetrSource =
+        'https://huggingface.co/${TranslationModels.rtDetrRepository}';
+    final (
+      description,
+      author,
+      sourceUrl,
+      license,
+      licenseUrl,
+    ) = switch (component) {
+      TranslationModels.rtDetr => (
+        "Helps Dialogue only distinguish text inside speech bubbles from captions and sound effects. Uses the Comic Translate author’s INT8 model."
+            .tl,
+        'ogkalu/Comic Translate',
+        '$rtDetrSource/tree/${TranslationModels.rtDetrRevision}',
+        'Apache-2.0',
+        '$rtDetrSource/blob/${TranslationModels.rtDetrRevision}/README.md',
+      ),
+      TranslationModels.bubblePop => (
+        "Helps Dialogue only find speech bubbles. VeneraX keeps letmutex’s original weights and adjusts the input and decoder to 576 × 768 on this device."
+            .tl,
+        'letmutex/BubblePop',
+        '$bubbleSource/tree/${TranslationModels.bubblePopRevision}',
+        'Apache-2.0',
+        '$bubbleSource/blob/${TranslationModels.bubblePopRevision}/LICENSE',
+      ),
+      _ => (
+        "Locates original text strokes in both scopes during page retries and chapter pre-translation. Uses more memory. The training images and fonts belong to their respective owners."
+            .tl,
+        'dmMaze/CTD',
+        '$strokeSource/tree/$strokeRevision',
+        'GPL-3.0',
+        '$strokeSource/blob/$strokeRevision/LICENSE',
+      ),
+    };
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Column(
@@ -198,22 +253,14 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
           Wrap(
             children: [
               TextButton(
-                onPressed: () => launchUrlString(
-                  bubble
-                      ? '$bubbleSource/tree/${TranslationModels.bubblePopRevision}'
-                      : '$strokeSource/tree/$strokeRevision',
-                ),
-                child: Text(bubble ? 'letmutex/BubblePop' : 'dmMaze/CTD'),
+                onPressed: () => launchUrlString(sourceUrl),
+                child: Text(author),
               ),
               TextButton(
-                onPressed: () => launchUrlString(
-                  bubble
-                      ? '$bubbleSource/blob/${TranslationModels.bubblePopRevision}/LICENSE'
-                      : '$strokeSource/blob/$strokeRevision/LICENSE',
-                ),
-                child: Text(bubble ? 'Apache-2.0' : 'GPL-3.0'),
+                onPressed: () => launchUrlString(licenseUrl),
+                child: Text(license),
               ),
-              if (!bubble)
+              if (component == TranslationModels.comicTextDetector)
                 TextButton(
                   onPressed: () => launchUrlString(
                     'https://github.com/zyddnys/manga-image-translator/releases/tag/beta-0.3',

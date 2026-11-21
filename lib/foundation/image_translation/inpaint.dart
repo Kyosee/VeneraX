@@ -49,6 +49,7 @@ abstract final class TextInpainter {
     IntRect region, {
     StrokeMask? strokeMask,
     bool flatFill = false,
+    List<IntRect> textRegions = const [],
   }) {
     var w = image.width;
     var h = image.height;
@@ -84,7 +85,24 @@ abstract final class TextInpainter {
       }
     }
 
-    var bgLum = _ringMeanLuminance(lum, rw, rh);
+    final neighbors = textRegions
+        .where(
+          (r) =>
+              r.right + 2 >= left &&
+              r.left - 2 < right &&
+              r.bottom + 2 >= top &&
+              r.top - 2 < bottom,
+        )
+        .toList();
+    final (bgLum, unstableRing) = _backgroundRing(
+      lum,
+      rw,
+      rh,
+      left,
+      top,
+      neighbors,
+      flatFill,
+    );
     var threshold = _otsu(lum);
 
     // Class means around the split, so the text class is chosen by which mean
@@ -94,7 +112,6 @@ abstract final class TextInpainter {
     var (lowMean, highMean) = _classMeans(lum, threshold);
     var bgIsHigh = (highMean - bgLum).abs() <= (lowMean - bgLum).abs();
     var textMean = bgIsHigh ? lowMean : highMean;
-    var unstableRing = _ringDeviation(lum, rw, rh, bgLum, flatFill);
 
     // A contrast margin keeps low-contrast noise from being erased.
     const minMargin = 24;
@@ -197,37 +214,61 @@ abstract final class TextInpainter {
     return TextMask(left, top, rw, rh, mask);
   }
 
-  static bool _ringDeviation(
+  static (int, bool) _backgroundRing(
     Uint8List values,
     int w,
     int h,
-    int mean,
+    int left,
+    int top,
+    List<IntRect> textRegions,
     bool flatFill,
   ) {
+    // Neighboring OCR lines are foreground, even when they touch this line's
+    // sampling border. Including them misclassifies dense dialogue as texture.
+    final ring = <int>[];
+    void sample(int x, int y) {
+      final px = left + x, py = top + y;
+      final isText = textRegions.any(
+        (r) =>
+            px >= r.left - 2 &&
+            px < r.right + 2 &&
+            py >= r.top - 2 &&
+            py < r.bottom + 2,
+      );
+      ring.add(isText ? -1 : values[y * w + x]);
+    }
+
+    for (var x = 0; x < w; x++) {
+      sample(x, 0);
+    }
+    for (var y = 1; y < h; y++) {
+      sample(w - 1, y);
+    }
+    for (var x = w - 2; x >= 0; x--) {
+      sample(x, h - 1);
+    }
+    for (var y = h - 2; y > 0; y--) {
+      sample(0, y);
+    }
+    var count = 0, sum = 0;
+    for (final value in ring) {
+      if (value < 0) continue;
+      count++;
+      sum += value;
+    }
+    if (count < 8) return (255, true);
+    final mean = (sum / count).round();
     var tolerance = flatFill ? 24 : 35;
     var varied = 0;
     var abrupt = 0;
-    for (var x = 0; x < w; x++) {
-      if ((values[x] - mean).abs() > tolerance) varied++;
-      if ((values[(h - 1) * w + x] - mean).abs() > tolerance) varied++;
-      if (x > 0) {
-        if ((values[x] - values[x - 1]).abs() > tolerance) abrupt++;
-        if ((values[(h - 1) * w + x] - values[(h - 1) * w + x - 1]).abs() >
-            tolerance) {
-          abrupt++;
-        }
-      }
+    for (var i = 0; i < ring.length; i++) {
+      final value = ring[i],
+          previous = ring[(i + ring.length - 1) % ring.length];
+      if (value < 0) continue;
+      if ((value - mean).abs() > tolerance) varied++;
+      if (previous >= 0 && (value - previous).abs() > tolerance) abrupt++;
     }
-    for (var y = 1; y < h - 1; y++) {
-      if ((values[y * w] - mean).abs() > tolerance) varied++;
-      if ((values[y * w + w - 1] - mean).abs() > tolerance) varied++;
-      if ((values[y * w] - values[(y - 1) * w]).abs() > tolerance) abrupt++;
-      if ((values[y * w + w - 1] - values[y * w - 1]).abs() > tolerance) {
-        abrupt++;
-      }
-    }
-    var perimeter = 2 * w + 2 * h - 4;
-    return varied > perimeter * .33 && (flatFill || abrupt > perimeter * .10);
+    return (mean, varied > count * .33 && (flatFill || abrupt > count * .10));
   }
 
   static void fillWithBackground(RgbaImage image, TextMask mask) {
@@ -267,21 +308,6 @@ abstract final class TextInpainter {
         image.pixels[i + 2] = blue;
       }
     }
-  }
-
-  static int _ringMeanLuminance(Uint8List lum, int rw, int rh) {
-    var sum = 0, count = 0;
-    for (var x = 0; x < rw; x++) {
-      sum += lum[x];
-      sum += lum[(rh - 1) * rw + x];
-      count += 2;
-    }
-    for (var y = 1; y < rh - 1; y++) {
-      sum += lum[y * rw];
-      sum += lum[y * rw + rw - 1];
-      count += 2;
-    }
-    return count == 0 ? 255 : (sum / count).round();
   }
 
   /// Otsu's method: luminance threshold maximising between-class variance.

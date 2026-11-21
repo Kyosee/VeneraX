@@ -194,6 +194,9 @@ class Appdata with Init, ChangeNotifier {
     "imageTranslationOcrWorkers",
     "imageTranslationImageConcurrency",
     "imageTranslationLlmConcurrency",
+    // Installed model files and their performance costs are device-specific.
+    "imageTranslationBubbleEnhancement",
+    "imageTranslationStrokeEnhancement",
     // Shortcuts follow the machine: modifiers differ between macOS and the
     // rest, and a global hotkey free on one PC may be taken on another.
     "keyboardShortcuts",
@@ -640,6 +643,8 @@ class Settings with ChangeNotifier {
     // 渲染图缓存键会带此模式的标记，切换后自动从已存文本重渲，不重跑 OCR/翻译。
     'imageTranslationInpaintMode': 'smart', // patch, smart
     'imageTranslationScope': 'all',
+    'imageTranslationBubbleEnhancement': true,
+    'imageTranslationStrokeEnhancement': true,
   };
 
   operator [](String key) {

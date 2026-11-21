@@ -8,7 +8,8 @@ import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
 /// Erases source strokes on a worker isolate, then fits each translation in
-/// the independent layout rectangle. An unsafe region retains its source art.
+/// the independent layout rectangle. Difficult backgrounds keep a small backing
+/// behind the translated glyphs so every usable translation remains readable.
 Future<Uint8List> renderTranslatedPage(
   Uint8List originalBytes,
   RgbaImage decoded,
@@ -18,8 +19,9 @@ Future<Uint8List> renderTranslatedPage(
   void Function(List<TranslatedRegion>)? onSkipped,
 }) async {
   var visible = List<int>.empty();
+  var backed = <int>{};
   if (regions.isNotEmpty) {
-    var (cleaned, indices) = await compute(_cleanPage, (
+    var (cleaned, indices, fallback) = await compute(_cleanPage, (
       decoded,
       regions,
       mode,
@@ -27,6 +29,7 @@ Future<Uint8List> renderTranslatedPage(
     ));
     decoded = cleaned;
     visible = indices;
+    backed = fallback.toSet();
   }
   if (onSkipped != null) {
     var displayed = visible.toSet();
@@ -42,7 +45,18 @@ Future<Uint8List> renderTranslatedPage(
     canvas.drawImage(base, ui.Offset.zero, ui.Paint());
     for (var index in visible) {
       var region = regions[index];
-      if (mode == InpaintMode.patch) {
+      if (backed.contains(index)) {
+        final dark = _regionIsDark(decoded, region.rect);
+        _drawText(
+          canvas,
+          region,
+          _rectOf(region),
+          dark ? const ui.Color(0xFFF5F5F5) : const ui.Color(0xFF202020),
+          background: dark
+              ? const ui.Color(0xFF202020)
+              : const ui.Color(0xFFF5F5F5),
+        );
+      } else if (mode == InpaintMode.patch) {
         _drawText(canvas, region, _rectOf(region), ui.Color(region.textColor));
       } else {
         _drawErasedRegion(canvas, decoded, region);
@@ -63,11 +77,13 @@ Future<Uint8List> renderTranslatedPage(
   }
 }
 
-(RgbaImage, List<int>) _cleanPage(
+(RgbaImage, List<int>, List<int>) _cleanPage(
   (RgbaImage, List<TranslatedRegion>, InpaintMode, StrokeMask?) work,
 ) {
   var (image, regions, mode, strokeMask) = work;
   var visible = <int>[];
+  var backed = <int>[];
+  final textRegions = [for (final region in regions) ...region.eraseRects];
   for (var index = 0; index < regions.length; index++) {
     var region = regions[index];
     if (region.text.trim().isEmpty ||
@@ -75,22 +91,34 @@ Future<Uint8List> renderTranslatedPage(
         region.rect.height <= 4) {
       continue;
     }
-    var masks = <TextMask>[];
+    var masks = <(TextMask, bool)>[];
     for (var line in region.eraseRects) {
       var mask = TextInpainter.computeMask(
         image,
         line,
         strokeMask: strokeMask,
         flatFill: mode == InpaintMode.patch,
+        textRegions: textRegions,
       );
-      if (mask == null) break;
-      masks.add(mask);
+      if (mask != null) {
+        masks.add((mask, mode == InpaintMode.patch));
+      } else if (mode == InpaintMode.patch) {
+        final local = TextInpainter.computeMask(
+          image,
+          line,
+          strokeMask: strokeMask,
+          textRegions: textRegions,
+        );
+        if (local != null) masks.add((local, false));
+      }
     }
-    // Erase and typeset a whole block atomically. A rejected line otherwise
-    // leaves the original text under its translation, even when its peers are clear.
-    if (masks.isEmpty || masks.length != region.eraseRects.length) continue;
-    for (var mask in masks) {
-      if (mode == InpaintMode.patch) {
+    // A difficult line must not suppress the whole translation. Keep the art
+    // in that line and back only the translated glyphs where it is drawn.
+    if (masks.isEmpty || masks.length != region.eraseRects.length) {
+      backed.add(index);
+    }
+    for (final (mask, flatFill) in masks) {
+      if (flatFill) {
         TextInpainter.fillWithBackground(image, mask);
       } else {
         TextInpainter.eraseWithMask(image, mask);
@@ -98,7 +126,7 @@ Future<Uint8List> renderTranslatedPage(
     }
     visible.add(index);
   }
-  return (image, visible);
+  return (image, visible, backed);
 }
 
 Future<ui.Image> _baseImage(RgbaImage decoded) async {
@@ -181,6 +209,7 @@ void _drawText(
   ui.Rect rect,
   ui.Color color, {
   ui.Color? outline,
+  ui.Color? background,
 }) {
   if (rect.width <= 4 || rect.height <= 4 || region.text.trim().isEmpty) {
     return;
@@ -195,6 +224,7 @@ void _drawText(
         color,
         rect,
         outline: outline,
+        background: background,
         lineHeight: region.lineHeight,
       );
       return;
@@ -224,7 +254,7 @@ void _drawText(
     var painter = _horizontalPainter(
       region.text,
       size,
-      _fillStyle(color, size),
+      _fillStyle(color, size).copyWith(backgroundColor: background),
       maxWidth,
     );
     var offset = ui.Offset(
@@ -311,6 +341,7 @@ void _drawVerticalText(
   ui.Color color,
   ui.Rect rect, {
   ui.Color? outline,
+  ui.Color? background,
   int lineHeight = 0,
 }) {
   var chars = text.runes
@@ -363,7 +394,10 @@ void _drawVerticalText(
   var startRight = rect.left + (rect.width + blockW) / 2;
   var top = rect.top + (rect.height - blockH) / 2;
 
-  var fillStyle = _fillStyle(color, chosen).copyWith(height: 1.0);
+  var fillStyle = _fillStyle(
+    color,
+    chosen,
+  ).copyWith(height: 1.0, backgroundColor: background);
   var strokeStyle = outline == null
       ? null
       : _strokeStyle(outline, chosen).copyWith(height: 1.0);

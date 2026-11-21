@@ -28,6 +28,10 @@ class _Pipeline extends Fake implements PageTranslationPipeline {
   var requests = 0;
   List<TranslatedRegion> previousRegions = [];
   bool maskAvailable = false;
+  bool? requestedStrokes;
+  bool renderText = false;
+  Completer<void>? renderStarted;
+  Completer<void>? resumeRender;
   @override
   bool get ocrIsWarm => true;
 
@@ -74,7 +78,13 @@ class _Pipeline extends Fake implements PageTranslationPipeline {
     bool enhanceStrokes = false,
     void Function()? onStrokeMask,
   }) async {
+    requestedStrokes = enhanceStrokes;
     if (enhanceStrokes && maskAvailable) onStrokeMask?.call();
+    if (renderStarted != null && !renderStarted!.isCompleted) {
+      renderStarted!.complete();
+      await resumeRender!.future;
+    }
+    if (renderText) return Uint8List.fromList(regions.single.text.codeUnits);
     return Uint8List.fromList([42]);
   }
 }
@@ -102,6 +112,7 @@ void main() {
     chapter: chapter,
   );
   setUp(() async {
+    appdata.settings[TranslationConfig.strokeEnhancementKey] = true;
     temp = await Directory.systemTemp.createTemp('page-retranslation-');
     oldPath = App.dataPath;
     oldCache = App.cachePath;
@@ -122,12 +133,105 @@ void main() {
     }
   });
   tearDown(() async {
+    appdata.settings[TranslationConfig.strokeEnhancementKey] = true;
     TranslationStore().close();
     DatabaseGateway.instance.closeManaged('${App.dataPath}/cache.db');
     CacheManager.instance = null;
     App.dataPath = oldPath;
     App.cachePath = oldCache;
     await temp.delete(recursive: true);
+  });
+  test(
+    'old failed render is rebuilt from stored text without another translation',
+    () async {
+      for (final mode in InpaintMode.values) {
+        await CacheManager().delete(
+          ImageTranslationService.renderedKey(key, mode),
+        );
+        await CacheManager().writeCache('$key#2${mode.token}', [7]);
+        await CacheManager().writeCache('$key#2${mode.token}+ctd', [8]);
+        final output = await service.renderStoredPage(
+          key,
+          Uint8List.fromList([1]),
+          mode,
+          chapter: chapter,
+        );
+        expect(output, [42]);
+        expect(await (await service.findTranslated(key, mode))!.readAsBytes(), [
+          42,
+        ]);
+      }
+      expect(pipeline.requests, 0);
+      expect(TranslationStore().get(key)!.single.text, 'old');
+    },
+  );
+  test(
+    'disabling strokes uses the standard render while keeping enhanced cache',
+    () async {
+      final enhanced = ImageTranslationService.renderedKey(
+        key,
+        config.mode,
+        enhanceStrokes: true,
+      );
+      await CacheManager().writeCache(enhanced, [77]);
+      expect(
+        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+        [77],
+      );
+      appdata.settings[TranslationConfig.strokeEnhancementKey] = false;
+      expect(
+        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+        [3],
+      );
+      expect(await (await CacheManager().findCache(enhanced))!.readAsBytes(), [
+        77,
+      ]);
+      appdata.settings[TranslationConfig.strokeEnhancementKey] = true;
+      expect(
+        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+        [77],
+      );
+      expect(pipeline.requests, 0);
+    },
+  );
+  test(
+    'stroke preference changes reader identity without changing the source',
+    () {
+      ReaderImageProvider provider(bool strokes) => ReaderImageProvider(
+        'image',
+        'src',
+        'book',
+        'ch',
+        1,
+        translationKey: key,
+        translated: true,
+        strokeEnhancement: strokes,
+      );
+      final enabled = provider(true);
+      final disabled = provider(false);
+      expect(enabled, isNot(disabled));
+      expect(enabled.diskCacheKey, disabled.diskCacheKey);
+      final originalKey = enabled.key;
+      appdata.settings[TranslationConfig.strokeEnhancementKey] = false;
+      expect(enabled.key, originalKey);
+    },
+  );
+  test('paid retry respects disabled stroke enhancement', () async {
+    appdata.settings[TranslationConfig.strokeEnhancementKey] = false;
+    pipeline.maskAvailable = true;
+    pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+    expect(await run(), isTrue);
+    expect(pipeline.requestedStrokes, isFalse);
+    expect(
+      await CacheManager().findCache(
+        ImageTranslationService.renderedKey(
+          key,
+          config.mode,
+          enhanceStrokes: true,
+        ),
+      ),
+      isNull,
+    );
   });
   test(
     'a paid retry replaces only the chosen page and its render variants',
@@ -202,6 +306,136 @@ void main() {
       [3],
     );
   });
+
+  test('a resumed chapter renders the latest successful retry', () async {
+    await CacheManager().delete(
+      ImageTranslationService.renderedKey(key, config.mode),
+    );
+    pipeline.renderText = true;
+    pipeline.maskAvailable = true;
+    final paused = Completer<void>();
+    final resume = Completer<void>();
+    var waits = 0;
+    final batch = service.translatePageGroup(
+      [
+        (
+          cacheKey: key,
+          legacyCacheKey: null,
+          imageBytes: Uint8List.fromList([1]),
+        ),
+      ],
+      'book@src',
+      config,
+      chapter: chapter,
+      waitUntilResumed: () async {
+        if (++waits == 2) {
+          paused.complete();
+          await resume.future;
+        }
+      },
+    );
+    await paused.future.timeout(const Duration(seconds: 5));
+    pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+    expect(await run(), isTrue);
+    resume.complete();
+    expect(await batch, [true]);
+    expect(TranslationStore().get(key)!.single.text, 'new');
+    expect(
+      await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+      'new'.codeUnits,
+    );
+    expect(pipeline.requests, 1);
+  });
+
+  test(
+    'an untranslated page stays readable while a paid request waits',
+    () async {
+      final page = ImageTranslationService.cacheKeyFor('src', 'book', 'ch', 12);
+      final image = Uint8List.fromList([12]);
+      final work = service.translateOne(
+        page,
+        'book@src',
+        image,
+        config,
+        chapter: chapter,
+      );
+      await pipeline.started.future.timeout(const Duration(seconds: 5));
+      final original = await service
+          .renderStoredPage(page, image, config.mode, chapter: chapter)
+          .timeout(const Duration(seconds: 1));
+      expect(original, isNull);
+      expect(pipeline.analysis.isCompleted, isFalse);
+      pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+      expect(await work, isTrue);
+    },
+  );
+
+  for (final storedOnly in [true, false]) {
+    test(
+      'render entry storedOnly=$storedOnly waits for a pending retry',
+      () async {
+        pipeline.renderText = true;
+        final retry = run();
+        await pipeline.started.future.timeout(const Duration(seconds: 5));
+        final patch = TranslationConfig(
+          sourceLang: config.sourceLang,
+          targetLang: config.targetLang,
+          mode: InpaintMode.patch,
+        );
+        final render = storedOnly
+            ? service.renderStoredPage(
+                key,
+                Uint8List.fromList([1]),
+                patch.mode,
+                chapter: chapter,
+              )
+            : service.translateOne(
+                key,
+                'book@src',
+                Uint8List.fromList([1]),
+                patch,
+                chapter: chapter,
+              );
+        pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+        expect(await retry, isTrue);
+        final result = await render;
+        if (storedOnly) expect(result, 'new'.codeUnits);
+        expect(
+          await (await service.findTranslated(key, patch.mode))!.readAsBytes(),
+          'new'.codeUnits,
+        );
+        expect(pipeline.requests, 1);
+      },
+    );
+  }
+
+  test(
+    'an unfinished cache render cannot overwrite a successful retry',
+    () async {
+      await CacheManager().delete(
+        ImageTranslationService.renderedKey(key, config.mode),
+      );
+      pipeline.renderText = true;
+      pipeline.renderStarted = Completer<void>();
+      pipeline.resumeRender = Completer<void>();
+      final render = service.renderStoredPage(
+        key,
+        Uint8List.fromList([1]),
+        config.mode,
+        chapter: chapter,
+      );
+      await pipeline.renderStarted!.future.timeout(const Duration(seconds: 5));
+      await expectLater(run(), throwsStateError);
+      pipeline.resumeRender!.complete();
+      expect(await render, 'old'.codeUnits);
+      pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+      expect(await run(), isTrue);
+      expect(
+        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+        'new'.codeUnits,
+      );
+    },
+  );
 
   test(
     'changing modes during a reader request pays once and renders both modes',

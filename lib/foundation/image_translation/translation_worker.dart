@@ -22,6 +22,7 @@ class WorkerModelPaths {
   WorkerModelPaths({
     required this.detector,
     this.bubbleModel,
+    this.rtDetrModel,
     this.jaEncoder,
     this.jaDecoder,
     this.jaVocab,
@@ -34,6 +35,7 @@ class WorkerModelPaths {
 
   final String detector;
   final String? bubbleModel;
+  final String? rtDetrModel;
   final String? jaEncoder;
   final String? jaDecoder;
   final String? jaVocab;
@@ -378,7 +380,9 @@ class TranslationWorker {
     // Keep total ONNX intra-op threads ~= cores: dividing by the pool size
     // avoids oversubscribing the CPU (which would make more workers slower).
     var useBubble =
-        dialogueOnly && paths.bubbleModel != null && _fitsBubbleModel(image);
+        dialogueOnly &&
+        (paths.rtDetrModel != null || paths.bubbleModel != null) &&
+        _fitsBubbleModel(image);
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
     var worker = _pickWorker(useBubble ? 1 : poolSize);
     return worker
@@ -692,11 +696,14 @@ class _WorkerState {
     if (boxes.isEmpty) return const [];
     List<List<IntRect>>? groups;
     if (req.dialogueOnly) {
-      var path = req.paths.bubbleModel;
+      var rtDetr = req.paths.rtDetrModel;
+      var path = rtDetr ?? req.paths.bubbleModel;
       if (path != null && _fitsBubbleModel(image)) {
         groups = _optional(
           path,
-          (session) => modelDialogueGroups(image, boxes, session),
+          (session) => rtDetr != null
+              ? rtDetrDialogueGroups(image, boxes, session)
+              : modelDialogueGroups(image, boxes, session),
         );
       }
       groups ??= dialogueGroups(image, boxes);
