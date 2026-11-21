@@ -20,6 +20,7 @@ import 'package:venera/foundation/follow_updates_scheduler.dart';
 import 'package:venera/foundation/related_source_tasks.dart';
 import 'package:venera/foundation/reading_widget.dart';
 import 'package:venera/foundation/session_guard.dart';
+import 'package:venera/foundation/tv_platform.dart';
 import 'package:venera/network/app_dio_io.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -93,13 +94,13 @@ Future<void> initDeferred() async {
       JsEngine().init().wait(),
       ComicSourceManager().init().wait(),
       OpenCC.init().wait(),
-      ImageEnhanceShader.instance.preload().wait(),
+      if (!isTvApp) ImageEnhanceShader.instance.preload().wait(),
     ];
     await Future.wait(futures);
     CacheManager().setLimitSize(appdata.settings['cacheSize']);
     RelatedSourceTaskManager.instance;
     _checkOldConfigs();
-    if (App.isAndroid) {
+    if (App.isAndroid && !isTvApp) {
       await trySetHighRefreshRate();
     }
     FlutterError.onError = (details) {
@@ -148,7 +149,7 @@ void _checkOldConfigs() {
     appdata.implicitData['webdavSyncMode'] =
         (appdata.implicitData['webdavAutoSync'] == false && configured)
             ? WebdavSyncMode.manual.name
-            : WebdavSyncMode.realtime.name;
+            : (isTvApp ? WebdavSyncMode.dataSaver : WebdavSyncMode.realtime).name;
     appdata.writeImplicitData();
   }
 }
@@ -193,7 +194,7 @@ Future<void> _checkAppUpdates() async {
 
 void checkUpdates() {
   // Safe mode leaves out what the app would start by itself.
-  if (SessionGuard.safeMode) return;
+  if (SessionGuard.safeMode || isTvApp) return;
   // Delay to make sure navigator context is ready for update dialogs.
   Future.delayed(const Duration(seconds: 2), _checkAppUpdates).wait();
   FollowUpdatesService.initChecker();
@@ -207,9 +208,9 @@ void startInteractiveServices() {
     showSafeModeNotice();
   } else {
     _autoCleanHistory();
-    ReadingWidgetService.instance.start();
+    if (!isTvApp) ReadingWidgetService.instance.start();
   }
-  if (App.isAndroid) initAndroidExtras();
+  if (App.isAndroid && !isTvApp) initAndroidExtras();
   if (App.isOhos) {
     handleLinks();
     handleTextShare();

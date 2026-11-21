@@ -4,6 +4,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flex_seed_scheme/flex_seed_scheme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:venera/foundation/tv_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:venera/foundation/log.dart';
@@ -113,7 +114,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     App.registerForceRebuild(forceRebuild);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setEnabledSystemUIMode(isTvApp ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.addObserver(this);
     if (App.isOhos) unawaited(readOhosNativeDiagnostics());
     syncOhosStartupTheme();
@@ -384,6 +385,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             }
 
             widget = OverlayWidget(widget);
+            if (isTvApp) {
+              widget = Shortcuts(shortcuts: const {
+                SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+              }, child: widget);
+            }
             if (App.isDesktop) {
               widget = Shortcuts(
                 shortcuts: {

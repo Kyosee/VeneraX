@@ -81,6 +81,8 @@
   <string>Choose images</string>
 	<key>NSCameraUsageDescription</key>
   <string>Scan a QR code to import sync configuration.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Send the settings you select to your paired TV on the local network.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

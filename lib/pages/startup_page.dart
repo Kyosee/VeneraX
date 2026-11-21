@@ -11,6 +11,9 @@ import 'package:venera/init.dart';
 import 'package:venera/pages/auth_page.dart';
 import 'package:venera/pages/disclaimer.dart';
 import 'package:venera/pages/main_page.dart';
+import 'package:venera/foundation/tv_platform.dart';
+import 'package:venera/pages/tv_home_page.dart';
+import 'package:venera/pages/tv_agreement.dart';
 import 'package:venera/pages/onboarding_page.dart';
 import 'package:venera/pages/onboarding_style.dart';
 import 'package:venera/utils/translations.dart';
@@ -115,6 +118,7 @@ class _StartupPageState extends State<StartupPage> {
       );
     }
     if (_store.state.needsAgreement()) {
+      if (isTvApp) return TvAgreement(accept: _acceptUpdate, decline: _decline);
       return OnboardingTheme(
         builder: (context) => PopScope(
           canPop: false,
@@ -175,7 +179,7 @@ class _StartupPageState extends State<StartupPage> {
         if (mounted) startInteractiveServices();
       });
     }
-    return const MainPage();
+    return isTvApp ? const TvHomePage() : const MainPage();
   }
 
   Widget _message(String message, String action, VoidCallback callback) =>

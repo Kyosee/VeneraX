@@ -169,14 +169,6 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     final reader = context.reader;
     _isOpen = true;
     reader._onMenuToggled(true);
-    const modes = {
-      'galleryLeftToRight': 'Gallery (Left to Right)',
-      'galleryRightToLeft': 'Gallery (Right to Left)',
-      'galleryTopToBottom': 'Gallery (Top to Bottom)',
-      'continuousTopToBottom': 'Continuous (Top to Bottom)',
-      'continuousLeftToRight': 'Continuous (Left to Right)',
-      'continuousRightToLeft': 'Continuous (Right to Left)',
-    };
     var changed = false;
     void save(String key, Object value) {
       appdata.settings.setEffectiveReaderSetting(
@@ -227,10 +219,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                     isExpanded: true,
                     value: reader.mode.key,
                     items: [
-                      for (final mode in modes.entries)
+                      for (final mode in ReaderMode.values)
                         DropdownMenuItem(
                           value: mode.key,
-                          child: Text(mode.value.tl),
+                          child: Text(mode.label.tl),
                         ),
                     ],
                     onChanged: (value) {

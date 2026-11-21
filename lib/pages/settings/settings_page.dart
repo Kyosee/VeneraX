@@ -40,6 +40,7 @@ import 'package:venera/foundation/launcher_icon.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/session_guard.dart';
+import 'package:venera/foundation/tv_platform.dart';
 import 'package:venera/foundation/native_diagnostics.dart';
 import 'package:venera/foundation/shortcuts.dart';
 import 'package:venera/foundation/tray.dart';

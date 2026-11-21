@@ -4,6 +4,9 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/pages/disclaimer.dart';
+import 'package:venera/foundation/tv_platform.dart';
+import 'package:venera/pages/tv_agreement.dart';
+import 'package:venera/pages/settings/tv_pairing_page.dart';
 import 'package:venera/pages/onboarding_restore.dart';
 import 'package:venera/pages/onboarding_style.dart';
 import 'package:venera/utils/data.dart';
@@ -160,9 +163,72 @@ class _OnboardingPageState extends State<OnboardingPage> {
     widget.onFinished();
   });
 
+  Widget _tvSetup(BuildContext context) {
+    void back() {
+      if (_busy) return;
+      if (_step == 0) {
+        widget.onDeclined();
+      } else {
+        setState(() => _step--);
+      }
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (popped, _) { if (!popped) back(); },
+      child: _step == 0 ? TvAgreement(accept: _accept, decline: widget.onDeclined)
+        : Scaffold(body: SafeArea(child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          child: Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Row(children:[
+              const Text('VeneraX TV'),
+              const Spacer(),
+              Text('${_step + 1} / ${_setupSteps.length}'),
+            ]),
+            const Divider(),
+            Expanded(child: Row(children:[
+              Expanded(child: Align(alignment:Alignment.centerLeft,
+                child:Text(_setupSteps[_step].tl,style:Theme.of(context).textTheme.headlineMedium))),
+              Expanded(flex:2,child:ListView(key:ValueKey(_step),shrinkWrap:true,children:[
+                if (_step == 1)
+                  for (final language in [('system','Follow system'.tl),('zh-CN','简体中文'),('zh-TW','繁體中文'),('en-US','English')])
+                    ListTile(autofocus: appdata.settings['language'] == language.$1,
+                      title:Text(language.$2),
+                      trailing: appdata.settings['language'] == language.$1 ? const Icon(Icons.check) : null,
+                      onTap:_busy ? null : () async {
+                        appdata.settings['language'] = language.$1;
+                        await appdata.saveData(false);
+                        if (!mounted) return;
+                        setState(() => _step = 2);
+                        App.forceRebuild();
+                      }),
+                if (_step == 2) ...[
+                  ListTile(title:Text('Notifications'.tl),
+                    subtitle:Text('Skip for now and grant access when needed.'.tl)),
+                  OutlinedButton(onPressed:_busy || _notifications == true ? null : _notify,
+                    child:Text('Enable notifications'.tl)),
+                  FilledButton(autofocus:true,onPressed:_busy ? null : () => setState(() => _step = 3),
+                    child:Text((_notifications == true ? 'Continue' : 'Skip for now').tl)),
+                ],
+                if (_step == 3) ...[
+                  OutlinedButton(autofocus:true,onPressed:_busy ? null : () => context.to(() => const TvPairingPage()),
+                    child:Text('Pair with phone'.tl)),
+                  OutlinedButton(onPressed:_busy ? null : _restoreWebdav,child:Text('Restore from WebDAV'.tl)),
+                  OutlinedButton(onPressed:_busy ? null : _restoreLocal,child:Text('Import local backup'.tl)),
+                  FilledButton(onPressed:_busy ? null : _finish,child:Text((_restored != null ? 'Finish setup':'Skip and start reading').tl)),
+                ],
+                if (_error != null) Text(_error!.tl),
+                if (_progress != null) Text(_progress!),
+              ])),
+            ])),
+          ]),
+        ))),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => OnboardingTheme(
-    builder: (context) => PopScope(
+    builder: (context) => isTvApp ? _tvSetup(context) : PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_busy) widget.onDeclined();

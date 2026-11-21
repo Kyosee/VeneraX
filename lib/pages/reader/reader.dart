@@ -1720,20 +1720,21 @@ mixin class _ReaderWindow {
 }
 
 enum ReaderMode {
-  galleryLeftToRight('galleryLeftToRight'),
-  galleryRightToLeft('galleryRightToLeft'),
-  galleryTopToBottom('galleryTopToBottom'),
-  continuousTopToBottom('continuousTopToBottom'),
-  continuousLeftToRight('continuousLeftToRight'),
-  continuousRightToLeft('continuousRightToLeft');
+  galleryLeftToRight('galleryLeftToRight', 'Gallery (Left to Right)'),
+  galleryRightToLeft('galleryRightToLeft', 'Gallery (Right to Left)'),
+  galleryTopToBottom('galleryTopToBottom', 'Gallery (Top to Bottom)'),
+  continuousTopToBottom('continuousTopToBottom', 'Continuous (Top to Bottom)'),
+  continuousLeftToRight('continuousLeftToRight', 'Continuous (Left to Right)'),
+  continuousRightToLeft('continuousRightToLeft', 'Continuous (Right to Left)');
 
   final String key;
+  final String label;
 
   bool get isGallery => key.startsWith('gallery');
 
   bool get isContinuous => key.startsWith('continuous');
 
-  const ReaderMode(this.key);
+  const ReaderMode(this.key, this.label);
 
   static ReaderMode fromKey(String key) {
     for (var mode in values) {

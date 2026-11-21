@@ -236,7 +236,7 @@ class _DataSyncSettingsState extends State<DataSyncSettings> {
               ),
               _CallbackSetting(
                 title: "Cache Limit".tl,
-                subtitle: "${appdata.settings['cacheSize']} MB",
+                subtitle: "${isTvApp ? (appdata.settings['cacheSize'] as int).clamp(1, 64) : appdata.settings['cacheSize']} MB",
                 callback: () {
                   showInputDialog(
                     context: context,

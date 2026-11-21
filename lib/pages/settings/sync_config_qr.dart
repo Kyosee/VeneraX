@@ -7,6 +7,8 @@ import 'package:venera/foundation/app.dart' show App;
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/widget_utils.dart';
 import 'package:venera/utils/sync_config_transfer.dart';
+import 'package:venera/utils/tv_pairing.dart';
+import 'tv_pairing_page.dart';
 import 'package:venera/utils/translations.dart';
 
 /// UI for transferring WebDAV sync configuration between devices via a
@@ -212,6 +214,11 @@ Future<SyncConfigPayload?> scanAndDecodeSyncConfig(BuildContext context) async {
   }
   if (raw == null || !context.mounted) return null;
   final String scannedUri = raw;
+  final tv = TvPairingCode.parse(scannedUri);
+  if (tv != null) {
+    await sendSettingsToTv(context, tv);
+    return null;
+  }
   if (!isSyncConfigUri(scannedUri)) {
     context.showMessage(
       message: _errorMessage(SyncConfigTransferError.notSyncConfig),
@@ -327,7 +334,7 @@ class _SyncConfigScanPageState extends State<_SyncConfigScanPage> {
     if (_handled) return;
     for (final barcode in capture.barcodes) {
       final raw = barcode.rawValue;
-      if (raw != null && isSyncConfigUri(raw)) {
+      if (raw != null && (isSyncConfigUri(raw) || TvPairingCode.parse(raw) != null)) {
         _handled = true;
         Navigator.of(context).pop(raw);
         return;
