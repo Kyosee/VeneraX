@@ -781,6 +781,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             if (refreshCover) _coverRefreshVersion++;
           });
           ComicDetailsCache().update(widget.sourceKey, _id, res.data);
+          await _comicStateRepository.updateStoredSourceMetadata(
+            _id,
+            ComicType.fromKey(widget.sourceKey),
+            res.data,
+          );
+          if (!mounted || generation != _detailsRefreshGeneration) return false;
           await onDataLoaded();
           return true;
         }

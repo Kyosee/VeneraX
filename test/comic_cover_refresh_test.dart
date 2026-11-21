@@ -10,6 +10,8 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_details_cache.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_state_repository.dart';
+import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -30,8 +32,8 @@ const _provider = CachedImageProvider(
   cid: _comicId,
 );
 
-ComicDetails _details() => ComicDetails.fromJson({
-  'title': 'Cached comic',
+ComicDetails _details({String title = 'Cached comic'}) => ComicDetails.fromJson({
+  'title': title,
   'cover': _coverUrl,
   'comicId': _comicId,
   'sourceKey': _sourceKey,
@@ -121,13 +123,19 @@ void main() {
     (tester) async {
       final background = Completer<Res<ComicDetails>>();
       var detailRequests = 0;
+      var sourceTitle = '日本語タイトル';
       ComicSourceManager().add(
         _source((id) async {
           expect(id, _comicId);
           detailRequests++;
-          return detailRequests == 1 ? background.future : Res(_details());
+          return detailRequests == 1
+              ? background.future
+              : Res(_details(title: sourceTitle));
         }),
       );
+      final history = History.fromModel(model: _details(), ep: 1, page: 7);
+      HistoryManager().addHistory(history);
+      addTearDown(() => HistoryManager().remove(_comicId, history.type));
       ComicDetailsCache().update(_sourceKey, _comicId, _details());
       final diskKey = ImageDownloader.thumbnailCacheKey(
         _coverUrl,
@@ -182,6 +190,8 @@ void main() {
       await tester.pump();
       await tester.runAsync(() => refresh.timeout(const Duration(seconds: 5)));
       expect(detailRequests, 2);
+      expect(HistoryManager().find(_comicId, history.type)!.title, sourceTitle);
+      expect(HistoryManager().find(_comicId, history.type)!.page, 7);
       expect(await tester.runAsync(() => cache.findCache(diskKey)), isNull);
       expect(images.containsKey(_provider), isFalse);
 
@@ -207,7 +217,98 @@ void main() {
         40,
       );
       expect(tester.takeException(), isNull);
+
+      sourceTitle = '別のタイトル';
+      final button = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.refresh),
+      );
+      await tester.runAsync(() async {
+        final updated = Completer<void>();
+        void onHistoryChanged() {
+          final stored = HistoryManager().find(_comicId, history.type);
+          if (!updated.isCompleted && stored?.title == sourceTitle) {
+            updated.complete();
+          }
+        }
+
+        HistoryManager().addListener(onHistoryChanged);
+        try {
+          button.onPressed!();
+          await updated.future.timeout(const Duration(seconds: 5));
+        } finally {
+          HistoryManager().removeListener(onHistoryChanged);
+        }
+      });
+      expect(detailRequests, 3);
+      expect(HistoryManager().find(_comicId, history.type)!.title, sourceTitle);
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  test(
+    'source title updates preserve downloads and hidden reading progress',
+    () async {
+      final type = ComicType.fromKey(_sourceKey);
+      const id = 'downloaded-title';
+      final created = DateTime(2024);
+      final local = LocalManager();
+      final history = HistoryManager();
+      LocalComic download(ComicType type) => LocalComic(
+        id: id,
+        title: 'Old title',
+        subtitle: 'Author',
+        tags: const ['tag'],
+        directory: 'original-directory',
+        chapters: const ComicChapters({'one': 'Chapter one'}),
+        cover: 'cover.jpg',
+        comicType: type,
+        downloadedChapters: const ['one'],
+        createdAt: created,
+      );
+      await local.add(download(type));
+      await local.add(download(ComicType.local));
+      final record = History.fromModel(
+        model: download(type),
+        ep: 1,
+        page: 23,
+        readChapters: {'one'},
+        time: created,
+      );
+      final save = history.addHistoryAsync(record);
+      const repository = ComicStateRepository();
+      final rename = repository.updateStoredSourceMetadata(
+        id,
+        type,
+        _details(title: '新題'),
+      );
+      await Future.wait([save, rename]);
+      expect(history.find(id, type)!.title, '新題');
+      history.hide(id, type);
+      await repository.updateStoredSourceMetadata(
+        id,
+        type,
+        _details(title: '更新後'),
+      );
+      await repository.updateStoredSourceMetadata(id, type, _details(title: ' '));
+      await repository.updateStoredSourceMetadata('absent', type, _details());
+
+      final saved = local.find(id, type)!;
+      expect(saved.title, '更新後');
+      expect(saved.directory, 'original-directory');
+      expect(saved.cover, 'cover.jpg');
+      expect(saved.chapters!.allChapters, {'one': 'Chapter one'});
+      expect(saved.downloadedChapters, ['one']);
+      expect(saved.createdAt, created);
+      expect(local.search('更新後').map((comic) => comic.id), contains(id));
+      expect(local.find(id, ComicType.local)!.title, 'Old title');
+      expect(local.find('absent', type), isNull);
+      final stored = history.find(id, type)!;
+      expect(stored.title, '更新後');
+      expect(stored.page, 23);
+      expect(stored.readEpisode, {'one'});
+      expect(stored.time, created);
+      expect(history.getAll(), isNot(contains(stored)));
+      expect(history.find('absent', type), isNull);
     },
   );
 

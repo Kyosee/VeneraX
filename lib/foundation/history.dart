@@ -612,13 +612,21 @@ class HistoryManager with ChangeNotifier {
     cachedHistories.clear();
   }
 
-  Future<void> _pendingHistoryWrite = Future.value();
+  Future<void>? _pendingHistoryWrite;
 
-  Future<T> _queueHistoryWrite<T>(FutureOr<T> Function() action) {
-    final write = _pendingHistoryWrite.then((_) => action());
-    // Report errors to the caller without blocking later writes or deletions.
-    _pendingHistoryWrite = write.then<void>((_) {}, onError: (Object _) {});
-    return write;
+  Future<T> _queueHistoryWrite<T>(FutureOr<T> Function() action) async {
+    final previous = _pendingHistoryWrite;
+    final done = Completer<void>();
+    _pendingHistoryWrite = done.future;
+    try {
+      if (previous != null) await previous;
+      return await action();
+    } finally {
+      if (identical(_pendingHistoryWrite, done.future)) {
+        _pendingHistoryWrite = null;
+      }
+      done.complete();
+    }
   }
 
   /// Create a isolate to add history to prevent blocking the UI thread.
@@ -674,6 +682,35 @@ class HistoryManager with ChangeNotifier {
     _cacheAddedHistory(newItem);
     notifyListeners();
   }
+
+  Future<void> updateSourceMetadata(
+    String id,
+    ComicType type, {
+    String? title,
+    String? subtitle,
+    String? cover,
+  }) => _queueHistoryWrite(() {
+    if (!isInitialized) return;
+    final current = find(id, type);
+    if (current == null) return;
+    final newTitle = title ?? current.title;
+    final newSubtitle = subtitle ?? current.subtitle;
+    final newCover = cover ?? current.cover;
+    if (current.title == newTitle &&
+        current.subtitle == newSubtitle &&
+        current.cover == newCover) {
+      return;
+    }
+    _db.execute(
+      'UPDATE history SET title = ?, subtitle = ?, cover = ? WHERE id = ? AND type = ?',
+      [newTitle, newSubtitle, newCover, id, type.value],
+    );
+    current
+      ..title = newTitle
+      ..subtitle = newSubtitle
+      ..cover = newCover;
+    notifyListeners();
+  });
 
   /// Update the set of read episodes for a comic and persist it.
   ///
@@ -1126,22 +1163,16 @@ class HistoryManager with ChangeNotifier {
         }
 
         var comicDetails = res.data;
+        await const ComicStateRepository().updateStoredSourceMetadata(
+          history.id,
+          history.type,
+          comicDetails,
+          includeHistoryCoverAndSubtitle: true,
+        );
         // Mirror full details to domain DB
         try {
           const ComicStateRepository().mirrorComicDetails(comicDetails);
         } catch (_) {}
-        // Reading may have advanced or been cleared while the request ran.
-        final updatedHistory = find(history.id, history.type);
-        if (updatedHistory == null) return const _HistoryRefreshResult(true);
-        updatedHistory
-          ..title = comicDetails.title
-          ..subtitle = comicDetails.subTitle ?? ''
-          ..cover = comicDetails.cover;
-
-        // A refresh only rewrites display fields, so it must not pull a record
-        // the user removed from the list back into it — the refresh-all task
-        // works from a snapshot taken before the deletion.
-        updateHistoryKeepingVisibility(updatedHistory);
         return const _HistoryRefreshResult(true);
       } catch (e, s) {
         lastError = e.toString();
