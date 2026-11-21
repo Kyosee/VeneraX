@@ -79,7 +79,9 @@ class NaviPaneState extends State<NaviPane>
   }
 
   bool get _shouldReturnHome =>
-      currentPage != 0 && appdata.settings['returnToHomeOnBack'] == true;
+      App.isMobile &&
+      currentPage != 0 &&
+      appdata.settings['returnToHomeOnBack'] == true;
 
   void Function()? mainViewUpdateHandler;
 
