@@ -195,11 +195,19 @@ jobs:
             exit 0
           fi
           libs=$(cat "$VENERAX_ANDROID_RHTTP/used")
+          toolchain=${libs##*/}
+          strip="$ANDROID_HOME/ndk/${toolchain%-api*}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' pubspec.yaml)
           apk="build/app/outputs/apk/release/VeneraX-$version"
           for abi in armeabi-v7a arm64-v8a x86_64; do
+            reference="$libs/$abi/librhttp.so"
             for file in "$apk.apk" "$apk-$abi.apk"; do
-              unzip -p "$file" "lib/$abi/librhttp.so" | cmp "$libs/$abi/librhttp.so" -
+              unzip -p "$file" "lib/$abi/librhttp.so" > "$RUNNER_TEMP/packaged.so"
+              if ! cmp -s "$reference" "$RUNNER_TEMP/packaged.so"; then
+                # Release packaging can strip the native symbol table.
+                "$strip" --strip-unneeded -o "$RUNNER_TEMP/stripped.so" "$reference"
+                cmp "$RUNNER_TEMP/stripped.so" "$RUNNER_TEMP/packaged.so"
+              fi
               echo "Verified $abi in $(basename "$file")"
             done
           done

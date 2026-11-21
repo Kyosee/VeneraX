@@ -55,6 +55,7 @@ if (publishedRhttp) {
                 }
             }
             cargo.dependsOn(stage)
+            rhttp.tasks.named("mergeReleaseJniLibFolders").configure { dependsOn(stage) }
             cargo.enabled = false
         }
     }
