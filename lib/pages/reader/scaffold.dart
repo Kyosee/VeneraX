@@ -1371,6 +1371,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         ),
       ),
       width: 400,
+      addBottomPadding: false,
     );
   }
 
@@ -1412,7 +1413,11 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return best?.clone();
   }
 
-  void _openSideBar(Widget widget, {double width = 400}) {
+  void _openSideBar(
+    Widget widget, {
+    double width = 400,
+    bool addBottomPadding = true,
+  }) {
     _gestureDetectorState?.ignoreNextTap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1420,6 +1425,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         context,
         widget,
         width: width,
+        addBottomPadding: addBottomPadding,
         dismissible: true,
       ).whenComplete(() {
         _gestureDetectorState?.clearIgnoreNextTap();

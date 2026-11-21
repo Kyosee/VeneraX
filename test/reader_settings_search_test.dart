@@ -197,6 +197,7 @@ void main() {
                     comicId: 'comic',
                     comicSource: 'source',
                   ),
+                  addBottomPadding: false,
                 ),
                 child: const Text('Open settings'),
               ),
@@ -206,8 +207,11 @@ void main() {
       );
       await tester.tap(find.text('Open settings'));
       await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(ReaderSettings)).bottom, 844);
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      tester.view.padding = const FakeViewPadding(top: 24);
       await search(tester, 'Split wide pages');
+      expect(tester.getRect(find.byType(ReaderSettings)).bottom, 544);
       final result = find.byKey(
         const ValueKey('settings-result-Split wide pages'),
       );
@@ -232,6 +236,7 @@ void main() {
     (tester) async {
       tester.view.physicalSize = const Size(2560, 1440);
       tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 32);
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
@@ -254,6 +259,7 @@ void main() {
                           ),
                         ),
                         width: 400,
+                        addBottomPadding: false,
                       ),
                       child: const Text('Open settings'),
                     ),
@@ -271,6 +277,7 @@ void main() {
         final bounds = tester.getRect(find.byType(ReaderSettings).last);
         expect(bounds.left, closeTo(2160, 0.01));
         expect(bounds.width, closeTo(400, 0.01));
+        expect(bounds.bottom, 1440);
         expect(find.text('Reader canvas'), findsOneWidget);
         expect(
           tester.getRect(find.text('Reader canvas')).right,

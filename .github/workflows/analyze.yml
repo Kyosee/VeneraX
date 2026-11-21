@@ -48,6 +48,7 @@ jobs:
           test/comic_cover_refresh_test.dart
           test/history_single_delete_test.dart
           test/reader_rotation_transition_test.dart
+          test/reader_settings_search_test.dart
           test/continuous_reader_navigation_test.dart
           test/continuous_reader_repivot_test.dart
           test/continuous_reader_rtl_test.dart
