@@ -12,6 +12,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/onboarding.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/session_guard.dart';
+import 'package:venera/network/app_dio_io.dart' show nativeInitRhttp;
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -24,6 +25,8 @@ void main() {
   Completer<void>? holdUpload;
 
   setUpAll(() async {
+    // Load the host HTTP library before selecting the lifecycle platform under test.
+    await nativeInitRhttp();
     directory = await Directory.systemTemp.createTemp('sync-cadence-');
     App.dataPath = directory.path;
     App.cachePath = (await Directory('${directory.path}/cache').create()).path;
@@ -68,10 +71,12 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  final platform = TargetPlatform.values.where((p) => p.name == 'ohos').firstOrNull ??
+      TargetPlatform.android;
   testWidgets(
-    'realtime batches changes and preserves failures and newer edits',
+    'realtime batches changes and settles pending uploads on ${platform.name}',
     (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      debugDefaultTargetPlatformOverride = platform;
       final sync = DataSync();
       appdata.settings['webdav'] = [
         'http://127.0.0.1:${server.port}',

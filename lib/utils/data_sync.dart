@@ -70,16 +70,12 @@ class DataSync with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Data-saver settle points (#114). `paused` fires on Android for both
-  /// app-switch and screen-off — the natural "session ended" moments — and
-  /// the upload rides the existing sync keep-alive foreground service, so
-  /// backgrounding doesn't freeze it mid-PUT. iOS gets NO paused settle: its
-  /// ~30s background budget can't reliably carry a request bounded by the
-  /// 120s timeout, so a half-finished PUT would only waste the user's data —
-  /// there the account settles on resume/startup instead.
+  /// Android and HarmonyOS settle pending changes when the app is backgrounded,
+  /// while their transfer services can still finish the upload. On iOS a PUT can
+  /// outlast the background budget, so pending changes settle on resume or startup.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused && App.isAndroid) {
+    if (state == AppLifecycleState.paused && (App.isAndroid || App.isOhos)) {
       settlePendingChanges();
     } else if (state == AppLifecycleState.resumed) {
       settlePendingChanges();

@@ -20,7 +20,7 @@ function deferred() {
 }
 
 function harness(options = {}) {
-  const config = { granted: true, ...options };
+  const config = { granted: true, sdk: 26, ...options };
   const channels = new Map();
   const active = new Map();
   const starts = [];
@@ -100,6 +100,9 @@ function harness(options = {}) {
   const notifications = {
     SlotType: { OTHER_TYPES: 65535, LIVE_VIEW: 4 },
     ContentType: { NOTIFICATION_CONTENT_BASIC_TEXT: 0, NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW: 5 },
+    async getActiveNotifications() {
+      return config.missingLiveView ? [] : [...active.values()].map((task) => ({ id: task.notificationId }));
+    },
     async isNotificationEnabled() {
       state.reads++;
       if (config.readError) throw new Error('Read unavailable');
@@ -114,6 +117,9 @@ function harness(options = {}) {
     async publish(request) {
       const snapshot = copy(request);
       publishes.push(snapshot);
+      if (request.updateOnly && config.missingLiveView) {
+        throw Object.assign(new Error('Notification does not exist'), { code: 1600007 });
+      }
       if (config.publishWait) await config.publishWait.promise;
       if (config.publishFailures > 0) {
         config.publishFailures--;
@@ -142,6 +148,7 @@ function harness(options = {}) {
   };
   const context = vm.createContext({
     MethodChannel,
+    deviceInfo: { sdkApiVersion: config.sdk },
     backgroundTaskManager: native,
     notificationManager: notifications,
     wantAgent: {
@@ -198,6 +205,7 @@ for (const progress of [[0, 100], [0, 45, 99, 100]]) {
     }
     assert.deepEqual(h.publishes.map((item) => item.template.data.progressValue), progress.slice(0, -1));
     assert.ok(h.publishes.every((item) => item.isAlertOnce && item.id === h.starts[0].task.notificationId));
+    assert.ok(h.publishes.every((item) => item.updateOnly === true));
     assert.equal(h.starts.length, 1);
 
     startDownload(h, 100);
@@ -206,6 +214,7 @@ for (const progress of [[0, 100], [0, 45, 99, 100]]) {
     const download = h.publishes.at(-1);
     assert.equal(download.id, h.starts[0].task.notificationId);
     assert.equal(download.isAlertOnce, false);
+    assert.equal(download.updateOnly, undefined);
     assert.equal(download.template.data.progressValue, 100);
     h.call(DOWNLOAD, 'complete', { status: 'Finished' });
     await flush();
@@ -214,6 +223,55 @@ for (const progress of [[0, 100], [0, 45, 99, 100]]) {
     assert.equal(h.active.size, 0);
   });
 }
+
+test('quiet sync waits for the system card without recreating it or restarting the transfer', async () => {
+  const h = harness({ missingLiveView: true });
+  const update = (progress) => h.call(BACKGROUND, 'update', { tag: 'sync_1', status: 'Sync', progress, quiet: true });
+  const first = update(0);
+  await flush();
+  assert.deepEqual(first, success(true));
+  assert.equal(h.publishes[0].updateOnly, true);
+  assert.equal(h.state.stops, 0);
+  h.config.missingLiveView = false;
+  const next = update(50);
+  await flush();
+  assert.deepEqual(next, success(true));
+  assert.equal(h.starts.length, 1);
+  assert.equal(h.publishes.at(-1).template.data.progressValue, 50);
+  h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+  await flush();
+  assert.equal(h.active.size, 0);
+});
+
+test('API 17 keeps the system card for quiet sync and still publishes downloads', async () => {
+  const h = harness({ sdk: 17 });
+  const result = h.call(BACKGROUND, 'update', { tag: 'sync_1', status: 'Sync', progress: 1, quiet: true });
+  await flush();
+  assert.deepEqual(result, success(true));
+  assert.equal(h.publishes.length, 0);
+  assert.equal(h.active.size, 1);
+  startDownload(h);
+  h.call(BACKGROUND, 'remove', { tag: 'sync_1' });
+  await flush();
+  assert.equal(h.publishes.at(-1).template.data.fileName, 'Download');
+  assert.equal(h.publishes.at(-1).updateOnly, undefined);
+});
+
+test('API 17 hands an existing download card to quiet sync without recreating a removed card', async () => {
+  const h = harness({ sdk: 17 });
+  startDownload(h);
+  await flush();
+  h.call(BACKGROUND, 'update', { tag: 'sync_1', status: 'Sync', progress: 10, quiet: true });
+  h.call(DOWNLOAD, 'stop');
+  await flush();
+  assert.equal(h.publishes.at(-1).template.data.fileName, 'Sync');
+  assert.equal(h.publishes.at(-1).isAlertOnce, true);
+  const published = h.publishes.length;
+  h.config.missingLiveView = true;
+  h.call(BACKGROUND, 'update', { tag: 'sync_1', status: 'Sync', progress: 20, quiet: true });
+  await flush();
+  assert.equal(h.publishes.length, published);
+});
 
 test('both channels share one authorization request and do not reprompt after refusal', async () => {
   const wait = deferred();

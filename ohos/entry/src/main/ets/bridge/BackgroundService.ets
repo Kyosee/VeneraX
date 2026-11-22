@@ -1,6 +1,8 @@
 import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
+import { BusinessError } from '@ohos.base';
+import deviceInfo from '@ohos.deviceInfo';
 import { Any, FlutterEngine, MethodCall, MethodCallHandler, MethodChannel, MethodResult } from '@ohos/flutter_ohos';
 
 const COMPLETION_NOTIFICATION_ID = 0x56454E41;
@@ -303,6 +305,14 @@ export class BackgroundService {
         return false;
       }
       if (running === undefined) return false;
+      // API 17 can update a card already used by a download, but cannot atomically require one.
+      if (first.quiet && deviceInfo.sdkApiVersion < 18) {
+        if (this.published === undefined) return true;
+        const cards = await notificationManager.getActiveNotifications();
+        if (!cards.some((card: notificationManager.NotificationRequest): boolean => card.id === running.notificationId)) {
+          return true;
+        }
+      }
       const published = this.published;
       if (published !== undefined && published.task === first && published.status === first.status &&
         published.progress === first.progress) return true;
@@ -310,7 +320,7 @@ export class BackgroundService {
       if (this.running !== running) return false;
       if (this.disposed || this.activeTasks()[0] !== first) return false;
       const snapshot: PublishedProgress = { task: first, status: first.status, progress: first.progress };
-      await notificationManager.publish({
+      const request: notificationManager.NotificationRequest = {
         id: running.notificationId,
         wantAgent: agent,
         tapDismissed: false,
@@ -324,7 +334,18 @@ export class BackgroundService {
           name: 'downloadTemplate',
           data: { title: 'VeneraX', fileName: snapshot.status, progressValue: snapshot.progress }
         }
-      });
+      };
+      // The transfer grant already owns a silent card. Never create another for a quiet sync.
+      if (first.quiet && deviceInfo.sdkApiVersion >= 18) request.updateOnly = true;
+      try {
+        await notificationManager.publish(request);
+      } catch (error) {
+        // The card may not be visible yet. Keep the grant and retry on the next progress update.
+        if (request.updateOnly && (error as BusinessError).code === 1600007) {
+          return this.running === running;
+        }
+        throw new Error('Unable to update transfer notification');
+      }
       if (this.running !== running) return false;
       if (this.disposed || this.activeTasks().length === 0) {
         await this.stopRunning();
