@@ -113,10 +113,20 @@ def download_apple(output, temp):
                        source)
         url = field(r'url:\s*"(https://[^"]+)"', binary)
         checksum = field(r'checksum:\s*"([a-f0-9]{64})"', binary)
-        # Use Microsoft's storage origin, retaining the manifest URL as the SwiftPM cache key.
+        # Keep the manifest URL as the SwiftPM cache key for mirrored archives too.
         origin = url.replace("https://download.onnxruntime.ai/", "https://onnxruntimepackages.z14.web.core.windows.net/", 1)
         file = output / re.sub(r"[^A-Za-z0-9_]", "_", url)
-        download(origin, file)
+        archive_name = url.rsplit("/", 1)[-1]
+        if archive_name in {"onnxruntime-libs-1.23.0.zip",
+                            "pod-archive-onnxruntime-extensions-c-0.13.0.zip"}:
+            mirror = ("https://github.com/Kyosee/flutter_onnxruntime/releases/download/"
+                      "apple-onnxruntime-1.23.0-extensions-0.13.0-r1/")
+            try:
+                download(mirror + archive_name, file)
+            except subprocess.CalledProcessError:
+                download(origin, file)
+        else:
+            download(origin, file)
         digest = hashlib.sha256()
         with file.open("rb") as archive:
             for chunk in iter(lambda: archive.read(1024 * 1024), b""):
