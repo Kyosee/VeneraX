@@ -1,19 +1,22 @@
 # 漫画翻译模型与许可
 
-下表中的模型权重均在安装 VeneraX 后按需下载。在「设置 → AI 翻译 → 翻译模型」中选择文件，应用会从对应的发布源或所选镜像下载，在设备上运行。默认消字直接处理像素，无需额外下载修复模型。「仅对白」可以使用内置规则，也可以下载 RT-DETR 增强对白识别。翻译用的第三方服务由用户另行配置，其服务条款、费用及对所提交文字的处理规则由服务提供方说明。[使用指南](guide.zh.md) · [English](model-notices.en.md)
+打开「设置 → AI 翻译 → 模型管理」，可以按需下载下表中的文件。所有语言共用一个检测模型定位文字，识别模型和配套字典则按漫画的原文选择。「仅对白」可以使用内置规则，也可下载 RT-DETR 增强对白识别。检测、识别、默认消字和译文排版都在本机完成，后两步无需另下模型。翻译服务由用户另行配置，服务商说明其条款、费用和对所提交文字的处理规则。[使用指南](guide.zh.md) · [English](model-notices.en.md)
 
 ## 下载文件和来源
 
 | 用途 | 文件与发布者 |
 | --- | --- |
-| 默认文字检测 | PaddleOCR 的 PP-OCRv4 移动检测器，由 SWHL/RapidOCR 提供 ONNX 文件 `ch_PP-OCRv4_det_infer.onnx`。[发布文件](https://huggingface.co/SWHL/RapidOCR/tree/main/PP-OCRv4) |
-| 简体中文与拉丁字母、英语、韩语识别 | SWHL/RapidOCR 分别提供 `ch_PP-OCRv4_rec_infer.onnx`、`en_PP-OCRv3_rec_infer.onnx`、`korean_mobile_v2.0_rec_infer.onnx`。韩语 v2.0 文件位于发布库的 `PP-OCRv1` 目录。三份字典取自 PaddleOCR v2.7.0，应用按文件配置从 jsDelivr 或 GitHub 获取。[ONNX 文件](https://huggingface.co/SWHL/RapidOCR/tree/main) · [中文字典](https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/ppocr_keys_v1.txt) · [英文](https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/en_dict.txt) · [韩文](https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/dict/korean_dict.txt) |
-| 简繁中文识别 | PP-OCRv5 移动识别器及配套字典优先来自 ModelScope 的 RapidAI/RapidOCR。备用来源 webnn/PP-OCRv5-ONNX 发布 `ch_PP-OCRv5_rec.onnx` 和 `ch_PP-OCRv5_dict.txt`。两个发布库均标示 Apache-2.0。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) · [webnn 模型卡及文件](https://huggingface.co/webnn/PP-OCRv5-ONNX/tree/main) |
+| 文字位置检测（默认） | PaddlePaddle 官方发布 PP-OCRv5 mobile 检测权重 `inference.onnx`，模型卡标示 Apache-2.0。应用从固定修订 `df0bd9dee2bc627e80a2a1798ccab35a332e22d6` 下载并校验 SHA-256。[官方文件目录](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/tree/df0bd9dee2bc627e80a2a1798ccab35a332e22d6) · [许可声明](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/blob/df0bd9dee2bc627e80a2a1798ccab35a332e22d6/README.md) |
+| 文字位置检测（可选） | RapidAI/RapidOCR 在 ModelScope 发布 PP-OCRv6 small 检测权重 `PP-OCRv6_det_small.onnx`。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) |
+| 英语、韩语识别 | SWHL/RapidOCR 提供英语 PP-OCRv3 权重 `en_PP-OCRv3_rec_infer.onnx` 和韩语 mobile v2.0 权重 `korean_mobile_v2.0_rec_infer.onnx`。各自的 `en_dict.txt` 和 `korean_dict.txt` 字典取自 PaddleOCR v2.7.0。[权重](https://huggingface.co/SWHL/RapidOCR/tree/main) · [英文字典](https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/en_dict.txt) · [韩文字典](https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/dict/korean_dict.txt) |
+| 简繁中文识别 | RapidAI/RapidOCR 在 ModelScope 发布 PP-OCRv5 mobile 识别权重 `ch_PP-OCRv5_rec_mobile.onnx` 和字典 `ppocrv5_dict.txt`。应用优先从此处下载，备用来源 webnn/PP-OCRv5-ONNX 提供 `ch_PP-OCRv5_rec.onnx` 和 `ch_PP-OCRv5_dict.txt`。两库均标示 Apache-2.0。简体中文和繁体中文共用这组文件。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) · [webnn 模型卡及文件](https://huggingface.co/webnn/PP-OCRv5-ONNX/tree/main) |
 | 日语漫画识别 | mayocream 提供 `encoder_model.onnx`、`decoder_model.onnx` 和词表 `vocab.txt`。原模型为 kha-white/manga-ocr-base。原权重和 ONNX 导出库的模型卡均标示 Apache-2.0。[原模型](https://huggingface.co/kha-white/manga-ocr-base) · [ONNX 与词表](https://huggingface.co/mayocream/manga-ocr-onnx/tree/main) |
-| 可选识别语言与检测预设 | RapidAI/RapidOCR 在 ModelScope 提供三个 PP-OCRv5 移动识别预设，分别为拉丁字母（`latin`）、西里尔字母（`cyrillic`）和泰文（`th`）。每项配套同名 `ppocrv5_<代号>_dict.txt`。两个检测预设为 `ch_PP-OCRv5_det_mobile.onnx` 和 `PP-OCRv6_det_small.onnx`。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) · [应用预设配置](https://github.com/Kyosee/VeneraX/blob/master/lib/pages/settings/translation_languages_settings.dart) |
+| 拉丁字母、西里尔字母和泰文识别预设 | RapidAI/RapidOCR 在 ModelScope 发布三组 PP-OCRv5 mobile 权重及配套字典。文件名为 `<代号>_PP-OCRv5_rec_mobile.onnx` 和 `ppocrv5_<代号>_dict.txt`，代号分别为 `latin`、`cyrillic` 和 `th`。在「模型管理」中可选择预设或填写自定义文件来源。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) |
 | 可选对白识别 | ogkalu（Comic Translate 作者）的 `detector-v4-s_int8.onnx`，固定修订 `16e8a622f91fabc6b5b65c96d32d1183f8843546`。该修订的模型卡标示 Apache-2.0，文件列表列出了这个 INT8 导出。关闭增强会保留文件。「全部文字」跳过该模型。[固定模型卡](https://huggingface.co/ogkalu/comic-text-and-bubble-detector/blob/16e8a622f91fabc6b5b65c96d32d1183f8843546/README.md) · [固定权重](https://huggingface.co/ogkalu/comic-text-and-bubble-detector/blob/16e8a622f91fabc6b5b65c96d32d1183f8843546/detector-v4-s_int8.onnx) |
 
 Hugging Face 默认使用其官方站点。选择 `hf-mirror.com` 会切换使用该下载端点的请求。ModelScope、字典 CDN 等地址仍按文件配置执行。自行填写检测模型 URL，或识别模型和字典 URL 时，应查看各文件发布者提供的许可。大部分 OCR 权重和词表跟随发布库的 `main` 或 `master`，重新下载时可能取得更新版本。[应用下载配置](https://github.com/Kyosee/VeneraX/blob/master/lib/foundation/image_translation/translation_models.dart)
+
+旧版模型库曾提供 SWHL/RapidOCR 发布的 PP-OCRv4 文字检测器和中文 / 拉丁字母识别器。这两份第三方 ONNX 文件已下架。设备上已有的文件可在「我的模型 → 旧版模型文件」查看大小或删除。
 
 ## 许可、训练数据与再分发
 

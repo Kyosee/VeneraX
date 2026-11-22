@@ -21,20 +21,20 @@ void main() {
   });
 
   group('resolveOcrEngines', () {
-    test('Traditional uses v5, falling back to v4 for an auto lock', () {
+    test('Traditional uses the supported Chinese recognizer', () {
       expect(resolveOcrEngines('zh-TW', installed: {'zh5', 'zh'}), ['zh5']);
-      expect(resolveOcrEngines('zh-TW', installed: {'zh'}), ['zh']);
+      expect(resolveOcrEngines('zh-TW', installed: {'zh'}), isEmpty);
       expect(resolveOcrEngines('zh-TW', installed: {'en'}), isEmpty);
     });
 
-    test('v5 replaces v4 for Simplified and auto', () {
+    test('Simplified and auto skip the retired v4 recognizer', () {
       expect(resolveOcrEngines('zh', installed: {'zh', 'zh5'}), ['zh5']);
-      expect(resolveOcrEngines('zh', installed: {'zh'}), ['zh']);
+      expect(resolveOcrEngines('zh', installed: {'zh'}), isEmpty);
       expect(
         resolveOcrEngines('auto', installed: {'zh', 'zh5', 'en', 'ko', 'ja'}),
         ['zh5', 'en', 'ko'],
       );
-      expect(resolveOcrEngines('auto', installed: {'zh', 'en'}), ['zh', 'en']);
+      expect(resolveOcrEngines('auto', installed: {'zh', 'en'}), ['en']);
     });
 
     test('other languages keep their single engine', () {

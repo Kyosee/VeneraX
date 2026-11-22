@@ -250,7 +250,7 @@ Probes are local development assets, not release artifacts. Rebuild with `lib/ma
 
 ### OCR model service
 
-Prepare a local model directory containing `text_detector/det.onnx`, `ocr_en/rec.onnx` and `ocr_en/dict.txt`. The files must be non-empty and no larger than 8 MiB, 16 MiB and 64 KiB. In a second terminal from the project root, replace the model path:
+Prepare a local model directory containing `text_detector_v5/det.onnx`, `ocr_en/rec.onnx` and `ocr_en/dict.txt`. The files must be non-empty and no larger than 8 MiB, 16 MiB and 64 KiB. In a second terminal from the project root, replace the model path:
 
 ```powershell
 & $ohDart tool/serve_ohos_ocr_models.dart 'D:/models/translation_models' 18767

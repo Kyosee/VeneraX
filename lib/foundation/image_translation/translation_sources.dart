@@ -4,21 +4,25 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/foundation/image_translation/translation_targets.dart';
 
-/// A source language the user added, recognized by a PP-OCR recognition model
-/// (ONNX + character dictionary) they supplied.
-class CustomSourceLanguage {
-  const CustomSourceLanguage({
-    required this.code,
-    required this.name,
+const _rapidOcrBase =
+    'https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master';
+
+/// The same recognizer and dictionary can serve several source languages.
+class RecognitionModel {
+  const RecognitionModel({
     required this.modelUrl,
     required this.dictUrl,
     this.inputHeight = 48,
     this.sizeBytes = 0,
   });
 
-  /// Part of stored translation keys, so fixed once added.
-  final String code;
-  final String name;
+  const RecognitionModel.ppOcrV5(String script, this.sizeBytes)
+    : modelUrl =
+          '$_rapidOcrBase/onnx/PP-OCRv5/rec/${script}_PP-OCRv5_rec_mobile.onnx',
+      dictUrl =
+          '$_rapidOcrBase/paddle/PP-OCRv5/rec/${script}_PP-OCRv5_rec_mobile/ppocrv5_${script}_dict.txt',
+      inputHeight = 48;
+
   final String modelUrl;
   final String dictUrl;
 
@@ -43,6 +47,21 @@ class CustomSourceLanguage {
       ModelFile('dict.txt', [dictUrl]),
     ],
   );
+}
+
+class CustomSourceLanguage extends RecognitionModel {
+  const CustomSourceLanguage({
+    required this.code,
+    required this.name,
+    required super.modelUrl,
+    required super.dictUrl,
+    super.inputHeight,
+    super.sizeBytes,
+  });
+
+  /// Part of stored translation keys, so fixed once added.
+  final String code;
+  final String name;
 
   Map<String, dynamic> toJson() => {
     'code': code,
@@ -93,12 +112,40 @@ class CustomDetectorModel {
   );
 
   Map<String, dynamic> toJson() => {'url': url, 'size': sizeBytes};
+
+  static CustomDetectorModel? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final url = '${raw['url'] ?? ''}'.trim();
+    if (!TranslationSources.isValidUrl(url)) return null;
+    return CustomDetectorModel(
+      url: url,
+      sizeBytes: raw['size'] is int ? raw['size'] : 0,
+    );
+  }
 }
 
 /// Source languages: the built-in set plus the user's own.
 abstract class TranslationSources {
   static const settingKey = 'imageTranslationCustomSources';
   static const detectorKey = 'imageTranslationCustomDetector';
+
+  static const recognitionPresets = {
+    'Latin script (French, German, Spanish...)': RecognitionModel.ppOcrV5(
+      'latin',
+      7900000,
+    ),
+    'Cyrillic (Russian, Ukrainian...)': RecognitionModel.ppOcrV5(
+      'cyrillic',
+      8100000,
+    ),
+    'Thai': RecognitionModel.ppOcrV5('th', 7900000),
+  };
+  static const detectorPresets = {
+    'PP-OCRv6 small': CustomDetectorModel(
+      url: '$_rapidOcrBase/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx',
+      sizeBytes: 9900000,
+    ),
+  };
 
   /// code -> English UI label. Codes are part of stored translation keys and
   /// of the per-comic language locks, so they must never change.
@@ -183,24 +230,52 @@ abstract class TranslationSources {
     TranslationModels.invalidateReadyCache();
   }
 
-  static CustomDetectorModel? get detector {
-    var raw = appdata.settings[detectorKey];
-    if (raw is! Map) return null;
-    var url = '${raw['url'] ?? ''}'.trim();
-    if (!isValidUrl(url)) return null;
-    var size = raw['size'] is int ? raw['size'] as int : 0;
-    return CustomDetectorModel(url: url, sizeBytes: size);
+  static CustomDetectorModel? get detector =>
+      CustomDetectorModel.fromJson(appdata.settings[detectorKey]);
+
+  /// Older settings only stored the selected URL at the top level.
+  static Map<String, CustomDetectorModel> get savedDetectors {
+    final raw = appdata.settings[detectorKey];
+    final urls = detectorPresets.values.map((model) => model.url).toSet();
+    return {
+      for (final item in [
+        if (raw is Map && raw['saved'] is List) ...raw['saved'],
+        raw,
+      ])
+        if (CustomDetectorModel.fromJson(item) case final model?)
+          if (!urls.contains(model.url)) model.url: model,
+    };
   }
 
-  /// Sets or clears (null) the custom detector, deleting the old one's files.
-  static void setDetector(CustomDetectorModel? model) {
-    var old = detector;
-    appdata.settings[detectorKey] = model?.toJson() ?? <String, dynamic>{};
+  static void _writeDetectors(
+    CustomDetectorModel? selected,
+    Map<String, CustomDetectorModel> saved,
+  ) {
+    appdata.settings[detectorKey] = {
+      ...?selected?.toJson(),
+      if (saved.isNotEmpty)
+        'saved': [for (final model in saved.values) model.toJson()],
+    };
     appdata.saveData();
     TranslationModels.invalidateReadyCache();
-    if (old != null && old.url != model?.url) {
-      TranslationModelStore.instance.delete(old.component);
+  }
+
+  /// Changing the active detector never removes a downloaded alternative.
+  static void setDetector(CustomDetectorModel? model, {bool select = true}) {
+    final saved = savedDetectors;
+    if (model != null &&
+        !detectorPresets.values.any((preset) => preset.url == model.url)) {
+      saved[model.url] = model;
     }
+    _writeDetectors(select ? model : detector, saved);
+  }
+
+  static Future<void> removeDetector(CustomDetectorModel model) {
+    _writeDetectors(
+      detector?.url == model.url ? null : detector,
+      savedDetectors..remove(model.url),
+    );
+    return TranslationModelStore.instance.delete(model.component);
   }
 }
 

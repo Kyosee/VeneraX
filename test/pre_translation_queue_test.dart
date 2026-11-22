@@ -46,8 +46,11 @@ void main() {
     ]) {
       Directory(model.directory).createSync(recursive: true);
       for (final file in model.files) {
-        File(model.filePath(file.name)).writeAsBytesSync([1]);
+        final fixture = File(model.filePath(file.name)).openSync(mode: FileMode.write);
+        fixture.truncateSync(file.size ?? 1);
+        fixture.closeSync();
       }
+      if (model.marker) File(model.filePath(ModelComponent.markerName)).createSync();
     }
     TranslationModels.invalidateReadyCache();
     final image = File('${temp.path}/page.png')..writeAsBytesSync([1]);

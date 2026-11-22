@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/components/components.dart' show Select;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
+import 'package:venera/foundation/image_translation/translation_sources.dart';
 import 'package:venera/pages/guide_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/utils/opencc.dart';
@@ -48,6 +50,286 @@ void main() {
     }
   }
 
+  Future<void> details(WidgetTester tester, ModelComponent component) async {
+    final button = find.descendant(
+      of: find.byKey(ValueKey(component.id)),
+      matching: find.byTooltip('Model details'.tl),
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> deleteLocalFiles(
+    WidgetTester tester,
+    ModelComponent component,
+  ) async {
+    await details(tester, component);
+    final delete = find.text('Delete downloaded files');
+    await tester.ensureVisible(delete);
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    final directory = Directory(component.directory);
+    expect(directory.existsSync(), isTrue);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Confirm'));
+      for (var i = 0; i < 50 && directory.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(directory.existsSync(), isFalse);
+  }
+
+  void installFixture(ModelComponent model) {
+    for (final file in model.files) {
+      makeFile(model, file.name, file.size ?? 1);
+    }
+    if (model.marker) makeFile(model, ModelComponent.markerName, 0);
+  }
+
+  for (final width in [320.0, 900.0]) {
+    testWidgets('model settings can open, change and close twice at $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      const key = 'imageTranslationHfEndpoint';
+      final previous = appdata.settings[key];
+      final wasBackgroundTask = App.isBackgroundTask;
+      App.isBackgroundTask = true;
+      addTearDown(() {
+        App.isBackgroundTask = wasBackgroundTask;
+        appdata.settings[key] = previous;
+      });
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.byTooltip('Model settings'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final wide = find.byType(Select);
+        final label = i == 0 ? 'hf-mirror.com' : 'HuggingFace';
+        await tester.tap(
+          wide.evaluate().isNotEmpty
+              ? wide
+              : find.text('Hugging Face download source'),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(label).hitTestable().last);
+        await tester.pumpAndSettle();
+        expect(
+          appdata.settings[key],
+          i == 0 ? 'https://hf-mirror.com' : 'https://huggingface.co',
+        );
+        await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        expect(find.text('Hugging Face download source'), findsNothing);
+      }
+    });
+  }
+
+  test(
+    'switching detectors preserves verified alternatives and legacy URLs',
+    () async {
+      final wasBackgroundTask = App.isBackgroundTask;
+      App.isBackgroundTask = true;
+      addTearDown(() => App.isBackgroundTask = wasBackgroundTask);
+      final key = TranslationSources.detectorKey;
+      final previous = appdata.settings[key];
+      addTearDown(() => appdata.settings[key] = previous);
+      const old = CustomDetectorModel(
+        url: 'https://example.invalid/custom.onnx',
+        sizeBytes: 123,
+      );
+      appdata.settings[key] = old.toJson();
+      expect(TranslationSources.savedDetectors.keys, [old.url]);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+      installFixture(old.component);
+      final preset = TranslationSources.detectorPresets.values.last;
+      installFixture(preset.component);
+      expect(TranslationModels.activeDetector.id, old.component.id);
+      TranslationSources.setDetector(preset);
+      expect(
+        TranslationModels.workerPaths().detector,
+        preset.component.filePath('det.onnx'),
+      );
+      TranslationSources.setDetector(null);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+      expect(old.component.isInstalled && preset.component.isInstalled, isTrue);
+      expect(TranslationSources.savedDetectors.keys, [old.url]);
+      TranslationSources.setDetector(old);
+      await TranslationSources.removeDetector(old);
+      expect(TranslationSources.savedDetectors, isEmpty);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+      expect(preset.component.isInstalled, isTrue);
+      await appdata.saveData(false);
+    },
+  );
+
+  testWidgets(
+    'retired downloads are listed locally and never selected for new pages',
+    (tester) async {
+      const oldDetector = ModelComponent(
+        id: 'text_detector',
+        files: [],
+        approxSizeBytes: 0,
+      );
+      const oldChinese = ModelComponent(
+        id: 'ocr_zh',
+        files: [],
+        approxSizeBytes: 0,
+      );
+      const unknown = ModelComponent(
+        id: 'former_preset',
+        files: [],
+        approxSizeBytes: 0,
+      );
+      makeFile(oldDetector, 'det.onnx', 128);
+      makeFile(oldChinese, 'rec.onnx', 128);
+      makeFile(unknown, 'unknown.onnx.part', 321);
+      expect(TranslationModels.isReadyFor('zh'), isFalse);
+      expect(TranslationModels.workerPaths('zh').engines, isEmpty);
+      expect(
+        TranslationModels.requiredFor('zh'),
+        contains(TranslationModels.ocrZhV5),
+      );
+      expect(TranslationModels.activeDetector.id, isNot(oldDetector.id));
+      expect(
+        TranslationModels.all.map((c) => c.id),
+        isNot(contains(oldChinese.id)),
+      );
+      expect(TranslationModelStore.instance.localModelSizes[unknown.id], 321);
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      expect(find.text('Older model files'), findsOneWidget);
+      expect(find.byKey(ValueKey(oldDetector.id)), findsOneWidget);
+      expect(find.byKey(ValueKey(oldChinese.id)), findsOneWidget);
+      await deleteLocalFiles(tester, unknown);
+      expect(oldDetector.isInstalled && oldChinese.isInstalled, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'My models can remove an incomplete download without affecting an installed recognizer',
+    (tester) async {
+      const japanese = TranslationModels.ocrJa;
+      const english = TranslationModels.ocrEn;
+      makeFile(japanese, 'encoder.onnx.part', 432);
+      installFixture(TranslationModels.detector);
+      installFixture(english);
+
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      await tester.tap(find.text('My models'));
+      await tester.pumpAndSettle();
+      final partial = find.byKey(ValueKey(japanese.id));
+      expect(find.text('Incomplete model download'), findsOneWidget);
+      expect(
+        find.descendant(of: partial, matching: find.text('432 B')),
+        findsOneWidget,
+      );
+      expect(TranslationModels.isReadyFor('ja'), isFalse);
+      expect(TranslationModels.isReadyFor('en'), isTrue);
+
+      await deleteLocalFiles(tester, japanese);
+      expect(partial, findsNothing);
+      expect(find.byKey(ValueKey(english.id)), findsOneWidget);
+      expect(TranslationModels.isReadyFor('en'), isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'the model library is browse-only and the installed detector picker switches immediately',
+    (tester) async {
+      final previous = appdata.settings[TranslationSources.detectorKey];
+      appdata.settings[TranslationSources.detectorKey] = <String, dynamic>{};
+      addTearDown(
+        () => appdata.settings[TranslationSources.detectorKey] = previous,
+      );
+      final alternative = TranslationSources.detectorPresets.values.first;
+      installFixture(TranslationModels.detector);
+      installFixture(alternative.component);
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      await tester.tap(find.text('Model library'));
+      await tester.pumpAndSettle();
+      await details(tester, alternative.component);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+      await tester.tap(find.text('My models'));
+      await tester.pumpAndSettle();
+      final picker = find.byKey(const ValueKey('active-detector'));
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      final wasBackgroundTask = App.isBackgroundTask;
+      App.isBackgroundTask = true;
+      try {
+        await tester.tap(find.text('PP-OCRv6 small').hitTestable().last);
+        await tester.pumpAndSettle();
+      } finally {
+        App.isBackgroundTask = wasBackgroundTask;
+      }
+      expect(TranslationModels.activeDetector.id, alternative.component.id);
+      expect(TranslationModels.detector.isInstalled, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('one downloaded model can serve two editable source languages', (
+    tester,
+  ) async {
+    final previous = appdata.settings[TranslationSources.settingKey];
+    addTearDown(
+      () => appdata.settings[TranslationSources.settingKey] = previous,
+    );
+    final latin = TranslationSources.recognitionPresets.values.first;
+    CustomSourceLanguage source(String code, String name) =>
+        CustomSourceLanguage(
+          code: code,
+          name: name,
+          modelUrl: latin.modelUrl,
+          dictUrl: latin.dictUrl,
+        );
+    appdata.settings[TranslationSources.settingKey] = [
+      source('fr', 'Français').toJson(),
+      source('de', 'Deutsch').toJson(),
+    ];
+    installFixture(latin.component);
+    tester.view.physicalSize = const Size(320, 680);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      const MaterialApp(home: TranslationModelsPage(sourceLang: 'fr')),
+    );
+    await tester.tap(find.text('My models'));
+    await tester.pumpAndSettle();
+    final row = find.byKey(ValueKey(latin.engine));
+    expect(row, findsOneWidget);
+    expect(find.text('PP-OCRv6 small'), findsNothing);
+    expect(find.text('Français (fr)'), findsNothing);
+    await details(tester, latin.component);
+    expect(find.text('Français (fr)'), findsOneWidget);
+    expect(find.text('Deutsch (de)'), findsOneWidget);
+    expect(find.text('Delete downloaded files'), findsNothing);
+    await tester.tap(find.byTooltip('Remove Français'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Other languages keep using the shared model'),
+      findsOneWidget,
+    );
+    final wasBackgroundTask = App.isBackgroundTask;
+    App.isBackgroundTask = true;
+    try {
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+    } finally {
+      App.isBackgroundTask = wasBackgroundTask;
+    }
+    expect(TranslationSources.find('fr'), isNull);
+    expect(TranslationSources.find('de')!.component.isInstalled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'enhancement settings survive a restart and stay on this device',
     () async {
@@ -71,14 +353,8 @@ void main() {
       const dialogue = TranslationModels.rtDetr;
       const stroke = TranslationModels.legacyTextStrokes;
       final store = TranslationModelStore.instance;
-      for (final base in [
-        TranslationModels.detector,
-        TranslationModels.ocrEn,
-      ]) {
-        for (final f in base.files) {
-          makeFile(base, f.name, 1);
-        }
-      }
+      installFixture(TranslationModels.detector);
+      installFixture(TranslationModels.ocrEn);
       expect(TranslationModels.isReadyFor('en'), isTrue);
       expect(TranslationModels.enhancements, [dialogue]);
       expect(TranslationModels.find('rt_detr'), same(dialogue));
@@ -149,12 +425,17 @@ void main() {
         await tester.pumpWidget(
           const MaterialApp(home: TranslationModelsPage()),
         );
-        expect(find.textContaining('SWHL/RapidOCR · Apache-2.0'), findsWidgets);
+        expect(find.textContaining('PaddlePaddle · Apache-2.0'), findsNothing);
+        await details(tester, TranslationModels.detector);
+        expect(
+          find.textContaining('PaddlePaddle · Apache-2.0'),
+          findsOneWidget,
+        );
         final path = locale == 'en-US'
             ? 'doc/model-notices.en.md'
             : 'doc/model-notices.zh.md';
         await tester.runAsync(() async {
-          await tester.tap(find.text('Model sources and licenses'.tl));
+          await tester.tap(find.byTooltip('Model sources and licenses'.tl));
           await tester.pump();
           await rootBundle.loadString(path);
         });
@@ -187,13 +468,14 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(home: TranslationModelsPage(sourceLang: 'en')),
       );
-      final scrollable = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(
-        find.text('Apache-2.0'),
-        240,
-        scrollable: scrollable,
-      );
-      expect(find.text(TranslationModels.rtDetr.displayName), findsOneWidget);
+      await tester.tap(find.text('Model library'.tl));
+      await tester.pumpAndSettle();
+      final tab = find.widgetWithText(Tab, 'Optional enhancements'.tl);
+      await tester.ensureVisible(tab);
+      await tester.pumpAndSettle();
+      await tester.tap(tab);
+      await tester.pumpAndSettle();
+      await details(tester, TranslationModels.rtDetr);
       expect(find.text('ogkalu/Comic Translate'), findsOneWidget);
       final title = switch (locale) {
         'zh-CN' => 'RT-DETR INT8 · 对白识别',
@@ -201,18 +483,15 @@ void main() {
         _ => 'RT-DETR INT8 · Dialogue detection',
       };
       expect(find.text(title), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('GPL-3.0'),
-        190,
-        scrollable: scrollable,
-      );
       expect(
         find.text(TranslationModels.legacyTextStrokes.displayName),
-        findsOneWidget,
+        findsNothing,
       );
-      final oldTile = find.widgetWithText(
-        ListTile,
-        TranslationModels.legacyTextStrokes.displayName,
+      await tester.tap(find.text('My models'.tl));
+      await tester.pumpAndSettle();
+      await details(tester, TranslationModels.legacyTextStrokes);
+      final oldTile = find.byKey(
+        ValueKey(TranslationModels.legacyTextStrokes.id),
       );
       expect(
         find.descendant(
@@ -257,13 +536,12 @@ void main() {
         'zh-TW' => '啟用對白辨識增強',
         _ => 'Use dialogue detection enhancement',
       };
-      final tile = find.widgetWithText(ListTile, bubbleLabel);
-      await tester.scrollUntilVisible(
-        tile,
-        180,
-        scrollable: find.byType(Scrollable).first,
+      final toggle = find.descendant(
+        of: find.byTooltip(bubbleLabel),
+        matching: find.byType(Switch),
       );
-      final toggle = find.descendant(of: tile, matching: find.byType(Switch));
+      await tester.ensureVisible(toggle);
+      await tester.pumpAndSettle();
       expect(tester.widget<Switch>(toggle).value, isTrue);
       if (locale == 'en-US') {
         await tester.scrollUntilVisible(

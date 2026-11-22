@@ -278,7 +278,7 @@ void main() {
     await open(tester, 900);
     await tester.tap(find.byKey(const ValueKey('settings-category-8')));
     await tester.pumpAndSettle();
-    await openSection(tester, 'Translation models');
+    await openSection(tester, 'Model management');
     final models = find.byType(TranslationModelsPage);
     expect(models, findsOneWidget);
     final detailSurface = find

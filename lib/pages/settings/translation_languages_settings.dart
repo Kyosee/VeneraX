@@ -1,11 +1,10 @@
 part of 'settings_page.dart';
 
-/// The user's own translation languages in one place: target languages, and
-/// source languages with the recognition model each one downloads, plus an
-/// optional replacement text detector. Codes are fixed once added: they are
-/// part of the keys translations are stored under.
+/// Target language settings, with a shortcut to source models.
 class TranslationLanguagesPage extends StatefulWidget {
-  const TranslationLanguagesPage({super.key});
+  const TranslationLanguagesPage({super.key, this.sourceLang});
+
+  final String? sourceLang;
 
   @override
   State<TranslationLanguagesPage> createState() =>
@@ -13,22 +12,6 @@ class TranslationLanguagesPage extends StatefulWidget {
 }
 
 class _TranslationLanguagesPageState extends State<TranslationLanguagesPage> {
-  @override
-  void initState() {
-    TranslationModelStore.instance.addListener(_update);
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    TranslationModelStore.instance.removeListener(_update);
-    super.dispose();
-  }
-
-  void _update() {
-    if (mounted) setState(() {});
-  }
-
   void _editTarget([CustomTargetLanguage? existing]) async {
     var saved = await showDialog<bool>(
       context: App.rootContext,
@@ -50,151 +33,6 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage> {
         if (mounted) setState(() {});
       },
     );
-  }
-
-  void _editSource([CustomSourceLanguage? existing]) async {
-    var saved = await showDialog<CustomSourceLanguage>(
-      context: App.rootContext,
-      builder: (context) => _SourceLanguageEditor(existing: existing),
-    );
-    if (saved == null || !mounted) return;
-    setState(() {});
-    if (!saved.component.isInstalled) _confirmSource(saved);
-  }
-
-  void _deleteSource(CustomSourceLanguage language) {
-    showConfirmDialog(
-      context: App.rootContext,
-      title: "Delete".tl,
-      content:
-          "Remove @name and its downloaded model? Pages already translated from it are kept."
-              .tlParams({'name': language.name}),
-      btnColor: context.colorScheme.error,
-      onConfirm: () {
-        TranslationSources.remove(language.code);
-        if (mounted) setState(() {});
-      },
-    );
-  }
-
-  /// States the download size before fetching a user-supplied model, with a
-  /// warning when it is large enough to matter on a phone.
-  void _confirmDownload(String title, int size, VoidCallback onConfirm) {
-    var content = size > 0
-        ? "Download @size?".tlParams({
-            'size': _TranslationModelsPageState._formatSize(size),
-          })
-        : "The host did not report the size. Download anyway?".tl;
-    if (size > 100 << 20) {
-      content +=
-          "\n\n${"Large models load slower and use more memory; on phones they may be slow or run out of memory.".tl}";
-    }
-    showConfirmDialog(
-      context: App.rootContext,
-      title: title,
-      content: content,
-      confirmText: "Download".tl,
-      onConfirm: onConfirm,
-    );
-  }
-
-  void _confirmSource(CustomSourceLanguage language) => _confirmDownload(
-    language.name,
-    language.sizeBytes,
-    () => _download(language),
-  );
-
-  void _confirmDetector(CustomDetectorModel model) => _confirmDownload(
-    "Text detection model".tl,
-    model.sizeBytes,
-    () => _downloadDetector(model),
-  );
-
-  void _download(CustomSourceLanguage language) {
-    var component = language.component;
-    TranslationModelStore.instance.download(
-      component,
-      verify: () => checkRecognitionModel(
-        component.filePath('rec.onnx'),
-        component.filePath('dict.txt'),
-        language.inputHeight,
-      ),
-    );
-  }
-
-  void _editDetector() async {
-    var saved = await showDialog<CustomDetectorModel>(
-      context: App.rootContext,
-      builder: (context) =>
-          _DetectorEditor(existing: TranslationSources.detector),
-    );
-    if (saved == null || !mounted) return;
-    setState(() {});
-    if (!saved.component.isInstalled) _confirmDetector(saved);
-  }
-
-  void _downloadDetector(CustomDetectorModel model) {
-    var component = model.component;
-    TranslationModelStore.instance.download(
-      component,
-      verify: () => checkDetectionModel(component.filePath('det.onnx')),
-    );
-  }
-
-  void _resetDetector() {
-    showConfirmDialog(
-      context: App.rootContext,
-      title: "Use built-in detector".tl,
-      content: "Remove the custom detection model and its downloaded file?".tl,
-      btnColor: context.colorScheme.error,
-      onConfirm: () {
-        TranslationSources.setDetector(null);
-        if (mounted) setState(() {});
-      },
-    );
-  }
-
-  Widget _modelTrailing(ModelComponent component, VoidCallback onDownload) {
-    var store = TranslationModelStore.instance;
-    var state = store.stateOf(component);
-    if (state.downloading) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.4,
-              value: state.progress <= 0 ? null : state.progress,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: "Cancel".tl,
-            onPressed: () => store.cancelDownload(component),
-          ),
-        ],
-      );
-    }
-    if (component.isInstalled) {
-      return Icon(Icons.check_circle, color: context.colorScheme.primary);
-    }
-    return IconButton(
-      icon: const Icon(Icons.download_outlined),
-      tooltip: "Download".tl,
-      onPressed: onDownload,
-    );
-  }
-
-  String _modelStatus(ModelComponent component, int sizeBytes) {
-    var parts = <String>[
-      if (sizeBytes > 0) _TranslationModelsPageState._formatSize(sizeBytes),
-      component.isInstalled ? "Downloaded".tl : "Not downloaded".tl,
-    ];
-    var error = TranslationModelStore.instance.stateOf(component).error;
-    var text = parts.join(' · ');
-    return error == null ? text : "$text\n${"Download failed".tl}: $error";
   }
 
   Widget _header(
@@ -244,8 +82,6 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage> {
   @override
   Widget build(BuildContext context) {
     var targets = TranslationTargets.custom;
-    var sources = TranslationSources.custom;
-    final detector = TranslationSources.detector;
     return Scaffold(
       body: SmoothCustomScrollView(
         scrollbarTopPadding: context.padding.top + 56,
@@ -273,83 +109,16 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage> {
                 onPressed: () => _deleteTarget(language),
               ),
             ).toSliver(),
-          _header(
-            "Source languages".tl,
-            GuideAnchor.translationSource,
-            addTooltip: "Add source language".tl,
-            onAdd: _editSource,
+          ListTile(
+            title: Text("Model management".tl),
+            subtitle: Text(
+              "Manage source languages and their recognition models.".tl,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.to(
+              () => TranslationModelsPage(sourceLang: widget.sourceLang),
+            ),
           ).toSliver(),
-          _note(
-            "Built-in source languages download their recognition models under Translation models. Add a language here with a recognition model of your own."
-                .tl,
-          ).toSliver(),
-          _ModelNoticesTile(
-            subtitle:
-                "For custom links, check the publisher’s license for each model and dictionary."
-                    .tl,
-          ).toSliver(),
-          for (var language in sources)
-            ListTile(
-              title: Text(language.name),
-              subtitle: Text(
-                "${language.code} · ${_modelStatus(language.component, language.sizeBytes)}",
-              ),
-              isThreeLine:
-                  TranslationModelStore.instance
-                      .stateOf(language.component)
-                      .error !=
-                  null,
-              onTap: () => _editSource(language),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _modelTrailing(
-                    language.component,
-                    () => _confirmSource(language),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: "Delete".tl,
-                    onPressed: () => _deleteSource(language),
-                  ),
-                ],
-              ),
-            ).toSliver(),
-          _header(
-            "Text detection model".tl,
-            GuideAnchor.translationSource,
-          ).toSliver(),
-          if (detector == null)
-            ListTile(
-              title: Text("Built-in (PP-OCRv4 mobile)".tl),
-              subtitle: Text("Tap to use a detection model of your own".tl),
-              onTap: _editDetector,
-            ).toSliver()
-          else
-            ListTile(
-              title: Text(detector.url, maxLines: 2),
-              subtitle: Text(
-                detector.component.isInstalled
-                    ? _modelStatus(detector.component, detector.sizeBytes)
-                    : "${_modelStatus(detector.component, detector.sizeBytes)}\n${"The built-in detector is used until this one is downloaded.".tl}",
-              ),
-              isThreeLine: true,
-              onTap: _editDetector,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _modelTrailing(
-                    detector.component,
-                    () => _confirmDetector(detector),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.restore),
-                    tooltip: "Use built-in detector".tl,
-                    onPressed: _resetDetector,
-                  ),
-                ],
-              ),
-            ).toSliver(),
           const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
         ],
       ),
@@ -454,26 +223,12 @@ class _TargetLanguageEditorState extends State<_TargetLanguageEditor> {
   }
 }
 
-const _rapidOcrBase =
-    'https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master';
-
-/// Recognition models known to load and match their dictionary. Name and code
-/// stay the user's to fill in.
-const _recognitionPresets = [
-  ('Latin script (French, German, Spanish...)', 'latin', 7.9),
-  ('Cyrillic (Russian, Ukrainian...)', 'cyrillic', 8.1),
-  ('Thai', 'th', 7.9),
-];
-
-const _detectorPresets = [
-  ('PP-OCRv5 mobile', 'onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx', 4.8),
-  ('PP-OCRv6 small', 'onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx', 9.9),
-];
-
 /// Add/edit dialog for a source language; probes the download size on save
 /// and pops the saved entry.
 class _SourceLanguageEditor extends StatefulWidget {
-  const _SourceLanguageEditor({this.existing});
+  const _SourceLanguageEditor({this.existing, this.initialModel});
+
+  final RecognitionModel? initialModel;
 
   final CustomSourceLanguage? existing;
 
@@ -485,12 +240,13 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late final _code = TextEditingController(text: widget.existing?.code ?? '');
   late final _model = TextEditingController(
-    text: widget.existing?.modelUrl ?? '',
+    text: (widget.existing ?? widget.initialModel)?.modelUrl ?? '',
   );
   late final _dict = TextEditingController(
-    text: widget.existing?.dictUrl ?? '',
+    text: (widget.existing ?? widget.initialModel)?.dictUrl ?? '',
   );
-  late var _height = widget.existing?.inputHeight ?? 48;
+  late var _height =
+      (widget.existing ?? widget.initialModel)?.inputHeight ?? 48;
   var _checking = false;
 
   @override
@@ -502,13 +258,11 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
     super.dispose();
   }
 
-  void _applyPreset(String key) {
+  void _applyPreset(RecognitionModel model) {
     setState(() {
-      _model.text =
-          '$_rapidOcrBase/onnx/PP-OCRv5/rec/${key}_PP-OCRv5_rec_mobile.onnx';
-      _dict.text =
-          '$_rapidOcrBase/paddle/PP-OCRv5/rec/${key}_PP-OCRv5_rec_mobile/ppocrv5_${key}_dict.txt';
-      _height = 48;
+      _model.text = model.modelUrl;
+      _dict.text = model.dictUrl;
+      _height = model.inputHeight;
     });
   }
 
@@ -538,11 +292,24 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
       return;
     }
     setState(() => _checking = true);
-    var store = TranslationModelStore.instance;
-    var sizes = await Future.wait([
-      store.probeSize(model),
-      store.probeSize(dict),
-    ]);
+    final known =
+        [
+              widget.existing,
+              widget.initialModel,
+              ...TranslationSources.recognitionPresets.values,
+            ]
+            .whereType<RecognitionModel>()
+            .where((entry) => entry.modelUrl == model && entry.dictUrl == dict)
+            .firstOrNull;
+    int size = known?.sizeBytes ?? 0;
+    if (known == null) {
+      final store = TranslationModelStore.instance;
+      final sizes = await Future.wait([
+        store.probeSize(model),
+        store.probeSize(dict),
+      ]);
+      if (!sizes.contains(null)) size = sizes[0]! + sizes[1]!;
+    }
     if (!mounted) return;
     var language = CustomSourceLanguage(
       code: code,
@@ -550,7 +317,7 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
       modelUrl: model,
       dictUrl: dict,
       inputHeight: _height,
-      sizeBytes: sizes.contains(null) ? 0 : sizes[0]! + sizes[1]!,
+      sizeBytes: size,
     );
     TranslationSources.save(language);
     context.pop(language);
@@ -593,10 +360,10 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text("Fill in a tested model:".tl, style: ts.s12),
-                  for (var p in _recognitionPresets)
+                  for (final p in TranslationSources.recognitionPresets.entries)
                     ActionChip(
-                      label: Text("${p.$1.tl} · ${p.$3} MB"),
-                      onPressed: () => _applyPreset(p.$2),
+                      label: Text(p.key.tl),
+                      onPressed: () => _applyPreset(p.value),
                     ),
                 ],
               ),
@@ -649,16 +416,14 @@ class _SourceLanguageEditorState extends State<_SourceLanguageEditor> {
 
 /// Dialog for the custom text detection model link.
 class _DetectorEditor extends StatefulWidget {
-  const _DetectorEditor({this.existing});
-
-  final CustomDetectorModel? existing;
+  const _DetectorEditor();
 
   @override
   State<_DetectorEditor> createState() => _DetectorEditorState();
 }
 
 class _DetectorEditorState extends State<_DetectorEditor> {
-  late final _url = TextEditingController(text: widget.existing?.url ?? '');
+  final _url = TextEditingController();
   var _checking = false;
 
   @override
@@ -677,7 +442,6 @@ class _DetectorEditorState extends State<_DetectorEditor> {
     var size = await TranslationModelStore.instance.probeSize(url);
     if (!mounted) return;
     var model = CustomDetectorModel(url: url, sizeBytes: size ?? 0);
-    TranslationSources.setDetector(model);
     context.pop(model);
   }
 
@@ -693,21 +457,6 @@ class _DetectorEditorState extends State<_DetectorEditor> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text("Fill in a tested model:".tl, style: ts.s12),
-                  for (var p in _detectorPresets)
-                    ActionChip(
-                      label: Text("${p.$1} · ${p.$3} MB"),
-                      onPressed: () =>
-                          setState(() => _url.text = '$_rapidOcrBase/${p.$2}'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
               TextField(
                 controller: _url,
                 autofocus: true,

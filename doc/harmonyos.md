@@ -250,7 +250,7 @@ $device = 'REPLACE_WITH_PHONE_ADDRESS'
 
 ### OCR 模型服务
 
-准备合法获取的本地模型目录，包含 `text_detector/det.onnx`、`ocr_en/rec.onnx`、`ocr_en/dict.txt`。三个文件大小分别须大于零且不超过 8 MiB、16 MiB、64 KiB。在第二个终端进入同一项目目录，将下面的模型根目录改成自己的路径：
+准备合法获取的本地模型目录，包含 `text_detector_v5/det.onnx`、`ocr_en/rec.onnx`、`ocr_en/dict.txt`。三个文件大小分别须大于零且不超过 8 MiB、16 MiB、64 KiB。在第二个终端进入同一项目目录，将下面的模型根目录改成自己的路径：
 
 ```powershell
 & $ohDart tool/serve_ohos_ocr_models.dart 'D:/models/translation_models' 18767

@@ -224,7 +224,7 @@ class _SettingsSearchEntry {
         'Custom translation script' ||
         'Test translation' => 'Translation services',
         'Custom languages' ||
-        'Translation models' ||
+        'Model management' ||
         'Translation prompt' => 'Models & languages',
         'Text removal' ||
         'Pages per pre-translation request' ||
@@ -477,7 +477,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   ),
   _SettingsSearchEntry("Performance mode", 8, keywords: ["speed", "mobile"]),
   _SettingsSearchEntry("Text removal", 8, keywords: ["erase", "inpaint"]),
-  _SettingsSearchEntry("Translation models", 8, keywords: ["OCR", "download"]),
+  _SettingsSearchEntry(
+    "Model management",
+    8,
+    keywords: ["Translation models", "OCR", "PP-OCR", "download"],
+  ),
   _SettingsSearchEntry(
     'Pages per pre-translation request',
     8,

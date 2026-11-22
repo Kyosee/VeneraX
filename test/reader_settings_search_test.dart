@@ -198,39 +198,53 @@ void main() {
     },
   );
 
-  testWidgets('model management reports a dialogue setting change on return', (
-    tester,
-  ) async {
-    const key = TranslationConfig.bubbleEnhancementKey;
-    final previous = appdata.settings[key];
-    addTearDown(() => appdata.settings[key] = previous);
-    final changed = <String>[];
-    await open(tester, onChanged: changed.add);
-    await search(tester, 'AI Translation');
-    await select(tester, 'AI Translation');
-    await tester.tap(find.text('AI Translation'));
-    await tester.pumpAndSettle();
-    final section = find.text('Models & languages');
-    await tester.ensureVisible(section);
-    await tester.pumpAndSettle();
-    await tester.tap(section);
-    await tester.pumpAndSettle();
-    final models = find.widgetWithText(ListTile, 'Translation models');
-    await tester.ensureVisible(models);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: models, matching: find.text('Manage')),
+  for (final viaLanguages in [false, true]) {
+    testWidgets(
+      'model management reports changes through the language shortcut: $viaLanguages',
+      (tester) async {
+        const key = TranslationConfig.bubbleEnhancementKey;
+        final previous = appdata.settings[key];
+        addTearDown(() => appdata.settings[key] = previous);
+        final changed = <String>[];
+        await open(tester, onChanged: changed.add);
+        await search(tester, 'AI Translation');
+        await select(tester, 'AI Translation');
+        await tester.tap(find.text('AI Translation'));
+        await tester.pumpAndSettle();
+        final section = find.text('Models & languages');
+        await tester.ensureVisible(section);
+        await tester.pumpAndSettle();
+        await tester.tap(section);
+        await tester.pumpAndSettle();
+        final models = find.widgetWithText(
+          ListTile,
+          viaLanguages ? 'Custom languages' : 'Model management',
+        );
+        await tester.ensureVisible(models);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(of: models, matching: find.text('Manage')),
+        );
+        await tester.pumpAndSettle();
+        if (viaLanguages) {
+          await tester.tap(find.widgetWithText(ListTile, 'Model management'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(TranslationModelsPage), findsOneWidget);
+        appdata.settings[key] = !TranslationConfig.bubbleEnhancementEnabled;
+        expect(changed, isEmpty);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(TranslationModelsPage), findsNothing);
+        if (viaLanguages) {
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+        }
+        expect(changed, [key]);
+        expect(tester.takeException(), isNull);
+      },
     );
-    await tester.pumpAndSettle();
-    expect(find.byType(TranslationModelsPage), findsOneWidget);
-    appdata.settings[key] = !TranslationConfig.bubbleEnhancementEnabled;
-    expect(changed, isEmpty);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.byType(TranslationModelsPage), findsNothing);
-    expect(changed, [key]);
-    expect(tester.takeException(), isNull);
-  });
+  }
 
   testWidgets(
     'sidebar search fits above the keyboard and back closes only the sidebar',

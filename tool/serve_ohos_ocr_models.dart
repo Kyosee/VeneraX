@@ -4,7 +4,7 @@ import 'dart:typed_data';
 // Usage: dart tool/serve_ohos_ocr_models.dart <translation_models> [port]
 // This serves existing local files only. Stop the process after the probe.
 const _files = {
-  '/text_detector/det.onnx': 8 * 1024 * 1024,
+  '/text_detector_v5/det.onnx': 8 * 1024 * 1024,
   '/ocr_en/rec.onnx': 16 * 1024 * 1024,
   '/ocr_en/dict.txt': 64 * 1024,
 };

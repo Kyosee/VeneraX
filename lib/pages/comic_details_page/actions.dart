@@ -175,7 +175,7 @@ abstract mixin class _ComicPageActions {
         content:
             "AI translation needs the offline recognition models on this device. Download them now?"
                 .tl,
-        confirmText: "Go to download".tl,
+        confirmText: "Model management".tl,
         onConfirm: () =>
             context.to(() => TranslationModelsPage(sourceLang: lang)),
       );

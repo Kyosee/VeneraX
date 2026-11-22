@@ -58,23 +58,22 @@ Detection and recognition run on the device; the recognized text is sent to an A
 <!--anchor:translation-setup-->
 ### Setup
 
-1. Settings → AI Translation. Language and performance mode are under "Translation preferences", providers and testing under "Translation services", and models and custom languages under "Models & languages".
+1. Open **Settings → AI Translation**. Choose the language and performance mode under **Translation preferences**. Configure and test your provider under **Translation services**.
 2. "LLM providers" → add one. Pick "Google Translate" to use its free endpoint: no account, no key, nothing to fill in — just save and it works. The trade-off is that each line is translated on its own, so wording and character names may vary between pages, and quality is below an AI model. It is not an official API, so it can be rate-limited or stop working at any time — use an AI model if you need reliability.
 3. For better results pick "AI model": enter the API URL and API key (some local services can leave it blank), then tap "Get models" to choose a model. Any OpenAI-compatible service works. If model fetching fails, enter the model name manually. You can add several providers and switch at any time.
 4. "Test translation" → a returned translation confirms the configuration works.
-5. "Translation models" → download. The text detector (~5 MB) is required; add one recognition model for the comic's language:
+5. Open **Model management → Model library**. Under **Text detection**, download the shared default detector, PP-OCRv5 mobile (~4.8 MB). Under **Text recognition**, download the recognizer and dictionary for the comic’s original language. **Optional enhancements** offers speech bubble detection if needed.
 
 | Language | Size |
 | --- | --- |
 | Japanese (incl. vertical text) | ~460 MB |
 | Chinese (Simplified + Traditional) | ~17 MB |
-| Chinese / Latin (Simplified only) | ~11 MB |
 | English | ~9 MB |
 | Korean | ~8 MB |
 
-With "Source language" set to "Auto detect", the detector plus any one recognition model is sufficient; the app determines each comic's language itself.
+With **Source language** set to **Auto detect**, the app chooses from your installed built-in recognizers. You can install several if you read comics in multiple languages.
 
-At the top of **Translation models**, open [Model sources and licenses](model-notices.en.md) to read the notices offline. Default text removal requires no extra model. **Dialogue only** can use the optional 11.1 MB RT-DETR download to distinguish text inside and outside bubbles. Switching it off keeps the file and uses the built-in rules. **All text** skips the dialogue detector.
+After downloading, open **My models** to choose a detector from the dropdown and see your installed recognizers under **Text recognition**. **Dialogue only** can use built-in rules or the optional 11.1 MB RT-DETR download to help distinguish text inside and outside bubbles. Switch it on or off under **My models → Optional enhancements**. Switching it off keeps the file. **All text** skips this enhancement. Default text removal and translated text layout run on your device with no additional model. **Model management** includes the offline [Model sources and licenses](model-notices.en.md).
 
 <!--anchor:translation-target-->
 ### Target languages
@@ -99,33 +98,33 @@ Built-in source languages and the recognition model each uses:
 
 | Source language | Recognition model |
 | --- | --- |
-| Japanese | Japanese model (~460 MB), horizontal and vertical text |
-| Simplified Chinese | Chinese (Simplified + Traditional) model; the Chinese / Latin model if that is not downloaded |
-| Traditional Chinese | Chinese (Simplified + Traditional) model (~17 MB), required |
-| English | English model |
-| Korean | Korean model |
+| Japanese | Manga OCR (~460 MB) includes an encoder, decoder and vocabulary for horizontal and vertical text |
+| Simplified Chinese | PP-OCRv5 mobile with its matching Simplified and Traditional Chinese dictionary |
+| Traditional Chinese | Requires PP-OCRv5 mobile with its Simplified and Traditional dictionary (~17 MB) |
+| English | PP-OCRv3 English recognizer and English dictionary |
+| Korean | Korean mobile v2.0 recognizer and Korean dictionary |
 
-- The Chinese / Latin model (~11 MB) only covers common Simplified characters and lacks about 3,800 Traditional ones, so Traditional comics come out with wrong characters. The Chinese (Simplified + Traditional) model covers about 18,000 characters, reads both scripts and also vertical Chinese; once downloaded, Simplified Chinese uses it too.
+- Simplified and Traditional Chinese share the PP-OCRv5 mobile weights and a dictionary of about 18,000 characters. This recognizer reads horizontal and vertical Chinese.
 - "Auto detect" tells Simplified and Traditional apart, so a Traditional comic is translated into Simplified Chinese as usual.
 - For a Traditional comic, choose "Traditional Chinese" as the source language. Under "Auto detect", vertical Chinese may be read by the Japanese model as Japanese; choosing the language avoids that.
 - If previously opened Traditional pages were recorded as having no text to translate, first choose the correct source language and prepare its model, then long-press "Pre-translate" on the details page → "Re-translate" to recognize them again.
 
 **Model size and accuracy**
 
-Check whether the matching dictionary covers the characters in your comic, then compare recognition quality and speed on your device. PaddleOCR cannot output a character outside its dictionary and may skip or misread it. The character error rates below were measured on a desktop with rendered Traditional Chinese dialogue. Lettering and screentone can affect results on real pages.
+Check whether the matching dictionary covers the characters in your comic, then compare recognition quality and speed on your device. PaddleOCR cannot output a character outside its dictionary and may skip or misread it. The table shows one desktop comparison using rendered dialogue. The v6 recognizers were included only for this desktop comparison. Lettering and screentone can affect results on real pages.
 
 | Model | Result |
 | --- | --- |
-| Chinese / Latin (~11 MB) | ~17% wrong Traditional characters; vertical text unreadable |
-| Chinese (Simplified + Traditional) (~17 MB) | No errors on Traditional, Simplified or vertical text |
+| PP-OCRv4 Chinese / Latin (~11 MB, retired, shown for comparison) | ~17% wrong Traditional characters and could not read this sample’s vertical text |
+| PP-OCRv5 mobile Chinese (~17 MB) | No errors on the Simplified, Traditional or vertical samples in this test |
 | PP-OCRv6 small (~21 MB) | Same as above, slightly slower |
 | PP-OCRv6 tiny (~4.5 MB) | About 3x faster, ~18% wrong Traditional characters |
 
 **Adding another source language**
 
-1. Settings → AI Translation → "Custom languages" → "+" next to "Source languages".
-2. Enter a language name and code (such as `fr`, `ru`, `th`).
-3. Enter the recognition model link (.onnx) and character dictionary link (.txt), or use "Fill in a tested model" for Latin script, Cyrillic or Thai.
+1. Open **Settings → AI Translation → Model management**. The Latin, Cyrillic and Thai recognition presets and the option to add a custom source language are all available here.
+2. In **Model library**, open the **Text recognition** tab and choose the script, such as Latin for French or Cyrillic for Russian. Open the model details and tap **Add source language** to enter a name and code, such as `fr`, `ru` or `th`. The **+** menu also lets you add a language.
+3. Each preset uses PP-OCRv5 mobile weights and a matching dictionary published by RapidAI/RapidOCR on ModelScope. To use another source, enter the recognition model URL (.onnx) and its matching character dictionary URL (.txt).
 4. Saving reads the file sizes; the download starts after you confirm. Models over 100 MB get an extra warning.
 
 - Only PP-OCR text recognition models (CTC) in ONNX format work, together with the character dictionary they were trained with. Paddle, MNN or PyTorch files and encoder-decoder models such as manga-ocr do not.
@@ -136,7 +135,9 @@ Check whether the matching dictionary covers the characters in your comic, then 
 
 **Custom text detection model**
 
-"Text detection model" on the same page can be replaced with your own, shared by all languages. Only PP-OCR text detection models (DBNet) in ONNX format work; tested choices are PP-OCRv5 mobile (~4.8 MB) and PP-OCRv6 small (~9.9 MB). A larger detector finds small or stylized lettering more reliably but is slower on every page. The built-in detector is used until the download finishes.
+In **Model library → Text detection**, you can download PaddlePaddle’s PP-OCRv5 mobile (~4.8 MB) or RapidAI’s PP-OCRv6 small (~9.9 MB). After downloading one, choose it under **My models**. All languages share this detector. It returns the location of the text. A separate recognition model reads the text itself.
+
+If you previously downloaded the retired PP-OCRv4 text detector or Chinese / Latin recognizer, open **My models → Older model files** to check the space they use or delete them. Both have been removed from the model library.
 
 <!--anchor:translation-script-->
 ### Custom translation scripts

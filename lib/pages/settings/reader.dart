@@ -161,6 +161,21 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   int _customLanguageCount() =>
       TranslationSources.custom.length + TranslationTargets.custom.length;
 
+  Future<void> _openModelSettings({bool languages = false}) async {
+    final bubbles = TranslationConfig.bubbleEnhancementEnabled;
+    final sourceLang = _effectiveSourceLang();
+    await context.to(
+      () => languages
+          ? TranslationLanguagesPage(sourceLang: sourceLang)
+          : TranslationModelsPage(sourceLang: sourceLang),
+    );
+    if (!mounted) return;
+    if (bubbles != TranslationConfig.bubbleEnhancementEnabled) {
+      widget.onChanged?.call(TranslationConfig.bubbleEnhancementKey);
+    }
+    setState(() {});
+  }
+
   /// Summary line for the LLM-providers entry: the active provider's name (or
   /// its URL when unnamed), how many others are configured, or "Not configured".
   String _activeProviderSubtitle() {
@@ -212,7 +227,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               ),
               section(
                 "One-time setup".tl,
-                "1. Open LLM providers and add one. Pick \"Google Translate\" to use its free endpoint with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Translation models and download the models for your source language (needed for on-device text recognition)."
+                "1. Open LLM providers and add one. Pick \"Google Translate\" to use its free endpoint with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Model management and download the models for your source language (needed for on-device text recognition)."
                     .tl,
               ),
               section(
@@ -1205,8 +1220,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               _SwitchSetting(
                 title: "Image enhancement".tl,
                 subtitle:
-                    "Sharpen blurry images or adjust clarity at render time"
-                        .tl,
+                    "Sharpen blurry images or adjust clarity at render time".tl,
                 settingKey: "enableReaderImageEnhance",
                 onChanged: () {
                   setState(() {});
@@ -1528,30 +1542,15 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                         'count': _customLanguageCount(),
                       }),
                 actionTitle: "Manage".tl,
-                callback: () async {
-                  await context.to(() => const TranslationLanguagesPage());
-                  if (mounted) setState(() {});
-                },
+                callback: () => _openModelSettings(languages: true),
               ),
               _CallbackSetting(
-                title: "Translation models".tl,
+                title: "Model management".tl,
                 subtitle: TranslationModels.isReadyFor(_effectiveSourceLang())
                     ? "Models ready".tl
                     : "Models not downloaded".tl,
                 actionTitle: "Manage".tl,
-                callback: () async {
-                  final bubbles = TranslationConfig.bubbleEnhancementEnabled;
-                  await context.to(
-                    () => TranslationModelsPage(
-                      sourceLang: _effectiveSourceLang(),
-                    ),
-                  );
-                  if (!mounted) return;
-                  if (bubbles != TranslationConfig.bubbleEnhancementEnabled) {
-                    widget.onChanged?.call(TranslationConfig.bubbleEnhancementKey);
-                  }
-                  setState(() {});
-                },
+                callback: _openModelSettings,
               ),
               _CallbackSetting(
                 title: "Translation prompt".tl,

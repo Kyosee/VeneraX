@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/app.dart';
@@ -58,7 +59,7 @@ Future<void> _downloadModels() async {
     ..findProxy = (_) => 'DIRECT';
   try {
     for (final entry in const {
-      'text_detector/det.onnx': 8 * 1024 * 1024,
+      'text_detector_v5/det.onnx': 8 * 1024 * 1024,
       'ocr_en/rec.onnx': 16 * 1024 * 1024,
       'ocr_en/dict.txt': 64 * 1024,
     }.entries) {
@@ -85,8 +86,20 @@ Future<void> _downloadModels() async {
         'Model transfer was truncated.',
       );
       final file = File('${App.dataPath}/translation_models/${entry.key}');
+      final data = bytes.takeBytes();
+      final detector = TranslationModels.detector;
+      final isDetector = entry.key == '${detector.id}/det.onnx';
+      if (isDetector) {
+        _check(
+          sha256.convert(data).toString() == detector.files.single.sha256Digest,
+          'Unexpected detector file for the OCR probe.',
+        );
+      }
       await file.parent.create(recursive: true);
-      await file.writeAsBytes(bytes.takeBytes(), flush: true);
+      await file.writeAsBytes(data, flush: true);
+      if (isDetector) {
+        await File(detector.filePath(ModelComponent.markerName)).create();
+      }
     }
   } finally {
     client.close(force: true);

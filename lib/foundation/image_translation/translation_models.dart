@@ -59,10 +59,9 @@ class ModelComponent {
   final bool marker;
 
   String get displayName => switch (id) {
-    'text_detector' => "Text detector".tl,
+    'text_detector_v5' => "Text detector".tl,
     'ocr_ja' => "Japanese OCR (manga)".tl,
     'ocr_zh_v5' => "Chinese OCR (Simplified + Traditional)".tl,
-    'ocr_zh' => "Chinese / Latin OCR".tl,
     'ocr_en' => "English OCR".tl,
     'ocr_ko' => "Korean OCR".tl,
     'rt_detr' => "RT-DETR INT8 · Dialogue detection".tl,
@@ -91,14 +90,21 @@ class ModelComponent {
 ///
 /// The app downloads model files when the reader chooses to install them.
 abstract class TranslationModels {
-  /// Text region detector (PP-OCRv4 mobile, DBNet). Language independent.
+  /// Official PaddleOCR text detector, shared by all languages.
   static const detector = ModelComponent(
-    id: 'text_detector',
-    approxSizeBytes: 4900000,
+    id: 'text_detector_v5',
+    approxSizeBytes: 4826518,
+    marker: true,
     files: [
-      ModelFile('det.onnx', [
-        '{hf}/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx',
-      ]),
+      ModelFile(
+        'det.onnx',
+        [
+          '{hf}/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/df0bd9dee2bc627e80a2a1798ccab35a332e22d6/inference.onnx',
+        ],
+        size: 4826518,
+        sha256Digest:
+            'a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d',
+      ),
     ],
   );
 
@@ -115,21 +121,6 @@ abstract class TranslationModels {
       ]),
       ModelFile('vocab.txt', [
         '{hf}/mayocream/manga-ocr-onnx/resolve/main/vocab.txt',
-      ]),
-    ],
-  );
-
-  /// Chinese + Latin OCR (PP-OCRv4 mobile rec).
-  static const ocrZh = ModelComponent(
-    id: 'ocr_zh',
-    approxSizeBytes: 11000000,
-    files: [
-      ModelFile('rec.onnx', [
-        '{hf}/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx',
-      ]),
-      ModelFile('dict.txt', [
-        'https://cdn.jsdelivr.net/gh/PaddlePaddle/PaddleOCR@v2.7.0/ppocr/utils/ppocr_keys_v1.txt',
-        'https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/v2.7.0/ppocr/utils/ppocr_keys_v1.txt',
       ]),
     ],
   );
@@ -206,7 +197,7 @@ abstract class TranslationModels {
     approxSizeBytes: 0,
     files: [],
   );
-  static const recognizers = [ocrJa, ocrZhV5, ocrZh, ocrEn, ocrKo];
+  static const recognizers = [ocrJa, ocrZhV5, ocrEn, ocrKo];
   static const enhancements = [rtDetr];
   static const all = [detector, ...recognizers, ...enhancements];
 
@@ -221,9 +212,20 @@ abstract class TranslationModels {
   /// (manga-ocr) is handled separately by the worker.
   static const _builtInRec = <String, (ModelComponent, String, int)>{
     'zh5': (ocrZhV5, 'zh', 48),
-    'zh': (ocrZh, 'zh', 48),
     'en': (ocrEn, 'en', 48),
     'ko': (ocrKo, 'ko', 32),
+  };
+
+  static Set<String> get automaticRecognizerIds => {
+    if (ocrJa.isInstalled) ocrJa.id,
+    for (final engine in resolveOcrEngines(
+      'auto',
+      installed: {
+        for (final entry in _builtInRec.entries)
+          if (entry.value.$1.isInstalled) entry.key,
+      },
+    ))
+      _builtInRec[engine]!.$1.id,
   };
 
   /// The detector in use: the user's own once it passed its check, otherwise
@@ -283,8 +285,7 @@ abstract class TranslationModels {
       activeDetector,
       if (custom != null) custom.component,
       if (sourceLang == 'ja') ocrJa,
-      if (sourceLang == 'zh-TW') ocrZhV5,
-      if (sourceLang == 'zh') ocrZh.isInstalled ? ocrZh : ocrZhV5,
+      if (sourceLang == 'zh' || sourceLang == 'zh-TW') ocrZhV5,
       if (sourceLang == 'en') ocrEn,
       if (sourceLang == 'ko') ocrKo,
     ];
@@ -305,9 +306,7 @@ abstract class TranslationModels {
       'auto' =>
         ocrJa.isInstalled || _builtInRec.values.any((e) => e.$1.isInstalled),
       'ja' => ocrJa.isInstalled,
-      // v4 misreads Traditional text, so an explicit choice needs v5.
-      'zh-TW' => ocrZhV5.isInstalled,
-      'zh' => ocrZhV5.isInstalled || ocrZh.isInstalled,
+      'zh' || 'zh-TW' => ocrZhV5.isInstalled,
       'en' => ocrEn.isInstalled,
       'ko' => ocrKo.isInstalled,
       _ => TranslationSources.find(sourceLang)?.component.isInstalled ?? false,
@@ -320,27 +319,21 @@ abstract class TranslationModels {
 }
 
 /// Ordered recognition engines for [sourceLang], limited to [installed].
-/// v5 reads both Chinese scripts at least as well as v4, so it replaces v4
-/// whenever present. 'auto' lists line engines only; the worker places 'ja'
-/// by text direction.
+/// Chinese defaults to v5. The worker places 'ja' by text direction in auto mode.
 List<String> resolveOcrEngines(
   String sourceLang, {
   required Set<String> installed,
   String? customEngine,
 }) {
   var order = switch (sourceLang) {
-    'auto' => const ['zh5', 'zh', 'en', 'ko'],
+    'auto' => const ['zh5', 'en', 'ko'],
     'ja' => const ['ja'],
-    // A comic auto-locked to Traditional still reads with v4 if that is all
-    // that is installed.
-    'zh' || 'zh-TW' => const ['zh5', 'zh'],
+    'zh' || 'zh-TW' => const ['zh5'],
     'en' => const ['en'],
     'ko' => const ['ko'],
     _ => [if (customEngine != null) customEngine],
   };
-  var result = order.where(installed.contains).toList();
-  if (result.contains('zh5')) result.remove('zh');
-  return result;
+  return order.where(installed.contains).toList();
 }
 
 /// User-facing reason a downloaded model was rejected.
@@ -377,10 +370,14 @@ class TranslationModelStore with ChangeNotifier {
   final _cancelTokens = <String, CancelToken>{};
   final _downloads = <String, Completer<void>>{};
   final _deleting = <String>{};
+  int _diskRevision = 0;
+  int get diskRevision => _diskRevision;
 
   ModelDownloadState stateOf(ModelComponent component) {
     return _states.putIfAbsent(component.id, () => ModelDownloadState());
   }
+
+  bool isDownloading(String id) => _states[id]?.downloading ?? false;
 
   static String get hfEndpoint {
     var value = appdata.settings['imageTranslationHfEndpoint'];
@@ -578,6 +575,7 @@ class TranslationModelStore with ChangeNotifier {
       state.downloading = false;
       _downloads.remove(component.id);
       completed.complete();
+      _diskRevision++;
       _refreshKeepAlive();
       TranslationModels.invalidateReadyCache();
       notifyListeners();
@@ -615,6 +613,7 @@ class TranslationModelStore with ChangeNotifier {
         await dir.deleteIgnoreError(recursive: true);
       }
       _states.remove(component.id);
+      _diskRevision++;
       TranslationModels.invalidateReadyCache();
       notifyListeners();
     } finally {
@@ -622,16 +621,28 @@ class TranslationModelStore with ChangeNotifier {
     }
   }
 
-  /// Total disk usage of installed model files.
-  int get installedSizeBytes {
+  /// Includes files from retired catalogs without opening model contents.
+  Map<String, int> get localModelSizes {
     var root = Directory(FilePath.join(App.dataPath, 'translation_models'));
-    if (!root.existsSync()) return 0;
-    var total = 0;
-    for (var entity in root.listSync(recursive: true)) {
-      if (entity is File) {
-        total += entity.lengthSync();
+    final sizes = <String, int>{};
+    if (!root.existsSync()) return sizes;
+    for (final directory
+        in root.listSync(followLinks: false).whereType<Directory>()) {
+      var bytes = 0;
+      try {
+        for (final file
+            in directory
+                .listSync(recursive: true, followLinks: false)
+                .whereType<File>()) {
+          final stat = file.statSync();
+          if (stat.type == FileSystemEntityType.file) bytes += stat.size;
+        }
+      } on FileSystemException {
+        // A cancelled download or deletion may remove this directory mid-scan.
+        continue;
       }
+      if (bytes > 0) sizes[directory.name] = bytes;
     }
-    return total;
+    return sizes;
   }
 }
