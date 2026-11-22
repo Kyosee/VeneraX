@@ -89,6 +89,63 @@ void main() {
   }
 
   for (final width in [320.0, 900.0]) {
+    testWidgets(
+      'installed detector aligns with the other model rows at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 850);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const detectorKey = TranslationSources.detectorKey;
+        final previous = appdata.settings[detectorKey];
+        final alternative = TranslationSources.detectorPresets.values.first;
+        appdata.settings[detectorKey] = alternative.toJson();
+        addTearDown(() => appdata.settings[detectorKey] = previous);
+        installFixture(alternative.component);
+        installFixture(TranslationModels.ocrEn);
+        installFixture(TranslationModels.rtDetr);
+        await tester.pumpWidget(
+          const MaterialApp(home: TranslationModelsPage()),
+        );
+        final picker = find.byKey(const ValueKey('active-detector'));
+        final arrow = find.descendant(
+          of: picker,
+          matching: find.byIcon(Icons.arrow_drop_down),
+        );
+        final detectorTitle = find.descendant(
+          of: picker,
+          matching: find.text('PP-OCRv6 small'),
+        );
+        final englishTitle = find.text(TranslationModels.ocrEn.displayName);
+        double gapBelow(Finder title, ModelComponent model) {
+          final info = find.descendant(
+            of: find.byKey(ValueKey(model.id)),
+            matching: find.byTooltip('Model details'),
+          );
+          return tester.getTopLeft(info).dy - tester.getBottomLeft(title).dy;
+        }
+
+        expect(
+          tester.getTopLeft(detectorTitle).dx,
+          closeTo(tester.getTopLeft(englishTitle).dx, 0.5),
+        );
+        expect(
+          tester.getCenter(arrow).dx,
+          closeTo(tester.getCenter(find.byType(Switch)).dx, 0.5),
+        );
+        expect(
+          gapBelow(detectorTitle, alternative.component),
+          closeTo(gapBelow(englishTitle, TranslationModels.ocrEn), 2),
+        );
+        await details(tester, alternative.component);
+        expect(
+          find.text(
+            'One detector finds text regions for all source languages.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('library actions share a column at $width', (tester) async {
       tester.view.physicalSize = Size(width, 720);
       tester.view.devicePixelRatio = 1;

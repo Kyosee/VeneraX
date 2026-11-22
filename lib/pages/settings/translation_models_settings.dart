@@ -529,7 +529,12 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         key: const ValueKey('active-detector'),
         value: active?.id,
         hint: Text("Choose a detector".tl),
+        isDense: active != null,
         isExpanded: true,
+        icon: const SizedBox(
+          width: 60, // Match the switch track and its horizontal padding.
+          child: Center(child: Icon(Icons.arrow_drop_down)),
+        ),
         borderRadius: BorderRadius.circular(12),
         items: [
           for (final item in installed)
@@ -739,7 +744,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       else if (installed && !legacy)
         "Downloaded".tl,
     ].join(' · ');
-    Widget trailing;
+    Widget? trailing;
     if (state.downloading) {
       trailing = IconButton(
         icon: const Icon(Icons.close),
@@ -764,10 +769,8 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
           },
         ),
       );
-    } else {
-      trailing = _library == true
-          ? Icon(Icons.download_done, color: context.colorScheme.primary)
-          : const SizedBox.shrink();
+    } else if (_library == true) {
+      trailing = Icon(Icons.download_done, color: context.colorScheme.primary);
     }
     return (
       id: component.id,
