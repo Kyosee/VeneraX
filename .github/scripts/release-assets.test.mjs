@@ -46,12 +46,40 @@ test('manual download links cover exactly the required full packages', () => {
   }
 });
 
-test('mobile previews link only to the four APKs and the ARM64 HAP', () => {
-  const body = releaseDownloads('https://github.com/Kyosee/VeneraX', 'mobile-9.8.7-beta.1', '9.8.7-beta.1+654', 'mobile');
-  const assets = [...body.matchAll(/\]\((https:[^)]+)\)/g)]
-    .map(match => decodeURIComponent(new URL(match[1]).pathname.split('/').at(-1))).sort();
-  assert.deepEqual(assets, packages.filter(name => /\.(apk|hap)$/.test(name))
-    .map(name => name.replace('9.8.7', '9.8.7-beta.1')).sort());
+for (const [scope, extensions] of [['mobile', /\.(apk|hap)$/], ['mobile-windows', /\.(apk|hap|exe|zip)$/]]) {
+  test(`${scope} preview links match its required packages`, () => {
+    const body = releaseDownloads('https://github.com/Kyosee/VeneraX', 'mobile-9.8.7-beta.1', '9.8.7-beta.1+654', scope);
+    const assets = [...body.matchAll(/\]\((https:[^)]+)\)/g)]
+      .map(match => decodeURIComponent(new URL(match[1]).pathname.split('/').at(-1))).sort();
+    assert.deepEqual(assets, packages.filter(name => extensions.test(name))
+      .map(name => name.replace('9.8.7', '9.8.7-beta.1')).sort());
+  });
+}
+
+test('a three-platform preview cannot publish without both Windows files', (t) => {
+  const script = readFileSync(new URL('./publish-mobile-preview.sh', import.meta.url), 'utf8');
+  const check = script.replaceAll('\r\n', '\n').match(/^root="\$RUNNER_TEMP\/mobile-preview"[\s\S]*?(?=^repo_url=)/m);
+  assert.ok(check);
+  const directory = mkdtempSync(join(tmpdir(), 'venera-preview-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const root = join(directory, 'mobile-preview');
+  for (const platform of ['android', 'windows', 'harmonyos']) mkdirSync(join(root, platform), { recursive: true });
+  for (const file of packages.filter(name => /\.(apk|hap)$/.test(name))) {
+    writeFileSync(join(root, file.endsWith('.apk') ? 'android' : 'harmonyos', file), 'package');
+  }
+  const validate = () => spawnSync(bash, ['-c', `set -euo pipefail
+    fail() { echo "$*" >&2; exit 1; }
+    RUNNER_TEMP=. PREVIEW_SCOPE=mobile-windows version=9.8.7 app_version=9.8.7+654
+    ${check[0]}
+  `], { cwd: directory, encoding: 'utf8' });
+  for (const file of ['VeneraX-9.8.7-windows-installer.exe', 'VeneraX-9.8.7-windows.zip']) {
+    const result = validate();
+    assert.equal(result.status, 1, result.stderr);
+    assert.ok(result.stderr.includes(file), result.stderr);
+    writeFileSync(join(root, 'windows', file), 'package');
+  }
+  const complete = validate();
+  assert.equal(complete.status, 0, complete.stderr);
 });
 
 test('a new mobile draft can be used before it appears in the releases list', () => {
@@ -84,6 +112,7 @@ test('prerelease titles describe only platforms with an installable package', ()
   const script = fileURLToPath(new URL('./prerelease-title.mjs', import.meta.url));
   for (const [version, files, expected] of [
     ['3.0.2-beta.2', ['a.hap', 'one.apk', 'two.apk'], 'v3.0.2 Beta 2 (Android & HarmonyOS)'],
+    ['3.0.2-beta.3', ['a.hap', 'one.apk', 'installer.exe', 'portable.zip'], 'v3.0.2 Beta 3 (Android, HarmonyOS & Windows)'],
     ['2.3.12-test.1', ['device.hap', 'HarmonyOS-TESTING.md'], 'v2.3.12 Test 1 (HarmonyOS)'],
     ['9.8.7-rc.10', packages, 'v9.8.7 RC 10 (Android, HarmonyOS, iOS, Windows, macOS & Linux)'],
   ]) {

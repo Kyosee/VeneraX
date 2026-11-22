@@ -18,17 +18,25 @@ for abi in arm64-v8a armeabi-v7a x86_64; do
   assets+=("$root/android/VeneraX-$version-$abi.apk")
 done
 assets+=("$root/harmonyos/VeneraX-$app_version-harmonyos-unsigned.hap")
+scope=${PREVIEW_SCOPE:-mobile}
+case "$scope" in
+  mobile) ;;
+  mobile-windows)
+    assets+=("$root/windows/VeneraX-$version-windows-installer.exe" "$root/windows/VeneraX-$version-windows.zip")
+    ;;
+  *) fail "Unknown preview scope: $scope" ;;
+esac
 for asset in "${assets[@]}"; do
   [[ -f "$asset" && -s "$asset" ]] || fail "Missing or empty package: ${asset##*/}"
 done
-count=$(find "$root/android" "$root/harmonyos" -type f \( -iname '*.apk' -o -iname '*.hap' \) -printf x | wc -c)
+count=$(find "$root" -type f \( -iname '*.apk' -o -iname '*.hap' -o -iname '*.exe' -o -iname '*.zip' \) -printf x | wc -c)
 (( count == ${#assets[@]} )) || fail "Unexpected additional packages in the downloaded artifacts."
 
 repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
 title=$(node .github/scripts/prerelease-title.mjs "$version" "${assets[@]}")
 body_file="$root/release-body.md"
 {
-  node .github/scripts/release-downloads.mjs "$repo_url" "$tag" "$app_version" mobile
+  node .github/scripts/release-downloads.mjs "$repo_url" "$tag" "$app_version" "$scope"
   printf '\n> **Language / 语言**: [English](%s/blob/%s/%s.en.md) · [简体中文](%s/blob/%s/%s.zh-CN.md)\n\n' \
     "$repo_url" "$tag" "$notes" "$repo_url" "$tag" "$notes"
   cat "$notes.en.md"

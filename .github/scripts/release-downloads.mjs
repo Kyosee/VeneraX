@@ -25,13 +25,16 @@ export function releaseDownloads(repositoryUrl, tag, appVersion, scope = 'all') 
     ].join(' · ')],
     ['HarmonyOS', link('ARM64 真机 / Unsigned HAP', `VeneraX-${appVersion}-harmonyos-unsigned.hap`), '—'],
   ];
-  if (scope === 'mobile') {
+  if (scope === 'mobile' || scope === 'mobile-windows') {
+    const windows = scope === 'mobile-windows';
     return [
       '## 下载安装 / Downloads', '',
-      '本次预览版提供 Android 和鸿蒙安装包。 / This preview includes Android and HarmonyOS.', '',
+      windows
+        ? '本次预览版提供 Android、Windows 和鸿蒙安装包。 / This preview includes Android, Windows and HarmonyOS.'
+        : '本次预览版提供 Android 和鸿蒙安装包。 / This preview includes Android and HarmonyOS.', '',
       '| 平台 / Platform | 安装包 / Package | 其他版本 / Alternatives |',
       '| --- | --- | --- |',
-      ...rows.filter(([platform]) => platform === 'Android' || platform === 'HarmonyOS')
+      ...rows.filter(([platform]) => platform === 'Android' || platform === 'HarmonyOS' || (windows && platform === 'Windows'))
         .map(row => `| ${row.join(' | ')} |`), '',
       '不确定 Android 架构时选通用 APK。鸿蒙真机安装前需自行签名。',
       'Use the universal APK if unsure of your Android architecture. Sign the HarmonyOS HAP before installing it on a device.', '',

@@ -23,6 +23,10 @@ on:
           - harmonyos
           - native-cache
           - mobile-preview
+      preview_windows:
+        description: "Include Windows x64 in the Android and HarmonyOS preview"
+        type: boolean
+        default: false
       appimage_run_id:
         description: "Existing build run to test AppImages without rebuilding (platform: linux)"
         type: string
@@ -284,7 +288,7 @@ jobs:
           retention-days: 7
   Build_Windows:
     runs-on: windows-latest
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' || (inputs.platform == 'mobile-preview' && inputs.preview_windows) }}
     steps:
       - uses: actions/checkout@v7
       - name: install dependencies
@@ -615,8 +619,11 @@ jobs:
           warm-only: 'true'
 
   Publish_Mobile_Preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'mobile-preview'
-    needs: [Build_Android, Build_HarmonyOS]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.platform == 'mobile-preview'
+          && needs.Build_Android.result == 'success' && needs.Build_HarmonyOS.result == 'success'
+          && needs.Build_Windows.result == (inputs.preview_windows && 'success' || 'skipped') }}
+    needs: [Build_Android, Build_HarmonyOS, Build_Windows]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -633,9 +640,15 @@ jobs:
         with:
           name: harmonyos_build_arm64
           path: ${{ runner.temp }}/mobile-preview/harmonyos
-      - name: Publish validated Android and HarmonyOS packages
+      - uses: actions/download-artifact@v8
+        if: inputs.preview_windows
+        with:
+          name: windows_build
+          path: ${{ runner.temp }}/mobile-preview/windows
+      - name: Publish validated preview packages
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIEW_SCOPE: ${{ inputs.preview_windows && 'mobile-windows' || 'mobile' }}
         run: bash .github/scripts/publish-mobile-preview.sh
 
   Test_AppImage:
