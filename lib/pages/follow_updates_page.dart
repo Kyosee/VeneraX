@@ -986,7 +986,6 @@ abstract class FollowUpdatesService {
 
   static bool _cancelRequested = false;
 
-  static Timer? _checkerTimer;
   static AppLifecycleListener? _lifecycle;
   static bool _systemCheck = false;
   static bool _scheduledActive = false;
@@ -1132,6 +1131,7 @@ abstract class FollowUpdatesService {
     if (_isInitialized) return;
     _isInitialized = true;
     FollowUpdatesScheduler.listen(check: _checkScheduled, stop: _stopScheduled);
+    FollowUpdatesScheduler.startPolling(_check);
     unawaited(FollowUpdatesScheduler.sync());
     if (App.isOhos || App.isAndroid) {
       _lifecycle ??= AppLifecycleListener(
@@ -1160,16 +1160,6 @@ abstract class FollowUpdatesService {
     DataSync().addListener(() {
       updateFollowUpdatesUI();
       unawaited(FollowUpdatesScheduler.sync());
-    });
-    // Polling this often is cheap: the per-comic interval decides what actually
-    // gets fetched, so a tick with nothing due starts no task at all.
-    _checkerTimer ??= Timer.periodic(const Duration(minutes: 10), (timer) {
-      if (FollowUpdateScope.isPastFixedTime(
-        FollowUpdateScope.fixedTime,
-        DateTime.now(),
-      )) {
-        _check();
-      }
     });
   }
 }

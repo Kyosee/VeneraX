@@ -16,11 +16,13 @@ void main() {
   const keepAlive = MethodChannel('venera/background_keepalive');
   late Object? oldFolders;
   late Object? oldAllFolders;
+  late Object? oldFixedTime;
 
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     oldFolders = appdata.settings[FollowUpdateScope.foldersKey];
     oldAllFolders = appdata.settings[FollowUpdateScope.allFoldersKey];
+    oldFixedTime = appdata.settings[FollowUpdateScope.fixedTimeKey];
     appdata.settings[FollowUpdateScope.foldersKey] = <String>[];
     appdata.settings[FollowUpdateScope.allFoldersKey] = false;
   });
@@ -31,6 +33,7 @@ void main() {
     channel.setMethodCallHandler(null);
     appdata.settings[FollowUpdateScope.foldersKey] = oldFolders;
     appdata.settings[FollowUpdateScope.allFoldersKey] = oldAllFolders;
+    appdata.settings[FollowUpdateScope.fixedTimeKey] = oldFixedTime;
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -116,6 +119,35 @@ void main() {
       await FollowUpdatesScheduler.sync();
     }
     expect(calls, isEmpty);
+  });
+
+  test('scheduling sends the local fixed minute, including midnight', () async {
+    final minutes = <int?>[];
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      minutes.add((call.arguments as Map)['fixedMinute'] as int?);
+      return null;
+    });
+    appdata.settings[FollowUpdateScope.allFoldersKey] = true;
+    for (final value in ['21:00', '00:00', '', '25:00']) {
+      appdata.settings[FollowUpdateScope.fixedTimeKey] = value;
+      await FollowUpdatesScheduler.sync();
+    }
+    expect(minutes, [1260, 0, null, null]);
+  });
+
+  test('the UI poll wakes at the fixed time, including after midnight', () {
+    DateTime next(int hour, int minute, String fixedTime) =>
+        FollowUpdatesScheduler.nextPoll(
+          DateTime(2026, 11, 21, hour, minute),
+          fixedTime,
+        );
+    expect(next(20, 59, '21:00'), DateTime(2026, 11, 21, 21));
+    expect(next(21, 0, '21:00'), DateTime(2026, 11, 21, 21, 10));
+    expect(next(23, 58, '00:03'), DateTime(2026, 11, 22, 0, 3));
+    expect(next(8, 5, '21:00'), DateTime(2026, 11, 21, 8, 15));
+    expect(next(8, 5, ''), DateTime(2026, 11, 21, 8, 15));
   });
 
   test(

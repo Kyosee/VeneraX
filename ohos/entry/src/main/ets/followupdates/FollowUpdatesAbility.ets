@@ -5,7 +5,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { connection } from '@kit.NetworkKit';
 import { Any, FlutterEngine, MethodCall, MethodChannel, MethodResult } from '@ohos/flutter_ohos';
 import { DartEntrypoint } from '@ohos/flutter_ohos/src/main/ets/embedding/engine/dart/DartExecutor';
-import { FOLLOW_WORK_ID } from '../bridge/FollowSchedulerService';
+import { FollowSchedulerService, FOLLOW_DAILY_WORK_ID, FOLLOW_WORK_ID } from '../bridge/FollowSchedulerService';
 import { ReadingWidgetService } from '../widget/ReadingWidgetService';
 
 const FOLLOW_STAGES: string[] = ['data', 'translation', 'network', 'stores', 'sources', 'checks', 'cleanup'];
@@ -19,9 +19,17 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
   private lease?: fs.File;
   private deadline?: number;
   private stopping = false;
+  private activeWorkId?: number;
 
   onWorkStart(work: workScheduler.WorkInfo): void {
-    if (work.workId !== FOLLOW_WORK_ID || this.engine !== undefined) return;
+    if (work.workId !== FOLLOW_WORK_ID && work.workId !== FOLLOW_DAILY_WORK_ID) return;
+    if (this.activeWorkId !== undefined) {
+      if (this.activeWorkId !== work.workId) {
+        try { workScheduler.stopWork(work, false); } catch (_) {}
+      }
+      return;
+    }
+    this.activeWorkId = work.workId;
     this.stopping = false;
     console.info('VeneraX follow scheduler: started');
     try {
@@ -147,7 +155,7 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
   }
 
   onWorkStop(work: workScheduler.WorkInfo): void {
-    if (work.workId === FOLLOW_WORK_ID) this.requestStop(work);
+    if (work.workId === this.activeWorkId) this.requestStop(work);
   }
 
   private requestStop(work: workScheduler.WorkInfo): void {
@@ -163,6 +171,7 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
 
   private finish(work: workScheduler.WorkInfo): void {
     this.stopping = true;
+    this.activeWorkId = undefined;
     if (this.deadline !== undefined) clearTimeout(this.deadline);
     this.deadline = undefined;
     this.channel?.setMethodCallHandler(null);
@@ -185,5 +194,8 @@ export default class FollowUpdatesAbility extends WorkSchedulerExtensionAbility 
     try {
       workScheduler.stopWork(work, false);
     } catch (_) {}
+    FollowSchedulerService.rollDailyForward(this.context.filesDir).catch((): void => {
+      console.warn('VeneraX follow scheduler: calendar update unavailable');
+    });
   }
 }

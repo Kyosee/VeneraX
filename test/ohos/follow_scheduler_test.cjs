@@ -42,7 +42,7 @@ function call(handler, method, args = {}) {
 function harness(options = {}) {
   const config = { granted: true, ...options };
   const state = {
-    works: new Map(), starts: [], stops: [], leases: [], engines: [],
+    works: new Map(), starts: [], stops: [], leases: [], scheduleOwner: undefined, engines: [],
     events: [], timers: new Map(), intents: [], publishes: [], lockOwner: undefined,
   };
   const waiters = [];
@@ -52,6 +52,13 @@ function harness(options = {}) {
   const fs = {
     OpenMode: { CREATE: 1, READ_WRITE: 2 },
     openSync(filename, flags) {
+      if (filename === '/private/files/.follow-schedule-config.lock') {
+        return { schedule: true, async lock() {
+          while (state.scheduleOwner) await state.scheduleOwner.promise;
+          this.wait = deferred();
+          state.scheduleOwner = this.wait;
+        } };
+      }
       assert.equal(filename, '/private/files/.follow-scheduler.lock');
       assert.equal(flags, 3);
       if (config.openError) throw new Error('Open unavailable');
@@ -78,6 +85,14 @@ function harness(options = {}) {
       return lease;
     },
     closeSync(lease) {
+      if (lease.schedule) {
+        if (lease.wait) {
+          assert.equal(state.scheduleOwner, lease.wait);
+          state.scheduleOwner = undefined;
+          lease.wait.resolve();
+        }
+        return;
+      }
       assert.equal(lease.closed, false, 'A native lease may only be closed once');
       lease.closed = true;
       state.events.push(`closed:${lease.id}`);
@@ -93,6 +108,11 @@ function harness(options = {}) {
     NetworkType: { NETWORK_TYPE_ANY: 0 },
     async getWorkStatus(id) {
       const work = state.works.get(id);
+      if (id === 336 && config.pauseStatus) {
+        const pause = config.pauseStatus;
+        config.pauseStatus = undefined;
+        await pause.promise;
+      }
       if (!work) throw new Error('No registered work');
       return work;
     },
@@ -153,6 +173,10 @@ function harness(options = {}) {
 
   const context = vm.createContext({
     fs, workScheduler, FlutterEngine, MethodChannel, DartEntrypoint,
+    deviceInfo: { sdkApiVersion: config.sdkApiVersion ?? 26 },
+    Date: class extends Date {
+      constructor(...args) { super(...(args.length ? args : [config.now ?? Date.now()])); }
+    },
     ReadingWidgetService: class {
       constructor(filesDir) { assert.equal(filesDir, abilityContext.filesDir); }
     },
@@ -208,7 +232,7 @@ function harness(options = {}) {
     ability, service, config, state, work, fire,
     start: () => ability.onWorkStart(work),
     stop: () => ability.onWorkStop(work),
-    configure: (enabled) => call(service, 'configure', { enabled }),
+    configure: (enabled, fixedMinute) => call(service, 'configure', { enabled, fixedMinute }),
     ui: () => call(service, 'acquireUiData'),
     channel: () => state.engines.at(-1).channels.get(SCHEDULER),
     call: (method, args) => call(state.engines.at(-1).channels.get(SCHEDULER).handler, method, args),
@@ -250,6 +274,136 @@ test('configuration errors are reported once and do not poison later calls', asy
   assert.deepEqual(valid, success(null));
   assert.equal(h.state.starts.length, 1);
   assert.deepEqual(call(h.service, 'unknown'), [{ kind: 'notImplemented' }]);
+});
+
+test('a fixed time adds a daily job and repeated configuration keeps its original deadline', async () => {
+  const h = harness({ now: new Date(2026, 10, 21, 20, 59, 30).getTime() });
+  const minute = 21 * 60;
+  h.configure(true);
+  h.configure(true, minute);
+  await flush();
+  const regular = h.state.starts.findLast((job) => job.workId === 336);
+  const daily = h.state.starts.find((job) => job.workId !== 336);
+  assert.equal(regular.repeatCycleTime, 7200000);
+  assert.notEqual(daily.workId, regular.workId);
+  assert.equal(daily.earliestStartTime, 30000);
+  assert.equal(daily.repeatCycleTime, 86400000);
+  assert.equal(daily.networkType, regular.networkType);
+  assert.equal(daily.isPersisted, true);
+  h.config.now = new Date(2026, 10, 21, 21, 0, 4).getTime();
+  h.configure(true, minute);
+  await flush();
+  assert.equal(h.state.starts.length, 3);
+  assert.equal(h.state.stops.length, 1);
+  h.configure(true, 0);
+  await flush();
+  const midnight = h.state.starts.at(-1);
+  assert.equal(midnight.workId, daily.workId);
+  assert.equal(midnight.earliestStartTime, new Date(2026, 10, 22).getTime() - h.config.now);
+  assert.deepEqual(h.state.stops.at(-1), { work: daily, cancel: true });
+  h.configure(true);
+  await flush();
+  assert.deepEqual([...h.state.works.keys()], [regular.workId]);
+  h.configure(true, minute);
+  h.configure(false, minute);
+  await flush();
+  assert.equal(h.state.works.size, 0);
+});
+
+test('older HarmonyOS versions retain the regular job when a fixed time is set', async () => {
+  const h = harness({ sdkApiVersion: 21 });
+  const result = h.configure(true, 21 * 60);
+  await flush();
+  assert.deepEqual(result, success(null));
+  assert.equal(h.state.starts.length, 1);
+  assert.equal(h.state.starts[0].workId, 336);
+  assert.equal(h.state.starts[0].earliestStartTime, undefined);
+});
+
+test('a delayed daily wake re-arms the local time on successive days without the UI', async () => {
+  const h = harness({ now: new Date(2026, 10, 21, 18).getTime() });
+  h.configure(true, 21 * 60);
+  await flush();
+  const [regular, daily] = h.state.starts;
+  for (const day of [21, 22]) {
+    h.config.now = new Date(2026, 10, day, 22, 35).getTime();
+    h.ability.onWorkStart(h.state.works.get(daily.workId));
+    h.call('finished');
+    h.fire(0);
+    await flush();
+    const next = h.state.works.get(daily.workId);
+    assert.equal(next.earliestStartTime, new Date(2026, 10, day + 1, 21).getTime() - h.config.now);
+    assert.deepEqual(copy(h.state.works.get(regular.workId)), regular);
+  }
+  h.config.now = new Date(2026, 10, 24, 9).getTime();
+  h.start();
+  h.call('finished');
+  h.fire(0);
+  await flush();
+  assert.equal(h.state.works.get(daily.workId).earliestStartTime, 12 * 60 * 60 * 1000);
+});
+
+test('disabling waits for an in-flight calendar update and leaves both jobs removed', async () => {
+  const h = harness({ now: new Date(2026, 10, 21, 18).getTime() });
+  h.configure(true, 21 * 60);
+  await flush();
+  h.config.now = new Date(2026, 10, 21, 22).getTime();
+  const daily = h.state.starts.at(-1);
+  h.ability.onWorkStart(daily);
+  h.call('finished');
+  const pause = deferred();
+  h.config.pauseStatus = pause;
+  h.fire(0);
+  await flush();
+  const disabling = h.configure(false);
+  await flush();
+  assert.deepEqual(disabling, []);
+  pause.resolve();
+  await flush();
+  assert.deepEqual(disabling, success(null));
+  assert.equal(h.state.works.size, 0);
+});
+
+test('a late callback after changing, clearing or disabling a schedule cannot restore its old time', async () => {
+  const h = harness({ now: new Date(2026, 10, 21, 18).getTime() });
+  h.configure(true, 21 * 60);
+  await flush();
+  const stale = h.state.starts.at(-1);
+  h.config.now = new Date(2026, 10, 21, 21, 37).getTime();
+  for (const [enabled, minute] of [[true, 22 * 60], [true, undefined], [false, undefined]]) {
+    h.ability.onWorkStart(stale);
+    h.configure(enabled, minute);
+    h.call('finished');
+    h.fire(0);
+    await flush();
+    const daily = h.state.works.get(stale.workId);
+    if (minute !== undefined) assert.equal(daily.parameters.fixedMinute, minute);
+    else assert.equal(daily, undefined);
+    if (!enabled) assert.equal(h.state.works.size, 0);
+  }
+});
+
+test('the daily worker owns its lease until its own stop or UI handoff', async () => {
+  const h = harness();
+  h.configure(true, 21 * 60);
+  await flush();
+  const [regular, daily] = h.state.starts;
+  h.ability.onWorkStart(daily);
+  h.ability.onWorkStart(regular);
+  h.ability.onWorkStop(regular);
+  assert.equal(h.state.engines.length, 1);
+  assert.deepEqual(h.channel().events, []);
+  assert.deepEqual(h.state.stops.at(-1), { work: regular, cancel: false });
+  const waiting = h.ui();
+  await flush();
+  assert.deepEqual(waiting, []);
+  assert.deepEqual(h.state.stops.at(-1), { work: daily, cancel: false });
+  h.ability.onWorkStop(daily);
+  h.fire(5000);
+  await flush();
+  assert.deepEqual(waiting, success(null));
+  assert.equal(h.state.works.size, 2);
+  assert.deepEqual(h.state.events.slice(-3), ['destroyed:0', 'closed:0', 'locked:1']);
 });
 
 test('the UI lease blocks background startup and is reused by later UI calls', async () => {
