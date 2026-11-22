@@ -228,12 +228,12 @@ Long-press the "Pre-translate" button on the detail page to open:
 Other options:
 
 - To redo only some chapters: select them in the chapter picker and use "Re-translate selected".
-- If the translation is poorly masked: Settings → AI Translation → Advanced translation settings → "Text removal". "Smart erase" (default) reconstructs the bubble's background and screentone; "Color patch" covers the area with a solid block — faster, with harder edges.
+- If the original lettering leaves smudges, open Settings → AI Translation → Advanced translation settings → Text removal. Smart erase uses nearby pixels to restore the background and screentone. Color patch fills the original strokes with a nearby background color.
 
 <!--anchor:translation-performance-->
 ### Performance and usage
 
-Translated text is stored, so a page normally runs OCR and an LLM request only once; re-reading does not spend more credits. Switching between "Smart erase" and "Color patch" only redraws the page from stored text, without repeating OCR or translation. Settings → AI Translation → Help & cleanup → "Clear translation results" frees the space and keeps the language and glossary learned per comic. Results written by older versions using the old cache format are discarded automatically and must be translated again.
+Each page normally needs one round of OCR and translation. Changing the text removal mode or upgrading the renderer redraws the page from stored translations. If the old 32-group limit skipped text, choose “Re-translate this page” to recognize it and send a new translation request. Settings → AI Translation → Help & cleanup → “Clear translation results” frees storage and keeps each comic's learned language and glossary.
 
 If throughput is poor or the provider returns rate-limit errors, adjust "Performance mode" in Settings → AI Translation. The other options below are under "More settings" → "Advanced translation settings" on that page:
 

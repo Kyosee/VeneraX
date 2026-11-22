@@ -78,25 +78,15 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              "Models are optional. Turn an enhancement off to use the default processing and keep its files."
+              "Turn off dialogue detection enhancement to use the default rules and keep the downloaded model."
                   .tl,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ).toSliver(),
-          for (final component in [
-            ...TranslationModels.enhancements,
-            if (TranslationModelStore.instance
-                    .stateOf(TranslationModels.bubblePop)
-                    .downloading ||
-                TranslationModels.bubblePop.isInstalled)
-              TranslationModels.bubblePop,
-          ]) ...[
+          for (final component in TranslationModels.enhancements) ...[
             _buildComponent(context, component, requiredIds).toSliver(),
             _buildEnhancementDetails(context, component).toSliver(),
-            if (component.isInstalled &&
-                (component == TranslationModels.rtDetr ||
-                    (component == TranslationModels.bubblePop &&
-                        !TranslationModels.rtDetr.isInstalled)))
+            if (component.isInstalled)
               _SwitchSetting(
                 title: "Use dialogue detection enhancement".tl,
                 settingKey: TranslationConfig.bubbleEnhancementKey,
@@ -212,7 +202,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     BuildContext context,
     ModelComponent component,
   ) {
-    const bubbleSource = 'https://github.com/letmutex/bubble-pop';
     const strokeSource = 'https://github.com/dmMaze/comic-text-detector';
     const strokeRevision = '440b978563c71b758e31aaa315d100faba1efa2f';
     const rtDetrSource =
@@ -231,14 +220,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         '$rtDetrSource/tree/${TranslationModels.rtDetrRevision}',
         'Apache-2.0',
         '$rtDetrSource/blob/${TranslationModels.rtDetrRevision}/README.md',
-      ),
-      TranslationModels.bubblePop => (
-        "Helps Dialogue only find speech bubbles. VeneraX keeps letmutex’s original weights and adjusts the input and decoder to 576 × 768 on this device."
-            .tl,
-        'letmutex/BubblePop',
-        '$bubbleSource/tree/${TranslationModels.bubblePopRevision}',
-        'Apache-2.0',
-        '$bubbleSource/blob/${TranslationModels.bubblePopRevision}/LICENSE',
       ),
       _ => (
         "This older model is no longer used. You can delete its files.".tl,

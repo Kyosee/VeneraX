@@ -1,105 +1,7 @@
 part of 'translation_worker.dart';
 
-bool _fitsBubbleModel(RgbaImage image) =>
+bool _fitsRtDetrPage(RgbaImage image) =>
     image.width * 3 >= image.height && image.height * 2 >= image.width;
-
-(int, int) _fitPage(RgbaImage image, int w, int h) {
-  var scale = math.min(w / image.width, h / image.height);
-  return (
-    (image.width * scale).round().clamp(1, w),
-    (image.height * scale).round().clamp(1, h),
-  );
-}
-
-// Only 256 input values and 65,536 distinct output values exist in this model.
-final _normalizedGray = _grayTable();
-final _logitProbability = _probabilityTable();
-
-Uint16List _grayTable() {
-  var normalized = Float32List(256);
-  var bits = Uint32List.view(normalized.buffer);
-  var result = Uint16List(256);
-  for (var i = 0; i < 256; i++) {
-    normalized[i] = (i / 255 - .449) / .226;
-    var value = bits[i];
-    // Every nonzero normalized byte is within the normal binary16 range.
-    var biased = (value & 0x7fffffff) - 0x38000000;
-    var rounded = (biased + 0xfff + ((biased >> 13) & 1)) >> 13;
-    result[i] = ((value >> 16) & 0x8000) | rounded;
-  }
-  return result;
-}
-
-Uint8List _probabilityTable() {
-  var scores = Uint8List(65536);
-  for (var exponent = 0; exponent < 32; exponent++) {
-    var unit = math.pow(2, math.max(1, exponent) - 25);
-    for (var fraction = 0; fraction < 1024; fraction++) {
-      var index = exponent * 1024 + fraction;
-      if (exponent == 31 && fraction != 0) continue;
-      var magnitude = exponent == 31
-          ? double.infinity
-          : (exponent == 0 ? fraction : fraction + 1024) * unit;
-      var score = (255 / (1 + math.exp(-magnitude))).round();
-      scores[index] = score;
-      scores[index + 32768] = 255 - score;
-    }
-  }
-  return scores;
-}
-
-/// Assign each OCR line to one instance in the author's fixed NHWC model.
-List<List<IntRect>> modelDialogueGroups(
-  RgbaImage image,
-  List<IntRect> boxes,
-  OrtFfiSession session,
-) {
-  const width = bubblePopWidth, height = bubblePopHeight;
-  var (w, h) = _fitPage(image, width, height);
-  var dx = (width - w) ~/ 2, dy = (height - h) ~/ 2;
-  var page = IntRect(0, 0, image.width, image.height);
-  var resized = _resizeRegion(image, page, w, h);
-  var input = Uint16List(width * height)
-    ..fillRange(0, width * height, _normalizedGray[255]);
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      var p = (y * w + x) * 4;
-      var gray =
-          (77 * resized[p] +
-              150 * resized[p + 1] +
-              29 * resized[p + 2] +
-              128) >>
-          8;
-      input[(y + dy) * width + x + dx] = _normalizedGray[gray];
-    }
-  }
-  return session.runMapped(
-    {
-      'image': OrtInput.float16(input, const [1, height, width, 1]),
-    },
-    'logits',
-    (data, shape) {
-      if (data is! Uint16List ||
-          !listEquals(shape, const [1, height, width, 3])) {
-        throw StateError('Unexpected BubblePop logits');
-      }
-      // Merge mask and confidence on a half-scale grid; never upsample to a
-      // potentially huge page, or copy the full 3-channel native output.
-      var mw = (w + 1) ~/ 2, mh = (h + 1) ~/ 2;
-      var scores = Uint8List(mw * mh);
-      for (var y = 0; y < mh; y++) {
-        for (var x = 0; x < mw; x++) {
-          var p = ((dy + y * 2) * width + dx + x * 2) * 3;
-          var mask = _logitProbability[data[p]];
-          if (mask >= 128) {
-            scores[y * mw + x] = (mask + _logitProbability[data[p + 2]]) ~/ 2;
-          }
-        }
-      }
-      return _DialogueMap(mw, mh, scores: scores).groups(page, boxes);
-    },
-  );
-}
 
 /// Comic Translate predicts bubble, inside-text and outside-text boxes together.
 List<List<IntRect>> rtDetrDialogueGroups(
@@ -352,35 +254,30 @@ _DialogueMap _backgroundMap(RgbaImage image, IntRect tile) {
       }
     }
   }
-  return _DialogueMap(width, height, colors: colors);
+  return _DialogueMap(width, height, colors);
 }
 
 class _DialogueMap {
-  _DialogueMap(this.w, this.h, {this.colors, this.scores})
+  _DialogueMap(this.w, this.h, this.colors)
     : labels = Int32List(w * h),
       queue = Int32List(w * h);
   final int w, h;
-  final Uint32List? colors;
-  final Uint8List? scores;
+  final Uint32List colors;
   final Int32List labels, queue;
   final bounds = <IntRect>[];
 
   int _component(int seed) {
     if (labels[seed] != 0) return labels[seed];
-    var color = colors?[seed];
-    if (color == 0 || scores?[seed] == 0) return -1;
+    final color = colors[seed];
+    if (color == 0) return -1;
     var head = 0, tail = 1;
-    var l = w, t = h, r = 0, b = 0, total = 0;
+    var l = w, t = h, r = 0, b = 0;
     labels[seed] = -1;
     queue[0] = seed;
     void visit(int i) {
       if (labels[i] != 0) return;
-      if (color != null) {
-        var candidate = colors![i];
-        if (candidate == 0 || !_nearColor(color, candidate, 25)) return;
-      } else if (scores![i] == 0) {
-        return;
-      }
+      final candidate = colors[i];
+      if (candidate == 0 || !_nearColor(color, candidate, 25)) return;
       labels[i] = -1;
       queue[tail++] = i;
     }
@@ -392,7 +289,6 @@ class _DialogueMap {
       if (y < t) t = y;
       if (x > r) r = x;
       if (y > b) b = y;
-      total += scores?[i] ?? 0;
       if (x != 0) visit(i - 1);
       if (x != w - 1) visit(i + 1);
       if (y != 0) visit(i - w);
@@ -405,8 +301,7 @@ class _DialogueMap {
         b == h - 1 ||
         bw < 8 ||
         bh < 8 ||
-        tail < bw * bh * .30 ||
-        (scores != null && total < 160 * tail)) {
+        tail < bw * bh * .30) {
       return -1;
     }
     // Row spans measure the outer silhouette without counting text holes.
@@ -468,8 +363,7 @@ class _DialogueMap {
       var winner = votes.entries.reduce((a, b) => a.value >= b.value ? a : b);
       var runner =
           votes.values.fold(0, (total, value) => total + value) - winner.value;
-      if (winner.value >= (scores == null ? 16 : 32) &&
-          winner.value > runner * 2) {
+      if (winner.value >= 16 && winner.value > runner * 2) {
         (groups[winner.key] ??= []).add(line);
       }
     }

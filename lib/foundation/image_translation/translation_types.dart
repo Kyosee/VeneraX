@@ -192,9 +192,7 @@ class PipelineCanceled implements Exception {
 /// switching it re-renders from the already-stored text result without
 /// re-running OCR or the LLM, and switching back serves the earlier render.
 enum InpaintMode {
-  /// Legacy: cover each region with an opaque rounded patch in the sampled
-  /// background colour. Fast and universal, but a big bubble becomes a big
-  /// solid block and a textured/translucent bubble gets a pasted-on look.
+  /// Fill source strokes with a sampled background colour when possible.
   patch('p'),
 
   /// Pure-Dart erase: estimate the text strokes inside each region and fill

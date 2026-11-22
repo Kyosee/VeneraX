@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
-import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
 import 'package:venera/pages/settings/settings_page.dart';
@@ -63,9 +62,8 @@ void main() {
   );
 
   test(
-    'optional models are independent of OCR readiness and each other',
+    'dialogue enhancement is optional and switching it off preserves its files',
     () async {
-      const bubble = TranslationModels.bubblePop;
       const dialogue = TranslationModels.rtDetr;
       const stroke = TranslationModels.legacyTextStrokes;
       final store = TranslationModelStore.instance;
@@ -80,24 +78,12 @@ void main() {
       expect(TranslationModels.isReadyFor('en'), isTrue);
       expect(TranslationModels.enhancements, [dialogue]);
       expect(TranslationModels.find('rt_detr'), same(dialogue));
-      expect(TranslationModels.find('bubble_pop'), same(bubble));
-      expect(TranslationModels.all, containsAll([dialogue, bubble]));
+      expect(TranslationModels.all, contains(dialogue));
       expect(TranslationModels.find(stroke.id), isNull);
       expect(TranslationModels.requiredFor('en'), isNot(contains(dialogue)));
-      expect(TranslationModels.requiredFor('en'), isNot(contains(bubble)));
       expect(TranslationModels.requiredFor('en'), isNot(contains(stroke)));
-      expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
 
-      final original = bubble.files.single;
-      makeFile(bubble, original.name, original.size!);
-      makeFile(bubble, ModelComponent.markerName, 0);
-      expect(bubble.isInstalled, isFalse);
-      makeFile(bubble, bubblePopRuntimeFileName, 1);
-      expect(
-        TranslationModels.workerPaths('en').bubbleModel,
-        bubble.filePath(bubblePopRuntimeFileName),
-      );
       final dialogueFile = dialogue.files.single;
       makeFile(dialogue, dialogueFile.name, dialogueFile.size!);
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
@@ -106,40 +92,33 @@ void main() {
         TranslationModels.workerPaths('en').rtDetrModel,
         dialogue.filePath(dialogueFile.name),
       );
-      expect(TranslationModels.workerPaths('en').bubbleModel, isNotNull);
 
       appdata.settings[bubbleKey] = false;
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
-      expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
-      expect([dialogue, bubble].every((model) => model.isInstalled), isTrue);
+      expect(dialogue.isInstalled, isTrue);
       appdata.settings[bubbleKey] = true;
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNotNull);
-      expect(TranslationModels.workerPaths('en').bubbleModel, isNotNull);
 
-      await store.delete(bubble);
-      expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
-      expect(dialogue.isInstalled, isTrue);
       await store.delete(dialogue);
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
       expect(TranslationModels.isReadyFor('en'), isTrue);
     },
   );
 
-  for (final model in [TranslationModels.rtDetr, TranslationModels.bubblePop]) {
-    test('a damaged ${model.id} download is removed and retryable', () async {
-      final store = TranslationModelStore.instance;
-      makeFile(model, model.files.single.name, model.files.single.size!);
-      await store.download(model);
-      expect(model.isInstalled, isFalse);
-      expect(Directory(model.directory).existsSync(), isFalse);
-      expect(
-        store.stateOf(model).error,
-        contains('Model file differs from the official release'),
-      );
-      expect(store.stateOf(model).downloading, isFalse);
-      await store.delete(model);
-    });
-  }
+  test('a damaged RT-DETR download is removed and retryable', () async {
+    const model = TranslationModels.rtDetr;
+    final store = TranslationModelStore.instance;
+    makeFile(model, model.files.single.name, model.files.single.size!);
+    await store.download(model);
+    expect(model.isInstalled, isFalse);
+    expect(Directory(model.directory).existsSync(), isFalse);
+    expect(
+      store.stateOf(model).error,
+      contains('Model file differs from the official release'),
+    );
+    expect(store.stateOf(model).downloading, isFalse);
+    await store.delete(model);
+  });
 
   test(
     'retired CTD never downloads and partial files can be removed',
@@ -217,9 +196,6 @@ void main() {
       );
       expect(find.text('dmMaze/CTD'), findsOneWidget);
       expect(find.text('Model release'.tl), findsOneWidget);
-      await tester.drag(scrollable, const Offset(0, -800));
-      await tester.pumpAndSettle();
-      expect(find.text('letmutex/BubblePop'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -283,48 +259,6 @@ void main() {
         findsNothing,
       );
       expect(tester.takeException(), isNull);
-    });
-  }
-
-  for (final installed in [false, true]) {
-    testWidgets('legacy BubblePop remains manageable (installed=$installed)', (
-      tester,
-    ) async {
-      const model = TranslationModels.bubblePop;
-      final store = TranslationModelStore.instance;
-      if (installed) {
-        makeFile(model, model.files.single.name, model.files.single.size!);
-        makeFile(model, bubblePopRuntimeFileName, 1);
-        makeFile(model, ModelComponent.markerName, 0);
-      } else {
-        store.stateOf(model).downloading = true;
-        addTearDown(() => store.stateOf(model).downloading = false);
-      }
-      await tester.pumpWidget(
-        const MaterialApp(home: TranslationModelsPage(sourceLang: 'en')),
-      );
-      await tester.scrollUntilVisible(
-        find.text(model.displayName),
-        240,
-        scrollable: find.byType(Scrollable).first,
-      );
-      final tile = find.widgetWithText(ListTile, model.displayName);
-      expect(
-        find.descendant(
-          of: tile,
-          matching: find.byIcon(installed ? Icons.delete_outline : Icons.close),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('letmutex/BubblePop'), findsOneWidget);
-      if (installed) {
-        await tester.scrollUntilVisible(
-          find.text('Use dialogue detection enhancement'),
-          160,
-          scrollable: find.byType(Scrollable).first,
-        );
-        expect(find.text('Use dialogue detection enhancement'), findsOneWidget);
-      }
     });
   }
 }

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
-import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/image_translation/model_file_download.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_sources.dart';
@@ -48,7 +47,6 @@ class ModelComponent {
     required this.files,
     required this.approxSizeBytes,
     this.marker = false,
-    this.preparedFile,
   });
 
   final String id;
@@ -57,9 +55,8 @@ class ModelComponent {
   /// Rough total download size, for display before downloading.
   final int approxSizeBytes;
 
-  /// Mark the component installed after its validation or preparation succeeds.
+  /// Mark the component installed after its validation succeeds.
   final bool marker;
-  final String? preparedFile;
 
   String get displayName => switch (id) {
     'text_detector' => "Text detector".tl,
@@ -69,7 +66,6 @@ class ModelComponent {
     'ocr_en' => "English OCR".tl,
     'ocr_ko' => "Korean OCR".tl,
     'rt_detr' => "RT-DETR INT8 · Dialogue detection".tl,
-    'bubble_pop' => "BubblePop · Speech bubbles".tl,
     'comic_text_detector' => "CTD · Text strokes".tl,
     _ => id,
   };
@@ -82,13 +78,6 @@ class ModelComponent {
     if (files.isEmpty) return Directory(directory).existsSync();
     for (var file in files) {
       if (!file.isComplete(File(filePath(file.name)).statSync())) {
-        return false;
-      }
-    }
-    final prepared = preparedFile;
-    if (prepared != null) {
-      final stat = File(filePath(prepared)).statSync();
-      if (stat.type != FileSystemEntityType.file || stat.size <= 0) {
         return false;
       }
     }
@@ -212,25 +201,7 @@ abstract class TranslationModels {
       ),
     ],
   );
-  static const bubblePopRevision = 'c8f207e98fc39065096e2ff602b65045051c447b';
-  static const bubblePop = ModelComponent(
-    id: 'bubble_pop',
-    approxSizeBytes: 1904999,
-    marker: true,
-    preparedFile: bubblePopRuntimeFileName,
-    files: [
-      ModelFile(
-        'model_fp16.onnx',
-        [
-          'https://raw.githubusercontent.com/letmutex/bubble-pop/$bubblePopRevision/model_fp16.onnx',
-        ],
-        size: 1904999,
-        sha256Digest:
-            '2c1a2cec608ba68ed1e2326570d47622db5920127bf53a80e713d393c74192d7',
-      ),
-    ],
-  );
-  // Older versions stored CTD here. Keep partial downloads removable too.
+  // Development builds stored CTD here. Keep partial downloads removable too.
   static const legacyTextStrokes = ModelComponent(
     id: 'comic_text_detector',
     approxSizeBytes: 0,
@@ -238,7 +209,7 @@ abstract class TranslationModels {
   );
   static const recognizers = [ocrJa, ocrZhV5, ocrZh, ocrEn, ocrKo];
   static const enhancements = [rtDetr];
-  static const all = [detector, ...recognizers, ...enhancements, bubblePop];
+  static const all = [detector, ...recognizers, ...enhancements];
 
   static ModelComponent? find(String id) {
     for (var c in all) {
@@ -289,9 +260,6 @@ abstract class TranslationModels {
       detector: activeDetector.filePath('det.onnx'),
       rtDetrModel: useBubbles && rtDetr.isInstalled
           ? rtDetr.filePath(rtDetr.files.single.name)
-          : null,
-      bubbleModel: useBubbles && bubblePop.isInstalled
-          ? bubblePop.filePath(bubblePopRuntimeFileName)
           : null,
       jaEncoder: hasJa ? ocrJa.filePath('encoder.onnx') : null,
       jaDecoder: hasJa ? ocrJa.filePath('decoder.onnx') : null,
@@ -576,9 +544,6 @@ class TranslationModelStore with ChangeNotifier {
                 'Model file differs from the official release'.tl,
               );
             }
-          }
-          if (component == TranslationModels.bubblePop) {
-            await prepareBubblePopModel(component.filePath('model_fp16.onnx'));
           }
           await verify?.call();
         } catch (_) {

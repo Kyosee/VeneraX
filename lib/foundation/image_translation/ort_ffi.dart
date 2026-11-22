@@ -28,7 +28,6 @@ class OrtRuntime {
   // ONNXTensorElementDataType
   static const typeFloat32 = 1;
   static const typeInt64 = 7;
-  static const typeFloat16 = 10;
 
   static OrtRuntime open() {
     if (_instance != null) {
@@ -215,20 +214,12 @@ class OrtRuntime {
   }
 }
 
-/// A typed input tensor. Float16 data contains IEEE 754 binary16 bit patterns.
+/// A typed input tensor for the OCR and dialogue detectors.
 class OrtInput {
-  OrtInput.float32(Float32List this.f32Data, this.shape)
-    : f16Data = null,
-      i64Data = null;
-  OrtInput.float16(Uint16List this.f16Data, this.shape)
-    : f32Data = null,
-      i64Data = null;
-  OrtInput.int64(Int64List this.i64Data, this.shape)
-    : f32Data = null,
-      f16Data = null;
+  OrtInput.float32(Float32List this.f32Data, this.shape) : i64Data = null;
+  OrtInput.int64(Int64List this.i64Data, this.shape) : f32Data = null;
 
   final Float32List? f32Data;
-  final Uint16List? f16Data;
   final Int64List? i64Data;
   final List<int> shape;
 }
@@ -417,16 +408,6 @@ class OrtFfiSession {
     });
   }
 
-  /// Reads a single native tensor before ORT releases it. The callback must
-  /// return owned data and must not retain the view.
-  T runMapped<T>(
-    Map<String, OrtInput> inputs,
-    String outputName,
-    T Function(TypedData data, List<int> shape) read,
-  ) => _execute(inputs, [
-    outputName,
-  ], (values) => _mapOutput(values.single, read));
-
   /// Reads several tensors from one inference. Views are valid inside [read].
   T runMappedOutputs<T>(
     Map<String, OrtInput> inputs,
@@ -536,13 +517,6 @@ class OrtFfiSession {
             dataPtr = p.cast();
             byteLength = data.length * 4;
             elementType = OrtRuntime.typeFloat32;
-          } else if (input.f16Data != null) {
-            var data = input.f16Data!;
-            var p = calloc<Uint16>(data.length);
-            p.asTypedList(data.length).setAll(0, data);
-            dataPtr = p.cast();
-            byteLength = data.length * 2;
-            elementType = OrtRuntime.typeFloat16;
           } else {
             var data = input.i64Data!;
             var p = calloc<Int64>(data.length);
@@ -745,10 +719,6 @@ class OrtFfiSession {
       return switch (type) {
         OrtRuntime.typeInt64 => read(
           dataOut.value.cast<Int64>().asTypedList(elementCount),
-          shape,
-        ),
-        OrtRuntime.typeFloat16 => read(
-          dataOut.value.cast<Uint16>().asTypedList(elementCount),
           shape,
         ),
         OrtRuntime.typeFloat32 => read(

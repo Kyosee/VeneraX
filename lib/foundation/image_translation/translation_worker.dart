@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
@@ -21,7 +20,6 @@ part 'translation_enhancement.dart';
 class WorkerModelPaths {
   WorkerModelPaths({
     required this.detector,
-    this.bubbleModel,
     this.rtDetrModel,
     this.jaEncoder,
     this.jaDecoder,
@@ -34,7 +32,6 @@ class WorkerModelPaths {
   });
 
   final String detector;
-  final String? bubbleModel;
   final String? rtDetrModel;
   final String? jaEncoder;
   final String? jaDecoder;
@@ -363,12 +360,10 @@ class TranslationWorker {
     _trimIdleWorkers(poolSize);
     // Keep total ONNX intra-op threads ~= cores: dividing by the pool size
     // avoids oversubscribing the CPU (which would make more workers slower).
-    var useBubble =
-        dialogueOnly &&
-        (paths.rtDetrModel != null || paths.bubbleModel != null) &&
-        _fitsBubbleModel(image);
+    final useRtDetr =
+        dialogueOnly && paths.rtDetrModel != null && _fitsRtDetrPage(image);
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
-    var worker = _pickWorker(useBubble ? 1 : poolSize);
+    var worker = _pickWorker(useRtDetr ? 1 : poolSize);
     return worker
         .ocrPage(
           image,
@@ -642,14 +637,11 @@ class _WorkerState {
     }
     List<List<IntRect>>? groups;
     if (req.dialogueOnly) {
-      var rtDetr = req.paths.rtDetrModel;
-      var path = rtDetr ?? req.paths.bubbleModel;
-      if (path != null && _fitsBubbleModel(image)) {
+      final path = req.paths.rtDetrModel;
+      if (path != null && _fitsRtDetrPage(image)) {
         groups = _optional(
           path,
-          (session) => rtDetr != null
-              ? rtDetrDialogueGroups(image, boxes, session)
-              : modelDialogueGroups(image, boxes, session),
+          (session) => rtDetrDialogueGroups(image, boxes, session),
         );
       }
       groups ??= dialogueGroups(image, boxes);
