@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:venera/components/components.dart' show Select;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
@@ -90,44 +89,81 @@ void main() {
   }
 
   for (final width in [320.0, 900.0]) {
-    testWidgets('model settings can open, change and close twice at $width', (
-      tester,
-    ) async {
+    testWidgets('library actions share a column at $width', (tester) async {
       tester.view.physicalSize = Size(width, 720);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      installFixture(TranslationSources.detectorPresets.values.first.component);
       await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
-      const key = 'imageTranslationHfEndpoint';
-      final previous = appdata.settings[key];
-      final wasBackgroundTask = App.isBackgroundTask;
-      App.isBackgroundTask = true;
-      addTearDown(() {
-        App.isBackgroundTask = wasBackgroundTask;
-        appdata.settings[key] = previous;
-      });
-      for (var i = 0; i < 2; i++) {
-        await tester.tap(find.byTooltip('Model settings'));
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-        final wide = find.byType(Select);
-        final label = i == 0 ? 'hf-mirror.com' : 'HuggingFace';
-        await tester.tap(
-          wide.evaluate().isNotEmpty
-              ? wide
-              : find.text('Hugging Face download source'),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(label).hitTestable().last);
-        await tester.pumpAndSettle();
-        expect(
-          appdata.settings[key],
-          i == 0 ? 'https://hf-mirror.com' : 'https://huggingface.co',
-        );
-        await tester.tap(find.byTooltip('Close'));
-        await tester.pumpAndSettle();
-        expect(find.text('Hugging Face download source'), findsNothing);
-      }
+      await tester.tap(find.text('Model library'));
+      await tester.pumpAndSettle();
+      final arrow = tester
+          .getCenter(
+            find.descendant(
+              of: find.byType(DropdownButtonFormField<String>),
+              matching: find.byIcon(Icons.arrow_drop_down),
+            ),
+          )
+          .dx;
+      final download = tester
+          .getCenter(find.byIcon(Icons.download_outlined))
+          .dx;
+      final installed = tester.getCenter(find.byIcon(Icons.download_done)).dx;
+      expect([
+        arrow,
+        download,
+        installed,
+      ], everyElement(closeTo(download, 0.5)));
     });
+
+    testWidgets(
+      'download source is above the library tabs and persists at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 720);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const key = 'imageTranslationHfEndpoint';
+        final previous = appdata.settings[key];
+        final wasBackgroundTask = App.isBackgroundTask;
+        appdata.settings[key] = 'https://huggingface.co';
+        App.isBackgroundTask = true;
+        addTearDown(() {
+          App.isBackgroundTask = wasBackgroundTask;
+          appdata.settings[key] = previous;
+        });
+        await tester.pumpWidget(
+          const MaterialApp(home: TranslationModelsPage()),
+        );
+        final source = find.text('Hugging Face download source');
+        final tabs = find.byType(TabBar);
+        expect(source, findsOneWidget);
+        expect(
+          tester.getBottomLeft(source).dy,
+          lessThan(tester.getTopLeft(tabs).dy),
+        );
+        Future<void> selectSource(String current, String next) async {
+          await tester.tap(find.text(current).hitTestable());
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(next).hitTestable().last);
+          await tester.pumpAndSettle();
+        }
+
+        await selectSource('Hugging Face', 'hf-mirror.com');
+        expect(TranslationModelStore.hfEndpoint, 'https://hf-mirror.com');
+        await tester.tap(find.widgetWithText(Tab, 'Text recognition'));
+        await tester.pumpAndSettle();
+        expect(source, findsOneWidget);
+        expect(find.text('hf-mirror.com').hitTestable(), findsOneWidget);
+        await tester.tap(find.text('My models'));
+        await tester.pumpAndSettle();
+        expect(source, findsNothing);
+        await tester.tap(find.text('Model library'));
+        await tester.pumpAndSettle();
+        await selectSource('hf-mirror.com', 'Hugging Face');
+        expect(TranslationModelStore.hfEndpoint, 'https://huggingface.co');
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 
   test(

@@ -23,6 +23,8 @@ class TranslationModelsPage extends StatefulWidget {
 }
 
 class _TranslationModelsPageState extends State<TranslationModelsPage> {
+  static const _catalogPadding = EdgeInsets.symmetric(horizontal: 16);
+
   bool? _library;
   String _category = 'Text detection';
   String? _expandedId;
@@ -257,6 +259,12 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         installed.values.every((models) => models.isEmpty);
     final library = _library ??= empty;
     final colors = context.colorScheme;
+    final endpoint = TranslationModelStore.hfEndpoint;
+    final downloadSources = {
+      'https://huggingface.co': 'Hugging Face',
+      'https://hf-mirror.com': 'hf-mirror.com',
+    };
+    downloadSources.putIfAbsent(endpoint, () => endpoint);
     return Scaffold(
       body: SmoothCustomScrollView(
         scrollbarTopPadding: context.padding.top + 56,
@@ -284,11 +292,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
                     child: Text("Add custom detector".tl),
                   ),
                 ],
-              ),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                tooltip: "Model settings".tl,
-                onPressed: _openPreferences,
               ),
               IconButton(
                 icon: const Icon(Icons.help_outline),
@@ -351,6 +354,42 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
                 if (library) ...[
                   _SettingsGroup(
                     children: [
+                      Padding(
+                        padding: _catalogPadding,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: endpoint,
+                          decoration: InputDecoration(
+                            labelText: "Hugging Face download source".tl,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                            ),
+                            filled: false,
+                            border: InputBorder.none,
+                          ),
+                          icon: const SizedBox(
+                            width: kMinInteractiveDimension,
+                            child: Center(child: Icon(Icons.arrow_drop_down)),
+                          ),
+                          isExpanded: true,
+                          items: [
+                            for (final source in downloadSources.entries)
+                              DropdownMenuItem(
+                                value: source.key,
+                                child: Text(
+                                  source.value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (url) {
+                            if (url == null) return;
+                            appdata.settings['imageTranslationHfEndpoint'] =
+                                url;
+                            appdata.saveData();
+                          },
+                        ),
+                      ),
                       DefaultTabController(
                         initialIndex: catalog.keys.toList().indexOf(_category),
                         length: catalog.length,
@@ -521,42 +560,6 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
             child: selector,
           ),
       ],
-    );
-  }
-
-  void _openPreferences() {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        child: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Appbar(
-                  title: Text("Model settings".tl),
-                  backgroundColor: Colors.transparent,
-                  leading: IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: "Close".tl,
-                    onPressed: () => Navigator.pop(dialogContext),
-                  ),
-                ),
-                SelectSetting(
-                  title: "Hugging Face download source".tl,
-                  settingKey: "imageTranslationHfEndpoint",
-                  optionTranslation: const {
-                    'https://huggingface.co': "HuggingFace",
-                    'https://hf-mirror.com': "hf-mirror.com",
-                  },
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -778,6 +781,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
           Semantics(
             expanded: expanded,
             child: ListTile(
+              contentPadding: _library == true ? _catalogPadding : null,
               title:
                   selector ??
                   Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -802,7 +806,12 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
                   ],
                 ),
               ),
-              trailing: trailing,
+              trailing: _library == true
+                  ? SizedBox(
+                      width: kMinInteractiveDimension,
+                      child: Center(child: trailing),
+                    )
+                  : trailing,
               onTap: () =>
                   setState(() => _expandedId = expanded ? null : component.id),
             ),

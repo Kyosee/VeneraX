@@ -14,7 +14,7 @@
 | 拉丁字母、西里尔字母和泰文识别预设 | RapidAI/RapidOCR 在 ModelScope 发布三组 PP-OCRv5 mobile 权重及配套字典。文件名为 `<代号>_PP-OCRv5_rec_mobile.onnx` 和 `ppocrv5_<代号>_dict.txt`，代号分别为 `latin`、`cyrillic` 和 `th`。在「模型管理」中可选择预设或填写自定义文件来源。[RapidAI 文件目录](https://modelscope.cn/models/RapidAI/RapidOCR/files) |
 | 可选对白识别 | ogkalu（Comic Translate 作者）的 `detector-v4-s_int8.onnx`，固定修订 `16e8a622f91fabc6b5b65c96d32d1183f8843546`。该修订的模型卡标示 Apache-2.0，文件列表列出了这个 INT8 导出。关闭增强会保留文件。「全部文字」跳过该模型。[固定模型卡](https://huggingface.co/ogkalu/comic-text-and-bubble-detector/blob/16e8a622f91fabc6b5b65c96d32d1183f8843546/README.md) · [固定权重](https://huggingface.co/ogkalu/comic-text-and-bubble-detector/blob/16e8a622f91fabc6b5b65c96d32d1183f8843546/detector-v4-s_int8.onnx) |
 
-Hugging Face 默认使用其官方站点。选择 `hf-mirror.com` 会切换使用该下载端点的请求。ModelScope、字典 CDN 等地址仍按文件配置执行。自行填写检测模型 URL，或识别模型和字典 URL 时，应查看各文件发布者提供的许可。大部分 OCR 权重和词表跟随发布库的 `main` 或 `master`，重新下载时可能取得更新版本。[应用下载配置](https://github.com/Kyosee/VeneraX/blob/master/lib/foundation/image_translation/translation_models.dart)
+在「模型管理 → 模型库」的分类标签上方，可以选择 Hugging Face 官方站点或 `hf-mirror.com`。默认使用官方站点。ModelScope、字典 CDN 等地址仍按文件配置执行。自行填写检测模型 URL，或识别模型和字典 URL 时，应查看各文件发布者提供的许可。大部分 OCR 权重和词表跟随发布库的 `main` 或 `master`，重新下载时可能取得更新版本。[应用下载配置](https://github.com/Kyosee/VeneraX/blob/master/lib/foundation/image_translation/translation_models.dart)
 
 旧版模型库曾提供 SWHL/RapidOCR 发布的 PP-OCRv4 文字检测器和中文 / 拉丁字母识别器。这两份第三方 ONNX 文件已下架。设备上已有的文件可在「我的模型 → 旧版模型文件」查看大小或删除。
 
