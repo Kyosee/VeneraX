@@ -184,6 +184,114 @@ void main() {
 
   group('stroke boundaries', () {
     test(
+      'erases contrasting coloured ink with the same luminance as its paper',
+      () {
+        final image = _solid(80, 60, 230, 100, 80);
+        for (var y = 24; y < 36; y++) {
+          for (var x = 26; x < 54; x++) {
+            final i = (y * image.width + x) * 4;
+            image.pixels.setRange(i, i + 3, [25, 225, 0]);
+          }
+        }
+        TextInpainter.erase(image, [IntRect(20, 20, 60, 40)]);
+        final i = (30 * image.width + 40) * 4;
+        expect(image.pixels.sublist(i, i + 3), [230, 100, 80]);
+      },
+    );
+    test(
+      'erases both ink colours on a line crossed by differently coloured artwork',
+      () {
+        final image = _solid(140, 95, 245, 245, 245);
+        for (var x = 0; x < image.width; x++) {
+          for (var y = 38; y < 40; y++) {
+            final i = (y * image.width + x) * 4;
+            image.pixels.fillRange(i, i + 3, 66);
+          }
+        }
+        for (final x in [35, 48, 61, 76, 90]) {
+          for (var y = 29; y < 52; y++) {
+            for (var dx = 0; dx < 4; dx++) {
+              final i = (y * image.width + x + dx) * 4;
+              image.pixels.setRange(
+                i,
+                i + 3,
+                x < 76 ? [20, 20, 20] : [21, 21, 132],
+              );
+            }
+          }
+        }
+        TextInpainter.erase(image, [IntRect(33, 27, 98, 54)]);
+        expect(_lum(image, 36, 33), greaterThan(220));
+        expect(_lum(image, 77, 33), greaterThan(220));
+        expect(_lum(image, 20, 38), 66);
+      },
+    );
+    test(
+      'removes lettering while continuing a line across both crop edges',
+      () {
+        final image = _solid(100, 64, 245, 245, 245);
+        void ink(int x, int y) {
+          final i = (y * image.width + x) * 4;
+          image.pixels.fillRange(i, i + 3, 20);
+        }
+
+        for (var x = 0; x < 100; x++) {
+          ink(x, 31);
+        }
+        for (final x in [35, 50, 65]) {
+          for (var y = 20; y < 43; y++) {
+            for (var dx = 0; dx < 3; dx++) {
+              ink(x + dx, y);
+            }
+          }
+        }
+        TextInpainter.erase(image, [IntRect(28, 18, 72, 46)]);
+        for (var x = 0; x < 100; x++) {
+          expect(_lum(image, x, 31), 20);
+        }
+        for (final x in [36, 51, 66]) {
+          expect(_lum(image, x, 23), greaterThan(200));
+        }
+      },
+    );
+
+    test(
+      'restores repeating screentone beneath lettering without a white patch',
+      () {
+        final image = _solid(180, 100, 245, 245, 245);
+        for (var y = 0; y < image.height; y++) {
+          for (var x = 0; x < image.width; x++) {
+            if (x % 8 < 4 && y % 8 < 4) {
+              final i = (y * image.width + x) * 4;
+              image.pixels.fillRange(i, i + 3, 120);
+            }
+          }
+        }
+        final clean = Uint8List.fromList(image.pixels);
+        for (final x in [65, 79, 93, 107]) {
+          for (var y = 36; y < 61; y++) {
+            for (var dx = 0; dx < 4; dx++) {
+              final i = (y * image.width + x + dx) * 4;
+              image.pixels.fillRange(i, i + 3, 20);
+            }
+          }
+        }
+        TextInpainter.erase(image, [IntRect(61, 33, 115, 65)]);
+        var error = 0;
+        for (var y = 36; y < 61; y++) {
+          for (var x = 65; x < 111; x++) {
+            final i = (y * image.width + x) * 4;
+            error += (image.pixels[i] - clean[i]).abs();
+          }
+        }
+        expect(error / (25 * 46), lessThan(15));
+        expect(
+          image.pixels.sublist(0, 180 * 20 * 4),
+          clean.sublist(0, 180 * 20 * 4),
+        );
+      },
+    );
+    test(
       'erases 120 glyph pixels and preserves a separate 50 pixel line inside the OCR box',
       () {
         var img = _solid(144, 96, 245, 245, 245);
@@ -210,34 +318,6 @@ void main() {
             }
           }
         }
-      },
-    );
-
-    test(
-      'a matching compact CTD mask can exclude artwork inside the OCR box',
-      () {
-        var img = _solid(100, 64, 245, 245, 245);
-        var bytes = Uint8List(50 * 32);
-        for (var x in [26, 38, 50, 62, 74, 82]) {
-          for (var dx = 0; dx < 4; dx++) {
-            for (var y = 24; y < 36; y++) {
-              var i = (y * 100 + x + dx) * 4;
-              img.pixels.fillRange(i, i + 3, 20);
-              if (x != 82) bytes[(y ~/ 2) * 50 + (x + dx) ~/ 2] = 255;
-            }
-          }
-        }
-        var roi = IntRect(24, 20, 90, 40);
-        var rules = TextInpainter.computeMask(img, roi)!;
-        var enhanced = TextInpainter.computeMask(
-          img,
-          roi,
-          strokeMask: StrokeMask(50, 32, bytes),
-        )!;
-        int at(TextMask m, int x) => m.mask[(28 - m.top) * m.rw + x - m.left];
-        expect(at(rules, 83), 1);
-        expect(at(enhanced, 83), 0);
-        expect(at(enhanced, 39), 1);
       },
     );
 
@@ -273,27 +353,50 @@ void main() {
       });
     }
 
-    test('retains glyph-length vowel marks in the erase mask on dark paper', () {
-      var img = _solid(120, 60, 25, 25, 25);
-      for (var y = 23; y < 34; y++) {
-        for (var x in [31, 32, 33, 56, 57, 58]) {
-          var i = (y * img.width + x) * 4;
-          img.pixels.fillRange(i, i + 3, 238);
+    test('erases a detached glyph beside a line touching another glyph', () {
+      final image = _solid(80, 110, 245, 245, 245);
+      void ink(int left, int top, int right, int bottom) {
+        for (var y = top; y < bottom; y++) {
+          for (var x = left; x < right; x++) {
+            final i = (y * image.width + x) * 4;
+            image.pixels.fillRange(i, i + 3, 20);
+          }
         }
       }
-      for (var y = 27; y < 30; y++) {
-        for (var x = 40; x < 50; x++) {
-          var i = (y * img.width + x) * 4;
-          img.pixels.fillRange(i, i + 3, 238);
-        }
+
+      ink(23, 11, 24, 96);
+      ink(23, 45, 30, 52);
+      ink(31, 45, 38, 52);
+      TextInpainter.erase(image, [IntRect(20, 12, 49, 95)]);
+
+      expect(_lum(image, 34, 48), greaterThan(200));
+      for (var y = 11; y < 96; y++) {
+        expect(_lum(image, 23, y), 20);
       }
-      // A useless optional mask must fall back to the local light-on-dark split.
-      for (var value in [0, 255]) {
-        var mask = StrokeMask(1, 1, Uint8List.fromList([value]));
-        var candidate = TextInpainter.computeMask(
+      for (var x = 23; x < 30; x++) {
+        expect(_lum(image, x, 48), 20);
+      }
+    });
+
+    test(
+      'retains glyph-length vowel marks in the erase mask on dark paper',
+      () {
+        var img = _solid(120, 60, 25, 25, 25);
+        for (var y = 23; y < 34; y++) {
+          for (var x in [31, 32, 33, 56, 57, 58]) {
+            var i = (y * img.width + x) * 4;
+            img.pixels.fillRange(i, i + 3, 238);
+          }
+        }
+        for (var y = 27; y < 30; y++) {
+          for (var x = 40; x < 50; x++) {
+            var i = (y * img.width + x) * 4;
+            img.pixels.fillRange(i, i + 3, 238);
+          }
+        }
+        final candidate = TextInpainter.computeMask(
           img,
           IntRect(26, 20, 65, 38),
-          strokeMask: mask,
         )!;
         expect(
           candidate.mask[(28 - candidate.top) * candidate.rw +
@@ -301,8 +404,8 @@ void main() {
               candidate.left],
           1,
         );
-      }
-    });
+      },
+    );
   });
 
   group('InpaintMode', () {

@@ -70,7 +70,9 @@ void main() {
     ('zh-CN', '在渲染时锐化模糊图像或调整清晰度'),
     ('zh-TW', '在算圖時銳化模糊圖像或調整清晰度'),
   ]) {
-    testWidgets('image enhancement shows its description in $locale', (tester) async {
+    testWidgets('image enhancement shows its description in $locale', (
+      tester,
+    ) async {
       appdata.settings['language'] = locale;
       await open(tester);
       final section = find.text('Image processing / enhancement'.tl);
@@ -196,10 +198,10 @@ void main() {
     },
   );
 
-  testWidgets('model management reports a CTD change on return', (
+  testWidgets('model management reports a dialogue setting change on return', (
     tester,
   ) async {
-    const key = TranslationConfig.strokeEnhancementKey;
+    const key = TranslationConfig.bubbleEnhancementKey;
     final previous = appdata.settings[key];
     addTearDown(() => appdata.settings[key] = previous);
     final changed = <String>[];
@@ -216,10 +218,12 @@ void main() {
     final models = find.widgetWithText(ListTile, 'Translation models');
     await tester.ensureVisible(models);
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(of: models, matching: find.text('Manage')));
+    await tester.tap(
+      find.descendant(of: models, matching: find.text('Manage')),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(TranslationModelsPage), findsOneWidget);
-    appdata.settings[key] = !TranslationConfig.strokeEnhancementEnabled;
+    appdata.settings[key] = !TranslationConfig.bubbleEnhancementEnabled;
     expect(changed, isEmpty);
     await tester.pageBack();
     await tester.pumpAndSettle();

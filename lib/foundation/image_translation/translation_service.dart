@@ -213,11 +213,8 @@ class ImageTranslationService with ChangeNotifier {
   /// same stored text, and switching back reuses the earlier render. The token
   /// is a suffix, so the comic/chapter scope prefixes still match it for
   /// deletion.
-  static String renderedKey(
-    String cacheKey,
-    InpaintMode mode, {
-    bool enhanceStrokes = false,
-  }) => '$cacheKey#3${mode.token}${enhanceStrokes ? '+ctd' : ''}';
+  static String renderedKey(String cacheKey, InpaintMode mode) =>
+      '$cacheKey#4${mode.token}';
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
@@ -486,9 +483,6 @@ class ImageTranslationService with ChangeNotifier {
         for (var mode in InpaintMode.values) {
           var renderKey = renderedKey(key, mode);
           await CacheManager().delete(renderKey);
-          await CacheManager().delete(
-            renderedKey(key, mode, enhanceStrokes: true),
-          );
           _completed.remove(renderKey);
           _failures.remove(renderKey);
           _errors.remove(renderKey);
@@ -537,32 +531,14 @@ class ImageTranslationService with ChangeNotifier {
     return removed;
   }
 
-  Future<File?> findTranslated(String cacheKey, InpaintMode mode) async {
-    if (TranslationConfig.strokeEnhancementEnabled) {
-      final enhanced = await CacheManager().findCache(
-        renderedKey(cacheKey, mode, enhanceStrokes: true),
-      );
-      if (enhanced != null) return enhanced;
-    }
-    return CacheManager().findCache(renderedKey(cacheKey, mode));
-  }
+  Future<File?> findTranslated(String cacheKey, InpaintMode mode) =>
+      CacheManager().findCache(renderedKey(cacheKey, mode));
 
   /// Whether a fully rendered translated page (not just the text result) is
   /// already cached. Used by the pre-translation task manager to skip pages
   /// that were done in an earlier run or read online.
-  Future<bool> hasRenderedPage(
-    String cacheKey,
-    InpaintMode mode, {
-    bool enhanceStrokes = false,
-  }) async {
-    if (!enhanceStrokes || !TranslationConfig.strokeEnhancementEnabled) {
-      return await findTranslated(cacheKey, mode) != null;
-    }
-    return await CacheManager().findCache(
-          renderedKey(cacheKey, mode, enhanceStrokes: true),
-        ) !=
-        null;
-  }
+  Future<bool> hasRenderedPage(String cacheKey, InpaintMode mode) async =>
+      await findTranslated(cacheKey, mode) != null;
 
   /// How many pages of one chapter already have a stored text result — the
   /// durable, WebDAV-synced source of truth (empty-result "no text" pages count
@@ -712,37 +688,27 @@ class ImageTranslationService with ChangeNotifier {
           glossary: _glossaryFor(comicKey),
         );
         if (analysis.regions.isEmpty) return false;
-        var enhanced = false;
         final bytes = await pipeline.renderPage(
           imageBytes,
           analysis.regions,
           mode: config.mode,
-          enhanceStrokes: TranslationConfig.strokeEnhancementEnabled,
-          onStrokeMask: () => enhanced = true,
         );
         final store = TranslationStore();
         if (legacyCacheKey != null) {
           store.adoptLegacyKey(legacyCacheKey, cacheKey);
         }
-        final writeKey = renderedKey(
-          cacheKey,
-          config.mode,
-          enhanceStrokes: enhanced,
-        );
+        final writeKey = renderedKey(cacheKey, config.mode);
         await CacheManager().writeCache(writeKey, bytes, _imageCacheDuration);
         for (final mode in InpaintMode.values) {
           final key = renderedKey(cacheKey, mode);
-          final ctdKey = renderedKey(cacheKey, mode, enhanceStrokes: true);
           if (key != writeKey) await CacheManager().delete(key);
-          if (ctdKey != writeKey) await CacheManager().delete(ctdKey);
           _completed.remove(key);
           _errors.remove(key);
           _failures.remove(key);
         }
-        final key = renderedKey(cacheKey, config.mode);
         store.put(cacheKey, analysis.regions, chapter: chapter);
         _pageRevisions[cacheKey] = revisionOf(cacheKey) + 1;
-        _completed.add(key);
+        _completed.add(writeKey);
         _noContent.remove(cacheKey);
         _updateLanguageLock(comicKey, analysis.languageVotes, config);
         _mergeGlossary(comicKey, analysis.newGlossary);
@@ -837,7 +803,6 @@ class ImageTranslationService with ChangeNotifier {
     bool Function()? shouldCancel,
     Future<void> Function()? waitUntilResumed,
     void Function(TranslationStage stage, double completedPages)? onStage,
-    bool enhanceStrokes = true,
     bool reuseOtherScope = true,
   }) async {
     var success = List.filled(pages.length, false);
@@ -888,12 +853,7 @@ class ImageTranslationService with ChangeNotifier {
       var p = pages[i];
       try {
         var renderKey = renderedKey(p.cacheKey, config.mode);
-        if (await hasRenderedPage(
-          p.cacheKey,
-          config.mode,
-          enhanceStrokes:
-              enhanceStrokes && TranslationModels.strokeModelPath != null,
-        )) {
+        if (await hasRenderedPage(p.cacheKey, config.mode)) {
           _completed.add(renderKey);
           success[i] = true;
           settled[i] = true;
@@ -1034,23 +994,18 @@ class ImageTranslationService with ChangeNotifier {
             success[i] = true; // no translatable text still counts as handled
             return;
           }
-          var enhanced = false;
           var rendered = await pipeline.renderPage(
             p.imageBytes,
             regions,
             mode: config.mode,
-            enhanceStrokes:
-                enhanceStrokes && TranslationConfig.strokeEnhancementEnabled,
-            onStrokeMask: () => enhanced = true,
           );
           var renderKey = renderedKey(p.cacheKey, config.mode);
           await CacheManager().writeCache(
-            renderedKey(p.cacheKey, config.mode, enhanceStrokes: enhanced),
+            renderKey,
             rendered,
             _imageCacheDuration,
           );
           _completed.add(renderKey);
-          if (enhanced) _pageRevisions[p.cacheKey] = revisionOf(p.cacheKey) + 1;
           success[i] = true;
         });
       } on PipelineCanceled {

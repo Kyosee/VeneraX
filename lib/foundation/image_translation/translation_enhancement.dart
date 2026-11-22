@@ -1,33 +1,5 @@
 part of 'translation_worker.dart';
 
-/// The CTD probe peaked near 600 MiB before counting the reader and RGBA
-/// copies. Check fresh headroom before transferring or loading its tensors.
-Future<bool> _hasStrokeMemory(int pageBytes) async {
-  const reserve = 768 * 1024 * 1024;
-  final needed = reserve + 2 * pageBytes;
-  if (Platform.isIOS) {
-    final system = DynamicLibrary.process();
-    if (!system.providesSymbol('os_proc_available_memory')) return false;
-    final available = system.lookupFunction<Size Function(), int Function()>(
-      'os_proc_available_memory',
-    );
-    return available() >= needed;
-  }
-  if (Platform.isAndroid || Platform.operatingSystem == 'ohos') {
-    try {
-      final stats = await File('/proc/meminfo').readAsString();
-      final available = RegExp(
-        r'^MemAvailable:\s+(\d+)\s+kB',
-        multiLine: true,
-      ).firstMatch(stats);
-      return available != null && int.parse(available[1]!) * 1024 >= needed;
-    } on FileSystemException {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool _fitsBubbleModel(RgbaImage image) =>
     image.width * 3 >= image.height && image.height * 2 >= image.width;
 
@@ -36,51 +8,6 @@ bool _fitsBubbleModel(RgbaImage image) =>
   return (
     (image.width * scale).round().clamp(1, w),
     (image.height * scale).round().clamp(1, h),
-  );
-}
-
-StrokeMask _ctdMask(RgbaImage image, OrtFfiSession session) {
-  const size = 1024;
-  const plane = size * size;
-  var (w, h) = _fitPage(image, size, size);
-  var pixels = _resizeRegion(
-    image,
-    IntRect(0, 0, image.width, image.height),
-    w,
-    h,
-  );
-  // dmMaze's letterbox pads only the right and bottom with black.
-  var tensor = Float32List(3 * plane);
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      var i = y * size + x;
-      var p = (y * w + x) * 4;
-      tensor[i] = pixels[p] / 255;
-      tensor[i + plane] = pixels[p + 1] / 255;
-      tensor[i + plane * 2] = pixels[p + 2] / 255;
-    }
-  }
-  return session.runMapped(
-    {
-      'images': OrtInput.float32(tensor, const [1, 3, size, size]),
-    },
-    'seg',
-    (data, shape) {
-      if (data is! Float32List ||
-          !listEquals(shape, const [1, 1, size, size])) {
-        throw StateError('Unexpected CTD stroke mask');
-      }
-      var mask = Uint8List(w * h);
-      for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-          var value = data[y * size + x];
-          mask[y * w + x] = value.isFinite
-              ? (value.clamp(0, 1) * 255).round()
-              : 0;
-        }
-      }
-      return StrokeMask(w, h, mask);
-    },
   );
 }
 

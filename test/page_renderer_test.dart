@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
@@ -46,6 +47,107 @@ void _letters(RgbaImage page, int top) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('longer translations shrink to their measured multiline area', () {
+    final texts = ['短句', '这是文字增加后的对白，需要在气泡里自动换行。', '这是一个明显更长的翻译结果。' * 8];
+    final sizes = <double>[];
+    for (final text in texts) {
+      final size = fittedTranslationFontSize(text, 92, 60, lineHeight: 28);
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            fontSize: size,
+            height: 1.2,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 92);
+      expect(painter.width, lessThanOrEqualTo(92));
+      expect(painter.height, lessThanOrEqualTo(60));
+      sizes.add(size);
+      painter.dispose();
+    }
+    expect(sizes[0], greaterThan(sizes[1]));
+    expect(sizes[1], greaterThan(sizes[2]));
+    expect(sizes.first, closeTo(25.2, .01));
+  });
+
+  test('mixed and narrow translations fit their actual line dimensions', () {
+    for (final (text, width, height) in [
+      ('English and 中文混合，需要自动换行。' * 4, 96.0, 80.0),
+      ('supercalifragilisticexpialidocious', 34.0, 60.0),
+      ('窄框', 3.0, 30.0),
+    ]) {
+      final size = fittedTranslationFontSize(text, width, height);
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            fontSize: size,
+            height: 1.2,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: width);
+      expect(painter.height, lessThanOrEqualTo(height));
+      for (final line in painter.computeLineMetrics()) {
+        expect(line.width, lessThanOrEqualTo(width));
+      }
+      painter.dispose();
+    }
+  });
+
+  test('empty legacy translations do not consume layout space', () {
+    TranslatedRegion region(String text) => TranslatedRegion(
+      rect: IntRect(0, 0, 120, 60),
+      text: text,
+      backgroundColor: 0xffffffff,
+      textColor: 0xff000000,
+    );
+    final rects = translationLayoutRects([region('一段中文'), region(' ')]);
+    expect(rects.first, const ui.Rect.fromLTWH(0, 0, 120, 60));
+    final invalid = TranslatedRegion(
+      rect: IntRect(36, 50, 164, 52),
+      text: '旧框',
+      backgroundColor: 0xffffffff,
+      textColor: 0xff000000,
+    );
+    expect(
+      translationLayoutRects([region('一段中文'), invalid]).first,
+      const ui.Rect.fromLTWH(0, 0, 120, 60),
+    );
+  });
+
+  test(
+    'overlapping adjacent translations keep separate drawing rectangles',
+    () {
+      TranslatedRegion region(IntRect rect) => TranslatedRegion(
+        rect: rect,
+        text: '译文',
+        backgroundColor: 0xffffffff,
+        textColor: 0xff000000,
+      );
+      final inputs = [
+        region(IntRect(10, 10, 100, 120)),
+        region(IntRect(90, 10, 200, 120)),
+        region(IntRect(10, 110, 200, 230)),
+      ];
+      final rectangles = translationLayoutRects(inputs);
+      for (var i = 0; i < rectangles.length; i++) {
+        expect(rectangles[i].width, greaterThan(10));
+        expect(rectangles[i].height, greaterThan(10));
+        for (var j = i + 1; j < rectangles.length; j++) {
+          expect(rectangles[i].overlaps(rectangles[j]), isFalse);
+        }
+      }
+      expect(inputs.first.rect.right, 100);
+    },
+  );
 
   test(
     'patch falls back to local repair on a smooth shaded background',

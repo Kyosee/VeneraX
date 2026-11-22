@@ -104,15 +104,17 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
                     "Saved translations are kept. Retranslate a page to apply the new dialogue detection setting."
                         .tl,
               ).toSliver(),
-            if (component == TranslationModels.comicTextDetector &&
-                component.isInstalled)
-              _SwitchSetting(
-                title: "Use text stroke enhancement".tl,
-                settingKey: TranslationConfig.strokeEnhancementKey,
-                subtitle:
-                    "Applies when retranslating a page or pre-translating a chapter."
-                        .tl,
-              ).toSliver(),
+          ],
+          if (TranslationModels.legacyTextStrokes.isInstalled) ...[
+            _buildComponent(
+              context,
+              TranslationModels.legacyTextStrokes,
+              requiredIds,
+            ).toSliver(),
+            _buildEnhancementDetails(
+              context,
+              TranslationModels.legacyTextStrokes,
+            ).toSliver(),
           ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
         ],
@@ -165,7 +167,8 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       trailing = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle, color: context.colorScheme.primary),
+          if (component != TranslationModels.legacyTextStrokes)
+            Icon(Icons.check_circle, color: context.colorScheme.primary),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {
@@ -197,7 +200,9 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     }
     return ListTile(
       title: Text(component.displayName),
-      subtitle: Text(subtitle),
+      subtitle: component == TranslationModels.legacyTextStrokes
+          ? null
+          : Text(subtitle),
       isThreeLine: state.error != null,
       trailing: trailing,
     );
@@ -236,8 +241,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         '$bubbleSource/blob/${TranslationModels.bubblePopRevision}/LICENSE',
       ),
       _ => (
-        "Locates original text strokes in both scopes during page retries and chapter pre-translation. Uses more memory. The training images and fonts belong to their respective owners."
-            .tl,
+        "This older model is no longer used. You can delete its files.".tl,
         'dmMaze/CTD',
         '$strokeSource/tree/$strokeRevision',
         'GPL-3.0',
@@ -260,7 +264,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
                 onPressed: () => launchUrlString(licenseUrl),
                 child: Text(license),
               ),
-              if (component == TranslationModels.comicTextDetector)
+              if (component == TranslationModels.legacyTextStrokes)
                 TextButton(
                   onPressed: () => launchUrlString(
                     'https://github.com/zyddnys/manga-image-translator/releases/tag/beta-0.3',

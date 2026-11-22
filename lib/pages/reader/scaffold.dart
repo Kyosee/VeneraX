@@ -1440,7 +1440,6 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 key == TranslationConfig.scopeKeyName ||
                 key == "imageTranslationInpaintMode" ||
                 key == "enableImageTranslation" ||
-                key == TranslationConfig.strokeEnhancementKey ||
                 scopeChanged) {
               PaintingBinding.instance.imageCache.clear();
               PaintingBinding.instance.imageCache.clearLiveImages();

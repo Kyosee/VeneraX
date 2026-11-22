@@ -1540,7 +1540,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     : "Models not downloaded".tl,
                 actionTitle: "Manage".tl,
                 callback: () async {
-                  final strokes = TranslationConfig.strokeEnhancementEnabled;
                   final bubbles = TranslationConfig.bubbleEnhancementEnabled;
                   await context.to(
                     () => TranslationModelsPage(
@@ -1548,9 +1547,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     ),
                   );
                   if (!mounted) return;
-                  if (strokes != TranslationConfig.strokeEnhancementEnabled) {
-                    widget.onChanged?.call(TranslationConfig.strokeEnhancementKey);
-                  }
                   if (bubbles != TranslationConfig.bubbleEnhancementEnabled) {
                     widget.onChanged?.call(TranslationConfig.bubbleEnhancementKey);
                   }

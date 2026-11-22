@@ -112,7 +112,6 @@ class PreTranslationTask {
     required this.chapters,
     required this.createdAt,
     TranslationConfig? config,
-    this.enhanceStrokes = false,
     this.reuseOtherScope = true,
     this.cover = '',
     this.status = PreTranslationTaskStatus.running,
@@ -134,7 +133,6 @@ class PreTranslationTask {
 
   /// Captured at enqueue time so settings changes cannot redirect later pages.
   final TranslationConfig config;
-  final bool enhanceStrokes;
   final bool reuseOtherScope;
 
   bool matchesScope(String cid, String sourceKey, TranslationConfig scope) =>
@@ -183,7 +181,6 @@ class PreTranslationTask {
     'targetLang': config.targetLang,
     'dialogueOnly': config.dialogueOnly,
     'mode': config.mode.name,
-    'enhanceStrokes': enhanceStrokes,
     'reuseOtherScope': reuseOtherScope,
     'title': title,
     'cover': cover,
@@ -208,7 +205,6 @@ class PreTranslationTask {
         // Jobs written before scope selection always processed all text.
         dialogueOnly: json['dialogueOnly'] == true,
       ),
-      enhanceStrokes: json['enhanceStrokes'] == true,
       reuseOtherScope: json['reuseOtherScope'] != false,
       comicType: ComicType(json['comicType'] ?? 0),
       title: json['title']?.toString() ?? '',
@@ -436,7 +432,6 @@ class PreTranslationTaskManager with ChangeNotifier {
     required List<PreTranslationChapter> chapters,
     String cover = '',
     TranslationConfig? config,
-    bool? enhanceStrokes,
     bool reuseOtherScope = true,
   }) {
     final scope = config ?? TranslationConfig.of(cid, sourceKey);
@@ -444,14 +439,11 @@ class PreTranslationTaskManager with ChangeNotifier {
         !ImageTranslationService.isReadyForLang(scope.sourceLang)) {
       return null;
     }
-    final useStrokes =
-        enhanceStrokes ?? (TranslationModels.strokeModelPath != null);
     var existing = currentTasks
         .where(
           (t) =>
               t.matchesScope(cid, sourceKey, scope) &&
               t.config.mode == scope.mode &&
-              t.enhanceStrokes == useStrokes &&
               t.reuseOtherScope == reuseOtherScope &&
               (t.isRunning || t.status == PreTranslationTaskStatus.paused),
         )
@@ -479,7 +471,6 @@ class PreTranslationTaskManager with ChangeNotifier {
       title: title,
       cover: cover,
       config: scope,
-      enhanceStrokes: useStrokes,
       reuseOtherScope: reuseOtherScope,
       chapters: chapters,
       createdAt: DateTime.now(),
@@ -1189,8 +1180,6 @@ class PreTranslationTaskManager with ChangeNotifier {
     var service = ImageTranslationService.instance;
     var settledBeforeBatch = 0;
     final config = task.config;
-    final enhanceStrokes =
-        task.enhanceStrokes && TranslationModels.strokeModelPath != null;
     var pending =
         <
           ({
@@ -1227,11 +1216,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         config: config,
       );
       try {
-        if (await service.hasRenderedPage(
-          cacheKey,
-          config.mode,
-          enhanceStrokes: enhanceStrokes,
-        )) {
+        if (await service.hasRenderedPage(cacheKey, config.mode)) {
           _markRetrySuccess(chapter, i);
           settledBeforeBatch++;
           reportFetchPhase();
@@ -1268,7 +1253,6 @@ class PreTranslationTaskManager with ChangeNotifier {
             .toList(),
         task.comicKey,
         config,
-        enhanceStrokes: enhanceStrokes,
         reuseOtherScope: task.reuseOtherScope,
         chapter: ImageTranslationService.chapterIdentity(
           cid: task.cid,
@@ -1332,8 +1316,6 @@ class PreTranslationTaskManager with ChangeNotifier {
   ) async {
     var service = ImageTranslationService.instance;
     final config = task.config;
-    final enhanceStrokes =
-        task.enhanceStrokes && TranslationModels.strokeModelPath != null;
     var pending =
         <
           ({
@@ -1384,11 +1366,7 @@ class PreTranslationTaskManager with ChangeNotifier {
         config: config,
       );
       try {
-        if (await service.hasRenderedPage(
-          cacheKey,
-          config.mode,
-          enhanceStrokes: enhanceStrokes,
-        )) {
+        if (await service.hasRenderedPage(cacheKey, config.mode)) {
           done++;
           preSettled++;
           reportFetchPhase();
@@ -1426,7 +1404,6 @@ class PreTranslationTaskManager with ChangeNotifier {
               .toList(),
           task.comicKey,
           config,
-          enhanceStrokes: enhanceStrokes,
           reuseOtherScope: task.reuseOtherScope,
           chapter: ImageTranslationService.chapterIdentity(
             cid: task.cid,

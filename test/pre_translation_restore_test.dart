@@ -44,7 +44,6 @@ void main() {
             dialogueOnly: true,
             mode: InpaintMode.patch,
           ),
-          enhanceStrokes: true,
           reuseOtherScope: false,
           chapters: [
             PreTranslationChapter(
@@ -58,6 +57,7 @@ void main() {
             ),
           ],
         ).toJson(),
+        'enhanceStrokes': true,
         if (manual) 'keepPaused': true,
       };
       // Older snapshots had neither a pause reason nor a translation scope.
@@ -82,7 +82,6 @@ void main() {
       final resumed = manager.currentTasks.first;
       final paused = manager.currentTasks.last;
       expect(resumed.config.dialogueOnly, isFalse);
-      expect(resumed.enhanceStrokes, isFalse);
       expect(resumed.reuseOtherScope, isTrue);
       expect(manager.chapterProgressFor('system', 'fixture', '1'), isNull);
       expect(
@@ -98,7 +97,6 @@ void main() {
       expect(paused.config.targetLang, 'ja');
       expect(paused.config.mode, InpaintMode.patch);
       expect(paused.config.dialogueOnly, isTrue);
-      expect(paused.enhanceStrokes, isTrue);
       expect(paused.reuseOtherScope, isFalse);
       expect(resumed.isRunning, isTrue);
       expect(paused.status, PreTranslationTaskStatus.paused);
@@ -118,7 +116,7 @@ void main() {
       expect(entries.first['chapters'].single['done'], 7);
       expect(entries.first['chapters'].single['paused'], isTrue);
       expect(entries.first['dialogueOnly'], isFalse);
-      expect(entries.last['enhanceStrokes'], isTrue);
+      expect(entries.last.containsKey('enhanceStrokes'), isFalse);
       expect(entries.first['reuseOtherScope'], isTrue);
       expect(entries.last['reuseOtherScope'], isFalse);
     },

@@ -290,7 +290,6 @@ ReaderImageProvider _createImageProviderFromKey(
     translationRevision: ImageTranslationService.instance.revisionOf(
       translationKey,
     ),
-    strokeEnhancement: TranslationConfig.strokeEnhancementEnabled,
     comicTitle: reader.widget.name,
     comicCover: reader.widget.history.cover,
     chapterTitle:

@@ -44,8 +44,6 @@ class _PageFixture extends PageTranslationPipeline {
     Uint8List bytes,
     List<TranslatedRegion> regions, {
     InpaintMode mode = InpaintMode.smart,
-    bool enhanceStrokes = false,
-    void Function()? onStrokeMask,
   }) async => Uint8List.fromList([42]);
 }
 

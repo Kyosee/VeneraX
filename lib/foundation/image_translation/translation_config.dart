@@ -37,12 +37,9 @@ class TranslationConfig {
   static const scopeKeyName = 'imageTranslationScope';
 
   static const bubbleEnhancementKey = 'imageTranslationBubbleEnhancement';
-  static const strokeEnhancementKey = 'imageTranslationStrokeEnhancement';
 
   static bool get bubbleEnhancementEnabled =>
       appdata.settings[bubbleEnhancementKey] != false;
-  static bool get strokeEnhancementEnabled =>
-      appdata.settings[strokeEnhancementKey] != false;
 
   /// Resolves the config for one comic.
   ///

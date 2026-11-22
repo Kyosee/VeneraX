@@ -644,7 +644,6 @@ class Settings with ChangeNotifier {
     'imageTranslationInpaintMode': 'smart', // patch, smart
     'imageTranslationScope': 'all',
     'imageTranslationBubbleEnhancement': true,
-    'imageTranslationStrokeEnhancement': true,
   };
 
   operator [](String key) {

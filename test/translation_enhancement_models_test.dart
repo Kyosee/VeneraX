@@ -16,7 +16,7 @@ void main() {
   late Directory temp;
   late String oldPath;
   const bubbleKey = TranslationConfig.bubbleEnhancementKey;
-  const strokeKey = TranslationConfig.strokeEnhancementKey;
+  const formerStrokeKey = 'imageTranslationStrokeEnhancement';
 
   setUpAll(() async {
     await AppTranslation.init();
@@ -31,7 +31,6 @@ void main() {
   tearDown(() {
     App.dataPath = oldPath;
     appdata.settings[bubbleKey] = true;
-    appdata.settings[strokeKey] = true;
     TranslationModels.invalidateReadyCache();
     temp.deleteSync(recursive: true);
   });
@@ -50,18 +49,16 @@ void main() {
     'enhancement settings survive a restart and stay on this device',
     () async {
       appdata.settings[bubbleKey] = false;
-      appdata.settings[strokeKey] = true;
+      appdata.settings[formerStrokeKey] = true;
       await appdata.saveData(false);
       final sync = jsonDecode(
         File('${temp.path}/syncdata.json').readAsStringSync(),
       );
       expect(sync['settings'], isNot(contains(bubbleKey)));
-      expect(sync['settings'], isNot(contains(strokeKey)));
+      expect(sync['settings'], isNot(contains(formerStrokeKey)));
       appdata.settings[bubbleKey] = true;
-      appdata.settings[strokeKey] = false;
       await appdata.doInit();
       expect(TranslationConfig.bubbleEnhancementEnabled, isFalse);
-      expect(TranslationConfig.strokeEnhancementEnabled, isTrue);
     },
   );
 
@@ -70,7 +67,7 @@ void main() {
     () async {
       const bubble = TranslationModels.bubblePop;
       const dialogue = TranslationModels.rtDetr;
-      const stroke = TranslationModels.comicTextDetector;
+      const stroke = TranslationModels.legacyTextStrokes;
       final store = TranslationModelStore.instance;
       for (final base in [
         TranslationModels.detector,
@@ -81,16 +78,16 @@ void main() {
         }
       }
       expect(TranslationModels.isReadyFor('en'), isTrue);
-      expect(TranslationModels.enhancements, [dialogue, stroke]);
+      expect(TranslationModels.enhancements, [dialogue]);
       expect(TranslationModels.find('rt_detr'), same(dialogue));
       expect(TranslationModels.find('bubble_pop'), same(bubble));
-      expect(TranslationModels.all, containsAll([dialogue, bubble, stroke]));
+      expect(TranslationModels.all, containsAll([dialogue, bubble]));
+      expect(TranslationModels.find(stroke.id), isNull);
       expect(TranslationModels.requiredFor('en'), isNot(contains(dialogue)));
       expect(TranslationModels.requiredFor('en'), isNot(contains(bubble)));
       expect(TranslationModels.requiredFor('en'), isNot(contains(stroke)));
       expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
-      expect(TranslationModels.strokeModelPath, isNull);
 
       final original = bubble.files.single;
       makeFile(bubble, original.name, original.size!);
@@ -111,39 +108,19 @@ void main() {
       );
       expect(TranslationModels.workerPaths('en').bubbleModel, isNotNull);
 
-      final file = stroke.files.single;
-      makeFile(stroke, file.name, file.size! - 1);
-      expect(TranslationModels.strokeModelPath, isNull);
-      makeFile(stroke, file.name, file.size!);
-      expect(TranslationModels.strokeModelPath, isNull);
-      makeFile(stroke, ModelComponent.markerName, 0);
-      expect(TranslationModels.strokeModelPath, stroke.filePath(file.name));
-
       appdata.settings[bubbleKey] = false;
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
       expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
-      expect(TranslationModels.strokeModelPath, isNotNull);
-      appdata.settings[strokeKey] = false;
-      expect(TranslationModels.strokeModelPath, isNull);
-      expect(
-        [dialogue, bubble, stroke].every((model) => model.isInstalled),
-        isTrue,
-      );
+      expect([dialogue, bubble].every((model) => model.isInstalled), isTrue);
       appdata.settings[bubbleKey] = true;
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNotNull);
       expect(TranslationModels.workerPaths('en').bubbleModel, isNotNull);
-      expect(TranslationModels.strokeModelPath, isNull);
-      appdata.settings[strokeKey] = true;
-      expect(TranslationModels.strokeModelPath, isNotNull);
 
       await store.delete(bubble);
       expect(TranslationModels.workerPaths('en').bubbleModel, isNull);
       expect(dialogue.isInstalled, isTrue);
       await store.delete(dialogue);
       expect(TranslationModels.workerPaths('en').rtDetrModel, isNull);
-      expect(stroke.isInstalled, isTrue);
-      await store.delete(stroke);
-      expect(TranslationModels.strokeModelPath, isNull);
       expect(TranslationModels.isReadyFor('en'), isTrue);
     },
   );
@@ -164,11 +141,30 @@ void main() {
     });
   }
 
+  test(
+    'retired CTD never downloads and partial files can be removed',
+    () async {
+      const model = TranslationModels.legacyTextStrokes;
+      final store = TranslationModelStore.instance;
+      await store.download(model);
+      expect(Directory(model.directory).existsSync(), isFalse);
+      makeFile(model, 'comictextdetector.pt.onnx.part', 11);
+      expect(model.isInstalled, isTrue);
+      await store.delete(model);
+      expect(Directory(model.directory).existsSync(), isFalse);
+    },
+  );
+
   for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
     testWidgets('model sources and licenses appear at phone width in $locale', (
       tester,
     ) async {
       appdata.settings['language'] = locale;
+      makeFile(
+        TranslationModels.legacyTextStrokes,
+        'comictextdetector.pt.onnx',
+        1,
+      );
       tester.view.physicalSize = const Size(360, 780);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -195,7 +191,28 @@ void main() {
         scrollable: scrollable,
       );
       expect(
-        find.text(TranslationModels.comicTextDetector.displayName),
+        find.text(TranslationModels.legacyTextStrokes.displayName),
+        findsOneWidget,
+      );
+      final oldTile = find.widgetWithText(
+        ListTile,
+        TranslationModels.legacyTextStrokes.displayName,
+      );
+      expect(
+        find.descendant(
+          of: oldTile,
+          matching: find.byIcon(Icons.delete_outline),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: oldTile, matching: find.text('Download'.tl)),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          'This older model is no longer used. You can delete its files.'.tl,
+        ),
         findsOneWidget,
       );
       expect(find.text('dmMaze/CTD'), findsOneWidget);
@@ -206,7 +223,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('installed enhancements have independent switches in $locale', (
+    testWidgets('installed dialogue detection has a switch in $locale', (
       tester,
     ) async {
       appdata.settings['language'] = locale;
@@ -222,55 +239,49 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
-      final (bubbleLabel, strokeLabel) = switch (locale) {
-        'zh-CN' => ('启用对白识别增强', '启用文字笔画增强'),
-        'zh-TW' => ('啟用對白辨識增強', '啟用文字筆畫增強'),
-        _ => (
-          'Use dialogue detection enhancement',
-          'Use text stroke enhancement',
-        ),
+      final bubbleLabel = switch (locale) {
+        'zh-CN' => '启用对白识别增强',
+        'zh-TW' => '啟用對白辨識增強',
+        _ => 'Use dialogue detection enhancement',
       };
-      for (final label in [bubbleLabel, strokeLabel]) {
-        final tile = find.widgetWithText(ListTile, label);
+      final tile = find.widgetWithText(ListTile, bubbleLabel);
+      await tester.scrollUntilVisible(
+        tile,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final toggle = find.descendant(of: tile, matching: find.byType(Switch));
+      expect(tester.widget<Switch>(toggle).value, isTrue);
+      if (locale == 'en-US') {
         await tester.scrollUntilVisible(
-          tile,
-          180,
+          toggle.hitTestable(),
+          100,
           scrollable: find.byType(Scrollable).first,
         );
-        final toggle = find.descendant(of: tile, matching: find.byType(Switch));
-        expect(tester.widget<Switch>(toggle).value, isTrue);
-        if (locale == 'en-US') {
-          await tester.scrollUntilVisible(
-            toggle.hitTestable(),
-            100,
-            scrollable: find.byType(Scrollable).first,
-          );
+        await tester.pumpAndSettle();
+        // Keep the settings write synchronous under the widget test's fake clock.
+        final wasBackgroundTask = App.isBackgroundTask;
+        App.isBackgroundTask = true;
+        try {
+          await tester.tap(toggle);
           await tester.pumpAndSettle();
-          // Keep the settings write synchronous under the widget test's fake clock.
-          final wasBackgroundTask = App.isBackgroundTask;
-          App.isBackgroundTask = true;
-          try {
-            await tester.tap(toggle);
-            await tester.pumpAndSettle();
-          } finally {
-            App.isBackgroundTask = wasBackgroundTask;
-          }
-          final stored = jsonDecode(
-            File('${temp.path}/appdata.json').readAsStringSync(),
-          )['settings'];
-          expect(stored[bubbleKey], isFalse);
-          expect(stored[strokeKey], label == bubbleLabel);
-          expect(TranslationConfig.bubbleEnhancementEnabled, isFalse);
-          expect(
-            TranslationConfig.strokeEnhancementEnabled,
-            label == bubbleLabel,
-          );
-          expect(
-            TranslationModels.enhancements.every((model) => model.isInstalled),
-            isTrue,
-          );
+        } finally {
+          App.isBackgroundTask = wasBackgroundTask;
         }
+        final stored = jsonDecode(
+          File('${temp.path}/appdata.json').readAsStringSync(),
+        )['settings'];
+        expect(stored[bubbleKey], isFalse);
+        expect(TranslationConfig.bubbleEnhancementEnabled, isFalse);
+        expect(
+          TranslationModels.enhancements.every((model) => model.isInstalled),
+          isTrue,
+        );
       }
+      expect(
+        find.text(TranslationModels.legacyTextStrokes.displayName),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     });
   }
