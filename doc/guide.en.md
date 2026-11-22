@@ -125,7 +125,7 @@ Check whether the matching dictionary covers the characters in your comic, then 
 1. Open **Settings → AI Translation → Model management**. The Latin, Cyrillic and Thai recognition presets and the option to add a custom source language are all available here.
 2. In **Model library**, open the **Text recognition** tab and choose the script, such as Latin for French or Cyrillic for Russian. Open the model details and tap **Add source language** to enter a name and code, such as `fr`, `ru` or `th`. The **+** menu also lets you add a language.
 3. Each preset uses PP-OCRv5 mobile weights and a matching dictionary published by RapidAI/RapidOCR on ModelScope. To use another source, enter the recognition model URL (.onnx) and its matching character dictionary URL (.txt).
-4. Saving reads the file sizes; the download starts after you confirm. Models over 100 MB get an extra warning.
+4. Presets show an estimated download size. For new links, the app asks the file host for the size. Confirm to download, or use the files already on your device.
 
 - Only PP-OCR text recognition models (CTC) in ONNX format work, together with the character dictionary they were trained with. Paddle, MNN or PyTorch files and encoder-decoder models such as manga-ocr do not.
 - "Input height": 48 for PP-OCRv3 and later, 32 for older models.

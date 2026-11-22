@@ -167,6 +167,7 @@ abstract class TranslationModels {
         '{hf}/webnn/PP-OCRv5-ONNX/resolve/main/ch_PP-OCRv5_rec.onnx',
       ]),
       ModelFile('dict.txt', [
+        'https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/a8474288ad53c0f439c272b786c5fa6240f0cf27/ppocr/utils/dict/ppocrv5_dict.txt',
         'https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv5/rec/ch_PP-OCRv5_rec_mobile/ppocrv5_dict.txt',
         '{hf}/webnn/PP-OCRv5-ONNX/resolve/main/ch_PP-OCRv5_dict.txt',
       ]),

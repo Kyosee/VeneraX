@@ -275,6 +275,57 @@ void main() {
     },
   );
 
+  testWidgets(
+    'custom recognizers show language names and installed file sizes',
+    (tester) async {
+      const key = TranslationSources.settingKey;
+      final previous = appdata.settings[key];
+      addTearDown(() => appdata.settings[key] = previous);
+      CustomSourceLanguage language(String code, String name, int bytes) {
+        final source = CustomSourceLanguage(
+          code: code,
+          name: name,
+          modelUrl: 'https://example.invalid/$code/rec.onnx',
+          dictUrl: 'https://example.invalid/$code/dict.txt',
+          sizeBytes: 9000000,
+        );
+        makeFile(source.component, 'rec.onnx', bytes);
+        makeFile(source.component, 'dict.txt', 70);
+        makeFile(source.component, ModelComponent.markerName, 0);
+        return source;
+      }
+
+      final french = language('fr', 'Français', 230);
+      final german = language('de', 'Deutsch', 420);
+      appdata.settings[key] = [french.toJson(), german.toJson()];
+      Finder inRow(CustomSourceLanguage source, Finder text) => find.descendant(
+        of: find.byKey(ValueKey(source.engine)),
+        matching: text,
+      );
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      expect(inRow(french, find.text('Français')), findsOneWidget);
+      expect(inRow(german, find.text('Deutsch')), findsOneWidget);
+      expect(inRow(french, find.textContaining('300 B')), findsOneWidget);
+      expect(inRow(german, find.textContaining('490 B')), findsOneWidget);
+      await details(tester, french.component);
+      expect(
+        inRow(french, find.textContaining('/fr/rec.onnx')),
+        findsOneWidget,
+      );
+      expect(
+        inRow(french, find.textContaining('/fr/dict.txt')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Model library'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, 'Text recognition'));
+      await tester.pumpAndSettle();
+      expect(inRow(french, find.textContaining('9.0 MB')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('one downloaded model can serve two editable source languages', (
     tester,
   ) async {

@@ -202,7 +202,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         ),
       for (final sources in groups.values)
         _languageRow(
-          _fileName(sources.first.modelUrl),
+          sources.map((language) => language.name).join(' / '),
           sources.first,
           sources,
           requiredIds,
@@ -629,7 +629,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       ),
       TranslationModels.ocrZhV5 => (
         'PP-OCRv5 mobile',
-        'RapidAI / webnn · Apache-2.0',
+        'RapidAI / webnn / PaddlePaddle · Apache-2.0',
       ),
       TranslationModels.ocrEn => ('PP-OCRv3', 'SWHL/RapidOCR · Apache-2.0'),
       _ => ('PP-OCR mobile v2.0', 'SWHL/RapidOCR · Apache-2.0'),
@@ -660,16 +660,19 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     bool preset = false,
   }) {
     final component = model.component;
-    final hosts = {
-      Uri.parse(model.modelUrl).host,
-      Uri.parse(model.dictUrl).host,
-    };
+    String fileSource(String url) {
+      final uri = Uri.parse(url);
+      return '${uri.host}${uri.path}';
+    }
+
     final shared = languages.length > 1;
     return _component(
       component,
       title: title,
       detail: preset ? 'PP-OCRv5 mobile' : "Custom recognition model".tl,
-      source: preset ? 'RapidAI/RapidOCR · Apache-2.0' : hosts.join(' / '),
+      source: preset
+          ? 'RapidAI/RapidOCR · Apache-2.0'
+          : '${fileSource(model.modelUrl)}\n${fileSource(model.dictUrl)}',
       status: _languageStatus(component, required),
       onDownload: () => _downloadRecognizer(title, model),
       allowDelete: !shared,
@@ -720,12 +723,12 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     final state = store.stateOf(component);
     final expanded = _expandedId == component.id;
     final legacy = component.files.isEmpty;
+    final size = installed && _library != true
+        ? _diskSizes[component.id] ?? 0
+        : component.approxSizeBytes;
     final summary = [
       ?detail,
-      if (!legacy || component.approxSizeBytes > 0)
-        component.approxSizeBytes > 0
-            ? _formatSize(component.approxSizeBytes)
-            : "Size unknown".tl,
+      if (!legacy || size > 0) size > 0 ? _formatSize(size) : "Size unknown".tl,
       if (state.downloading)
         '${(state.progress * 100).round()}%'
       else if (status != null)
