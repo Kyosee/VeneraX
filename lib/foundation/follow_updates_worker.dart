@@ -103,6 +103,10 @@ void runFollowUpdatesWorker(List<String> args) {
 
           // New slow requests must not delay previously committed results.
           await notifyPending();
+          if (FollowUpdateScope.isAutomaticCheckDeferred()) {
+            outcome = 'disabled';
+            return;
+          }
           final due = entries
               .where(
                 (entry) =>

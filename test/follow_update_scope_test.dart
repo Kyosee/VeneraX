@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/follow_update_tasks.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -190,6 +191,30 @@ void main() {
   });
 
   group('fixed check time', () {
+    test('user cancellation expires at the next configured check', () {
+      final oldInterval = FollowUpdateScope.intervalHours;
+      final oldTime = FollowUpdateScope.fixedTime;
+      const key = FollowUpdateScope.lastUserCancellationKey;
+      addTearDown(() {
+        appdata.implicitData.remove(key);
+        appdata.settings[FollowUpdateScope.intervalKey] = oldInterval;
+        appdata.settings[FollowUpdateScope.fixedTimeKey] = oldTime;
+      });
+      final evening = DateTime(2026, 11, 21, 21, 5);
+      appdata.implicitData[key] = evening.toUtc().toIso8601String();
+      appdata.settings[FollowUpdateScope.intervalKey] = 24;
+      appdata.settings[FollowUpdateScope.fixedTimeKey] = '21:00';
+      bool deferred(DateTime now) =>
+          FollowUpdateScope.isAutomaticCheckDeferred(now: now);
+      expect(deferred(DateTime(2026, 11, 21, 22, 24)), isTrue);
+      expect(deferred(DateTime(2026, 11, 22, 20, 59)), isTrue);
+      expect(deferred(DateTime(2026, 11, 22, 21)), isFalse);
+
+      appdata.settings[FollowUpdateScope.intervalKey] = 1;
+      expect(deferred(DateTime(2026, 11, 21, 22, 4)), isTrue);
+      expect(deferred(DateTime(2026, 11, 21, 22, 5)), isFalse);
+    });
+
     test('an unset or malformed value never blocks a check', () {
       final now = DateTime(2026, 9, 5, 3);
       expect(FollowUpdateScope.isPastFixedTime('', now), isTrue);

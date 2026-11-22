@@ -37,7 +37,8 @@ getTaskTitle('follow_update', {'folder': task.folderLabel}),
         ),
         trailing: task.isRunning
             ? TextButton(
-                onPressed: () => followUpdateManager.cancel(task.id),
+                onPressed: () =>
+                    followUpdateManager.cancel(task.id, userInitiated: true),
                 child: Text("Cancel".tl),
               )
             : null,

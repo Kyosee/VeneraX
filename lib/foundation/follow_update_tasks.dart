@@ -191,6 +191,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
     }
     // A cancelled task may still be draining its in-flight requests.
     if (_runningIds.isNotEmpty) return null;
+    if (!manual && FollowUpdateScope.isAutomaticCheckDeferred()) return null;
 
     var task = FollowUpdateTask(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -214,12 +215,17 @@ class FollowUpdateTaskManager with ChangeNotifier {
     return task;
   }
 
-  void cancel(String id) {
-    _canceledIds.add(id);
+  void cancel(String id, {bool userInitiated = false}) {
     var task = currentTasks.where((t) => t.id == id).firstOrNull;
     if (task == null) {
       notifyListeners();
       return;
+    }
+    _canceledIds.add(id);
+    if (userInitiated && !task.manual) {
+      // Persist the decision together with the removal from active tasks.
+      appdata.implicitData[FollowUpdateScope.lastUserCancellationKey] =
+          DateTime.now().toUtc().toIso8601String();
     }
     task.status = FollowUpdateTaskStatus.canceled;
     // Remove from the active list immediately so the UI reflects the cancel at

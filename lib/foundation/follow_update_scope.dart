@@ -17,6 +17,7 @@ abstract class FollowUpdateScope {
   static const checkOnStartKey = 'followUpdatesCheckOnStart';
   static const fixedTimeKey = 'followUpdatesFixedTime';
   static const migratedKey = 'followUpdatesFoldersMigrated';
+  static const lastUserCancellationKey = 'follow_update_last_user_cancellation';
 
   /// The single-folder setting this scope replaced. Left as it is on disk, so
   /// an older build still finds its choice; read only by the migration below.
@@ -129,6 +130,13 @@ abstract class FollowUpdateScope {
       time.minute,
     );
     return !now.isBefore(scheduled);
+  }
+
+  /// A user cancellation skips the rest of this device's current check interval.
+  static bool isAutomaticCheckDeferred({DateTime? now}) {
+    final value = appdata.implicitData[lastUserCancellationKey];
+    if (value is! String) return false;
+    return !isDue(DateTime.tryParse(value)?.toLocal(), now: now);
   }
 
   /// Whether a comic last checked at [lastCheck] is due for another check.

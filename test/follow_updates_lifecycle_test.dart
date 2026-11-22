@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -212,7 +213,7 @@ void main() {
   );
 
   test(
-    'cancelled requests block new checks until their real execution ends',
+    'user cancellation skips automatic retries while allowing a manual check',
     () async {
       final requested = Completer<void>();
       final response = Completer<Res<ComicDetails>>();
@@ -227,13 +228,16 @@ void main() {
       );
       final comic = add('draining');
       final manager = FollowUpdateTaskManager.instance;
-      final task = manager.startCheck([_folder], manual: true)!;
+      final task = manager.startCheck([_folder], manual: false)!;
       await requested.future.timeout(const Duration(seconds: 2));
       final finished = Completer<void>();
       manager.onTaskFinished = (done) {
         if (done.id == task.id) finished.complete();
       };
-      manager.cancel(task.id);
+      manager.cancel(task.id, userInitiated: true);
+      addTearDown(() {
+        appdata.implicitData.remove(FollowUpdateScope.lastUserCancellationKey);
+      });
       expect(task.isRunning, isFalse);
       expect(manager.isExecuting(task.id), isTrue);
       expect(manager.hasPendingWork, isTrue);
@@ -250,11 +254,38 @@ void main() {
       expect(manager.hasPendingWork, isFalse);
       expect(read(comic.id).name, 'Original ${comic.id}');
       expect(read(comic.id).lastCheckDateTime, isNull);
+      appdata.implicitData = jsonDecode(
+        File('${directory.path}/implicitData.json').readAsStringSync(),
+      );
+      expect(appdata.implicitData['follow_update_active_tasks'], isEmpty);
+      final automatic = manager.startCheck([_folder], manual: false);
+      await manager.waitForIdle().timeout(const Duration(seconds: 3));
+      expect(automatic, isNull);
       final restarted = manager.startCheck([_folder], manual: true);
       expect(restarted, isNotNull);
       await manager.waitForIdle().timeout(const Duration(seconds: 3));
       expect(restarted!.status, FollowUpdateTaskStatus.completed);
       expect(read(comic.id).lastCheckDateTime, isNotNull);
+    },
+  );
+
+  test(
+    'cancelling a manual check keeps the automatic schedule eligible',
+    () async {
+      const folder = 'Manual cancel';
+      favorites.createFolder(folder);
+      favorites.prepareTableForFollowUpdates(folder);
+      final response = Completer<Res<ComicDetails>>();
+      ComicSourceManager().add(_source((id) => response.future));
+      final comic = add('manual-cancel', folder: folder);
+      final manager = FollowUpdateTaskManager.instance;
+      final manual = manager.startCheck([folder], manual: true)!;
+      manager.cancel(manual.id, userInitiated: true);
+      response.complete(Res(_details(comic.id)));
+      await manager.waitForIdle().timeout(const Duration(seconds: 3));
+      expect(FollowUpdateScope.isAutomaticCheckDeferred(), isFalse);
+      expect(manager.startCheck([folder], manual: false), isNotNull);
+      await manager.waitForIdle().timeout(const Duration(seconds: 3));
     },
   );
 
@@ -344,6 +375,7 @@ void main() {
       await checking.timeout(const Duration(seconds: 3));
       expect(checkReturned, isTrue);
       expect(manager.hasPendingWork, isFalse);
+      expect(FollowUpdateScope.isAutomaticCheckDeferred(), isFalse);
       expect(read(comic.id).lastCheckDateTime, isNull);
       expect(keepAliveCalls, isEmpty);
       expect(FollowUpdateResult.latest!.checkedAt, lastResult.checkedAt);

@@ -992,6 +992,7 @@ Future<ImportOutcome> _importAppDataLocked(
             'data_sync_tasks',
             'follow_update_active_tasks',
             'follow_update_task_history',
+            FollowUpdateScope.lastUserCancellationKey,
             'pre_translation_active_tasks',
             'pre_translation_task_history',
           ];
