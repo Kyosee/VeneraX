@@ -1,33 +1,5 @@
 part of 'translation_worker.dart';
 
-/// The CTD probe peaked near 600 MiB before counting the reader and RGBA
-/// copies. Check fresh headroom before transferring or loading its tensors.
-Future<bool> _hasStrokeMemory(int pageBytes) async {
-  const reserve = 768 * 1024 * 1024;
-  final needed = reserve + 2 * pageBytes;
-  if (Platform.isIOS) {
-    final system = DynamicLibrary.process();
-    if (!system.providesSymbol('os_proc_available_memory')) return false;
-    final available = system.lookupFunction<Size Function(), int Function()>(
-      'os_proc_available_memory',
-    );
-    return available() >= needed;
-  }
-  if (Platform.isAndroid || Platform.operatingSystem == 'ohos') {
-    try {
-      final stats = await File('/proc/meminfo').readAsString();
-      final available = RegExp(
-        r'^MemAvailable:\s+(\d+)\s+kB',
-        multiLine: true,
-      ).firstMatch(stats);
-      return available != null && int.parse(available[1]!) * 1024 >= needed;
-    } on FileSystemException {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool _fitsBubbleModel(RgbaImage image) =>
     image.width * 3 >= image.height && image.height * 2 >= image.width;
 
@@ -36,51 +8,6 @@ bool _fitsBubbleModel(RgbaImage image) =>
   return (
     (image.width * scale).round().clamp(1, w),
     (image.height * scale).round().clamp(1, h),
-  );
-}
-
-StrokeMask _ctdMask(RgbaImage image, OrtFfiSession session) {
-  const size = 1024;
-  const plane = size * size;
-  var (w, h) = _fitPage(image, size, size);
-  var pixels = _resizeRegion(
-    image,
-    IntRect(0, 0, image.width, image.height),
-    w,
-    h,
-  );
-  // dmMaze's letterbox pads only the right and bottom with black.
-  var tensor = Float32List(3 * plane);
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      var i = y * size + x;
-      var p = (y * w + x) * 4;
-      tensor[i] = pixels[p] / 255;
-      tensor[i + plane] = pixels[p + 1] / 255;
-      tensor[i + plane * 2] = pixels[p + 2] / 255;
-    }
-  }
-  return session.runMapped(
-    {
-      'images': OrtInput.float32(tensor, const [1, 3, size, size]),
-    },
-    'seg',
-    (data, shape) {
-      if (data is! Float32List ||
-          !listEquals(shape, const [1, 1, size, size])) {
-        throw StateError('Unexpected CTD stroke mask');
-      }
-      var mask = Uint8List(w * h);
-      for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-          var value = data[y * size + x];
-          mask[y * w + x] = value.isFinite
-              ? (value.clamp(0, 1) * 255).round()
-              : 0;
-        }
-      }
-      return StrokeMask(w, h, mask);
-    },
   );
 }
 
@@ -172,6 +99,176 @@ List<List<IntRect>> modelDialogueGroups(
       return _DialogueMap(mw, mh, scores: scores).groups(page, boxes);
     },
   );
+}
+
+/// Comic Translate predicts bubble, inside-text and outside-text boxes together.
+List<List<IntRect>> rtDetrDialogueGroups(
+  RgbaImage image,
+  List<IntRect> lines,
+  OrtFfiSession session,
+) {
+  const size = 640, plane = size * size;
+  final page = IntRect(0, 0, image.width, image.height);
+  final resized = _resizeRegion(image, page, size, size);
+  final rgb = Float32List(3 * plane);
+  for (var i = 0; i < plane; i++) {
+    rgb[i] = resized[4 * i] / 255;
+    rgb[plane + i] = resized[4 * i + 1] / 255;
+    rgb[2 * plane + i] = resized[4 * i + 2] / 255;
+  }
+  return session.runMappedOutputs(
+    {
+      'images': OrtInput.float32(rgb, const [1, 3, size, size]),
+      'orig_target_sizes': OrtInput.int64(
+        Int64List.fromList([image.width, image.height]),
+        const [1, 2],
+      ),
+    },
+    const ['labels', 'boxes', 'scores'],
+    (outputs) {
+      final (labels, ls) = outputs[0];
+      final (boxes, bs) = outputs[1];
+      final (scores, ss) = outputs[2];
+      if (labels is! Int64List ||
+          boxes is! Float32List ||
+          scores is! Float32List ||
+          !listEquals(ls, [1, labels.length]) ||
+          !listEquals(ls, ss) ||
+          !listEquals(bs, [1, labels.length, 4])) {
+        throw StateError('Unexpected Comic Translate detection tensors');
+      }
+      final bubbles = <IntRect>[];
+      final captions = <IntRect>[];
+      final text = <({IntRect rect, bool inside, double score})>[];
+      for (var i = 0; i < scores.length; i++) {
+        if (!scores[i].isFinite || scores[i] < .3) continue;
+        final p = i * 4;
+        if (!boxes[p].isFinite ||
+            !boxes[p + 1].isFinite ||
+            !boxes[p + 2].isFinite ||
+            !boxes[p + 3].isFinite) {
+          continue;
+        }
+        final rect = IntRect(
+          boxes[p].floor().clamp(0, page.right),
+          boxes[p + 1].floor().clamp(0, page.bottom),
+          boxes[p + 2].ceil().clamp(0, page.right),
+          boxes[p + 3].ceil().clamp(0, page.bottom),
+        );
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        if (labels[i] == 0) {
+          (_hasCaptionBorder(image, rect) ? captions : bubbles).add(rect);
+        } else if (labels[i] == 1 || labels[i] == 2) {
+          text.add((rect: rect, inside: labels[i] == 1, score: scores[i]));
+        }
+      }
+      return groupDetectedDialogue(
+        image,
+        lines,
+        bubbles,
+        text,
+        captions: captions,
+      );
+    },
+  );
+}
+
+@visibleForTesting
+List<List<IntRect>> groupDetectedDialogue(
+  RgbaImage image,
+  List<IntRect> lines,
+  List<IntRect> bubbles,
+  List<({IntRect rect, bool inside, double score})> text, {
+  List<IntRect> captions = const [],
+}) {
+  final groups = <IntRect, List<IntRect>>{};
+  final undecided = <IntRect>[];
+  final owners = <IntRect, IntRect>{};
+  for (final line in lines) {
+    if (line.area <= 0) continue;
+    double coverage(IntRect box) {
+      final w = math.min(line.right, box.right) - math.max(line.left, box.left);
+      final h = math.min(line.bottom, box.bottom) - math.max(line.top, box.top);
+      return w > 0 && h > 0 ? w * h / line.area : 0;
+    }
+
+    // Competing text predictions near adjacent bubbles can overlap. Prefer
+    // the label that explains more of this OCR line at higher confidence.
+    var inside = 0.0, outside = 0.0;
+    IntRect? insideRect;
+    for (final prediction in text) {
+      final overlap = coverage(prediction.rect);
+      if (overlap < .5) continue;
+      final score = overlap * prediction.score;
+      if (prediction.inside) {
+        if (score > inside) {
+          inside = score;
+          insideRect = prediction.rect;
+        }
+      } else {
+        outside = math.max(outside, score);
+      }
+    }
+    IntRect? owner;
+    for (final bubble in bubbles) {
+      if (coverage(bubble) >= .85 &&
+          (owner == null || bubble.area < owner.area)) {
+        owner = bubble;
+      }
+    }
+    if (owner == null && captions.any((box) => coverage(box) >= .85)) continue;
+    if (inside > outside) {
+      (groups[owner ?? insideRect!] ??= []).add(line);
+    } else if (outside == 0 || owner != null) {
+      // Partial detections must still get the default closed-bubble check.
+      // A detected bubble can also corroborate a misclassified text line.
+      undecided.add(line);
+      if (owner != null) owners[line] = owner;
+    }
+  }
+  for (final fallback in dialogueGroups(image, undecided)) {
+    final owner = owners[fallback.first] ?? fallback.first;
+    (groups[owner] ??= []).addAll(fallback);
+  }
+  return groups.values.toList();
+}
+
+/// The detector also calls boxed narration a bubble. Look for straight edges
+/// near all four sides, including thin outlines on a same-colour background.
+bool _hasCaptionBorder(RgbaImage image, IntRect box) {
+  if (box.width < 16 || box.height < 16) return false;
+  bool straight(bool horizontal, int edge) {
+    final length = horizontal ? box.width : box.height;
+    final depth = horizontal ? box.height : box.width;
+    final start = horizontal ? box.left : box.top;
+    final limit = horizontal ? image.height : image.width;
+    final search = (depth * .05).ceil().clamp(3, 12);
+    final stride = (depth * .012).round().clamp(2, 5);
+    for (
+      var pos = math.max(stride, edge - search);
+      pos <= math.min(limit - 1 - stride, edge + search);
+      pos++
+    ) {
+      var edges = 0;
+      for (var i = 1; i <= 11; i++) {
+        final along = start + length * i ~/ 12;
+        int sample(int at) =>
+            horizontal ? _rgbAt(image, along, at) : _rgbAt(image, at, along);
+        final center = sample(pos);
+        if (!_nearColor(center, sample(pos - stride), 38) ||
+            !_nearColor(center, sample(pos + stride), 38)) {
+          edges++;
+        }
+      }
+      if (edges >= 10) return true;
+    }
+    return false;
+  }
+
+  return straight(true, box.top) &&
+      straight(true, box.bottom) &&
+      straight(false, box.left) &&
+      straight(false, box.right);
 }
 
 /// Lightweight closed-background detection for pages without model evidence.

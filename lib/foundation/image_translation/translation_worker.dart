@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:math' as math;
 
@@ -10,6 +9,7 @@ import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
+import 'package:venera/foundation/image_translation/text_detector_geometry.dart';
 import 'package:venera/foundation/image_translation/translation_performance_config.dart';
 import 'package:venera/foundation/image_translation/worker_pool_selection.dart';
 import 'package:venera/utils/io.dart';
@@ -22,6 +22,7 @@ class WorkerModelPaths {
   WorkerModelPaths({
     required this.detector,
     this.bubbleModel,
+    this.rtDetrModel,
     this.jaEncoder,
     this.jaDecoder,
     this.jaVocab,
@@ -34,6 +35,7 @@ class WorkerModelPaths {
 
   final String detector;
   final String? bubbleModel;
+  final String? rtDetrModel;
   final String? jaEncoder;
   final String? jaDecoder;
   final String? jaVocab;
@@ -205,21 +207,6 @@ class _OcrPageRequest {
   final bool dialogueOnly;
 }
 
-class _StrokeRequest {
-  _StrokeRequest(
-    this.id,
-    this.pixels,
-    this.width,
-    this.height,
-    this.path,
-    this.threads,
-  );
-
-  final int id, width, height, threads;
-  final TransferableTypedData pixels;
-  final String path;
-}
-
 class _ReleaseRequest {
   const _ReleaseRequest({this.stop = false});
   final bool stop;
@@ -345,7 +332,6 @@ class TranslationWorker {
   static final instance = TranslationWorker._();
 
   final _workers = <_IsolateWorker>[];
-  Future<void> _lastStroke = Future.value();
 
   bool _isWarm = false;
 
@@ -378,7 +364,9 @@ class TranslationWorker {
     // Keep total ONNX intra-op threads ~= cores: dividing by the pool size
     // avoids oversubscribing the CPU (which would make more workers slower).
     var useBubble =
-        dialogueOnly && paths.bubbleModel != null && _fitsBubbleModel(image);
+        dialogueOnly &&
+        (paths.rtDetrModel != null || paths.bubbleModel != null) &&
+        _fitsBubbleModel(image);
     var intraThreads = (Platform.numberOfProcessors ~/ poolSize).clamp(1, 4);
     var worker = _pickWorker(useBubble ? 1 : poolSize);
     return worker
@@ -390,16 +378,6 @@ class TranslationWorker {
           dialogueOnly: dialogueOnly,
         )
         .whenComplete(() => _isWarm = true);
-  }
-
-  /// Only one full-page CTD session and one input transfer can be active.
-  Future<StrokeMask?> strokeMask(RgbaImage image, String modelPath) {
-    var request = _lastStroke.then((_) async {
-      if (!await _hasStrokeMemory(image.pixels.length)) return null;
-      return _pickWorker(1).strokeMask(image, modelPath);
-    });
-    _lastStroke = request.then<void>((_) {}, onError: (Object _) {});
-    return request;
   }
 
   _IsolateWorker _pickWorker(int poolSize) {
@@ -536,18 +514,6 @@ class _IsolateWorker {
     );
   }
 
-  Future<StrokeMask?> strokeMask(RgbaImage image, String path) =>
-      _request<StrokeMask?>(
-        (id) => _StrokeRequest(
-          id,
-          TransferableTypedData.fromList([image.pixels]),
-          image.width,
-          image.height,
-          path,
-          Platform.numberOfProcessors.clamp(1, 3),
-        ),
-      );
-
   void release() {
     _sendPort?.send(const _ReleaseRequest());
   }
@@ -582,23 +548,6 @@ void _workerMain(SendPort mainPort) {
       } catch (e, s) {
         mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
       }
-    } else if (message is _StrokeRequest) {
-      try {
-        var image = RgbaImage(
-          message.width,
-          message.height,
-          message.pixels.materialize().asUint8List(),
-        );
-        state._intraThreads = message.threads;
-        var mask = state._optional(
-          message.path,
-          (session) => _ctdMask(image, session),
-          stroke: true,
-        );
-        mainPort.send(_WorkerResponse(message.id, mask, null));
-      } catch (e, s) {
-        mainPort.send(_WorkerResponse(message.id, null, '$e\n$s'));
-      }
     } else if (message is _ReleaseRequest) {
       state.release();
       if (message.stop) port.close();
@@ -621,11 +570,7 @@ class _WorkerState {
     );
   }
 
-  T? _optional<T>(
-    String path,
-    T Function(OrtFfiSession) run, {
-    bool stroke = false,
-  }) {
+  T? _optional<T>(String path, T Function(OrtFfiSession) run) {
     var failed = _failedModels[path];
     if (failed != null) {
       var stat = File(path).statSync();
@@ -642,7 +587,6 @@ class _WorkerState {
           path,
           intraOpThreads: _intraThreads,
           disableMemPattern: true,
-          disableCpuMemArena: stroke,
         ),
       );
       var result = run(session);
@@ -690,30 +634,42 @@ class _WorkerState {
     );
     var boxes = _detectBoxes(image, req.paths);
     if (boxes.isEmpty) return const [];
+    if (needsVerticalDetectionPass(boxes)) {
+      boxes = combineVerticalDetections(
+        boxes,
+        _detectBoxes(image, req.paths, rotate: true),
+      );
+    }
     List<List<IntRect>>? groups;
     if (req.dialogueOnly) {
-      var path = req.paths.bubbleModel;
+      var rtDetr = req.paths.rtDetrModel;
+      var path = rtDetr ?? req.paths.bubbleModel;
       if (path != null && _fitsBubbleModel(image)) {
         groups = _optional(
           path,
-          (session) => modelDialogueGroups(image, boxes, session),
+          (session) => rtDetr != null
+              ? rtDetrDialogueGroups(image, boxes, session)
+              : modelDialogueGroups(image, boxes, session),
         );
       }
       groups ??= dialogueGroups(image, boxes);
     }
-    var clusters = [
-      for (var group in groups ?? [boxes])
-        ...clusterOcrBoxes(group, image.width, image.height),
-    ];
+    var clusters = req.dialogueOnly
+        ? [
+            for (var group in groups!)
+              ...clusterOcrBoxes(group, image.width, image.height),
+          ]
+        : clusterAllTextBoxes(
+            boxes,
+            dialogueGroups(image, boxes),
+            image.width,
+            image.height,
+          );
     clusters.sort((a, b) => _boundsOf(a).top.compareTo(_boundsOf(b).top));
-    const maxBlocks = 32;
-    if (clusters.length > maxBlocks) {
-      clusters = clusters.sublist(0, maxBlocks);
-    }
 
     var blocks = <OcrBlock>[];
     var pageHint = OcrPageEngineHint();
-    for (var cluster in clusters) {
+    for (var cluster in clusters.expand(splitOcrCluster)) {
       var detectedBounds = _boundsOf(cluster);
       var eraseBounds = detectedBounds.inflated(
         2,
@@ -726,8 +682,26 @@ class _WorkerState {
       // guard and must not reach into artwork between lines.
       var eraseLines = [
         for (var line in cluster)
-          line.inflated(0, 0, image.width, image.height),
+          line.inflated(
+            0,
+            _isVerticalLine(line) ? (line.width * .15).round().clamp(2, 5) : 2,
+            image.width,
+            image.height,
+          ),
       ];
+      final verticalColumns = cluster.where(_isVerticalLine).toList();
+      if (verticalColumns.length >= 2) {
+        final firstTop = verticalColumns
+            .map((line) => line.top)
+            .reduce(math.min);
+        for (var i = 0; i < cluster.length; i++) {
+          final line = cluster[i];
+          if (line.height > line.width &&
+              line.top - firstTop <= math.min(line.width * 1.5, 28)) {
+            eraseLines[i].top = math.min(eraseLines[i].top, firstTop);
+          }
+        }
+      }
       var bounds = detectedBounds.inflated(4, 4, image.width, image.height);
       if (bounds.width < 8 || bounds.height < 8) continue;
       var colors = _sampleColors(image, bounds);
@@ -775,7 +749,7 @@ class _WorkerState {
   /// glyph height, used to size the translation to the source text.
   int _medianLineHeight(List<IntRect> lines) {
     if (lines.isEmpty) return 0;
-    var heights = [for (var l in lines) l.height]..sort();
+    var heights = [for (var l in lines) math.min(l.width, l.height)]..sort();
     return heights[heights.length ~/ 2];
   }
 
@@ -845,7 +819,11 @@ class _WorkerState {
 
   // ----- detection -----
 
-  List<IntRect> _detectBoxes(RgbaImage image, WorkerModelPaths paths) {
+  List<IntRect> _detectBoxes(
+    RgbaImage image,
+    WorkerModelPaths paths, {
+    bool rotate = false,
+  }) {
     var session = _session(paths.detector);
     var boxes = <IntRect>[];
     const tileHeight = 1280;
@@ -862,7 +840,7 @@ class _WorkerState {
           bottom * image.width * 4,
         ),
       );
-      var input = _detPreprocess(tile);
+      var input = _detPreprocess(tile, rotate: rotate);
       var output = session
           .run({
             session.inputNames.first: OrtInput.float32(input.tensor, [
@@ -874,14 +852,23 @@ class _WorkerState {
           })
           .values
           .first;
-      var tileBoxes = _detPostprocess(
+      var tileBoxes = postprocessTextDetections(
         output.data,
         input.width,
         input.height,
-        tile.width,
-        tile.height,
+        rotate ? tile.height : tile.width,
+        rotate ? tile.width : tile.height,
       );
       for (var box in tileBoxes) {
+        if (rotate) {
+          box = IntRect(
+            tile.width - box.bottom,
+            box.left,
+            tile.width - box.top,
+            box.right,
+          );
+        }
+        box = box.inflated(0, 0, tile.width, tile.height);
         box.top += top;
         box.bottom += top;
         if (!boxes.any((b) => _iou(b, box) > 0.5)) {
@@ -973,15 +960,9 @@ class _WorkerState {
       return ['', ...dict.map((line) => line.isEmpty ? ' ' : line), ' '];
     });
     var height = paths.recHeights[lang] ?? 48;
-    // Vertical columns read right to left; horizontal lines top to bottom.
-    var vertical = lines.any(_isVerticalLine);
-    var sorted = [...lines]
-      ..sort(
-        (a, b) =>
-            vertical ? b.right.compareTo(a.right) : a.top.compareTo(b.top),
-      );
+    // splitOcrCluster orders whole columns and fragments within each column.
     var parts = <String>[];
-    for (var line in sorted) {
+    for (var line in lines) {
       var rect = line.inflated(2, 2, image.width, image.height);
       if (rect.width < 8 || rect.height < 8) continue;
       // The line models read left to right only: a column squeezed to one
@@ -1090,17 +1071,18 @@ Uint8List _resizeRegion(RgbaImage src, IntRect region, int outW, int outH) {
 /// PP-OCR DBNet preprocessing: long side <= 1280 (small/stylized lettering
 /// survives better than at the stock 960), multiple of 32, ImageNet
 /// normalization.
-_DetInput _detPreprocess(RgbaImage tile) {
+_DetInput _detPreprocess(RgbaImage tile, {bool rotate = false}) {
   const maxSide = 1280.0;
   var scale = math.min(1.0, maxSide / math.max(tile.width, tile.height));
   int round32(double v) => math.max(32, (v / 32).round() * 32);
-  var inW = round32(tile.width * scale);
-  var inH = round32(tile.height * scale);
-  var resized = _resizeRegion(
+  var inW = round32((rotate ? tile.height : tile.width) * scale);
+  var inH = round32((rotate ? tile.width : tile.height) * scale);
+  var resized = resizeTextLine(
     tile,
     IntRect(0, 0, tile.width, tile.height),
     inW,
     inH,
+    rotate: rotate,
   );
   const mean = [0.485, 0.456, 0.406];
   const std = [0.229, 0.224, 0.225];
@@ -1114,76 +1096,249 @@ _DetInput _detPreprocess(RgbaImage tile) {
   return _DetInput(tensor, inW, inH);
 }
 
-/// DBNet postprocessing: binarize, connected components, filter, dilate.
-List<IntRect> _detPostprocess(
-  Float32List probs,
-  int w,
-  int h,
-  int tileWidth,
-  int tileHeight,
-) {
-  const binaryThreshold = 0.3;
-  const scoreThreshold = 0.5;
-  const unclipRatio = 1.8;
-  var labels = Int32List(w * h);
-  var boxes = <IntRect>[];
-  var stack = <int>[];
-  var nextLabel = 0;
-  for (var start = 0; start < w * h; start++) {
-    if (labels[start] != 0 || probs[start] < binaryThreshold) {
-      continue;
+/// A fragmented vertical page benefits from detecting the same pixels turned
+/// sideways. Reuse the loaded detector, and keep ordinary pages to one pass.
+@visibleForTesting
+bool needsVerticalDetectionPass(List<IntRect> boxes) {
+  var vertical = 0, horizontal = 0, fragments = 0;
+  for (final box in boxes) {
+    if (box.height >= box.width * 2.5) {
+      vertical++;
+    } else if (box.width >= box.height * 2.5) {
+      horizontal++;
+    } else {
+      fragments++;
     }
-    nextLabel++;
-    var minX = w, minY = h, maxX = 0, maxY = 0;
-    var count = 0;
-    var scoreSum = 0.0;
-    stack.add(start);
-    labels[start] = nextLabel;
-    while (stack.isNotEmpty) {
-      var index = stack.removeLast();
-      var x = index % w;
-      var y = index ~/ w;
-      count++;
-      scoreSum += probs[index];
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-      for (var d = 0; d < 4; d++) {
-        var nx = x + const [1, -1, 0, 0][d];
-        var ny = y + const [0, 0, 1, -1][d];
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-        var ni = ny * w + nx;
-        if (labels[ni] == 0 && probs[ni] >= binaryThreshold) {
-          labels[ni] = nextLabel;
-          stack.add(ni);
-        }
+  }
+  return vertical >= 2 &&
+      vertical > horizontal * 2 &&
+      fragments > vertical + horizontal;
+}
+
+/// Prefer complete columns over repeated glyph fragments. Preserve detections
+/// missed by the sideways pass, including horizontal captions on mixed pages.
+@visibleForTesting
+List<IntRect> combineVerticalDetections(
+  List<IntRect> original,
+  List<IntRect> rotated,
+) {
+  if (rotated.isEmpty) return original;
+  int overlap(IntRect a, IntRect b) =>
+      _axisOverlap(a.left, a.right, b.left, b.right) *
+      _axisOverlap(a.top, a.bottom, b.top, b.bottom);
+  bool horizontal(IntRect box) => box.width >= box.height * 1.5;
+  IntRect extendColumn(IntRect column, IntRect fragment) => IntRect(
+    column.left,
+    math.min(column.top, fragment.top),
+    column.right,
+    math.max(column.bottom, fragment.bottom),
+  );
+  // Match against the detector's original coordinates throughout. Extending
+  // one column must not make it a match for a neighbour's glyphs.
+  final crops = {for (final box in rotated) box: box};
+  for (final box in original) {
+    IntRect? best;
+    var bestArea = 0, bestDistance = 0;
+    var covered = false;
+    for (final column in rotated) {
+      final x = _axisOverlap(box.left, box.right, column.left, column.right);
+      final y = _axisOverlap(box.top, box.bottom, column.top, column.bottom);
+      final area = x * y;
+      if (horizontal(box) == horizontal(column) &&
+          area >= box.area * (horizontal(box) ? 1.0 : .5)) {
+        covered = true;
+      }
+      if (column.height > box.height * 3 &&
+          box.width <= column.width * 1.25 &&
+          box.height <= column.width * 1.25 &&
+          area >= box.area * .9) {
+        covered = true;
+      }
+      if (horizontal(box) ||
+          column.height <= column.width ||
+          box.width > column.width * 1.5 ||
+          x < math.min(box.width, column.width) * .6 ||
+          y < math.min(box.height, column.height) * .5) {
+        continue;
+      }
+      final distance = (box.left + box.right - column.left - column.right)
+          .abs();
+      if (area > bestArea || (area == bestArea && distance < bestDistance)) {
+        best = column;
+        bestArea = area;
+        bestDistance = distance;
       }
     }
-    if (count < 12 || scoreSum / count < scoreThreshold) {
+    if (best != null) {
+      final sameColumn =
+          _axisOverlap(box.left, box.right, best.left, best.right) >=
+          math.max(box.width, best.width) * .85;
+      if (_isVerticalLine(box) || sameColumn) {
+        crops[best] = extendColumn(crops[best]!, box);
+      }
+    } else if (!covered) {
+      crops[box] = box;
+    }
+  }
+  final combined = crops.keys.toList();
+  combined.sort((a, b) => b.area.compareTo(a.area));
+  final result = <IntRect>[];
+  for (final box in combined) {
+    var duplicate = false;
+    for (final anchor in result) {
+      if (horizontal(box) != horizontal(anchor)) continue;
+      if (_isVerticalLine(box) &&
+          _isVerticalLine(anchor) &&
+          _axisOverlap(box.left, box.right, anchor.left, anchor.right) >=
+              math.max(box.width, anchor.width) * .8 &&
+          _axisOverlap(box.top, box.bottom, anchor.top, anchor.bottom) >=
+              math.min(box.height, anchor.height) * .5) {
+        crops[anchor] = extendColumn(crops[anchor]!, crops[box]!);
+        duplicate = true;
+        break;
+      }
+      if (overlap(box, anchor) >= box.area * .8) {
+        if (horizontal(box)) {
+          final crop = crops[anchor]!, other = crops[box]!;
+          crops[anchor] = IntRect(
+            math.min(crop.left, other.left),
+            math.min(crop.top, other.top),
+            math.max(crop.right, other.right),
+            math.max(crop.bottom, other.bottom),
+          );
+        }
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) result.add(box);
+  }
+  final columns = [
+    for (final box in rotated)
+      if (_isVerticalLine(box)) box,
+    for (final box in result)
+      if (_isVerticalLine(box)) crops[box]!,
+  ];
+  return [
+    for (final box in result)
+      if (_isVerticalLine(box) || !_crossesDetectedColumns(box, columns))
+        crops[box]!,
+  ];
+}
+
+// On a vertical page DBNet can also connect the first glyph of several
+// columns into a horizontal strip. Count distinct covered x coordinates so
+// two overlapping columns cannot suppress an independent horizontal caption.
+bool _crossesDetectedColumns(IntRect box, List<IntRect> columns) {
+  final uniqueSpans = <(int, int)>{};
+  final strip = box.width >= box.height * 1.5;
+  for (final column in columns) {
+    // A row through staggered column tops can clip half of its first glyph.
+    // A box spanning several whole columns needs stronger vertical overlap.
+    if (box.width < column.width * 1.12 ||
+        column.height < box.height * (strip ? 1.5 : 1.0) ||
+        _axisOverlap(column.top, column.bottom, box.top, box.bottom) <
+            box.height * (strip ? .45 : .75)) {
       continue;
     }
-    var boxW = maxX - minX + 1;
-    var boxH = maxY - minY + 1;
-    if (boxW < 3 || boxH < 3) continue;
-    var offset = boxW * boxH * unclipRatio / (2 * (boxW + boxH));
-    var scaleX = tileWidth / w;
-    var scaleY = tileHeight / h;
-    boxes.add(
-      IntRect(
-        ((minX - offset) * scaleX).round(),
-        ((minY - offset) * scaleY).round(),
-        ((maxX + 1 + offset) * scaleX).round(),
-        ((minY - offset) * scaleY).round() +
-            ((boxH + 2 * offset) * scaleY).round(),
-      ),
-    );
+    final l = math.max(column.left, box.left);
+    final r = math.min(column.right, box.right);
+    if (r > l) uniqueSpans.add((l, r));
   }
-  return boxes;
+  final spans = uniqueSpans.toList();
+  if (spans.length < 2) return false;
+  spans.sort((a, b) => a.$1.compareTo(b.$1));
+  var covered = 0, right = box.left;
+  for (final span in spans) {
+    covered += math.max(0, span.$2 - math.max(right, span.$1));
+    right = math.max(right, span.$2);
+  }
+  return covered >= box.width * .78;
+}
+
+/// Keep long notes within the recognizer's token and crop limits. Columns are
+/// split into neighbouring groups instead of discarding the rest of the page.
+@visibleForTesting
+List<List<IntRect>> splitOcrCluster(List<IntRect> cluster) {
+  if (cluster.length < 2) return [cluster];
+  final vertical = cluster.any(_isVerticalLine);
+  final sorted = [...cluster];
+  if (vertical) {
+    int center(IntRect box) => box.left + box.right;
+    sorted.sort((a, b) => center(b).compareTo(center(a)));
+    final columns = <List<IntRect>>[];
+    for (final line in sorted) {
+      final anchor = columns.isEmpty ? null : columns.last.first;
+      if (anchor == null ||
+          _axisOverlap(line.left, line.right, anchor.left, anchor.right) <
+              math.min(line.width, anchor.width) * .6) {
+        columns.add([line]);
+      } else {
+        columns.last.add(line);
+      }
+    }
+    sorted.clear();
+    for (final column in columns) {
+      column.sort((a, b) => a.top.compareTo(b.top));
+      sorted.addAll(column);
+    }
+  } else {
+    sorted.sort((a, b) => a.top.compareTo(b.top));
+  }
+  final groups = <List<IntRect>>[];
+  var group = <IntRect>[];
+  var glyphs = 0.0;
+  for (final line in sorted) {
+    final count =
+        math.max(line.width, line.height) /
+        math.max(1, math.min(line.width, line.height));
+    if (group.isNotEmpty && glyphs + count > 36) {
+      groups.add(group);
+      group = [];
+      glyphs = 0;
+    }
+    group.add(line);
+    glyphs += count;
+  }
+  if (group.isNotEmpty) groups.add(group);
+  return groups;
 }
 
 /// Groups detector line boxes into OCR blocks without joining incompatible
 /// neighbouring captions or speech bubbles.
+@visibleForTesting
+List<List<IntRect>> clusterAllTextBoxes(
+  List<IntRect> boxes,
+  List<List<IntRect>> bubbles,
+  int width,
+  int height,
+) {
+  final membership = <IntRect>{for (final bubble in bubbles) ...bubble};
+  final grouped = [
+    for (final bubble in bubbles) [...bubble],
+  ];
+  final interiors = bubbles.map(_boundsOf).toList();
+  final outside = <IntRect>[];
+  for (final line in boxes) {
+    if (membership.contains(line)) continue;
+    final matches = [
+      for (var i = 0; i < interiors.length; i++)
+        if (interiors[i].intersects(line)) i,
+    ];
+    // Expanded edge columns can join one enclosed bubble. Outside captions
+    // and detections crossing several bubbles keep their own reading block.
+    if (matches.length == 1) {
+      grouped[matches.single].add(line);
+    } else {
+      outside.add(line);
+    }
+  }
+  return [
+    for (final group in grouped) ...clusterOcrBoxes(group, width, height),
+    ...clusterOcrBoxes(outside, width, height),
+  ];
+}
+
 List<List<IntRect>> clusterOcrBoxes(
   List<IntRect> boxes,
   int width,
@@ -1303,7 +1458,7 @@ bool _compatibleTextLines(IntRect a, IntRect b) {
         _axisOverlap(a.top, a.bottom, b.top, b.bottom) >=
         math.min(a.height, b.height) * 0.25;
     var shortFragments =
-        a.height <= thicknessA * 12 && b.height <= thicknessB * 12;
+        a.height <= thicknessA * 3 || b.height <= thicknessB * 3;
     var sameColumn =
         shortFragments &&
         _axisOverlap(a.left, a.right, b.left, b.right) >=

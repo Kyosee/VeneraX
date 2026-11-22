@@ -534,8 +534,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           );
           if (!mounted) return;
           if (!replaced) {
+            final previous = ImageTranslationService.pageTranslation(
+              key,
+              provider.legacyTranslationKey,
+            );
             context.showMessage(
-              message: 'No translatable text found on this page'.tl,
+              message: previous.isEmpty
+                  ? 'No translatable text found on this page'.tl
+                  : 'No translatable text found. Previous translation kept.'.tl,
             );
           }
         } catch (e, s) {

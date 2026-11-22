@@ -27,7 +27,9 @@ class _Pipeline extends Fake implements PageTranslationPipeline {
   final analysis = Completer<PageAnalysis>();
   var requests = 0;
   List<TranslatedRegion> previousRegions = [];
-  bool maskAvailable = false;
+  bool renderText = false;
+  Completer<void>? renderStarted;
+  Completer<void>? resumeRender;
   @override
   bool get ocrIsWarm => true;
 
@@ -71,10 +73,12 @@ class _Pipeline extends Fake implements PageTranslationPipeline {
     Uint8List imageBytes,
     List<TranslatedRegion> regions, {
     InpaintMode mode = InpaintMode.smart,
-    bool enhanceStrokes = false,
-    void Function()? onStrokeMask,
   }) async {
-    if (enhanceStrokes && maskAvailable) onStrokeMask?.call();
+    if (renderStarted != null && !renderStarted!.isCompleted) {
+      renderStarted!.complete();
+      await resumeRender!.future;
+    }
+    if (renderText) return Uint8List.fromList(regions.single.text.codeUnits);
     return Uint8List.fromList([42]);
   }
 }
@@ -129,6 +133,35 @@ void main() {
     App.cachePath = oldCache;
     await temp.delete(recursive: true);
   });
+  test(
+    'old failed render is rebuilt from stored text without another translation',
+    () async {
+      for (final mode in InpaintMode.values) {
+        await CacheManager().delete(
+          ImageTranslationService.renderedKey(key, mode),
+        );
+        for (final version in [2, 3]) {
+          await CacheManager().writeCache('$key#$version${mode.token}', [7]);
+          await CacheManager().writeCache('$key#$version${mode.token}+ctd', [
+            8,
+          ]);
+        }
+        expect(await service.hasRenderedPage(key, mode), isFalse);
+        final output = await service.renderStoredPage(
+          key,
+          Uint8List.fromList([1]),
+          mode,
+          chapter: chapter,
+        );
+        expect(output, [42]);
+        expect(await (await service.findTranslated(key, mode))!.readAsBytes(), [
+          42,
+        ]);
+      }
+      expect(pipeline.requests, 0);
+      expect(TranslationStore().get(key)!.single.text, 'old');
+    },
+  );
   test(
     'a paid retry replaces only the chosen page and its render variants',
     () async {
@@ -202,6 +235,135 @@ void main() {
       [3],
     );
   });
+
+  test('a resumed chapter renders the latest successful retry', () async {
+    await CacheManager().delete(
+      ImageTranslationService.renderedKey(key, config.mode),
+    );
+    pipeline.renderText = true;
+    final paused = Completer<void>();
+    final resume = Completer<void>();
+    var waits = 0;
+    final batch = service.translatePageGroup(
+      [
+        (
+          cacheKey: key,
+          legacyCacheKey: null,
+          imageBytes: Uint8List.fromList([1]),
+        ),
+      ],
+      'book@src',
+      config,
+      chapter: chapter,
+      waitUntilResumed: () async {
+        if (++waits == 2) {
+          paused.complete();
+          await resume.future;
+        }
+      },
+    );
+    await paused.future.timeout(const Duration(seconds: 5));
+    pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+    expect(await run(), isTrue);
+    resume.complete();
+    expect(await batch, [true]);
+    expect(TranslationStore().get(key)!.single.text, 'new');
+    expect(
+      await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+      'new'.codeUnits,
+    );
+    expect(pipeline.requests, 1);
+  });
+
+  test(
+    'an untranslated page stays readable while a paid request waits',
+    () async {
+      final page = ImageTranslationService.cacheKeyFor('src', 'book', 'ch', 12);
+      final image = Uint8List.fromList([12]);
+      final work = service.translateOne(
+        page,
+        'book@src',
+        image,
+        config,
+        chapter: chapter,
+      );
+      await pipeline.started.future.timeout(const Duration(seconds: 5));
+      final original = await service
+          .renderStoredPage(page, image, config.mode, chapter: chapter)
+          .timeout(const Duration(seconds: 1));
+      expect(original, isNull);
+      expect(pipeline.analysis.isCompleted, isFalse);
+      pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+      expect(await work, isTrue);
+    },
+  );
+
+  for (final storedOnly in [true, false]) {
+    test(
+      'render entry storedOnly=$storedOnly waits for a pending retry',
+      () async {
+        pipeline.renderText = true;
+        final retry = run();
+        await pipeline.started.future.timeout(const Duration(seconds: 5));
+        final patch = TranslationConfig(
+          sourceLang: config.sourceLang,
+          targetLang: config.targetLang,
+          mode: InpaintMode.patch,
+        );
+        final render = storedOnly
+            ? service.renderStoredPage(
+                key,
+                Uint8List.fromList([1]),
+                patch.mode,
+                chapter: chapter,
+              )
+            : service.translateOne(
+                key,
+                'book@src',
+                Uint8List.fromList([1]),
+                patch,
+                chapter: chapter,
+              );
+        pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+        expect(await retry, isTrue);
+        final result = await render;
+        if (storedOnly) expect(result, 'new'.codeUnits);
+        expect(
+          await (await service.findTranslated(key, patch.mode))!.readAsBytes(),
+          'new'.codeUnits,
+        );
+        expect(pipeline.requests, 1);
+      },
+    );
+  }
+
+  test(
+    'an unfinished cache render cannot overwrite a successful retry',
+    () async {
+      await CacheManager().delete(
+        ImageTranslationService.renderedKey(key, config.mode),
+      );
+      pipeline.renderText = true;
+      pipeline.renderStarted = Completer<void>();
+      pipeline.resumeRender = Completer<void>();
+      final render = service.renderStoredPage(
+        key,
+        Uint8List.fromList([1]),
+        config.mode,
+        chapter: chapter,
+      );
+      await pipeline.renderStarted!.future.timeout(const Duration(seconds: 5));
+      await expectLater(run(), throwsStateError);
+      pipeline.resumeRender!.complete();
+      expect(await render, 'old'.codeUnits);
+      pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+      expect(await run(), isTrue);
+      expect(
+        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+        'new'.codeUnits,
+      );
+    },
+  );
 
   test(
     'changing modes during a reader request pays once and renders both modes',
@@ -368,51 +530,37 @@ void main() {
     },
   );
 
-  test(
-    'the reader prefers an enhanced retry while a fallback stays eligible for enhancement',
-    () async {
-      pipeline.maskAvailable = true;
-      pipeline.analysis.complete(PageAnalysis([region('new')], {}));
-      expect(await run(), isTrue);
-      expect(
-        await service.hasRenderedPage(key, config.mode, enhanceStrokes: true),
-        isTrue,
-      );
-      expect(
-        await (await service.findTranslated(key, config.mode))!.readAsBytes(),
-        [42],
-      );
-      expect(
-        await service.hasRenderedPage(
-          neighbor,
-          config.mode,
-          enhanceStrokes: true,
-        ),
-        isFalse,
-      );
-      ReaderImageProvider provider(TranslationConfig selection) =>
-          ReaderImageProvider(
-            'image',
-            'src',
-            'book',
-            'ch',
-            1,
-            translationKey: key,
-            translationConfig: selection,
-            translated: true,
-          );
-      expect(
-        provider(config),
-        isNot(
-          provider(
-            TranslationConfig(
-              sourceLang: config.sourceLang,
-              targetLang: config.targetLang,
-              mode: InpaintMode.patch,
-            ),
+  test('a paid retry and its neighbor use their own current render', () async {
+    pipeline.analysis.complete(PageAnalysis([region('new')], {}));
+    expect(await run(), isTrue);
+    expect(await service.hasRenderedPage(key, config.mode), isTrue);
+    expect(
+      await (await service.findTranslated(key, config.mode))!.readAsBytes(),
+      [42],
+    );
+    expect(await service.hasRenderedPage(neighbor, config.mode), isTrue);
+    ReaderImageProvider provider(TranslationConfig selection) =>
+        ReaderImageProvider(
+          'image',
+          'src',
+          'book',
+          'ch',
+          1,
+          translationKey: key,
+          translationConfig: selection,
+          translated: true,
+        );
+    expect(
+      provider(config),
+      isNot(
+        provider(
+          TranslationConfig(
+            sourceLang: config.sourceLang,
+            targetLang: config.targetLang,
+            mode: InpaintMode.patch,
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
 }

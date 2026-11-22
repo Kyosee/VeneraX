@@ -9,22 +9,6 @@ class RgbaImage {
   final Uint8List pixels;
 }
 
-/// Quantized stroke probabilities in normalized page coordinates.
-class StrokeMask {
-  StrokeMask(this.width, this.height, this.pixels)
-    : assert(width > 0 && height > 0 && pixels.length == width * height);
-
-  final int width;
-  final int height;
-  final Uint8List pixels;
-
-  bool contains(int x, int y, int pageWidth, int pageHeight) {
-    final mx = (x * width ~/ pageWidth).clamp(0, width - 1);
-    final my = (y * height ~/ pageHeight).clamp(0, height - 1);
-    return pixels[my * width + mx] >= 128;
-  }
-}
-
 /// Integer rectangle (isolate-friendly, no dart:ui types).
 class IntRect {
   IntRect(this.left, this.top, this.right, this.bottom);

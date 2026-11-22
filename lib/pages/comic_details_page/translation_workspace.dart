@@ -533,7 +533,6 @@ class _SelectPreTranslateChapterState extends State<_SelectPreTranslateChapter>
           sourceKey: widget.sourceKey,
           comicType: widget.comicType,
           config: current?.config ?? widget.config,
-          enhanceStrokes: current?.enhanceStrokes,
           title: widget.title,
           cover: widget.cover,
           chapters: [

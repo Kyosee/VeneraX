@@ -2,31 +2,32 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:flutter/painting.dart';
 import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
 /// Erases source strokes on a worker isolate, then fits each translation in
-/// the independent layout rectangle. An unsafe region retains its source art.
+/// the independent layout rectangle. Difficult backgrounds keep a small backing
+/// behind the translated glyphs so every usable translation remains readable.
 Future<Uint8List> renderTranslatedPage(
   Uint8List originalBytes,
   RgbaImage decoded,
   List<TranslatedRegion> regions, {
   InpaintMode mode = InpaintMode.smart,
-  StrokeMask? strokeMask,
   void Function(List<TranslatedRegion>)? onSkipped,
 }) async {
   var visible = List<int>.empty();
+  var backed = <int>{};
   if (regions.isNotEmpty) {
-    var (cleaned, indices) = await compute(_cleanPage, (
+    var (cleaned, indices, fallback) = await compute(_cleanPage, (
       decoded,
       regions,
       mode,
-      strokeMask,
     ));
     decoded = cleaned;
     visible = indices;
+    backed = fallback.toSet();
   }
   if (onSkipped != null) {
     var displayed = visible.toSet();
@@ -36,16 +37,29 @@ Future<Uint8List> renderTranslatedPage(
     ]);
   }
   var base = await _baseImage(decoded);
+  final layouts = translationLayoutRects(regions);
   try {
     var recorder = ui.PictureRecorder();
     var canvas = ui.Canvas(recorder);
     canvas.drawImage(base, ui.Offset.zero, ui.Paint());
     for (var index in visible) {
       var region = regions[index];
-      if (mode == InpaintMode.patch) {
-        _drawText(canvas, region, _rectOf(region), ui.Color(region.textColor));
+      final layout = layouts[index];
+      if (backed.contains(index)) {
+        final dark = _regionIsDark(decoded, region.rect);
+        _drawText(
+          canvas,
+          region,
+          layout,
+          dark ? const ui.Color(0xFFF5F5F5) : const ui.Color(0xFF202020),
+          background: dark
+              ? const ui.Color(0xFF202020)
+              : const ui.Color(0xFFF5F5F5),
+        );
+      } else if (mode == InpaintMode.patch) {
+        _drawText(canvas, region, layout, ui.Color(region.textColor));
       } else {
-        _drawErasedRegion(canvas, decoded, region);
+        _drawErasedRegion(canvas, decoded, region, layout);
       }
     }
     var picture = recorder.endRecording();
@@ -63,11 +77,22 @@ Future<Uint8List> renderTranslatedPage(
   }
 }
 
-(RgbaImage, List<int>) _cleanPage(
-  (RgbaImage, List<TranslatedRegion>, InpaintMode, StrokeMask?) work,
+(RgbaImage, List<int>, List<int>) _cleanPage(
+  (RgbaImage, List<TranslatedRegion>, InpaintMode) work,
 ) {
-  var (image, regions, mode, strokeMask) = work;
+  var (image, regions, mode) = work;
   var visible = <int>[];
+  var backed = <int>[];
+  final source = RgbaImage(
+    image.width,
+    image.height,
+    Uint8List.fromList(image.pixels),
+  );
+  final textRegions = <(int, int, int, int), IntRect>{
+    for (final region in regions)
+      for (final r in region.eraseRects) (r.left, r.top, r.right, r.bottom): r,
+  }.values.toList();
+  final erased = <(int, int, int, int), bool>{};
   for (var index = 0; index < regions.length; index++) {
     var region = regions[index];
     if (region.text.trim().isEmpty ||
@@ -75,30 +100,45 @@ Future<Uint8List> renderTranslatedPage(
         region.rect.height <= 4) {
       continue;
     }
-    var masks = <TextMask>[];
+    var complete = region.eraseRects.isNotEmpty;
     for (var line in region.eraseRects) {
+      final key = (line.left, line.top, line.right, line.bottom);
+      if (erased.containsKey(key)) {
+        complete = complete && erased[key]!;
+        continue;
+      }
+      var flat = mode == InpaintMode.patch;
       var mask = TextInpainter.computeMask(
-        image,
+        source,
         line,
-        strokeMask: strokeMask,
-        flatFill: mode == InpaintMode.patch,
+        flatFill: flat,
+        textRegions: textRegions,
       );
-      if (mask == null) break;
-      masks.add(mask);
-    }
-    // Erase and typeset a whole block atomically. A rejected line otherwise
-    // leaves the original text under its translation, even when its peers are clear.
-    if (masks.isEmpty || masks.length != region.eraseRects.length) continue;
-    for (var mask in masks) {
-      if (mode == InpaintMode.patch) {
+      if (mask == null && flat) {
+        flat = false;
+        mask = TextInpainter.computeMask(
+          source,
+          line,
+          textRegions: textRegions,
+        );
+      }
+      erased[key] = mask != null;
+      if (mask == null) {
+        complete = false;
+      } else if (flat) {
         TextInpainter.fillWithBackground(image, mask);
       } else {
         TextInpainter.eraseWithMask(image, mask);
       }
     }
+    // A difficult line must not suppress the whole translation. Keep the art
+    // in that line and back only the translated glyphs where it is drawn.
+    if (!complete) {
+      backed.add(index);
+    }
     visible.add(index);
   }
-  return (image, visible);
+  return (image, visible, backed);
 }
 
 Future<ui.Image> _baseImage(RgbaImage decoded) async {
@@ -126,6 +166,68 @@ ui.Rect _rectOf(TranslatedRegion region) => ui.Rect.fromLTRB(
   region.rect.bottom.toDouble(),
 );
 
+/// Detector padding can make adjacent blocks overlap. Divide only that shared
+/// layout space; source erasure keeps the original per-line rectangles.
+@visibleForTesting
+List<ui.Rect> translationLayoutRects(List<TranslatedRegion> regions) {
+  final result = regions.map(_rectOf).toList();
+  for (var i = 0; i < result.length; i++) {
+    if (regions[i].text.trim().isEmpty ||
+        result[i].width <= 4 ||
+        result[i].height <= 4) {
+      continue;
+    }
+    for (var j = i + 1; j < result.length; j++) {
+      if (regions[j].text.trim().isEmpty ||
+          result[j].width <= 4 ||
+          result[j].height <= 4) {
+        continue;
+      }
+      var a = result[i], b = result[j];
+      final overlap = a.intersect(b);
+      if (overlap.width <= 0 || overlap.height <= 0) continue;
+      final across =
+          overlap.width / math.min(a.width, b.width) <=
+          overlap.height / math.min(a.height, b.height);
+      if (across) {
+        final first = a.center.dx <= b.center.dx;
+        final left = first ? a : b, right = first ? b : a;
+        final boundary = (overlap.left + overlap.right) / 2;
+        if (boundary - left.left < 10 || right.right - boundary < 10) continue;
+        final l = ui.Rect.fromLTRB(
+          left.left,
+          left.top,
+          boundary - 1,
+          left.bottom,
+        );
+        final r = ui.Rect.fromLTRB(
+          boundary + 1,
+          right.top,
+          right.right,
+          right.bottom,
+        );
+        result[i] = first ? l : r;
+        result[j] = first ? r : l;
+      } else {
+        final first = a.center.dy <= b.center.dy;
+        final top = first ? a : b, bottom = first ? b : a;
+        final boundary = (overlap.top + overlap.bottom) / 2;
+        if (boundary - top.top < 10 || bottom.bottom - boundary < 10) continue;
+        final t = ui.Rect.fromLTRB(top.left, top.top, top.right, boundary - 1);
+        final btm = ui.Rect.fromLTRB(
+          bottom.left,
+          boundary + 1,
+          bottom.right,
+          bottom.bottom,
+        );
+        result[i] = first ? t : btm;
+        result[j] = first ? btm : t;
+      }
+    }
+  }
+  return result;
+}
+
 /// Erase mode: the base is already clean, so the text only needs a contrast
 /// outline (never an opaque plate) to stay readable over minor screentone or
 /// gradient the erase left behind.
@@ -133,8 +235,8 @@ void _drawErasedRegion(
   ui.Canvas canvas,
   RgbaImage decoded,
   TranslatedRegion region,
+  ui.Rect rect,
 ) {
-  var rect = _rectOf(region);
   var backgroundIsDark = _regionIsDark(decoded, region.rect);
   var textColor = backgroundIsDark
       ? const ui.Color(0xFFF5F5F5)
@@ -181,6 +283,7 @@ void _drawText(
   ui.Rect rect,
   ui.Color color, {
   ui.Color? outline,
+  ui.Color? background,
 }) {
   if (rect.width <= 4 || rect.height <= 4 || region.text.trim().isEmpty) {
     return;
@@ -195,13 +298,14 @@ void _drawText(
         color,
         rect,
         outline: outline,
+        background: background,
         lineHeight: region.lineHeight,
       );
       return;
     }
     var maxWidth = rect.width - 4;
     var maxHeight = rect.height - 4;
-    var size = _fitFontSize(
+    var size = fittedTranslationFontSize(
       region.text,
       maxWidth,
       maxHeight,
@@ -224,7 +328,7 @@ void _drawText(
     var painter = _horizontalPainter(
       region.text,
       size,
-      _fillStyle(color, size),
+      _fillStyle(color, size).copyWith(backgroundColor: background),
       maxWidth,
     );
     var offset = ui.Offset(
@@ -238,17 +342,14 @@ void _drawText(
   }
 }
 
-/// Stroke width scales with the glyph so the outline reads at any size.
-double _strokeWidth(double fontSize) => math.max(1.5, fontSize * 0.14);
+/// Small glyphs need proportionally thin outlines to keep adjacent lines apart.
+double _strokeWidth(double fontSize) => fontSize * 0.14;
 
-/// Hard floor for the shrink-to-fit search. Nothing below this is legible, and
-/// without it a box the text can never fit into makes the search unbounded.
-const _minGlyphSize = 4.0;
+/// A final fallback for exceptionally long replies in tiny cached rectangles.
+const _minGlyphSize = 1.0;
 
-/// Narrowest width [_horizontalPainter] will lay out at. The fit test must use
-/// this, not the caller's box: `TextPainter.width` reports the layout
-/// constraint, so comparing against a narrower value is never satisfiable.
-const _minLayoutWidth = 8.0;
+/// Keep text layout constraints positive for narrow legacy rectangles.
+const _minLayoutWidth = 0.1;
 
 TextStyle _fillStyle(ui.Color color, double fontSize) => TextStyle(
   color: color,
@@ -311,6 +412,7 @@ void _drawVerticalText(
   ui.Color color,
   ui.Rect rect, {
   ui.Color? outline,
+  ui.Color? background,
   int lineHeight = 0,
 }) {
   var chars = text.runes
@@ -338,19 +440,24 @@ void _drawVerticalText(
     cap = math.min(cap, math.max(10.0, lineHeight * 0.9));
   }
   var upper = math.max(10.0, math.min(cap, maxWidth * 0.9));
-  var size = upper;
-  var chosen = _minGlyphSize;
+  var low = _minGlyphSize, high = upper;
+  var chosen = low;
   var perColumn = 1;
   var columns = chars.length;
-  while (true) {
+  // A fixed number of measurements avoids 20% jumps that make a translation
+  // needlessly small when it is just too wide for one more column.
+  for (var attempt = 0; attempt < 10; attempt++) {
+    final size = attempt == 0 ? high : (low + high) / 2;
     var cell = size * 1.15;
     perColumn = math.max(1, (maxHeight / cell).floor());
     columns = (chars.length / perColumn).ceil();
-    if (columns * cell <= maxWidth || size <= _minGlyphSize) {
-      chosen = math.max(_minGlyphSize, size);
-      break;
+    if (columns * cell <= maxWidth && cell <= maxHeight) {
+      chosen = size;
+      low = size;
+      if (attempt == 0) break;
+    } else {
+      high = size;
     }
-    size *= 0.8;
   }
 
   var cellH = chosen * 1.15;
@@ -363,7 +470,10 @@ void _drawVerticalText(
   var startRight = rect.left + (rect.width + blockW) / 2;
   var top = rect.top + (rect.height - blockH) / 2;
 
-  var fillStyle = _fillStyle(color, chosen).copyWith(height: 1.0);
+  var fillStyle = _fillStyle(
+    color,
+    chosen,
+  ).copyWith(height: 1.0, backgroundColor: background);
   var strokeStyle = outline == null
       ? null
       : _strokeStyle(outline, chosen).copyWith(height: 1.0);
@@ -402,7 +512,8 @@ void _drawVerticalText(
 /// the detected box. The detector's line box already spans the full line with
 /// leading and CJK glyphs fill the em, so the cap sits slightly *below* the box
 /// height (0.9x) to keep the translation from reading larger than the source.
-double _fitFontSize(
+@visibleForTesting
+double fittedTranslationFontSize(
   String text,
   double maxWidth,
   double maxHeight, {
@@ -414,18 +525,27 @@ double _fitFontSize(
   }
   var upper = math.max(10.0, math.min(cap, maxHeight * 0.8));
   var layoutWidth = math.max(_minLayoutWidth, maxWidth);
-  var size = upper;
-  while (size > _minGlyphSize) {
+  var low = _minGlyphSize, high = upper;
+  for (var attempt = 0; attempt < 10; attempt++) {
+    final size = attempt == 0 ? high : (low + high) / 2;
     var painter = _horizontalPainter(
       text,
       size,
       _fillStyle(const ui.Color(0xFF000000), size),
       maxWidth,
     );
-    var fits = painter.height <= maxHeight && painter.width <= layoutWidth;
+    // The painter width is clamped to the constraint even if a glyph spills.
+    // Line metrics retain the actual glyph width.
+    var fits =
+        painter.height <= maxHeight &&
+        painter.computeLineMetrics().every((line) => line.width <= layoutWidth);
     painter.dispose();
-    if (fits) return size;
-    size *= 0.8;
+    if (fits) {
+      low = size;
+      if (attempt == 0) return size;
+    } else {
+      high = size;
+    }
   }
-  return _minGlyphSize;
+  return low;
 }

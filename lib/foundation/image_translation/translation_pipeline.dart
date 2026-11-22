@@ -201,34 +201,9 @@ class PageTranslationPipeline {
     Uint8List imageBytes,
     List<TranslatedRegion> regions, {
     InpaintMode mode = InpaintMode.smart,
-    bool enhanceStrokes = false,
-    VoidCallback? onStrokeMask,
   }) async {
     var image = await _decode(imageBytes);
-    StrokeMask? mask;
-    if (enhanceStrokes && regions.isNotEmpty) {
-      final path = TranslationModels.strokeModelPath;
-      if (path != null) {
-        try {
-          mask = await TranslationWorker.instance.strokeMask(image, path);
-        } on Exception catch (e) {
-          Log.warning(
-            'Image Translation',
-            'Stroke enhancement unavailable: $e',
-          );
-        } on OutOfMemoryError {
-          mask = null;
-        }
-      }
-    }
-    if (mask != null) onStrokeMask?.call();
-    return renderTranslatedPage(
-      imageBytes,
-      image,
-      regions,
-      mode: mode,
-      strokeMask: mask,
-    );
+    return renderTranslatedPage(imageBytes, image, regions, mode: mode);
   }
 
   TranslatedRegion _region(OcrBlock block, String text) {

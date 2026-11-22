@@ -36,6 +36,11 @@ class TranslationConfig {
   static const inpaintKeyName = 'imageTranslationInpaintMode';
   static const scopeKeyName = 'imageTranslationScope';
 
+  static const bubbleEnhancementKey = 'imageTranslationBubbleEnhancement';
+
+  static bool get bubbleEnhancementEnabled =>
+      appdata.settings[bubbleEnhancementKey] != false;
+
   /// Resolves the config for one comic.
   ///
   /// [sourceKey] is nullable to match the cache-key call sites, which pass

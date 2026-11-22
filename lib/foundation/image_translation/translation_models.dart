@@ -8,6 +8,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/image_translation/bubble_pop_model.dart';
 import 'package:venera/foundation/image_translation/model_file_download.dart';
+import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_sources.dart';
 import 'package:venera/foundation/image_translation/translation_worker.dart';
 import 'package:venera/foundation/log.dart';
@@ -67,6 +68,7 @@ class ModelComponent {
     'ocr_zh' => "Chinese / Latin OCR".tl,
     'ocr_en' => "English OCR".tl,
     'ocr_ko' => "Korean OCR".tl,
+    'rt_detr' => "RT-DETR INT8 · Dialogue detection".tl,
     'bubble_pop' => "BubblePop · Speech bubbles".tl,
     'comic_text_detector' => "CTD · Text strokes".tl,
     _ => id,
@@ -77,6 +79,7 @@ class ModelComponent {
   String get directory => FilePath.join(App.dataPath, 'translation_models', id);
 
   bool get isInstalled {
+    if (files.isEmpty) return Directory(directory).existsSync();
     for (var file in files) {
       if (!file.isComplete(File(filePath(file.name)).statSync())) {
         return false;
@@ -191,6 +194,24 @@ abstract class TranslationModels {
     ],
   );
 
+  static const rtDetrRevision = '16e8a622f91fabc6b5b65c96d32d1183f8843546';
+  static const rtDetrRepository = 'ogkalu/comic-text-and-bubble-detector';
+  static const rtDetr = ModelComponent(
+    id: 'rt_detr',
+    approxSizeBytes: 11120765,
+    marker: true,
+    files: [
+      ModelFile(
+        'detector-v4-s_int8.onnx',
+        [
+          '{hf}/$rtDetrRepository/resolve/$rtDetrRevision/detector-v4-s_int8.onnx',
+        ],
+        size: 11120765,
+        sha256Digest:
+            '5fe9e4f576e49d4e7e8b0e029d6d3cdc252abd4694113e1cae120e62c931ea79',
+      ),
+    ],
+  );
   static const bubblePopRevision = 'c8f207e98fc39065096e2ff602b65045051c447b';
   static const bubblePop = ModelComponent(
     id: 'bubble_pop',
@@ -209,29 +230,15 @@ abstract class TranslationModels {
       ),
     ],
   );
-  static const comicTextDetector = ModelComponent(
+  // Older versions stored CTD here. Keep partial downloads removable too.
+  static const legacyTextStrokes = ModelComponent(
     id: 'comic_text_detector',
-    approxSizeBytes: 94669756,
-    marker: true,
-    files: [
-      ModelFile(
-        'comictextdetector.pt.onnx',
-        [
-          'https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx',
-        ],
-        size: 94669756,
-        sha256Digest:
-            '1a86ace74961413cbd650002e7bb4dcec4980ffa21b2f19b86933372071d718f',
-      ),
-    ],
+    approxSizeBytes: 0,
+    files: [],
   );
   static const recognizers = [ocrJa, ocrZhV5, ocrZh, ocrEn, ocrKo];
-  static const enhancements = [bubblePop, comicTextDetector];
-  static const all = [detector, ...recognizers, ...enhancements];
-
-  static String? get strokeModelPath => comicTextDetector.isInstalled
-      ? comicTextDetector.filePath(comicTextDetector.files.single.name)
-      : null;
+  static const enhancements = [rtDetr];
+  static const all = [detector, ...recognizers, ...enhancements, bubblePop];
 
   static ModelComponent? find(String id) {
     for (var c in all) {
@@ -277,9 +284,13 @@ abstract class TranslationModels {
       add(custom.engine, custom.component, custom.code, custom.inputHeight);
     }
     var hasJa = ocrJa.isInstalled;
+    final useBubbles = TranslationConfig.bubbleEnhancementEnabled;
     return WorkerModelPaths(
       detector: activeDetector.filePath('det.onnx'),
-      bubbleModel: bubblePop.isInstalled
+      rtDetrModel: useBubbles && rtDetr.isInstalled
+          ? rtDetr.filePath(rtDetr.files.single.name)
+          : null,
+      bubbleModel: useBubbles && bubblePop.isInstalled
           ? bubblePop.filePath(bubblePopRuntimeFileName)
           : null,
       jaEncoder: hasJa ? ocrJa.filePath('encoder.onnx') : null,
@@ -466,6 +477,7 @@ class TranslationModelStore with ChangeNotifier {
     ModelComponent component, {
     Future<void> Function()? verify,
   }) async {
+    if (component.files.isEmpty) return;
     var state = stateOf(component);
     if (state.downloading ||
         _deleting.contains(component.id) ||

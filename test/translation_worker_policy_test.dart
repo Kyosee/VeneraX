@@ -146,6 +146,18 @@ void main() {
   });
 
   group('clusterOcrBoxes', () {
+    test(
+      'does not join vertical paragraphs at overlapping detector margins',
+      () {
+        var groups = clusterOcrBoxes(
+          [IntRect(20, 20, 50, 190), IntRect(20, 185, 50, 355)],
+          200,
+          400,
+        );
+        expect(groups, hasLength(2));
+      },
+    );
+
     test('keeps aligned lines in one block', () {
       var groups = clusterOcrBoxes(
         [
