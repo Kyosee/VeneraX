@@ -16,7 +16,9 @@ void main() {
     });
 
     test('attaches an anchor comment to the following heading', () {
-      var blocks = parseGuideMarkdown('<!--anchor:my-id-->\n## Section\n## Other');
+      var blocks = parseGuideMarkdown(
+        '<!--anchor:my-id-->\n## Section\n## Other',
+      );
       expect(blocks.length, 2);
       expect(blocks[0].anchor, 'my-id');
       expect(blocks[0].text, 'Section');
@@ -73,6 +75,20 @@ void main() {
         GuideSpanStyle.link,
       ]);
       expect(spans.last.isLink, isTrue);
+      expect(spans.last.destination, '#section');
+    });
+
+    test('preserves distinct external and offline links in table cells', () {
+      final row = parseGuideMarkdown(
+        '| [Guide](guide.en.md) | [Source](https://a.example/model#files) and [Source](https://b.example/license) |',
+      ).single;
+      expect(row.spans.single.destination, 'guide.en.md');
+      final links = row.trailingSpans.where((span) => span.isLink);
+      expect(links.map((span) => span.text), ['Source', 'Source']);
+      expect(links.map((span) => span.destination), [
+        'https://a.example/model#files',
+        'https://b.example/license',
+      ]);
     });
 
     test('drops blank lines and tolerates CRLF', () {
@@ -192,7 +208,7 @@ void main() {
         var headings = headingTexts(blocks).toSet();
         var links = blocks
             .expand((b) => b.spans)
-            .where((s) => s.isLink)
+            .where((s) => s.destination?.startsWith('#') == true)
             .map((s) => s.text)
             .toList();
         expect(links, isNotEmpty, reason: '$path has no contents list');

@@ -148,6 +148,8 @@ flutter:
     # User guide, authored once and read both here and on the repo page.
     - doc/guide.zh.md
     - doc/guide.en.md
+    - doc/model-notices.zh.md
+    - doc/model-notices.en.md
     # Bundled so the import help works offline and outlives the repo page.
     - doc/import_comic.md
   shaders:

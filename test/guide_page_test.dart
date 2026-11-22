@@ -13,6 +13,83 @@ void main() {
     await OpenCC.init();
   });
 
+  testWidgets(
+    'source links open externally and a bundled notice opens offline',
+    (tester) async {
+      const fixture = 'doc/guide_links_fixture.md';
+      const notice = 'doc/model-notices.en.md';
+      const document =
+          '# Links\n[Publisher](https://first.example/source)\n'
+          '[Publisher](https://second.example/license)\n'
+          '[Offline notice](model-notices.en.md)\n[Unknown](file:///private)';
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final requested = <MethodCall>[];
+      const platform = MethodChannel('plugins.flutter.io/url_launcher');
+      messenger.setMockMethodCallHandler(platform, (call) async {
+        requested.add(call);
+        return true;
+      });
+      messenger.setMockMessageHandler('flutter/assets', (message) async {
+        final path = const StringCodec().decodeMessage(message);
+        final data = switch (path) {
+          fixture => document,
+          notice => '# Local copy of model notices',
+          _ => null,
+        };
+        return data == null ? null : const StringCodec().encodeMessage(data);
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(platform, null);
+        messenger.setMockMessageHandler('flutter/assets', null);
+        rootBundle.evict(fixture);
+        rootBundle.evict(notice);
+      });
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          const MaterialApp(home: GuidePage(assetPath: fixture)),
+        );
+        await rootBundle.loadString(fixture);
+      });
+      await tester.pumpAndSettle();
+      Finder labeled(String text) => find.byWidgetPredicate(
+        (w) => w is Text && w.textSpan?.toPlainText() == text,
+      );
+      Future<void> tapText(Finder finder) async {
+        await tester.tapAt(tester.getTopLeft(finder) + const Offset(3, 10));
+        await tester.pumpAndSettle();
+      }
+
+      await tapText(labeled('Publisher').first);
+      await tapText(labeled('Publisher').last);
+      await tapText(labeled('Unknown'));
+      expect(requested.map((call) => call.arguments['url']), [
+        'https://first.example/source',
+        'https://second.example/license',
+      ]);
+      expect(requested.every((call) => call.method == 'launch'), isTrue);
+      expect(
+        requested.every(
+          (call) =>
+              call.arguments['useWebView'] == false &&
+              call.arguments['useSafariVC'] == false,
+        ),
+        isTrue,
+      );
+
+      await tester.tapAt(
+        tester.getTopLeft(labeled('Offline notice')) + const Offset(3, 10),
+      );
+      await tester.runAsync(() async {
+        await tester.pump();
+        await rootBundle.loadString(notice);
+      });
+      await tester.pumpAndSettle();
+      expect(labeled('Local copy of model notices'), findsOneWidget);
+      expect(requested.length, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final entry in {
     'en-US': 'Finding settings',
     'zh-CN': '设置导航',

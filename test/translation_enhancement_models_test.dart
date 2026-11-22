@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
+import 'package:venera/pages/guide_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
+import 'package:venera/utils/opencc.dart';
 import 'package:venera/utils/translations.dart';
 
 void main() {
@@ -19,6 +22,7 @@ void main() {
 
   setUpAll(() async {
     await AppTranslation.init();
+    await OpenCC.init();
   });
   setUp(() {
     oldPath = App.dataPath;
@@ -135,6 +139,39 @@ void main() {
   );
 
   for (final locale in ['en-US', 'zh-CN', 'zh-TW']) {
+    testWidgets(
+      'opens the bundled model notices before downloading in $locale',
+      (tester) async {
+        appdata.settings['language'] = locale;
+        tester.view.physicalSize = const Size(360, 780);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          const MaterialApp(home: TranslationModelsPage()),
+        );
+        expect(find.textContaining('SWHL/RapidOCR · Apache-2.0'), findsWidgets);
+        final path = locale == 'en-US'
+            ? 'doc/model-notices.en.md'
+            : 'doc/model-notices.zh.md';
+        await tester.runAsync(() async {
+          await tester.tap(find.text('Model sources and licenses'.tl));
+          await tester.pump();
+          await rootBundle.loadString(path);
+        });
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<GuidePage>(find.byType(GuidePage)).assetPath,
+          path,
+        );
+        expect(
+          find.textContaining('detector-v4-s_int8.onnx', findRichText: true),
+          findsWidgets,
+        );
+        expect(find.text('Failed to load the guide'.tl), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('model sources and licenses appear at phone width in $locale', (
       tester,
     ) async {

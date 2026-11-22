@@ -2,6 +2,8 @@
   "zh_CN": {
     "Model file differs from the official release": "模型文件与官方发布版本不一致",
     "Hugging Face download source": "Hugging Face 下载源",
+    "Model sources and licenses": "模型来源与许可",
+    "For custom links, check the publisher’s license for each model and dictionary.": "自定义下载链接请以模型和字典各自发布者的许可为准。",
     "Turn off dialogue detection enhancement to use the default rules and keep the downloaded model.": "关闭对白识别增强后会使用默认规则，已下载的模型会保留。",
     "Use dialogue detection enhancement": "启用对白识别增强",
     "Saved translations are kept. Retranslate a page to apply the new dialogue detection setting.": "已保存的译文会保留。重新翻译本页时，会按当前设置识别对白。",
@@ -2056,6 +2058,8 @@
   "zh_TW": {
     "Model file differs from the official release": "模型檔案與官方發布版本不一致",
     "Hugging Face download source": "Hugging Face 下載來源",
+    "Model sources and licenses": "模型來源與授權",
+    "For custom links, check the publisher’s license for each model and dictionary.": "自訂下載連結請以模型與字典各自發布者的授權條款為準。",
     "Turn off dialogue detection enhancement to use the default rules and keep the downloaded model.": "關閉對白辨識增強後會使用預設規則，已下載的模型會保留。",
     "Use dialogue detection enhancement": "啟用對白辨識增強",
     "Saved translations are kept. Retranslate a page to apply the new dialogue detection setting.": "已儲存的譯文會保留。重新翻譯本頁時，會依目前設定辨識對白。",

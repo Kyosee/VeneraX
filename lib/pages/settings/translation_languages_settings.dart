@@ -283,6 +283,11 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage> {
             "Built-in source languages download their recognition models under Translation models. Add a language here with a recognition model of your own."
                 .tl,
           ).toSliver(),
+          _ModelNoticesTile(
+            subtitle:
+                "For custom links, check the publisher’s license for each model and dictionary."
+                    .tl,
+          ).toSliver(),
           for (var language in sources)
             ListTile(
               title: Text(language.name),

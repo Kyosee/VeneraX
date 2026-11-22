@@ -112,6 +112,8 @@ To update, download the new AppImage and replace the old file. Application data 
 
 Setup steps and interactions for each feature are documented in the **[guide](doc/guide.en.md)**. It is also available in the app under Settings → About → Guide.
 
+For the OCR weights, dictionaries and optional dialogue detector, see [Translation model sources and licenses](doc/model-notices.en.md).
+
 ### First Launch and Upgrade Notice
 
 The app shows onboarding once only for a fresh installation with no local application data: first read the agreement in a selectable language, then choose the interface language and review basic permissions, and finally choose whether to import a backup or configure WebDAV. Optional setup can be skipped. Users with existing data receive a one-time notice for this agreement version after upgrading and do not repeat new-user onboarding.

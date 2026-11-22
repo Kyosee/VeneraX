@@ -60,17 +60,12 @@ enum GuideBlockType {
 enum GuideSpanStyle { plain, bold, code, link }
 
 class GuideSpan {
-  const GuideSpan(this.text, this.style);
+  const GuideSpan(this.text, this.style, {this.destination});
 
   final String text;
   final GuideSpanStyle style;
+  final String? destination;
 
-  /// A contents entry links to the heading whose text equals [text].
-  ///
-  /// The link target in the markdown is GitHub's own generated heading slug,
-  /// which differs per language and is not what this parser tracks. Matching on
-  /// the visible text instead keeps one authored contents list working both on
-  /// the repository page and here.
   bool get isLink => style == GuideSpanStyle.link;
 }
 
@@ -116,7 +111,9 @@ class GuideBlock {
 /// parser a stable target that survives rewording a heading.
 final _anchorPattern = RegExp(r'^<!--\s*anchor:\s*([a-z0-9-]+)\s*-->$');
 final _numberedPattern = RegExp(r'^(\d+)\.\s+');
-final _inlinePattern = RegExp(r'\*\*(.+?)\*\*|`(.+?)`|\[([^\]]+)\]\(#[^)]*\)');
+final _inlinePattern = RegExp(
+  r'\*\*(.+?)\*\*|`(.+?)`|\[([^\]]+)\]\(([^\s)]+)\)',
+);
 final _tableDividerPattern = RegExp(r'^\|[\s|:-]+\|$');
 
 /// Parses the guide's markdown subset: ATX headings with an optional
@@ -223,10 +220,7 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
         }
         continue;
       }
-      var cells = line
-          .split('|')
-          .map((c) => c.trim())
-          .toList();
+      var cells = line.split('|').map((c) => c.trim()).toList();
       // A leading and trailing '|' produce empty outer entries.
       if (cells.isNotEmpty && cells.first.isEmpty) cells.removeAt(0);
       if (cells.isNotEmpty && cells.last.isEmpty) cells.removeLast();
@@ -267,10 +261,7 @@ List<GuideBlock> parseGuideMarkdown(String markdown) {
     }
 
     add(
-      GuideBlock(
-        type: GuideBlockType.paragraph,
-        spans: parseGuideInline(line),
-      ),
+      GuideBlock(type: GuideBlockType.paragraph, spans: parseGuideInline(line)),
     );
   }
   // A fence left open at the end of the file still reaches the reader.
@@ -294,7 +285,13 @@ List<GuideSpan> parseGuideInline(String text) {
     } else if (code != null) {
       spans.add(GuideSpan(code, GuideSpanStyle.code));
     } else {
-      spans.add(GuideSpan(match.group(3)!, GuideSpanStyle.link));
+      spans.add(
+        GuideSpan(
+          match.group(3)!,
+          GuideSpanStyle.link,
+          destination: match.group(4)!,
+        ),
+      );
     }
     cursor = match.end;
   }

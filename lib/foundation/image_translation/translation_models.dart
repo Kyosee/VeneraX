@@ -102,8 +102,7 @@ abstract class TranslationModels {
     ],
   );
 
-  /// Japanese OCR (manga-ocr, vision encoder-decoder). The only reliable
-  /// option for vertical manga text; large but worth it.
+  /// Manga OCR encoder, decoder and vocabulary for horizontal and vertical Japanese.
   static const ocrJa = ModelComponent(
     id: 'ocr_ja',
     approxSizeBytes: 461000000,

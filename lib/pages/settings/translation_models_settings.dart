@@ -1,5 +1,28 @@
 part of 'settings_page.dart';
 
+class _ModelNoticesTile extends StatelessWidget {
+  const _ModelNoticesTile({this.subtitle});
+
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = "Model sources and licenses".tl;
+    return ListTile(
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => GuidePage.openDocument(
+        context,
+        assetPath: App.locale.languageCode == 'zh'
+            ? 'doc/model-notices.zh.md'
+            : 'doc/model-notices.en.md',
+        title: title,
+      ),
+    );
+  }
+}
+
 /// Management page for offline translation model files: download (with
 /// progress and mirror fallback), delete, and choice of download endpoint.
 class TranslationModelsPage extends StatefulWidget {
@@ -51,6 +74,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
         scrollbarTopPadding: context.padding.top + 56,
         slivers: [
           SliverAppbar(title: Text("Translation models".tl)),
+          const _ModelNoticesTile().toSliver(),
           SelectSetting(
             title: "Hugging Face download source".tl,
             settingKey: "imageTranslationHfEndpoint",
@@ -185,6 +209,16 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
     if (requiredIds.contains(component.id) && !installed) {
       subtitle += " · ${"Required by current settings".tl}";
     }
+    final source = switch (component) {
+      TranslationModels.detector ||
+      TranslationModels.ocrZh ||
+      TranslationModels.ocrEn ||
+      TranslationModels.ocrKo => 'PaddleOCR · SWHL/RapidOCR · Apache-2.0',
+      TranslationModels.ocrZhV5 => 'PaddleOCR · RapidAI / webnn · Apache-2.0',
+      TranslationModels.ocrJa => 'kha-white / mayocream · Apache-2.0',
+      _ => null,
+    };
+    if (source != null) subtitle += "\n$source";
     if (state.error != null) {
       subtitle += "\n${"Download failed".tl}: ${state.error}";
     }
@@ -193,7 +227,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       subtitle: component == TranslationModels.legacyTextStrokes
           ? null
           : Text(subtitle),
-      isThreeLine: state.error != null,
+      isThreeLine: state.error != null || source != null,
       trailing: trailing,
     );
   }

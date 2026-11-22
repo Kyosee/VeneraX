@@ -74,6 +74,8 @@ Detection and recognition run on the device; the recognized text is sent to an A
 
 With "Source language" set to "Auto detect", the detector plus any one recognition model is sufficient; the app determines each comic's language itself.
 
+At the top of **Translation models**, open [Model sources and licenses](model-notices.en.md) to read the notices offline. Default text removal requires no extra model. **Dialogue only** can use the optional 11.1 MB RT-DETR download to distinguish text inside and outside bubbles. Switching it off keeps the file and uses the built-in rules. **All text** skips the dialogue detector.
+
 <!--anchor:translation-target-->
 ### Target languages
 
@@ -110,7 +112,7 @@ Built-in source languages and the recognition model each uses:
 
 **Model size and accuracy**
 
-A larger model knows more characters and fonts, so it reads more accurately; the cost is a bigger download, a slower first load, more memory and more heat on phones. A character missing from the dictionary is always read as a look-alike, so dictionary coverage matters more than size. Character error rates measured on a desktop with rendered Traditional dialogue (real comic lettering and screentone are harder):
+Check whether the matching dictionary covers the characters in your comic, then compare recognition quality and speed on your device. PaddleOCR cannot output a character outside its dictionary and may skip or misread it. The character error rates below were measured on a desktop with rendered Traditional Chinese dialogue. Lettering and screentone can affect results on real pages.
 
 | Model | Result |
 | --- | --- |
@@ -259,7 +261,7 @@ Two things must stay in the prompt or the feature stops working. First, ask the 
 ### Things to know
 
 - Marked experimental: recognition and translation can both fail, most visibly on long text and unusual layouts.
-- The Japanese model is large because vertical manga text currently has only one reliable recognition option.
+- VeneraX uses Manga OCR for horizontal and vertical Japanese manga text. The initial download includes an encoder, a decoder and a vocabulary, totaling about 460 MB.
 - Inference is CPU-only, so pre-translating on mobile causes noticeable heat and battery drain. Run it while charging.
 
 <!--anchor:cache-directory-->

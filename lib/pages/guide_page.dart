@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/guide_document.dart';
@@ -60,9 +61,13 @@ class _GuidePageState extends State<GuidePage> {
   /// Keep separate keys when headings share the same text.
   final _headingBlockKeys = <GuideBlock, GlobalKey>{};
 
-  /// One recognizer per contents entry, kept for the page's lifetime: a
-  /// recognizer built inline would leak on every rebuild.
-  final _linkRecognizers = <String, TapGestureRecognizer>{};
+  final _linkRecognizers = <(String, String), TapGestureRecognizer>{};
+  static const _documentNames = {
+    'guide.zh.md',
+    'guide.en.md',
+    'model-notices.zh.md',
+    'model-notices.en.md',
+  };
 
   @override
   void initState() {
@@ -315,7 +320,8 @@ class _GuidePageState extends State<GuidePage> {
                   GuideSpanStyle.bold => base.bold,
                   GuideSpanStyle.code => base.copyWith(
                     fontFamily: 'monospace',
-                    backgroundColor: context.colorScheme.surfaceContainerHighest,
+                    backgroundColor:
+                        context.colorScheme.surfaceContainerHighest,
                   ),
                   _ => base,
                 },
@@ -327,22 +333,45 @@ class _GuidePageState extends State<GuidePage> {
   }
 
   InlineSpan _buildLinkSpan(GuideSpan span, TextStyle base) {
-    var label = _localize(span.text);
-    var target = _headingKeys[label];
-    // An entry pointing at a heading that no longer exists stays readable as
-    // plain text instead of becoming a dead tap.
-    if (target == null) {
-      return TextSpan(text: label, style: base);
+    final label = _localize(span.text);
+    final destination = span.destination!;
+    final VoidCallback onTap;
+    if (destination.startsWith('#')) {
+      // GitHub generates localized heading slugs, so also match the visible label.
+      final key = _anchorKeys[destination.substring(1)] ?? _headingKeys[label];
+      if (key == null) return TextSpan(text: label, style: base);
+      onTap = () => _scrollTo(key);
+    } else if (_documentNames.contains(destination)) {
+      onTap = () => GuidePage.openDocument(
+        context,
+        assetPath: 'doc/$destination',
+        title: label,
+      );
+    } else {
+      final uri = Uri.tryParse(destination);
+      if (uri == null || !uri.isScheme('https') || uri.host.isEmpty) {
+        return TextSpan(text: label, style: base);
+      }
+      onTap = () => _openSource(uri);
     }
-    var recognizer = _linkRecognizers.putIfAbsent(
+    var recognizer = _linkRecognizers.putIfAbsent((
+      destination,
       label,
-      () => TapGestureRecognizer()..onTap = () => _scrollTo(target),
-    );
+    ), () => TapGestureRecognizer()..onTap = onTap);
     return TextSpan(
       text: label,
       style: base.copyWith(color: context.colorScheme.primary),
       recognizer: recognizer,
     );
+  }
+
+  Future<void> _openSource(Uri uri) async {
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } on Exception {
+      // The platform could not open a browser.
+    }
+    if (mounted) context.showMessage(message: '${"Failed".tl} · ${uri.host}');
   }
 
   /// The Chinese guide is written in Simplified Chinese; a Traditional Chinese
