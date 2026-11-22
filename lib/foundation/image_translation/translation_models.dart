@@ -613,6 +613,10 @@ class TranslationModelStore with ChangeNotifier {
       if (dir.existsSync()) {
         await dir.deleteIgnoreError(recursive: true);
       }
+      if (TranslationSources.detector?.component.id == component.id &&
+          !dir.existsSync()) {
+        TranslationSources.setDetector(null);
+      }
       _states.remove(component.id);
       _diskRevision++;
       TranslationModels.invalidateReadyCache();

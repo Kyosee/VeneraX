@@ -262,6 +262,46 @@ void main() {
   );
 
   testWidgets(
+    'reinstalling a deleted or explicitly replaced detector keeps the default',
+    (tester) async {
+      const key = TranslationSources.detectorKey;
+      const custom = CustomDetectorModel(
+        url: 'https://example.invalid/old.onnx',
+      );
+      final previous = appdata.settings[key];
+      final wasBackgroundTask = App.isBackgroundTask;
+      App.isBackgroundTask = true;
+      addTearDown(() {
+        appdata.settings[key] = previous;
+        App.isBackgroundTask = wasBackgroundTask;
+      });
+      appdata.settings[key] = custom.toJson();
+      installFixture(TranslationModels.detector);
+      installFixture(custom.component);
+      await tester.pumpWidget(const MaterialApp(home: TranslationModelsPage()));
+      await deleteLocalFiles(tester, custom.component);
+      expect(TranslationSources.detector, isNull);
+      expect(TranslationSources.savedDetectors.keys, contains(custom.url));
+      installFixture(custom.component);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+
+      // Restore an older preference from a device with a different detector.
+      final v6 = TranslationSources.detectorPresets.values.first;
+      appdata.settings[key] = v6.toJson();
+      await tester.tap(find.text('Model library'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('My models'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('active-detector')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PP-OCRv5 mobile').hitTestable().last);
+      await tester.pumpAndSettle();
+      installFixture(v6.component);
+      expect(TranslationModels.activeDetector, TranslationModels.detector);
+    },
+  );
+
+  testWidgets(
     'retired downloads are listed locally and never selected for new pages',
     (tester) async {
       const oldDetector = ModelComponent(

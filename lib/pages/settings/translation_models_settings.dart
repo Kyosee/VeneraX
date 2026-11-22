@@ -548,7 +548,7 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
             ),
         ],
         onChanged: (id) {
-          if (id != null && id != activeId) {
+          if (id != null) {
             installed.firstWhere((item) => item.id == id).select?.call();
           }
         },
