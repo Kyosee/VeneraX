@@ -88,6 +88,74 @@ void main() {
     if (model.marker) makeFile(model, ModelComponent.markerName, 0);
   }
 
+  for (final (width, scale, platform) in [
+    (486.0, 1.0, TargetPlatform.windows),
+    (320.0, 1.8, TargetPlatform.android),
+  ]) {
+    testWidgets(
+      'translation scope actions align and work at ${width}px',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 850);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        const key = TranslationConfig.scopeKeyName;
+        final previous = appdata.settings[key];
+        final wasBackgroundTask = App.isBackgroundTask;
+        appdata.settings[key] = 'all';
+        App.isBackgroundTask = true;
+        addTearDown(() {
+          appdata.settings[key] = previous;
+          App.isBackgroundTask = wasBackgroundTask;
+        });
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: ReaderSettings(
+                translationOnly: true,
+                section: 'Translation preferences',
+              ),
+            ),
+          ),
+        );
+        final scope = find.widgetWithText(ListTile, 'Translation scope');
+        final help = find.descendant(
+          of: scope,
+          matching: find.byIcon(Icons.help_outline),
+        );
+        final arrow = find.descendant(
+          of: scope,
+          matching: find.byIcon(Icons.arrow_drop_down),
+        );
+        await tester.ensureVisible(scope);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getCenter(help).dy,
+          closeTo(tester.getCenter(arrow).dy, 0.5),
+        );
+        expect(tester.getCenter(help).dx, lessThan(tester.getCenter(arrow).dx));
+
+        await tester.tap(help);
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('All text includes captions'),
+          findsOneWidget,
+        );
+        expect(find.text('Dialogue only'), findsNothing);
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        await tester.tap(arrow);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Dialogue only'));
+        await tester.pumpAndSettle();
+        expect(appdata.settings[key], 'dialogue');
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant.only(platform),
+    );
+  }
+
   for (final width in [320.0, 900.0]) {
     testWidgets(
       'installed detector aligns with the other model rows at $width',

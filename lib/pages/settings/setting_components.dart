@@ -318,25 +318,28 @@ class _DoubleLineSelectSettingsState extends State<_DoubleLineSelectSettings> {
         : appdata.settings[widget.settingKey];
 
     return ListTile(
-      title: Row(
+      title: _SettingLabel(
+        title: widget.title,
+        keys: [widget.settingKey],
+        comicId: widget.comicId,
+        sourceKey: widget.comicSource,
+        useDeviceSettings: widget.useDeviceSettings,
+        onReset: () {
+          if (mounted) setState(() {});
+          widget.onChanged?.call();
+        },
+      ),
+      subtitle: Text(widget.optionTranslation[value] ?? "None".tl),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: _SettingLabel(
-              title: widget.title,
-              keys: [widget.settingKey],
-              comicId: widget.comicId,
-              sourceKey: widget.comicSource,
-              useDeviceSettings: widget.useDeviceSettings,
-              onReset: () {
-                if (mounted) setState(() {});
-                widget.onChanged?.call();
-              },
-            ),
-          ),
-          const SizedBox(width: 4),
           if (widget.help != null)
-            Button.icon(
-              size: 18,
+            IconButton(
+              tooltip: "Help".tl,
+              iconSize: 18,
+              color: context.colorScheme.primary,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              visualDensity: VisualDensity.standard,
               icon: const Icon(Icons.help_outline),
               onPressed: () {
                 showDialog(
@@ -358,10 +361,9 @@ class _DoubleLineSelectSettingsState extends State<_DoubleLineSelectSettings> {
                 );
               },
             ),
+          const Icon(Icons.arrow_drop_down),
         ],
       ),
-      subtitle: Text(widget.optionTranslation[value] ?? "None".tl),
-      trailing: const Icon(Icons.arrow_drop_down),
       onTap: () {
         var renderBox = context.findRenderObject() as RenderBox;
         var offset = renderBox.localToGlobal(Offset.zero);
