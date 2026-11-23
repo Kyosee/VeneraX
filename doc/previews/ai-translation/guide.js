@@ -4,7 +4,7 @@
   const sheetBody = document.querySelector("#sheet-body");
   const announce = document.querySelector("#announce");
   const storageKey = "venerax.ai-translation-guide.preview.v1";
-  const fresh = { provider: "google", configured: false, tested: false, detector: false, recognizer: false, enabled: false, finished: false };
+  const fresh = { provider: "google", configured: false, tested: false, detector: false, recognizer: false, enabled: false, finished: false, automaticGuide: true };
   let state = { ...fresh };
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
@@ -12,6 +12,7 @@
       for (const key of Object.keys(fresh)) {
         if (typeof saved[key] === typeof fresh[key]) state[key] = saved[key];
       }
+      if (typeof saved.automaticGuide !== "boolean") state.automaticGuide = !state.finished;
       if (state.provider !== "ai") state.provider = "google";
     }
   } catch { /* Storage can be unavailable when opened from a file. */ }
@@ -37,6 +38,15 @@
   }
   function flags() { return [state.configured, state.detector && state.recognizer, state.enabled]; }
   function serviceAndModelsReady() { return state.configured && state.detector && state.recognizer; }
+  function missingRequirements() {
+    return [!state.configured && "翻译服务", !flags()[1] && "识别模型"].filter(Boolean).join("和");
+  }
+  function comicHint() {
+    if (state.enabled) {
+      return serviceAndModelsReady() ? "这本漫画已开启 AI 翻译，可以在阅读器对照原图和译图。" : `这本漫画已开启 AI 翻译，还需准备${missingRequirements()}才能看到译图。`;
+    }
+    return "点右上角「更多」，选择「开启 AI 翻译」。";
+  }
   function nextStep() {
     const next = flags().indexOf(false);
     return next < 0 ? 2 : next;
@@ -93,18 +103,19 @@
   }
   function settings() {
     return `${crumbs(["设置", "阅读体验", "AI 翻译"])}<div class="context-page"><h1>AI 翻译</h1>
-      ${!state.finished ? `<section class="entry-banner"><span class="entry-symbol">${icon("book")}</span><div><h2>第一次翻译漫画？</h2><p>用一页示例漫画，把服务、模型和阅读器连起来。</p></div>${button("start", entryText(), "primary")}</section>` : ""}
+      ${state.automaticGuide ? `<section class="entry-banner"><span class="entry-symbol">${icon("book")}</span><div><h2>第一次翻译漫画？</h2><p>用一页示例漫画，把服务、模型和阅读器连起来。</p></div><div class="entry-actions">${button("start", entryText(), "primary")}${button("hide-guide", "不再提示翻译引导", "text-button")}</div></section>` : ""}
       <section class="settings-group"><h2>翻译服务</h2>${sectionLink("step-0", "LLM 服务商", "添加或切换负责翻译文本的服务", state.configured ? providerNames[state.provider] : "未配置")}
       ${sectionLink("step-0", "测试翻译", "用样例检测服务是否可用")}</section>
       <section class="settings-group"><h2>模型与语言</h2>${sectionLink("step-1", "模型管理", "在模型库中选择漫画原文所需的模型", flags()[1] ? "模型已就绪" : "尚未准备好")}</section>
-      <section class="settings-group"><h2>帮助与清理</h2>${sectionLink("help", "AI 翻译怎么用", "重新查看引导和常见问题")}</section></div>`;
+      <section class="settings-group"><h2>帮助与清理</h2>${sectionLink("help", "AI 翻译怎么用", "重新查看引导和常见问题")}
+      <button type="button" class="setting-row switch" role="switch" aria-checked="${state.automaticGuide}" aria-label="自动显示翻译引导" data-action="auto-guide"><span><b>自动显示翻译引导</b><small>在设置中显示引导卡，开启漫画翻译时提示缺少的配置。</small></span><span class="switch-track" aria-hidden="true"></span></button></section></div>`;
   }
   function comic() {
     return `${crumbs(["示例漫画", "漫画详情"])}<div class="context-page"><header class="title-row"><h1>漫画详情</h1>
       <div class="menu-wrap">${button("more", `${icon("more")} 更多`, "secondary", 'aria-expanded="false" aria-controls="comic-menu"')}
       <div id="comic-menu" class="pop-menu" hidden>${button("toggle-comic", state.enabled ? "关闭 AI 翻译" : "开启 AI 翻译", "menu-item")}</div></div></header>
       <article class="book-summary"><div class="cover" aria-hidden="true"><canvas data-seaside width="1000" height="526"></canvas></div><div><small class="muted">示例漫画</small><h2>海边电车</h2><p>日语原文</p><div class="actions">${button("read", "阅读", "primary")}${state.enabled ? button("pretranslate", "预翻译") : ""}</div></div></article>
-      <div class="context-note">${icon("info")}<p>${state.enabled ? "这本漫画已开启 AI 翻译。进入阅读器，可以随时对照原图。" : "点右上角「更多」，选择「开启 AI 翻译」。首次使用会提示还需要准备什么。"}</p></div>
+      <div class="context-note">${icon("info")}<p>${comicHint()}</p></div>
       <section class="settings-group"><h2>章节</h2>${sectionLink("read", "第 1 话　靠海的车站", "打开示例阅读器")}</section></div>`;
   }
   function reader() {
@@ -115,7 +126,7 @@
       ${state.enabled && serviceAndModelsReady() ? button("flip-reader", `${icon(translated ? "image" : "language")}<span>${translated ? "查看原图" : "查看译图"}</span>`, "tool-button", `aria-label="${translated ? "查看原图" : "查看译图"}"`) : ""}
       ${button("reader-settings", `${icon("gear")}<span>设置</span>`, "tool-button", 'aria-label="设置"')}</div></header>
       <figure class="reader-paper">${art(translated)}<figcaption>1 / 1</figcaption></figure>
-      <p class="reader-hint">${state.enabled && serviceAndModelsReady() ? "点顶栏按钮，在原图和译图间切换。" : "在顶栏打开「设置」，点「AI 翻译」为本漫画开启翻译。"}</p></div>`;
+      <p class="reader-hint">${state.enabled && serviceAndModelsReady() ? "点顶栏按钮，在原图和译图间切换。" : state.enabled ? comicHint() : "在顶栏打开「设置」，点「AI 翻译」为本漫画开启翻译。"}</p></div>`;
   }
   function paint() {
     page.querySelectorAll("canvas[data-seaside]").forEach(canvas => window.drawSeaside(canvas));
@@ -194,9 +205,8 @@
     if (focusAction) sheetBody.querySelector(`[data-action="${focusAction}"]:not(:disabled)`)?.focus({ preventScroll: true });
   }
   function toggleComic() {
-    if (state.enabled || serviceAndModelsReady()) {
+    if (state.enabled || !state.automaticGuide || serviceAndModelsReady()) {
       state.enabled = !state.enabled;
-      state.finished ||= state.enabled;
       showReaderOriginal = false;
       save();
       if (sheet.open) sheet.close();
@@ -204,14 +214,20 @@
       announce.textContent = state.enabled ? "已为海边电车开启 AI 翻译" : "已关闭本漫画的 AI 翻译";
       return;
     }
-    const missing = [!state.configured && "翻译服务", !flags()[1] && "识别模型"].filter(Boolean).join("和");
-    modal("还差一点就能翻译", `<p class="sheet-intro">《海边电车》还需要准备${missing}。引导会从缺少的那一步开始。</p>`,
+    modal("还差一点就能翻译", `<p class="sheet-intro">《海边电车》还需要准备${missingRequirements()}。引导会从缺少的那一步开始。</p>`,
       button("close", "稍后再说", "text-button") + button("start", entryText(), "primary"), "为本漫画开启 AI 翻译");
   }
   function go(name) {
     if (sheet.open) sheet.close();
     if (route() !== name) location.hash = name;
     else render();
+  }
+  function setAutomaticGuide(enabled) {
+    state.automaticGuide = enabled;
+    save();
+    render();
+    page.querySelector('[data-action="auto-guide"]').focus({ preventScroll: true });
+    announce.textContent = enabled ? "已恢复自动提示翻译引导" : "已关闭自动提示，可从帮助与清理随时重看";
   }
   function saveProvider(tested) {
     state.provider = selectedProvider;
@@ -223,6 +239,8 @@
   const actions = {
     start: () => showStep(state.finished && flags().every(Boolean) ? 0 : nextStep()),
     help: () => go("guide"),
+    "hide-guide": () => setAutomaticGuide(false),
+    "auto-guide": () => setAutomaticGuide(!state.automaticGuide),
     next: () => showStep(step + 1),
     prev: () => showStep(step - 1),
     close: () => sheet.close(),
@@ -231,7 +249,7 @@
     "save-provider": () => saveProvider(false),
     test: () => saveProvider(true),
     enable() { state.enabled = !state.enabled; save(); showStep(2, "enable"); },
-    finish() { state.finished = true; save(); showReaderOriginal = false; go("reader"); },
+    finish() { state.finished = true; state.automaticGuide = false; save(); showReaderOriginal = false; go("reader"); },
     read: () => go("reader"),
     more() {
       const menu = document.querySelector("#comic-menu");
@@ -250,6 +268,12 @@
         ${sectionLink("start", "AI 翻译怎么用", "查看配置和阅读引导")}`, button("reader-settings", "返回阅读设置", "text-button"), "阅读器设置");
     },
     pretranslate() {
+      if (!serviceAndModelsReady()) {
+        const missing = !state.configured ? 0 : 1;
+        modal("预翻译还未就绪", `<p class="sheet-intro">这本漫画已开启翻译。预翻译前还需准备${missingRequirements()}。</p>`,
+          button("close", "返回漫画详情", "text-button") + button(`step-${missing}`, missing === 0 ? "配置翻译服务" : "模型管理", "primary"), "预翻译");
+        return;
+      }
       modal("选择章节", '<div class="where"><b>第 1 话　靠海的车站</b><p>在应用里可勾选章节，点「开始预翻译」，然后在任务页查看进度。</p></div>', button("close", "返回漫画详情", "primary"), "预翻译");
     },
     reset() {

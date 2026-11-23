@@ -110,7 +110,7 @@ h2 { font-size: 22px; font-weight: 680; line-height: 1.4; letter-spacing: -.035e
 .entry-banner h2 { font-size: 20px; }
 .entry-banner p, .book-summary p { color: var(--muted); margin-top: 5px; font-size: 14px; line-height: 1.65; }
 .entry-symbol { border-radius: 12px; display: grid; place-items: center; background: white; color: var(--blue); width: 45px; height: 45px; flex-shrink: 0; }
-.entry-banner > button { margin-left: auto; flex-shrink: 0; }
+.entry-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .settings-group { margin-top: 18px; padding: 15px 20px 6px; border: 1px solid var(--line); border-radius: 15px; background: var(--paper); }
 .settings-group h2 { color: var(--blue); font-size: 14px; margin-bottom: 3px; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; text-align: left; gap: 14px; width: 100%; background: none; padding: 13px 0; border: 0; }
@@ -172,6 +172,8 @@ dialog::backdrop { background: #192b3d60; }
 .where p { margin: 5px 0 0; }
 .inline-note { font-size: 13px; margin-bottom: 6px; }
 .switch { padding: 6px; background: transparent; border: 0; }
+.setting-row.switch { padding: 13px 0; }
+.setting-row.switch .switch-track { flex-shrink: 0; }
 .switch-track { display: block; width: 46px; height: 28px; padding: 3px; background: #d5dce2; border: 1px solid #82909c; border-radius: 20px; }
 .switch-track::after { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #657383; }
 .switch[aria-checked="true"] .switch-track { border-color: var(--blue); background: var(--blue); }
@@ -222,8 +224,8 @@ dialog::backdrop { background: #192b3d60; }
   .context-page > h1, .title-row h1 { font-size: 28px; }
   .entry-banner { flex-wrap: wrap; gap: 9px; padding: 16px; }
   .entry-symbol { width: 32px; height: 32px; }
-  .entry-banner > div { flex: 1; min-width: 160px; }
-  .entry-banner > button { margin-left: 41px; }
+  .entry-banner > div:not(.entry-actions) { flex: 1; min-width: 160px; }
+  .entry-actions { flex-basis: 100%; justify-content: flex-start; margin-left: 41px; }
   .settings-group { padding-inline: 14px; }
   .book-summary { padding: 16px; gap: 14px; }
   .book-summary h2 { font-size: 23px; }
@@ -241,7 +243,7 @@ dialog::backdrop { background: #192b3d60; }
   .preview-nav { gap: 10px; }
   .hero { padding: 17px 15px; }
   .hero-copy h1 { font-size: 30px; }
-  .entry-banner > button { margin-left: 0; }
+  .entry-actions { margin-left: 0; }
   #sheet-body { padding-inline: 14px; }
   .language-pair { gap: 8px; }
   .tool-button span { display: none; }
