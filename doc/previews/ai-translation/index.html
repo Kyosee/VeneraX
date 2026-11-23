@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f9fc">
+  <title>AI 翻译使用引导 · VeneraX</title>
+  <link rel="icon" href="../../../assets/app_icon.png">
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="seaside.js"></script>
+  <script defer src="guide.js"></script>
+</head>
+<body>
+  <header class="preview-bar">
+    <div class="bar-inner">
+      <a class="brand" href="#guide" aria-label="VeneraX 使用引导">
+        <img src="../../../assets/app_icon.png" alt="" width="36" height="36">
+        <strong>VeneraX</strong>
+      </a>
+      <span class="preview-label">交互预览</span>
+      <nav class="preview-nav" aria-label="预览场景">
+        <a href="#guide">使用引导</a>
+        <a href="#settings">设置入口</a>
+        <a href="#comic">漫画入口</a>
+      </nav>
+    </div>
+  </header>
+  <main id="page" tabindex="-1"></main>
+  <footer class="page-footer">
+    <span>本地演示，使用示例漫画与译文。</span>
+    <button type="button" class="text-button" data-action="reset">重新体验</button>
+  </footer>
+  <dialog id="sheet" aria-labelledby="sheet-title">
+    <div id="sheet-body"></div>
+  </dialog>
+  <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>
