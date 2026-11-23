@@ -31,7 +31,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Classify and reply
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           ISSUE_AI_ENABLED: ${{ vars.ISSUE_AI_ENABLED }}
           ISSUE_AI_API_URL: ${{ secrets.ISSUE_AI_API_URL }}
