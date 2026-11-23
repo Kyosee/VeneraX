@@ -103,12 +103,15 @@
   }
   function settings() {
     return `${crumbs(["设置", "阅读体验", "AI 翻译"])}<div class="context-page"><h1>AI 翻译</h1>
-      ${state.automaticGuide ? `<section class="entry-banner"><span class="entry-symbol">${icon("book")}</span><div><h2>第一次翻译漫画？</h2><p>用一页示例漫画，把服务、模型和阅读器连起来。</p></div><div class="entry-actions">${button("start", entryText(), "primary")}${button("hide-guide", "不再提示翻译引导", "text-button")}</div></section>` : ""}
+      ${state.automaticGuide ? `<div class="entry-banner">
+        <span class="entry-prompt">${icon("book")}第一次翻译漫画？</span>
+        <div class="entry-actions">${button("start", "<span>引导</span>", "entry-open", 'title="打开翻译引导"')}
+        ${button("hide-guide", "<span>跳过</span>", "entry-skip", 'title="不再提示翻译引导"')}</div></div>` : ""}
       <section class="settings-group"><h2>翻译服务</h2>${sectionLink("step-0", "LLM 服务商", "添加或切换负责翻译文本的服务", state.configured ? providerNames[state.provider] : "未配置")}
       ${sectionLink("step-0", "测试翻译", "用样例检测服务是否可用")}</section>
       <section class="settings-group"><h2>模型与语言</h2>${sectionLink("step-1", "模型管理", "在模型库中选择漫画原文所需的模型", flags()[1] ? "模型已就绪" : "尚未准备好")}</section>
       <section class="settings-group"><h2>帮助与清理</h2>${sectionLink("help", "AI 翻译怎么用", "重新查看引导和常见问题")}
-      <button type="button" class="setting-row switch" role="switch" aria-checked="${state.automaticGuide}" aria-label="自动显示翻译引导" data-action="auto-guide"><span><b>自动显示翻译引导</b><small>在设置中显示引导卡，开启漫画翻译时提示缺少的配置。</small></span><span class="switch-track" aria-hidden="true"></span></button></section></div>`;
+      <button type="button" class="setting-row switch" role="switch" aria-checked="${state.automaticGuide}" aria-label="自动显示翻译引导" data-action="auto-guide"><span><b>自动显示翻译引导</b><small>在设置中显示入门提示，开启漫画翻译时提示缺少的配置。</small></span><span class="switch-track" aria-hidden="true"></span></button></section></div>`;
   }
   function comic() {
     return `${crumbs(["示例漫画", "漫画详情"])}<div class="context-page"><header class="title-row"><h1>漫画详情</h1>

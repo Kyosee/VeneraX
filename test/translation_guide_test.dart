@@ -122,6 +122,62 @@ void main() {
     expect(TranslationGuidePage.showAutomatically, isTrue);
   });
 
+  for (final (width, scale, language) in [
+    (2088.0, 1.0, 'en-US'),
+    (320.0, 1.0, 'zh-CN'),
+    (320.0, 2.0, 'en-US'),
+  ]) {
+    testWidgets(
+      'guide entry fits the settings list at ${width}px, ${scale}x',
+      (tester) async {
+        appdata.settings['language'] = language;
+        size(tester, width);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await show(tester, home);
+
+        final entry = tester.getRect(card);
+        expect(
+          tester.widget<Material>(card).color,
+          Theme.of(tester.element(card)).colorScheme.primaryContainer,
+        );
+        final nextRow = tester.getRect(
+          find.widgetWithText(
+            SwitchListTile,
+            'Enable device specific settings'.tl,
+          ),
+        );
+        expect(entry.left, nextRow.left);
+        expect(entry.right, nextRow.right);
+        final prompt = tester.getRect(
+          find.text('First time translating a comic?'.tl),
+        );
+        final open = find.widgetWithText(FilledButton, 'Tutorial'.tl);
+        final skip = find.widgetWithText(TextButton, 'Skip'.tl);
+        expect(open.hitTestable(), findsOneWidget);
+        expect(skip.hitTestable(), findsOneWidget);
+        final openRect = tester.getRect(open);
+        final skipRect = tester.getRect(skip);
+        expect(openRect.overlaps(skipRect), isFalse);
+        for (final rect in [openRect, skipRect]) {
+          expect(rect.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+          expect(rect.width, greaterThanOrEqualTo(kMinInteractiveDimension));
+          expect(entry.contains(rect.center), isTrue);
+        }
+        if (scale == 1) {
+          expect(entry.height, lessThanOrEqualTo(56));
+          expect(openRect.center.dy, closeTo(prompt.center.dy, 1));
+        } else {
+          expect(openRect.top, greaterThanOrEqualTo(prompt.bottom));
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant.only(
+        width > 1000 ? TargetPlatform.windows : TargetPlatform.android,
+      ),
+    );
+  }
+
   for (final width in [390.0, 1050.0]) {
     testWidgets('guide can be dismissed and reopened manually at ${width}px', (
       tester,
@@ -203,7 +259,7 @@ void main() {
     (tester) async {
       size(tester, 390);
       await show(tester, home);
-      await tap(tester, find.text('Open translation guide'));
+      await tap(tester, find.text('Tutorial'));
       await tap(tester, find.text('Add provider'));
       expect(find.byType(LlmProvidersPage), findsNothing);
       expect(find.byType(TextField), findsOneWidget);

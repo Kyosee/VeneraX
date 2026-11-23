@@ -370,6 +370,14 @@ class _ReaderSettingsState extends State<ReaderSettings> {
       comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
       useDeviceSettings: useDeviceSpecificSettings,
     );
+    const guideButtonStyle = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(Size(48, 32)),
+      padding: WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      tapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
+    );
     return _SettingsPageView(
       title: widget.translationOnly ? 'AI Translation' : 'Reading settings',
       description: widget.translationOnly
@@ -385,37 +393,41 @@ class _ReaderSettingsState extends State<ReaderSettings> {
             if (widget.translationOnly &&
                 selectedSection == null &&
                 TranslationGuidePage.showAutomatically)
-              Card(
+              Material(
                 key: const ValueKey('translation-guide-card'),
-                margin: const EdgeInsets.only(bottom: 8),
-                elevation: 0,
                 color: context.colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 12, 0),
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
                     children: [
                       Text(
                         'First time translating a comic?'.tl,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: context.colorScheme.onPrimaryContainer,
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Set up a service and recognition models, then turn translation on for the comic you want to read.'
-                            .tl,
-                      ),
-                      const SizedBox(height: 8),
                       Wrap(
-                        spacing: 8,
+                        spacing: 4,
                         children: [
                           FilledButton(
+                            style: guideButtonStyle,
                             onPressed: _openTranslationGuide,
-                            child: Text('Open translation guide'.tl),
+                            child: Text('Tutorial'.tl),
                           ),
-                          TextButton(
-                            key: const ValueKey('hide-translation-guide'),
-                            onPressed: () => _setTranslationGuideVisible(false),
-                            child: Text('Hide translation guide'.tl),
+                          Tooltip(
+                            message: 'Hide translation guide'.tl,
+                            child: TextButton(
+                              key: const ValueKey('hide-translation-guide'),
+                              style: guideButtonStyle,
+                              onPressed: () =>
+                                  _setTranslationGuideVisible(false),
+                              child: Text('Skip'.tl),
+                            ),
                           ),
                         ],
                       ),
