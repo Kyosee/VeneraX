@@ -231,7 +231,8 @@ class _TranslationGuidePageState extends State<TranslationGuidePage> {
               _open(() => TranslationModelsPage(sourceLang: config.sourceLang)),
           child: Text('Model management'.tl),
         ),
-        if (_modelsReady) TextButton(onPressed: _next, child: Text('Continue'.tl)),
+        if (_modelsReady)
+          TextButton(onPressed: _next, child: Text('Continue'.tl)),
       ],
       controls: Column(
         children: [
@@ -557,6 +558,7 @@ Future<void> _testTranslationService(
   } catch (e) {
     error = e.toString();
   }
+  if (controller.closed) return;
   controller.close();
   if (!context.mounted) return;
   await showDialog<void>(

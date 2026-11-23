@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -219,6 +221,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('closing the service test discards a late result', (
+    tester,
+  ) async {
+    size(tester, 390);
+    appdata.settings['imageTranslationProviders'] = [
+      {'id': 'delayed', 'kind': LlmProviderKind.customScript.token},
+    ];
+    final previousScripts = appdata.settings[LlmProviderStore.scriptsKey];
+    appdata.settings[LlmProviderStore.scriptsKey] = {
+      'delayed': 'function translate(input) { return {texts: input.texts}; }',
+    };
+    addTearDown(
+      () => appdata.settings[LlmProviderStore.scriptsKey] = previousScripts,
+    );
+    await show(tester, const TranslationGuidePage());
+    await tap(tester, find.text('Connect a translation service'));
+    final testService = find.text('Test translation');
+    await tester.ensureVisible(testService);
+    await tester.pumpAndSettle();
+
+    // Delay provider startup so the user can dismiss the test before it fails.
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final response = Completer<ByteData?>();
+    rootBundle.evict('assets/init.js');
+    messenger.setMockMessageHandler('flutter/assets', (message) {
+      expect(const StringCodec().decodeMessage(message), 'assets/init.js');
+      return response.future;
+    });
+    addTearDown(() {
+      messenger.setMockMessageHandler('flutter/assets', null);
+      rootBundle.evict('assets/init.js');
+    });
+    await tester.tap(testService);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Testing translation'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    response.complete(null);
+    await tester.pumpAndSettle();
+    expect(find.text('Translation failed'), findsNothing);
+    expect(testService.hitTestable(), findsOneWidget);
+  });
 
   testWidgets('reader waits for setup and respects the per-device opt-out', (
     tester,
