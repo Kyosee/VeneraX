@@ -8,6 +8,19 @@ part of 'settings_page.dart';
 class LlmProvidersPage extends StatefulWidget {
   const LlmProvidersPage({super.key});
 
+  static Future<bool> addProvider(
+    BuildContext context, {
+    LlmProviderKind initialKind = LlmProviderKind.openai,
+  }) async {
+    final provider = await showDialog<LlmProvider>(
+      context: context,
+      builder: (_) => _LlmProviderEditor(initialKind: initialKind),
+    );
+    if (provider == null) return false;
+    LlmProviderStore.add(provider);
+    return true;
+  }
+
   @override
   State<LlmProvidersPage> createState() => _LlmProvidersPageState();
 }
@@ -18,15 +31,14 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
   }
 
   void _addProvider() async {
-    var provider = await _editProvider(null);
-    if (provider != null) {
-      LlmProviderStore.add(provider);
-      _refresh();
-    }
+    if (await LlmProvidersPage.addProvider(context)) _refresh();
   }
 
   void _editExisting(LlmProvider provider) async {
-    var edited = await _editProvider(provider);
+    var edited = await showDialog<LlmProvider>(
+      context: context,
+      builder: (_) => _LlmProviderEditor(existing: provider),
+    );
     if (edited != null) {
       LlmProviderStore.update(edited);
       _refresh();
@@ -43,16 +55,6 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
         LlmProviderStore.remove(provider.id);
         _refresh();
       },
-    );
-  }
-
-  /// Opens the add/edit sheet for [existing] (null = new) and returns the
-  /// resulting provider, or null if cancelled. The dialog carries its own
-  /// working copy so nothing is written until the user confirms.
-  Future<LlmProvider?> _editProvider(LlmProvider? existing) {
-    return showDialog<LlmProvider>(
-      context: App.rootContext,
-      builder: (context) => _LlmProviderEditor(existing: existing),
     );
   }
 
@@ -165,9 +167,13 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
 /// the four editable fields and returns a fully-formed provider (preserving the
 /// original id when editing) on confirm.
 class _LlmProviderEditor extends StatefulWidget {
-  const _LlmProviderEditor({this.existing});
+  const _LlmProviderEditor({
+    this.existing,
+    this.initialKind = LlmProviderKind.openai,
+  });
 
   final LlmProvider? existing;
+  final LlmProviderKind initialKind;
 
   @override
   State<_LlmProviderEditor> createState() => _LlmProviderEditorState();
@@ -190,7 +196,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
     _url = TextEditingController(text: e?.url ?? '');
     _key = TextEditingController(text: e?.key ?? '');
     _model = e?.model ?? '';
-    _kind = e?.kind ?? LlmProviderKind.openai;
+    _kind = e?.kind ?? widget.initialKind;
     _script = e?.script ?? '';
   }
 

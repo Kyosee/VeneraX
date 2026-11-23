@@ -1,5 +1,48 @@
 part of 'settings_page.dart';
 
+SelectSetting _translationLanguageField({
+  required bool target,
+  required String? comicId,
+  required String? comicSource,
+  required ValueChanged<String> onChanged,
+}) {
+  final config = comicId == null
+      ? TranslationConfig.device
+      : TranslationConfig.of(comicId, comicSource);
+  final key = target
+      ? TranslationConfig.targetKeyName
+      : TranslationConfig.sourceKeyName;
+  final current = target ? config.targetLang : config.sourceLang;
+  final options = target
+      ? {
+          for (final item in TranslationTargets.builtIn.entries)
+            item.key: item.value.label.tl,
+          for (final item in TranslationTargets.custom) item.code: item.name,
+        }
+      : {
+          'auto': 'Auto detect'.tl,
+          for (final item in TranslationSources.builtIn.entries)
+            item.key: item.value.tl,
+          for (final item in TranslationSources.custom) item.code: item.name,
+        };
+  // An inherited code can outlive a custom language removed on this device.
+  options.putIfAbsent(current, () => current);
+  final perComic = appdata.settings.isComicSpecificSettingsEnabled(
+    comicId,
+    comicSource,
+  );
+  return SelectSetting(
+    title: (target ? 'Target language' : 'Source language').tl,
+    settingKey: key,
+    optionTranslation: options,
+    onChanged: () => onChanged(key),
+    comicId: perComic ? comicId : null,
+    comicSource: perComic ? comicSource : null,
+    useDeviceSettings:
+        !perComic && appdata.settings.isDeviceSpecificSettingsEnabled(),
+  );
+}
+
 /// Keeps settings routes inside the reader's sidebar.
 class ReaderSettingsPanel extends StatefulWidget {
   const ReaderSettingsPanel({required this.child, super.key});
@@ -132,32 +175,6 @@ class _ReaderSettingsState extends State<ReaderSettings> {
 
   String _effectiveTargetLang() => _effectiveTranslationConfig().targetLang;
 
-  /// Built-in targets, then the user's own. A selected code that is no longer
-  /// listed (a removed custom language) stays visible under its raw code
-  /// instead of showing as blank.
-  Map<String, String> _targetLanguageOptions() {
-    var options = {
-      for (var e in TranslationTargets.builtIn.entries) e.key: e.value.label.tl,
-      for (var e in TranslationTargets.custom) e.code: e.name,
-    };
-    var current = _effectiveTargetLang();
-    options.putIfAbsent(current, () => current);
-    return options;
-  }
-
-  /// Auto, built-in sources, then the user's own; a removed custom language
-  /// still selected shows under its code.
-  Map<String, String> _sourceLanguageOptions() {
-    var options = {
-      'auto': "Auto detect".tl,
-      for (var e in TranslationSources.builtIn.entries) e.key: e.value.tl,
-      for (var e in TranslationSources.custom) e.code: e.name,
-    };
-    var current = _effectiveSourceLang();
-    options.putIfAbsent(current, () => current);
-    return options;
-  }
-
   int _customLanguageCount() =>
       TranslationSources.custom.length + TranslationTargets.custom.length;
 
@@ -195,119 +212,27 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     return label;
   }
 
-  /// A plain-language explainer of what AI translation does, how to set it up,
-  /// and how to use it — so users don't have to guess from the field labels.
-  /// The short version stays here; the full walkthrough lives in the guide.
-  void _showTranslationHelp() {
-    Widget section(String title, String body) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: ts.bold.s14),
-          const SizedBox(height: 4),
-          Text(body, style: ts.s14),
-          const SizedBox(height: 16),
-        ],
-      );
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: "AI Translation help".tl,
-        content: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              section(
-                "What it does".tl,
-                "Reads the text in comic pages and overlays a translation right on the image, keeping the original artwork. Text is found and recognized on your device; the recognized lines are then sent to an AI model to translate."
-                    .tl,
-              ),
-              section(
-                "One-time setup".tl,
-                "1. Open LLM providers and add one. Pick \"Google Translate\" to use its free endpoint with nothing to fill in, or \"AI model\" to enter the API URL, API Key and Model of any OpenAI-compatible service. Add several and switch between them anytime.\n2. Tap Test translation to confirm it replies.\n3. Open Model management and download the models for your source language (needed for on-device text recognition)."
-                    .tl,
-              ),
-              section(
-                "How to use".tl,
-                "Translation is turned on per comic, not globally, because it uses your API tokens. Open a comic, turn on \"Translate pages while reading\", and pages translate as you read. To translate ahead of time, use Pre-translate from the comic's menu."
-                    .tl,
-              ),
-              section(
-                "Target language".tl,
-                "Language not in the list? Open Custom languages, tap + next to Target languages and enter a name (what the AI model translates into, e.g. ไทย) and a code (used by Google Translate and scripts, e.g. th). It then appears in Target language. Removing it later keeps the pages already translated."
-                    .tl,
-              ),
-              section(
-                "Good to know".tl,
-                "Results are saved, so a page is only translated once. Use Clear translation results to free up space. Source language can stay on Auto detect if you're unsure."
-                    .tl,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          Button.text(
-            onPressed: () {
-              context.pop();
-              GuidePage.open(App.rootContext, anchor: GuideAnchor.translation);
-            },
-            child: Text("Full guide".tl),
-          ),
-          Button.filled(onPressed: context.pop, child: Text("OK".tl)),
-        ],
+  Future<void> _openTranslationGuide() async {
+    final bubbles = TranslationConfig.bubbleEnhancementEnabled;
+    final changed = await context.to<bool>(
+      () => TranslationGuidePage(
+        comicId: widget.comicId,
+        comicSource: widget.comicSource,
+        onLanguageChanged: widget.onChanged,
       ),
     );
+    if (!mounted) return;
+    if (changed == true) widget.onChanged?.call('enableImageTranslation');
+    if (bubbles != TranslationConfig.bubbleEnhancementEnabled) {
+      widget.onChanged?.call(TranslationConfig.bubbleEnhancementKey);
+    }
+    refreshSettings();
   }
 
-  /// Runs a sample string through the full translate path so the user can
-  /// confirm the endpoint/key/model actually work — and return usable output —
-  /// without opening a comic to find out. Shows the returned translation on
-  /// success, or the error on failure.
-  void _testTranslation() async {
-    if (!LlmTranslator.isConfigured) {
-      context.showMessage(message: "Add a translation service first".tl);
-      return;
-    }
-    var controller = showLoadingDialog(
-      context,
-      message: "Testing translation".tl,
-      allowCancel: false,
-    );
-    String? result;
-    String? error;
-    try {
-      var res = await LlmTranslator.translateBatch(const [
-        'こんにちは',
-        'ありがとう',
-      ], _effectiveTargetLang());
-      result = res.texts.where((t) => t.isNotEmpty).join(' / ');
-      if (result.isEmpty) {
-        error = "The model returned an empty response".tl;
-        result = null;
-      }
-    } catch (e) {
-      error = e.toString();
-    }
-    controller.close();
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: error == null
-            ? "Translation succeeded".tl
-            : "Translation failed".tl,
-        content: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(error ?? "こんにちは / ありがとう →\n$result", style: ts.s14),
-        ),
-        actions: [
-          FilledButton(onPressed: () => context.pop(), child: Text("OK".tl)),
-        ],
-      ),
-    );
+  Future<void> _setTranslationGuideVisible(bool show) async {
+    final write = TranslationGuidePage.setShowAutomatically(show);
+    refreshSettings();
+    await write;
   }
 
   void _writeEffectiveSetting(String key, dynamic value) {
@@ -457,6 +382,47 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         borderRadius: BorderRadius.circular(10),
         child: Column(
           children: [
+            if (widget.translationOnly &&
+                selectedSection == null &&
+                TranslationGuidePage.showAutomatically)
+              Card(
+                key: const ValueKey('translation-guide-card'),
+                margin: const EdgeInsets.only(bottom: 8),
+                elevation: 0,
+                color: context.colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'First time translating a comic?'.tl,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Set up a service and recognition models, then turn translation on for the comic you want to read.'
+                            .tl,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          FilledButton(
+                            onPressed: _openTranslationGuide,
+                            child: Text('Open translation guide'.tl),
+                          ),
+                          TextButton(
+                            key: const ValueKey('hide-translation-guide'),
+                            onPressed: () => _setTranslationGuideVisible(false),
+                            child: Text('Hide translation guide'.tl),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             SwitchListTile(
               dense: true,
               title: Text(
@@ -1420,15 +1386,20 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                       widget.comicId!,
                       widget.comicSource!,
                     ),
-                    onChanged: (v) {
-                      ImageTranslationService.setEnabledForComic(
-                        widget.comicId!,
-                        widget.comicSource!,
-                        v,
-                      );
-                      appdata.saveData();
-                      setState(() {});
-                      widget.onChanged?.call("enableImageTranslation");
+                    onChanged: (v) async {
+                      final changed =
+                          await TranslationGuidePage.requestComicChange(
+                            context,
+                            widget.comicId!,
+                            widget.comicSource!,
+                            v,
+                            onLanguageChanged: widget.onChanged,
+                          );
+                      if (!mounted) return;
+                      refreshSettings();
+                      if (changed) {
+                        widget.onChanged?.call("enableImageTranslation");
+                      }
                     },
                   ),
                 )
@@ -1441,34 +1412,16 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                   ),
                   enabled: false,
                 ),
-              SelectSetting(
-                title: "Source language".tl,
-                settingKey: "imageTranslationSource",
-                optionTranslation: _sourceLanguageOptions(),
-                onChanged: () {
-                  setState(() {});
-                  widget.onChanged?.call("imageTranslationSource");
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
-              SelectSetting(
-                title: "Target language".tl,
-                settingKey: "imageTranslationTarget",
-                optionTranslation: _targetLanguageOptions(),
-                onChanged: () {
-                  setState(() {});
-                  widget.onChanged?.call("imageTranslationTarget");
-                },
-                comicId: isEnabledSpecificSettings ? widget.comicId : null,
-                comicSource: isEnabledSpecificSettings
-                    ? widget.comicSource
-                    : null,
-                useDeviceSettings: useDeviceSpecificSettings,
-              ),
+              for (final target in [false, true])
+                _translationLanguageField(
+                  target: target,
+                  comicId: comicId,
+                  comicSource: sourceKey,
+                  onChanged: (key) {
+                    refreshSettings();
+                    widget.onChanged?.call(key);
+                  },
+                ),
               SelectSetting(
                 title: "Translation scope".tl,
                 settingKey: TranslationConfig.scopeKeyName,
@@ -1524,7 +1477,8 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 title: "Test translation".tl,
                 subtitle: "Check the endpoint with a sample line".tl,
                 actionTitle: "Test".tl,
-                callback: _testTranslation,
+                callback: () =>
+                    _testTranslationService(context, _effectiveTargetLang()),
               ),
             ],
           ),
@@ -1639,7 +1593,16 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 title: "How AI translation works".tl,
                 subtitle: "Setup and usage in plain language".tl,
                 actionTitle: "Help".tl,
-                callback: _showTranslationHelp,
+                callback: _openTranslationGuide,
+              ),
+              SwitchListTile(
+                title: Text('Show translation guide automatically'.tl),
+                subtitle: Text(
+                  'On this device. You can always open the guide from Help & cleanup.'
+                      .tl,
+                ),
+                value: TranslationGuidePage.showAutomatically,
+                onChanged: _setTranslationGuideVisible,
               ),
               _CallbackSetting(
                 title: "Clear translation results".tl,

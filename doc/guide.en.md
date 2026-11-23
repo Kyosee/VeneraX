@@ -58,6 +58,8 @@ Detection and recognition run on the device; the recognized text is sent to an A
 <!--anchor:translation-setup-->
 ### Setup
 
+In **Settings → AI Translation**, choose **Open translation guide** to compare the original and translated sample and set up what you need. When you enable translation for a comic, the guide opens at the first missing step. Go back to leave for now, or choose **Hide translation guide** to dismiss prompts on this device. Under **Help & cleanup**, you can revisit **How AI translation works** or turn on **Show translation guide automatically**.
+
 1. Open **Settings → AI Translation**. Choose the language and performance mode under **Translation preferences**. Configure and test your provider under **Translation services**.
 2. "LLM providers" → add one. Pick "Google Translate" to use its free endpoint: no account, no key, nothing to fill in — just save and it works. The trade-off is that each line is translated on its own, so wording and character names may vary between pages, and quality is below an AI model. It is not an official API, so it can be rate-limited or stop working at any time — use an AI model if you need reliability.
 3. For better results pick "AI model": enter the API URL and API key (some local services can leave it blank), then tap "Get models" to choose a model. Any OpenAI-compatible service works. If model fetching fails, enter the model name manually. You can add several providers and switch at any time.

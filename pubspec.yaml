@@ -130,6 +130,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/translation.json
+    - assets/translation_guide_seaside.png
     - assets/init.js
     - assets/app_icon.png
     - assets/app_icon.ico

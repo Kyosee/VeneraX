@@ -64,6 +64,7 @@ import 'package:venera/utils/sync_skip.dart';
 import 'package:venera/utils/translations.dart';
 
 part 'reader.dart';
+part 'translation_guide.dart';
 part 'translation_models_settings.dart';
 part 'llm_providers_settings.dart';
 part 'translation_script_settings.dart';

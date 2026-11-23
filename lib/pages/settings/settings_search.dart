@@ -232,6 +232,7 @@ class _SettingsSearchEntry {
         'Image download concurrency' ||
         'Translation request concurrency' => 'Advanced translation settings',
         'How AI translation works' ||
+        'Show translation guide automatically' ||
         'Clear translation results' => 'Help & cleanup',
         _ => 'Translation preferences',
       };
@@ -465,6 +466,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
     keywords: ['language', 'OCR', 'model'],
   ),
   _SettingsSearchEntry('Test translation', 8, keywords: ['API', 'test']),
+  _SettingsSearchEntry(
+    'Show translation guide automatically',
+    8,
+    keywords: ['help', 'disable', 'guide'],
+  ),
   _SettingsSearchEntry(
     "Custom translation script",
     8,

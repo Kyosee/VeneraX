@@ -639,12 +639,14 @@ abstract mixin class _ComicPageActions {
             ? "Disable AI translation".tl
             : "Enable AI translation".tl,
         color: translationEnabled ? context.colorScheme.primary : null,
-        onClick: () {
-          ImageTranslationService.setEnabledForComic(
+        onClick: () async {
+          final changed = await TranslationGuidePage.requestComicChange(
+            context,
             comic.id,
             comic.sourceKey,
             !translationEnabled,
           );
+          if (!changed || !context.mounted) return;
           context.showMessage(
             message: translationEnabled
                 ? "AI translation disabled".tl
