@@ -370,23 +370,39 @@ class ReadingWidgetService with WidgetsBindingObserver {
         final count = active ? comics.length : math.min(2, comics.length);
         final snapshot = snapshots[kind]!;
         final items = snapshot['items']! as List<Map<String, Object>>;
+        var changed = false;
         for (var i = 0; i < count; i++) {
           if (revision != _revision) return;
           final comic = comics[i];
           final key = _coverKey(comic);
           var path = _covers[key];
           if (path == null || !File(path).existsSync()) {
+            final originalCover = comic.cover;
+            _covers.remove(key);
             path = await _thumbnail(comic, revision);
             if (revision != _revision) return;
-            if (path.isNotEmpty) _covers[key] = path;
+            // Loading online history can resolve and replace its cover URL.
+            if (path.isNotEmpty) {
+              final resolvedKey = comic.cover == originalCover ? key : _coverKey(comic);
+              _covers[resolvedKey] = path;
+            }
           }
-          items[i]['coverPath'] = path;
+          if (items[i]['coverPath'] != path) {
+            items[i]['coverPath'] = path;
+            changed = true;
+          }
+          // The compact card only shows the first cover. Publish it before
+          // slower requests can be suspended when the app goes to background.
+          if (changed && (i == 0 || i == count - 1)) {
+            _saveCovers();
+            await readingWidgetChannel.invokeMethod<void>(
+              'update',
+              jsonEncode(snapshot),
+            );
+            if (revision != _revision) return;
+            changed = false;
+          }
         }
-        await readingWidgetChannel.invokeMethod<void>(
-          'update',
-          jsonEncode(snapshot),
-        );
-        if (revision != _revision) return;
       }
       if (ReadingWidgetKind.values.every(kinds.contains)) {
         _pruneCovers(collections.values.expand((items) => items));

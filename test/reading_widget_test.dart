@@ -236,8 +236,16 @@ void main() {
       );
       image.dispose();
       picture.dispose();
-      final records = [history('offline')];
-      await service(records, load: (_) async => bytes).refresh();
+      final record = history('offline')..cover = '';
+      final records = [record];
+      await service(
+        records,
+        load: (_) async {
+          // HistoryImageProvider can resolve a missing URL while loading.
+          record.cover = 'https://example.invalid/resolved';
+          return bytes;
+        },
+      ).refresh();
       final path = (latest()['items'] as List).single['coverPath'] as String;
       expect(path, isNotEmpty);
       expect(File(path).existsSync(), isTrue);
@@ -255,6 +263,38 @@ void main() {
       expect(File(path).existsSync(), isTrue);
     },
   );
+
+  test('the compact history card gets its cover while later covers wait', () async {
+    final waiting = Completer<void>();
+    final release = Completer<Uint8List>();
+    final records = [history('visible'), history('second')];
+    final refresh = service(
+      records,
+      load: (comic) async {
+        if (comic.id == 'visible') {
+          return base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          );
+        }
+        waiting.complete();
+        return release.future;
+      },
+    ).refresh();
+    try {
+      await waiting.future.timeout(const Duration(seconds: 5));
+      final path = (latest()['items'] as List).first['coverPath'] as String;
+      expect(path, isNotEmpty);
+      expect(File(path).existsSync(), isTrue);
+      // A fresh process can repaint even if the previous refresh was suspended.
+      await service([
+        records.first,
+      ]).refresh(kinds: [ReadingWidgetKind.history], loadCovers: false);
+      expect((latest()['items'] as List).first['coverPath'], path);
+    } finally {
+      release.complete(Uint8List(0));
+      await refresh;
+    }
+  });
 
   test('local cards leave out comics whose folders hold no pages', () async {
     LocalComic comic(String id) => LocalComic(
