@@ -9,6 +9,7 @@ abstract mixin class _ComicPageActions {
   void reloadDetails();
 
   Future<void> _showRelatedSourcesManager();
+  void _showBlockingMatches();
 
   ComicDetails get comic;
 
@@ -779,6 +780,11 @@ abstract mixin class _ComicPageActions {
           },
         ),
       MenuEntry(icon: Icons.block, text: "Block".tl, onClick: blockThisComic),
+      MenuEntry(
+        icon: Icons.rule,
+        text: 'Matched blocking rules'.tl,
+        onClick: _showBlockingMatches,
+      ),
     ]);
   }
 

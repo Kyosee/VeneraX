@@ -174,31 +174,20 @@ void showBlockDialog({
   );
 }
 
-/// return the first blocked keyword, or null if not blocked
-String? isBlocked(Comic item) {
-  for (var word in appdata.settings['blockedWords']) {
-    if (item.title.contains(word)) {
-      return word;
-    }
-    if (item.subtitle?.contains(word) ?? false) {
-      return word;
-    }
-    if (item.description.contains(word)) {
-      return word;
-    }
-    for (var tag in item.tags ?? <String>[]) {
-      if (tag == word) {
-        return word;
-      }
-      if (tag.contains(':')) {
-        tag = tag.split(':')[1];
-        if (tag == word) {
-          return word;
-        }
-      }
+String? isBlocked(Comic item) =>
+    matchingBlockedWords(item).firstOrNull ?? blockedTagOf(item.tags);
+
+Iterable<String> matchingBlockedWords(Comic item) sync* {
+  for (final word in appdata.settings['blockedWords']) {
+    if (word is! String || word.isEmpty) continue;
+    if (item.title.contains(word) ||
+        (item.subtitle?.contains(word) ?? false) ||
+        item.description.contains(word) ||
+        (item.tags?.any((tag) =>
+            tag == word || (tag.contains(':') && tag.split(':')[1] == word)) ?? false)) {
+      yield word;
     }
   }
-  return blockedTagOf(item.tags);
 }
 
 /// The first entry of the tag blocklist matched by [tags], or null.
@@ -208,10 +197,12 @@ String? isBlocked(Comic item) {
 /// compared against the value half of `namespace:value`, which is the form the
 /// block dialog stores; an entry typed with a namespace is compared whole, for
 /// users who want to pin a rule to one namespace.
-String? blockedTagOf(List<String>? tags) {
-  if (tags == null || tags.isEmpty) return null;
+String? blockedTagOf(List<String>? tags) => matchingBlockedTags(tags).firstOrNull;
+
+Iterable<String> matchingBlockedTags(List<String>? tags) sync* {
+  if (tags == null || tags.isEmpty) return;
   var blocked = appdata.settings['blockedTags'];
-  if (blocked is! List || blocked.isEmpty) return null;
+  if (blocked is! List || blocked.isEmpty) return;
   // Comparable forms of each tag, built once instead of per blocklist entry.
   var whole = <String>[]; // raw tag, for namespace-qualified entries
   var plain = <String>[]; // value half + localized text, for bare entries
@@ -230,9 +221,9 @@ String? blockedTagOf(List<String>? tags) {
     var needle = entry.toLowerCase();
     for (var candidate in entry.contains(':') ? whole : plain) {
       if (candidate.contains(needle)) {
-        return entry;
+        yield entry;
+        break;
       }
     }
   }
-  return null;
 }

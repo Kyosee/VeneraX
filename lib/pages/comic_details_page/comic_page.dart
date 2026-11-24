@@ -24,6 +24,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/domain_database.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/favorites_meta.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_translation/pre_translation_tasks.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
@@ -482,7 +483,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     );
   }
 
-  Comic _relatedSourcesComic() => Comic(
+  Comic _detailComic() => Comic(
     comic.title,
     comic.cover,
     comic.id,
@@ -494,6 +495,52 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     null,
   );
 
+  @override
+  void _showBlockingMatches() {
+    final favorites = LocalFavoritesManager();
+    final id = comic.id;
+    final type = comic.comicType;
+    // Favorites and follow updates can keep metadata older than the detail page.
+    final entries = [
+      _detailComic(),
+      for (final folder in favorites.find(id, type))
+        favorites.getComic(folder, id, type),
+      ...favorites.getComicsWithUpdatesInfoIn(
+        FollowUpdateScope.folders(),
+        onlyComic: (id: id, type: type),
+      ),
+    ];
+    final words = entries.expand(matchingBlockedWords).toSet();
+    final tags = entries.expand((item) => matchingBlockedTags(item.tags)).toSet();
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Matched blocking rules'.tl),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (words.isEmpty && tags.isEmpty)
+              Text('No matching blocking rules'.tl),
+            if (words.isNotEmpty) ...[
+              Text('Keyword blocking'.tl, style: Theme.of(context).textTheme.titleSmall),
+              SelectableText(words.join('\n')),
+            ],
+            if (words.isNotEmpty && tags.isNotEmpty) const SizedBox(height: 16),
+            if (tags.isNotEmpty) ...[
+              Text('Tag blocking'.tl, style: Theme.of(context).textTheme.titleSmall),
+              SelectableText(tags.join('\n')),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Close'.tl)),
+        ],
+      ),
+    );
+  }
+
   void _loadRelatedSources() {
     _relatedSourcesLoaded = true;
     if (ComicCollectionStore.isCollectionSourceKey(comic.sourceKey) ||
@@ -502,13 +549,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       return;
     }
     _relatedSourceLinks = _comicStateRepository.relatedSourcesFor(
-      _relatedSourcesComic(),
+      _detailComic(),
     );
   }
 
   @override
   Future<void> _showRelatedSourcesManager() async {
-    await showRelatedSourcesDialog(context, _relatedSourcesComic());
+    await showRelatedSourcesDialog(context, _detailComic());
     if (!mounted) return;
     setState(_loadRelatedSources);
   }
@@ -547,6 +594,10 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
+            TextButton(
+              onPressed: _showBlockingMatches,
+              child: Text('Matched blocking rules'.tl),
+            ),
             Button.outlined(
               onPressed: () => setState(() => _blockOverridden = true),
               child: Text("View anyway".tl),

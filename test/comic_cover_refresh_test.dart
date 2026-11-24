@@ -13,6 +13,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_state_repository.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/follow_update_scope.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/js_engine.dart';
@@ -116,6 +117,61 @@ void main() {
     JsEngine().dispose();
     debugDefaultTargetPlatformOverride = null;
     root.deleteSync(recursive: true);
+  });
+
+  testWidgets('blocked details list all matching rules including saved favorites', (tester) async {
+    const id = 'blocking-rules-test';
+    final local = LocalComic(
+      id: id, title: 'Current title', subtitle: '', tags: ['genre:Fantasy'],
+      directory: root.path, cover: '', comicType: ComicType.local,
+      chapters: null, downloadedChapters: const [], createdAt: DateTime.utc(2026),
+    );
+    await LocalManager().add(local);
+    final favorites = LocalFavoritesManager();
+    final folder = favorites.createFolder('Blocking rules test');
+    final secondFolder = favorites.createFolder('Blocking rules test B');
+    favorites.addComic(folder, FavoriteItem(
+      id: id, name: 'Saved title', author: '', coverPath: '',
+      type: ComicType.local, tags: ['genre:Magic'],
+    ), null, 'Old follow time');
+    favorites.addComic(secondFolder, FavoriteItem(
+      id: id, name: 'Saved title', author: '', coverPath: '',
+      type: ComicType.local, tags: ['genre:Magic'],
+    )..hasNewUpdate = true, null, 'Follow-only');
+    final oldWords = appdata.settings['blockedWords'];
+    final oldTags = appdata.settings['blockedTags'];
+    final oldFollowScope = appdata.settings[FollowUpdateScope.allFoldersKey];
+    appdata.settings[FollowUpdateScope.allFoldersKey] = true;
+    final wasInitialized = App.isInitialized;
+    App.isInitialized = true;
+    appdata.settings['blockedWords'] = ['Current', 'Saved', 'Old follow time', 'Follow-only', 'unrelated'];
+    appdata.settings['blockedTags'] = ['Fantasy', 'genre:Magic'];
+    addTearDown(() {
+      App.domain.close();
+      App.isInitialized = wasInitialized;
+      appdata.settings['blockedWords'] = oldWords;
+      appdata.settings['blockedTags'] = oldTags;
+      appdata.settings[FollowUpdateScope.allFoldersKey] = oldFollowScope;
+      favorites.deleteFolder(folder);
+      favorites.deleteFolder(secondFolder);
+      LocalManager().remove(id, ComicType.local);
+    });
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: App.rootNavigatorKey,
+      home: const ComicPage(id: id, sourceKey: 'local'),
+    ));
+    await tester.pump();
+    expect(find.text('Blocked comic'), findsOneWidget);
+    await tester.tap(find.text('Matched blocking rules'));
+    await tester.pumpAndSettle();
+    expect(find.text('Current\nSaved\nFollow-only'), findsOneWidget);
+    expect(find.text('Fantasy\ngenre:Magic'), findsOneWidget);
+    expect(find.text('unrelated'), findsNothing);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('View anyway'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets(

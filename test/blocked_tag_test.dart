@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/utils/tags_translation.dart';
 
 // blockedTagOf backs the tag blocklist (#179). The list a user types and the
@@ -12,6 +13,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
+    appdata.settings['blockedWords'] = [];
     appdata.settings['blockedTags'] = [];
     // Loads assets/tags.json through rootBundle so the translated-tag case
     // exercises the real table rather than an empty map.
@@ -59,6 +61,20 @@ void main() {
   test('returns the first matching entry', () {
     appdata.settings['blockedTags'] = ['ntr', 'loli'];
     expect(blockedTagOf(['loli', 'ntr']), 'ntr');
+  });
+
+  test('reports every matching rule using the same comparisons as the grid', () {
+    appdata.settings['blockedWords'] = ['Title', 'Author', 'Summary', 'literal', 'title'];
+    appdata.settings['blockedTags'] = ['fut', '扶她', 'female:futa', 'absent'];
+    final comic = Comic(
+      'Title', '', '1', 'Author', ['tag:literal', 'female:futanari'],
+      'Summary', 'local', null, null,
+    );
+    expect(matchingBlockedWords(comic), ['Title', 'Author', 'Summary', 'literal']);
+    expect(matchingBlockedTags(comic.tags), ['fut', '扶她', 'female:futa']);
+    expect(isBlocked(comic), 'Title');
+    appdata.settings['blockedWords'] = [];
+    expect(isBlocked(comic), 'fut');
   });
 
   test('unrelated tags are left alone', () {

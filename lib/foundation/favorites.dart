@@ -2482,8 +2482,9 @@ class LocalFavoritesManager with ChangeNotifier {
   @visibleForTesting
   static List<FavoriteItemWithUpdateInfo> queryComicsWithUpdatesInfoIn(
     List<String> folders,
-    CommonDatabase db,
-  ) {
+    CommonDatabase db, {
+    ({String id, ComicType type})? onlyComic,
+  }) {
     if (folders.isEmpty) {
       // Growable: callers sort the result, and sort() throws on an
       // unmodifiable list even when it is empty.
@@ -2503,8 +2504,9 @@ class LocalFavoritesManager with ChangeNotifier {
     var res = db.select('''
       select $columns, max(coalesce("has_new_update", 0)) as any_update
       from (${branches.join(' union all ')})
+      ${onlyComic == null ? '' : 'where id = ? and type = ?'}
       group by "id", "type";
-    ''');
+    ''', [if (onlyComic != null) ...[onlyComic.id, onlyComic.type.value]]);
     return res
         .map(
           (e) => FavoriteItemWithUpdateInfo(
@@ -2520,10 +2522,13 @@ class LocalFavoritesManager with ChangeNotifier {
   /// Rows of [folders] as one list, keeping the first occurrence of a comic
   /// that sits in more than one of them.
   List<FavoriteItemWithUpdateInfo> getComicsWithUpdatesInfoIn(
-    List<String> folders,
-  ) {
+    List<String> folders, {
+    ({String id, ComicType type})? onlyComic,
+  }) {
     if (!isInitialized) return [];
-    return queryComicsWithUpdatesInfoIn(_existingFolders(folders), _db);
+    return queryComicsWithUpdatesInfoIn(
+      _existingFolders(folders), _db, onlyComic: onlyComic,
+    );
   }
 
   /// Same as [getComicsWithUpdatesInfoIn] but off the UI thread, for a scope
