@@ -723,9 +723,6 @@ class LocalManager with ChangeNotifier {
     if (sortType == LocalSortType.lastRead) {
       return _getComicsSortedByLastRead();
     }
-    if (sortType == LocalSortType.author) {
-      return _getComicsSortedByAuthor();
-    }
     String orderColumn;
     String orderDir;
     switch (sortType) {
@@ -748,7 +745,9 @@ class LocalManager with ChangeNotifier {
     var res = _db.select('''
       SELECT * FROM comics ORDER BY $orderColumn $orderDir;
     ''');
-    return res.map((row) => LocalComic.fromRow(row)).toList();
+    final comics = res.map((row) => LocalComic.fromRow(row)).toList();
+    if (sortType == LocalSortType.author) sortLocalComicsByAuthor(comics);
+    return comics;
   }
 
   /// Every comic in the library, without reading the rest of its row.
@@ -770,13 +769,6 @@ class LocalManager with ChangeNotifier {
       if (statuses.contains(LocalComicStatus.downloaded)) return true;
     }
     return false;
-  }
-
-  List<LocalComic> _getComicsSortedByAuthor() {
-    var res = _db.select('SELECT * FROM comics;');
-    var comics = res.map((row) => LocalComic.fromRow(row)).toList();
-    comics.sort((a, b) => a.subtitle.compareTo(b.subtitle));
-    return comics;
   }
 
   List<LocalComic> _getComicsSortedByLastRead() {
@@ -1541,6 +1533,25 @@ Future<List<LocalComic>> sortLocalComicsBySize(
     if (byTitle != 0) return byTitle;
     final byType = a.comicType.value.compareTo(b.comicType.value);
     return byType != 0 ? byType : a.id.compareTo(b.id);
+  });
+}
+
+void sortLocalComicsByAuthor(List<LocalComic> comics) {
+  const repository = ComicStateRepository();
+  final keys = <LocalComic, String>{};
+  final separators = RegExp(r'[|,]');
+  for (final comic in comics) {
+    final author = repository.localDisplayAuthor(comic) ?? '';
+    keys[comic] = author
+        .toLowerCase()
+        .split(separators)
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .join(', ');
+  }
+  comics.sort((a, b) {
+    final byAuthor = keys[a]!.compareTo(keys[b]!);
+    return byAuthor != 0 ? byAuthor : a.title.compareTo(b.title);
   });
 }
 

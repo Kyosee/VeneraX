@@ -52,11 +52,15 @@ void main() {
     debugDefaultTargetPlatformOverride = previousTarget;
   });
 
-  LocalComic comic(String id, {ComicType type = ComicType.local}) => LocalComic(
+  LocalComic comic(String id, {
+    ComicType type = ComicType.local,
+    String author = 'Author',
+    List<String> tags = const [],
+  }) => LocalComic(
     id: id,
     title: 'Comic $id',
-    subtitle: 'Author',
-    tags: const [],
+    subtitle: author,
+    tags: tags,
     directory: '${root.path}/$id',
     chapters: null,
     cover: '',
@@ -91,6 +95,29 @@ void main() {
       expect(input.map((c) => c.id), ['small', 'large', 'missing']);
     },
   );
+
+  test('author sort groups displayed authors in the library and search', () async {
+    final entries = [
+      comic('sort-1', author: '森島コン'),
+      comic('sort-2', author: '', tags: ['artist:藤崎ひかり']),
+      comic('sort-3', author: 'Unknown', tags: ['作者:森島コン']),
+      comic('sort-4', author: 'n/a'),
+      comic('sort-5', author: ' N/A '),
+    ];
+    for (final entry in entries) {
+      await local.add(entry);
+    }
+    addTearDown(() {
+      for (final entry in entries) {
+        local.remove(entry.id, entry.comicType);
+      }
+    });
+    final expected = ['sort-4', 'sort-5', 'sort-1', 'sort-3', 'sort-2'];
+    expect(local.getComics(LocalSortType.author).map((c) => c.id), expected);
+    final results = [comic('sort-6', author: '森島コン'), ...local.search('sort-')];
+    sortLocalComicsByAuthor(results);
+    expect(results.map((c) => c.id), [...expected.take(4), 'sort-6', 'sort-2']);
+  });
 
   test('file size sorting refreshes files changed by a download', () async {
     await file('growing/page.jpg', 1);

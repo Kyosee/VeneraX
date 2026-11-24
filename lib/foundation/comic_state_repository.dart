@@ -194,6 +194,23 @@ class ComicStateRepository {
     );
   }
 
+  /// Resolves just the author for library sorting, skipping unrelated tile data.
+  String? localDisplayAuthor(LocalComic comic) {
+    final identity = identityFor(comic.sourceKey, comic.id);
+    final domain = _findDomainBaseInfo(identity);
+    final author =
+        _ComicMetadata.clean(domain?.author) ??
+        _ComicMetadata.fromLocalComic(comic).author;
+    if (author != null) return author;
+    final folders = _findFavoriteFolders(comic.id, identity.type);
+    final favorite = _findFavoriteItem(folders, comic.id, identity.type);
+    final favoriteAuthor = favorite == null
+        ? null
+        : _ComicMetadata.fromFavorite(favorite).author;
+    return favoriteAuthor ??
+        _ComicMetadata.clean(_findHistory(comic.id, identity.type)?.subtitle);
+  }
+
   ComicDisplayInfo displayInfoFor(Comic comic, {String? badge}) {
     final identity = identityFor(comic.sourceKey, comic.id);
     final domain = _findDomainBaseInfo(identity);
@@ -276,7 +293,7 @@ class ComicStateRepository {
       sourceName: badge ?? _sourceNameFor(comic.sourceKey),
       author: _pick([
         domain?.author,
-        localMeta?.author,
+        if (comic is LocalComic) currentMeta.author else localMeta?.author,
         favoriteMeta?.author,
         currentMeta.author,
         history?.subtitle,

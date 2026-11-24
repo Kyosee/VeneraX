@@ -49,7 +49,9 @@ class _LocalComicsPageState extends State<LocalComicsPage>
     List<LocalComic> all;
     if (keyword.isEmpty) {
       all = LocalManager().getComics(
-        sortType.isSize ? LocalSortType.defaultSort : sortType,
+        sortType.isSize || sortType == LocalSortType.author
+            ? LocalSortType.defaultSort
+            : sortType,
       );
     } else {
       all = LocalManager().search(keyword);
@@ -63,9 +65,11 @@ class _LocalComicsPageState extends State<LocalComicsPage>
         .map((task) => task.toLocalComic())
         .toList();
     all = [...downloadingComics, ...all];
-    return currentTab == null
-        ? all
-        : all.where((c) => c.status == currentTab).toList();
+    if (currentTab != null) {
+      all = all.where((c) => c.status == currentTab).toList();
+    }
+    if (sortType == LocalSortType.author) sortLocalComicsByAuthor(all);
+    return all;
   }
 
   void update() {
