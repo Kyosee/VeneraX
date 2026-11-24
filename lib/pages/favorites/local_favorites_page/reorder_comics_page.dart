@@ -113,9 +113,11 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
         key: reorderWidgetKey,
         scrollController: _scrollController,
         animationConfig: ReorderableAnimationConfig(
-          fadeInDuration: positionsRebuilt
-              ? Duration.zero
-              : const Duration(milliseconds: 500),
+          insert: ReorderableItemTransition(
+            duration: positionsRebuilt
+                ? Duration.zero
+                : const Duration(milliseconds: 500),
+          ),
         ),
         longPressDelay: App.isDesktop
             ? const Duration(milliseconds: 100)

@@ -69,9 +69,11 @@ class _ReorderPageState extends State<_ReorderPage> {
         key: _builderKey,
         scrollController: _scrollController,
         animationConfig: ReorderableAnimationConfig(
-          fadeInDuration: _positionsRebuilt
-              ? Duration.zero
-              : const Duration(milliseconds: 500),
+          insert: ReorderableItemTransition(
+            duration: _positionsRebuilt
+                ? Duration.zero
+                : const Duration(milliseconds: 500),
+          ),
         ),
         longPressDelay: const Duration(milliseconds: 500),
         onReorder: (reorderFunc) {
