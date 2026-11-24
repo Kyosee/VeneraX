@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:archive/archive_io.dart' show ZipDecoder;
 import 'package:flutter/foundation.dart';
+import 'package:flutter_saf/flutter_saf.dart' show AndroidFile;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -14,6 +15,18 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/utils/cbz.dart';
 import 'package:venera/utils/io.dart' show overrideIO;
 import 'package:zip_flutter/zip_flutter.dart';
+
+class _SafArchive extends Fake implements AndroidFile {
+  _SafArchive(this.path, this.contents);
+
+  @override
+  final String path;
+  final File contents;
+
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      contents.open(mode: mode);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +57,30 @@ void main() {
     App.dataPath = previousDataPath;
     App.cachePath = previousCachePath;
     debugDefaultTargetPlatformOverride = previousTarget;
+  });
+
+  test('imports SAF archives and clears their cache', () async {
+    final pages = await Directory('${root.path}/saf-pages').create();
+    final image = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=',
+    );
+    await File('${pages.path}/1.png').writeAsBytes(image);
+    final archive = File('${root.path}/backing-file');
+    await ZipFile.compressFolderAsync(pages.path, archive.path, 4);
+    for (final name in ['first.CBZ', 'second.ZIP']) {
+      final safFile = _SafArchive('/saf/$name', archive);
+      final comic = (await CBZ.importAll(safFile)).single;
+      expect(comic.title, name.split('.').first);
+      final paths = await LocalManager().getImagesForComic(comic, 1);
+      final page = File(paths.single.substring('file://'.length));
+      expect(await page.readAsBytes(), image);
+    }
+    await archive.writeAsString('invalid archive');
+    await expectLater(
+      CBZ.importAll(_SafArchive('/saf/broken.cbz', archive)),
+      throwsA(isA<Exception>()),
+    );
+    expect(Directory(App.cachePath).listSync(), isEmpty);
   });
 
   test('CBZ preserves every page in unequal length chapters', () async {

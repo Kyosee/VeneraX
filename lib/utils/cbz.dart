@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_7zip/flutter_7zip.dart';
+import 'package:flutter_saf/flutter_saf.dart' show AndroidFile;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -91,13 +92,25 @@ abstract class CBZ {
   }
 
   static Future<void> extractArchive(File file, Directory out) async {
-    var fileType = await checkType(file);
-    if (fileType.mime == 'application/zip') {
-      await ZipFile.openAndExtractAsync(file.path, out.path, 4);
-    } else if (fileType.mime == "application/x-7z-compressed") {
-      await SZArchive.extractIsolates(file.path, out.path, 4);
-    } else {
-      throw Exception('Unsupported archive type');
+    Directory? staging;
+    try {
+      if (file is AndroidFile) {
+        // Native extractors need a filesystem path outside the SAF provider.
+        staging = await Directory(App.cachePath).createTemp('cbz_source_');
+        final local = staging.joinFile('archive');
+        await copyFileStreaming(file, local);
+        file = local;
+      }
+      final fileType = await checkType(file);
+      if (fileType.mime == 'application/zip') {
+        await ZipFile.openAndExtractAsync(file.path, out.path, 4);
+      } else if (fileType.mime == "application/x-7z-compressed") {
+        await SZArchive.extractIsolates(file.path, out.path, 4);
+      } else {
+        throw Exception('Unsupported archive type');
+      }
+    } finally {
+      await staging?.deleteIgnoreError(recursive: true);
     }
   }
 

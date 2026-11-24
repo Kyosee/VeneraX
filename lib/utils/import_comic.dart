@@ -153,7 +153,7 @@ class ImportComic {
 
   Future<bool> multipleCbz() async {
     var picker = DirectoryPicker();
-    var dir = await picker.pickDirectory(directAccess: true);
+    var dir = await picker.pickDirectory();
     if (dir == null) {
       return false;
     }
@@ -161,9 +161,10 @@ class ImportComic {
   }
 
   Future<bool> multipleCbzFromDir(Directory dir) async {
-    var files = (await dir.list().toList()).whereType<File>().toList();
-    const supportedExtensions = ['cbz', 'zip', '7z', 'cb7'];
-    files.removeWhere((e) => !supportedExtensions.contains(e.extension));
+    var files = (await dir.list().toList())
+        .whereType<File>()
+        .where((e) => CBZ.archiveExts.contains(e.extension.toLowerCase()))
+        .toList();
     Map<String?, List<LocalComic>> imported = {};
     var controller = showLoadingDialog(App.rootContext, allowCancel: false);
     var comics = <LocalComic>[];
@@ -392,7 +393,6 @@ class ImportComic {
     var hasMetaInRoot = false;
     const imgExt = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'jpe'];
     const metaFiles = ['details.json', 'comicinfo.xml', 'metadata.json'];
-    const arcExt = ['cbz', 'zip', '7z', 'cb7'];
 
     await for (var e in path.list()) {
       final name = e.name.toLowerCase();
@@ -401,7 +401,7 @@ class ImportComic {
       } else if (e is File) {
         final ext = name.split('.').last;
         if (ext == 'venera_comics') hasVeneraComics = true;
-        if (arcExt.contains(ext)) hasArchive = true;
+        if (CBZ.archiveExts.contains(ext)) hasArchive = true;
         if (imgExt.contains(ext)) hasImageInRoot = true;
         if (metaFiles.contains(name)) hasMetaInRoot = true;
       }
