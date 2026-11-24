@@ -9,6 +9,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/random_comic_picker.dart';
 import 'package:venera/foundation/random_comic_scope.dart';
@@ -16,9 +17,14 @@ import 'package:venera/foundation/read_later.dart';
 import 'package:venera/utils/translations.dart';
 
 const _selectionFolderKey = 'random_comic_selection_folder';
+const _localLibraryKey = 'random_comic_local_library';
 const _readingScopeKey = 'random_comic_reading_scope';
 const _drawCountKey = 'random_comic_draw_count';
 const _quickRevealKey = 'random_comic_quick_reveal';
+
+typedef _DrawPool = ({bool local, String? folder});
+const _localPool = (local: true, folder: null);
+const _allFavorites = (local: false, folder: null);
 
 Future<FavoriteItem?> showRandomComicDrawDialog(BuildContext context) {
   return showDialog<FavoriteItem>(
@@ -45,7 +51,9 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
   List<FavoriteItem> _candidates = const [];
   List<FavoriteItem> _hand = const [];
   List<String> _folders = const [];
-  String? _selectedFolder;
+  _DrawPool _pool = _allFavorites;
+  String get _poolLabel =>
+      _pool.local ? 'Local comics'.tl : _pool.folder ?? 'All favorites'.tl;
   RandomComicReadingScope _readingScope = RandomComicReadingScope.all;
   int _drawCount = 1;
   int? _selectedIndex;
@@ -78,7 +86,9 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
   void initState() {
     super.initState();
     final folder = appdata.implicitData[_selectionFolderKey];
-    _selectedFolder = folder is String && folder.isNotEmpty ? folder : null;
+    _pool = appdata.implicitData[_localLibraryKey] == true
+        ? _localPool
+        : (local: false, folder: folder is String && folder.isNotEmpty ? folder : null);
     _readingScope = randomComicReadingScopeFromName(
       appdata.implicitData[_readingScopeKey],
     );
@@ -150,14 +160,33 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
     try {
       final manager = LocalFavoritesManager();
       _folders = manager.folderNames;
-      final available = randomComicAvailableFolder(_selectedFolder, _folders);
-      if (available != _selectedFolder) {
-        _selectedFolder = available;
+      final available = randomComicAvailableFolder(_pool.folder, _folders);
+      if (available != _pool.folder) {
+        _pool = _allFavorites;
         _persistSelection();
       }
-      final comics = _selectedFolder == null
-          ? await manager.getAllComicsAsync()
-          : await manager.getFolderComicsAsync(_selectedFolder!);
+      final List<FavoriteItem> comics;
+      if (_pool.local) {
+        final local = LocalManager().getComics(LocalSortType.defaultSort);
+        final statuses = await loadLocalComicStatuses(local);
+        comics = [
+          for (final (i, comic) in local.indexed)
+            if (statuses[i] == LocalComicStatus.downloaded)
+              FavoriteItem(
+                id: comic.id,
+                name: comic.title,
+                author: comic.subtitle,
+                type: comic.comicType,
+                coverPath: 'file://${comic.coverFile.path}',
+                tags: comic.tags,
+                favoriteTime: comic.createdAt,
+              ),
+        ];
+      } else {
+        comics = available == null
+            ? await manager.getAllComicsAsync()
+            : await manager.getFolderComicsAsync(available);
+      }
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _loadedComics = comics;
@@ -177,7 +206,8 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
   }
 
   void _persistSelection() {
-    appdata.implicitData[_selectionFolderKey] = _selectedFolder;
+    appdata.implicitData[_selectionFolderKey] = _pool.folder;
+    appdata.implicitData[_localLibraryKey] = _pool.local;
     appdata.implicitData[_readingScopeKey] = _readingScope.name;
     appdata.implicitData[_drawCountKey] = _drawCount;
     appdata.implicitData[_quickRevealKey] = _quickReveal;
@@ -299,7 +329,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
   }
 
   void _resetFilters() {
-    _selectedFolder = null;
+    _pool = _allFavorites;
     _readingScope = RandomComicReadingScope.all;
     _showScope = false;
     _persistSelection();
@@ -545,7 +575,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '${_selectedFolder ?? 'All favorites'.tl} · ${_readingScopeLabel(_readingScope)}',
+                  '$_poolLabel · ${_readingScopeLabel(_readingScope)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium,
@@ -579,9 +609,9 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
 
   Widget _buildScopeControls() {
     final disabled = _loading || _busy;
-    final folderField = DropdownButtonFormField<String?>(
+    final folderField = DropdownButtonFormField<_DrawPool>(
       key: const ValueKey('draw-folder'),
-      initialValue: randomComicAvailableFolder(_selectedFolder, _folders),
+      initialValue: _pool,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: 'Selection scope'.tl,
@@ -589,19 +619,20 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
       ),
       hint: Text('All favorites'.tl),
       items: [
-        DropdownMenuItem<String?>(value: null, child: Text('All favorites'.tl)),
+        DropdownMenuItem(value: _allFavorites, child: Text('All favorites'.tl)),
+        DropdownMenuItem(value: _localPool, child: Text('Local comics'.tl)),
         ..._folders.map(
-          (folder) => DropdownMenuItem<String?>(
-            value: folder,
+          (folder) => DropdownMenuItem<_DrawPool>(
+            value: (local: false, folder: folder),
             child: Text(folder, overflow: TextOverflow.ellipsis),
           ),
         ),
       ],
       onChanged: disabled
           ? null
-          : (folder) {
-              if (folder == _selectedFolder) return;
-              _selectedFolder = folder;
+          : (pool) {
+              if (pool == null || pool == _pool) return;
+              _pool = pool;
               _persistSelection();
               _loadSelectionScope();
             },
@@ -639,7 +670,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: KeyedSubtree(
-        key: ValueKey((_selectedFolder, _readingScope)),
+        key: ValueKey((_pool, _readingScope)),
         child: LayoutBuilder(
           builder: (context, constraints) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -736,11 +767,13 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
       );
     }
     final text = _loading
-        ? 'Loading favorites...'.tl
+        ? (_pool.local ? 'Loading' : 'Loading favorites...').tl
         : _loadError
-        ? 'Could not load favorites'.tl
+        ? (_pool.local ? 'Could not load local comics' : 'Could not load favorites').tl
         : _candidates.isEmpty
-        ? 'No favorite comics in this selection'.tl
+        ? (_pool.local
+              ? (_loadedComics.isEmpty ? 'No local comics' : 'No results')
+              : 'No favorite comics in this selection').tl
         : _dealing
         ? 'Drawing...'.tl
         : _flips.any((flip) => flip.isAnimating)
@@ -758,7 +791,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
         const SizedBox(height: 5),
         Text(
           _candidates.isEmpty && !_loading && !_loadError
-              ? (_selectedFolder != null ||
+              ? (_pool != _allFavorites ||
                             _readingScope != RandomComicReadingScope.all
                         ? 'Change filters to find more comics'
                         : 'Add favorites to build your draw pool')
@@ -782,7 +815,7 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
     final inReadLater =
         comic != null && ReadLaterManager().isExist(comic.id, comic.type);
     final hasFilters =
-        _selectedFolder != null || _readingScope != RandomComicReadingScope.all;
+        _pool != _allFavorites || _readingScope != RandomComicReadingScope.all;
     final count = math.min(
       _drawCount,
       _remaining == 0 ? _candidates.length : _remaining,

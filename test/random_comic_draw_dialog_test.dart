@@ -7,9 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/components/random_comic_draw.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/js_engine.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/random_comic_scope.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
@@ -213,6 +216,11 @@ void main() {
       image.dispose();
       picture.dispose();
       _coverPath = 'file://${cover.path}';
+      final library = await Directory('${temp.path}/library').create();
+      await File('${temp.path}/local_path').writeAsString(library.path);
+      await JsEngine().init();
+      await ComicSourceManager().init();
+      await LocalManager().init();
       await history.init();
       await favorites.init();
       await readLater.init();
@@ -242,6 +250,8 @@ void main() {
       await appdata.saveData(false);
       await DatabaseGateway.instance.runExclusive(() async {});
       readLater.close();
+      LocalManager().close();
+      JsEngine().dispose();
       favorites.close();
       history.close();
       App.dataPath = originalDataPath;
@@ -267,6 +277,50 @@ void main() {
       await _waitUntil(tester, () => _enabled(tester, 'draw-button'));
       await tester.pumpAndSettle();
     }
+
+    _drawTest('local scope draws a readable comic without favorites', (tester) async {
+      final manager = LocalManager();
+      final result = await _open(tester, waitReady: false);
+      await _waitUntil(tester, () => find.text('No favorite comics in this selection').evaluate().isNotEmpty);
+      await _tap(tester, 'draw-scope-toggle');
+      await _tap(tester, 'draw-folder');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Local comics').last);
+      await _waitUntil(tester, () => find.text('No local comics').evaluate().isNotEmpty);
+      expect(_enabled(tester, 'draw-button'), isFalse);
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+      expect(await result.future, isNull);
+      await tester.pumpAndSettle();
+
+      LocalComic entry(String id) => LocalComic(
+        id: id, title: id, subtitle: 'Author', tags: const [],
+        directory: '${manager.path}/$id', cover: 'cover.png',
+        comicType: ComicType.local, chapters: null, downloadedChapters: const [],
+        createdAt: DateTime.utc(2026),
+      );
+      final saved = entry('Readable');
+      final missing = entry('Missing files');
+      await tester.runAsync(() async {
+        await Directory(saved.directory).create();
+        await File(_coverPath.substring('file://'.length)).copy(saved.coverFile.path);
+        await manager.add(saved);
+        await manager.add(missing);
+      });
+      addTearDown(() {
+        manager.remove(saved.id, saved.comicType);
+        manager.remove(missing.id, missing.comicType);
+      });
+      final reopened = await _open(tester);
+      expect(find.text('Local comics · All'), findsOneWidget);
+      await _draw(tester);
+      await _tap(tester, 'draw-read');
+      final selected = await reopened.future;
+      expect(selected?.id, saved.id);
+      expect(selected?.sourceKey, saved.sourceKey);
+      expect(selected?.cover, 'file://${saved.coverFile.path}');
+      expect(favorites.getAllComics(), isEmpty);
+    });
 
     _drawTest('single draw returns the real favorite', (tester) async {
       final comic = _comic('only');
@@ -409,8 +463,8 @@ void main() {
         final result = await _open(tester);
         await _tap(tester, 'draw-scope-toggle');
         expect(
-          tester.state<FormFieldState<String?>>(_key('draw-folder')).value,
-          'B',
+          find.descendant(of: _key('draw-folder'), matching: find.text('B')),
+          findsOneWidget,
         );
         expect(
           tester
@@ -433,8 +487,8 @@ void main() {
         await _open(tester);
         await _tap(tester, 'draw-scope-toggle');
         expect(
-          tester.state<FormFieldState<String?>>(_key('draw-folder')).value,
-          isNull,
+          find.descendant(of: _key('draw-folder'), matching: find.text('All favorites')),
+          findsWidgets,
         );
         expect(
           tester
