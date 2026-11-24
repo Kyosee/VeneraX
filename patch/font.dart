@@ -8,7 +8,7 @@ void main() async {
 
   var dio = Dio();
   await dio.download(harmonySansLink, "HarmonyOS-Sans.zip");
-  await extractFileToDisk("HarmonyOS-Sans.zip", "./assets/");
+  await extractFileToDisk("HarmonyOS-Sans.zip", "./assets/", verify: true);
   File("HarmonyOS-Sans.zip").deleteSync();
 
   var pubspec = await File("pubspec.yaml").readAsString();

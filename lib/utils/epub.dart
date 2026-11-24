@@ -42,8 +42,9 @@ Future<File> createEpubComic(EpubData data, String outFilePath) async {
 
   void addImage(String path, File image) {
     // SAF bulk reads can silently return empty bytes after a native read error.
-    final input = InputFileStream.withFileHandle(_EpubImageHandle(image.path));
+    final imageHandle = _EpubImageHandle(image.path);
     try {
+      final input = InputFileStream.withFileHandle(imageHandle);
       if (input.length == 0) {
         throw 'Failed to read image file';
       }
@@ -52,7 +53,7 @@ Future<File> createEpubComic(EpubData data, String outFilePath) async {
         ..compression = CompressionType.none;
       zip.add(entry, autoClose: false);
     } finally {
-      input.closeSync();
+      imageHandle.closeSync();
     }
   }
 
