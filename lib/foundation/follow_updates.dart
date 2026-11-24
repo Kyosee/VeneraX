@@ -73,6 +73,17 @@ Future<ComicUpdateResult> updateComic(
   bool Function()? shouldCancel,
   Duration? requestTimeout,
 }) async {
+  Future<ComicUpdateResult> sourceFailure(String message) async {
+    var cancelled = false;
+    await _dbWriteGate.run(() {
+      cancelled = shouldCancel?.call() ?? false;
+      if (!cancelled) {
+        LocalFavoritesManager().recordFailedCheck(folders, c.id, c.type);
+      }
+    });
+    return ComicUpdateResult(false, cancelled ? null : message);
+  }
+
   int retries = 3;
   while (true) {
     // Bail before the (slow) network call so a cancel that arrives mid-queue
@@ -80,10 +91,11 @@ Future<ComicUpdateResult> updateComic(
     if (shouldCancel?.call() ?? false) {
       return ComicUpdateResult(false, null);
     }
+    var fetchingDetails = true;
     try {
       var comicSource = c.type.comicSource;
       if (comicSource == null) {
-        return ComicUpdateResult(false, "Comic source not found");
+        return sourceFailure("Comic source not found");
       }
       final request = comicSource.loadComicInfo!(c.id);
       // Automatic checks cannot hold an OS job indefinitely on a stalled source.
@@ -131,6 +143,7 @@ Future<ComicUpdateResult> updateComic(
       var updated = updateTime != null && updateTime != c.updateTime;
 
       var committed = false;
+      fetchingDetails = false;
       await _dbWriteGate.run(() {
         if (shouldCancel?.call() ?? false) return;
         const ComicStateRepository().mirrorComicDetails(newInfo);
@@ -154,6 +167,7 @@ Future<ComicUpdateResult> updateComic(
       return ComicUpdateResult(committed && updated, null);
     } on TimeoutException catch (error) {
       // The source may still be finishing; do not overlap it with a retry.
+      if (fetchingDetails) return sourceFailure(error.toString());
       return ComicUpdateResult(false, error.toString());
     } catch (e, s) {
       retries--;
@@ -163,6 +177,7 @@ Future<ComicUpdateResult> updateComic(
         // errors, rate limiting, non-JSON responses) are expected during bulk
         // update checks and shouldn't flood the error log on every retry.
         Log.error("Check Updates", e, s);
+        if (fetchingDetails) return sourceFailure(e.toString());
         return ComicUpdateResult(false, e.toString());
       }
       Log.warning("Check Updates", "Failed to update ${c.id}, retrying: $e");
@@ -282,14 +297,15 @@ void updateFoldersBase(
     // at or after it was handled before the app was killed, so resuming the
     // task continues from the breakpoint instead of re-checking everything.
     if (checkedSince != null) {
-      var lastCheckTime = comic.lastCheckDateTime;
+      var lastCheckTime = comic.lastAttemptDateTime;
       if (lastCheckTime != null && !lastCheckTime.isBefore(checkedSince)) {
         current++;
         stream.add(UpdateProgress(total, current, errors, updated));
         continue;
       }
     }
-    if (!ignoreCheckTime && !FollowUpdateScope.isDue(comic.lastCheckDateTime)) {
+    if (!ignoreCheckTime &&
+        !FollowUpdateScope.isDue(comic.lastAttemptDateTime)) {
       current++;
       stream.add(UpdateProgress(total, current, errors, updated));
       continue;

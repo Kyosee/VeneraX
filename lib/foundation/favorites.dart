@@ -258,28 +258,39 @@ class FavoriteItemWithFolderInfo extends FavoriteItem {
 
 class FavoriteItemWithUpdateInfo extends FavoriteItem {
   String? updateTime;
+  final int? lastFailedCheckTime;
 
   DateTime? get lastCheckDateTime => lastCheckTime == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(lastCheckTime!);
 
+  /// Failed requests affect scheduling, but never the successful sync baseline.
+  DateTime? get lastAttemptDateTime {
+    final failed = lastFailedCheckTime;
+    if (failed != null && (lastCheckTime == null || failed > lastCheckTime!)) {
+      return DateTime.fromMillisecondsSinceEpoch(failed);
+    }
+    return lastCheckDateTime;
+  }
+
   FavoriteItemWithUpdateInfo(
     FavoriteItem item,
     this.updateTime,
     bool hasNewUpdate,
-    int? lastCheckTime,
-  ) : super(
-        id: item.id,
-        name: item.name,
-        coverPath: item.coverPath,
-        author: item.author,
-        type: item.type,
-        tags: item.tags,
-        authors: item.authors,
-        status: item.status,
-        updateTimeMeta: item.updateTimeMeta,
-        extraMeta: item.extraMeta,
-      ) {
+    int? lastCheckTime, [
+    this.lastFailedCheckTime,
+  ]) : super(
+         id: item.id,
+         name: item.name,
+         coverPath: item.coverPath,
+         author: item.author,
+         type: item.type,
+         tags: item.tags,
+         authors: item.authors,
+         status: item.status,
+         updateTimeMeta: item.updateTimeMeta,
+         extraMeta: item.extraMeta,
+       ) {
     lastUpdateTime = updateTime;
     this.hasNewUpdate = hasNewUpdate;
     this.lastCheckTime = lastCheckTime;
@@ -731,6 +742,11 @@ class LocalFavoritesManager with ChangeNotifier {
 
   void _ensureFavoriteFolderSchema(String folder) {
     var columns = _tableColumns(folder);
+    // A restored task can still reference a previously followed folder.
+    if (columns.contains('last_check_time') &&
+        !columns.contains('last_failed_check_time')) {
+      _ensureUpdateColumns(_db, folder);
+    }
     if (!columns.contains('type')) {
       _db.execute("""
         alter table "$folder"
@@ -2100,8 +2116,7 @@ class LocalFavoritesManager with ChangeNotifier {
         .toSet();
   }
 
-  /// Adds the follow-update columns ("last_update_time", "has_new_update",
-  /// "last_check_time", "flag_update_time") to [table] if missing.
+  /// Adds missing follow-update columns to older folder tables.
   static void _ensureUpdateColumns(CommonDatabase db, String table) {
     var columns = _columnsOf(db, table);
     if (!columns.contains("last_update_time")) {
@@ -2127,6 +2142,9 @@ class LocalFavoritesManager with ChangeNotifier {
         alter table "$table"
         add column flag_update_time int;
       """);
+    }
+    if (!columns.contains('last_failed_check_time')) {
+      db.execute('alter table "$table" add column last_failed_check_time int');
     }
   }
 
@@ -2402,6 +2420,24 @@ class LocalFavoritesManager with ChangeNotifier {
     );
   }
 
+  void recordFailedCheck(List<String> folders, String id, ComicType type) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _db.execute('begin');
+    try {
+      for (final folder in folders) {
+        if (!counts.containsKey(folder)) continue;
+        _db.execute(
+          'update "$folder" set last_failed_check_time = ? where id = ? and type = ?',
+          [now, id, type.value],
+        );
+      }
+      _db.execute('commit');
+    } catch (_) {
+      _db.execute('rollback');
+      rethrow;
+    }
+  }
+
   List<FavoriteItemWithUpdateInfo> getUpdates(String folder) {
     if (!existsFolder(folder)) {
       return [];
@@ -2417,6 +2453,7 @@ class LocalFavoritesManager with ChangeNotifier {
             e['last_update_time'],
             e['has_new_update'] == 1,
             e['last_check_time'],
+            e['last_failed_check_time'],
           ),
         )
         .toList();
@@ -2464,6 +2501,7 @@ class LocalFavoritesManager with ChangeNotifier {
     'last_update_time',
     'has_new_update',
     'last_check_time',
+    'last_failed_check_time',
   ];
 
   /// Rows of [folders] deduplicated by (id, type) — one row per comic even when
@@ -2514,6 +2552,7 @@ class LocalFavoritesManager with ChangeNotifier {
             e['last_update_time'],
             e['any_update'] == 1,
             e['last_check_time'],
+            e['last_failed_check_time'],
           ),
         )
         .toList();
@@ -2559,6 +2598,7 @@ class LocalFavoritesManager with ChangeNotifier {
             e['last_update_time'],
             e['has_new_update'] == 1,
             e['last_check_time'],
+            e['last_failed_check_time'],
           ),
         )
         .toList();
@@ -2606,6 +2646,7 @@ class LocalFavoritesManager with ChangeNotifier {
         row['last_update_time'],
         row['has_new_update'] == 1,
         row['last_check_time'],
+        row['last_failed_check_time'],
       );
     }
     return null;
@@ -2635,6 +2676,7 @@ class LocalFavoritesManager with ChangeNotifier {
       row['last_update_time'],
       row['has_new_update'] == 1,
       row['last_check_time'],
+      row['last_failed_check_time'],
     );
   }
 

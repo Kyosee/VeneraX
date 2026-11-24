@@ -457,7 +457,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
     for (var entry in dedupeFollowUpdateEntries(perFolder)) {
       var comic = entry.comic;
       if (!ignoreCheckTime &&
-          !FollowUpdateScope.isDue(comic.lastCheckDateTime)) {
+          !FollowUpdateScope.isDue(comic.lastAttemptDateTime)) {
         continue;
       }
       result
@@ -555,7 +555,7 @@ class FollowUpdateTaskManager with ChangeNotifier {
   /// Per-comic persistence rewrites the whole implicit-data file; on a large
   /// folder that's hundreds of writes per check, so cap it at one per second.
   /// Counters may lag disk by at most that second after a hard kill — resume
-  /// correctness is unaffected, it derives from each comic's last_check_time
+  /// correctness is unaffected, it derives from each comic's last attempt
   /// in the favorites database, not from these counters. Terminal states
   /// still persist immediately via [_saveActiveTasks].
   void _saveActiveTasksThrottled() {

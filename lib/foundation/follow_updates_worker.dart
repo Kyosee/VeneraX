@@ -110,7 +110,7 @@ void runFollowUpdatesWorker(List<String> args) {
           final due = entries
               .where(
                 (entry) =>
-                    FollowUpdateScope.isDue(entry.comic.lastCheckDateTime),
+                    FollowUpdateScope.isDue(entry.comic.lastAttemptDateTime),
               )
               .map((entry) => entry.comic.identityKey)
               .toSet();

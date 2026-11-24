@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/background_follow_queue.dart';
@@ -170,6 +171,82 @@ void main() {
     await done.future;
   }
 
+  test(
+    'reopening after two source failures waits for the next automatic check',
+    () async {
+      const folders = ['First failed folder', 'Second failed folder'];
+      for (final folder in folders) {
+        favorites.createFolder(folder);
+        favorites.prepareTableForFollowUpdates(folder);
+      }
+      add('missing-one', folder: folders.first);
+      add('missing-two', folder: folders.last);
+      add('missing-two', folder: folders.first);
+      // Reopen folder tables from before failed attempts were recorded.
+      favorites.close();
+      final databasePath = '${directory.path}/local_favorite.db';
+      final legacy = sqlite3.open(databasePath);
+      for (final folder in folders) {
+        legacy.execute('alter table "$folder" drop column last_failed_check_time');
+      }
+      legacy.dispose();
+      await favorites.init();
+      var missing = true;
+      final requests = <String>[];
+      ComicSourceManager().add(
+        _source((id) async {
+          requests.add(id);
+          return missing
+              ? const Res.error('Comic has been removed')
+              : Res(_details(id));
+        }),
+      );
+      final manager = FollowUpdateTaskManager.instance;
+      final task = manager.startCheck(folders, manual: false)!;
+      await manager.waitForIdle();
+      expect(task.total, 2);
+      expect(task.failed, 2);
+      expect(requests.where((id) => id == 'missing-one'), hasLength(3));
+      expect(requests.where((id) => id == 'missing-two'), hasLength(3));
+      for (final folder in folders) {
+        final item = read('missing-two', folder: folder);
+        expect(item.lastCheckDateTime, isNull);
+        expect(item.lastAttemptDateTime, isNotNull);
+        expect(item.name, 'Original missing-two');
+      }
+      missing = false;
+      favorites.close();
+      await favorites.init();
+      final automatic = manager.startCheck(
+        folders.reversed.toList(),
+        manual: false,
+      );
+      await manager.waitForIdle();
+      expect(automatic, isNull);
+      expect(requests, hasLength(6));
+      // Only one failure has aged past the next scheduled check.
+      final db = sqlite3.open(databasePath);
+      db.execute(
+        'update "${folders.first}" set last_failed_check_time = 1 where id = ?',
+        ['missing-one'],
+      );
+      db.dispose();
+      expect(manager.startCheck(folders, manual: false)?.total, 1);
+      await manager.waitForIdle();
+      expect(requests.last, 'missing-one');
+      final fresh = add('newly-followed', folder: folders.last);
+      expect(manager.startCheck(folders, manual: false)?.total, 1);
+      await manager.waitForIdle();
+      expect(requests.last, fresh.id);
+      expect(manager.startCheck(folders, manual: true)?.total, 3);
+      await manager.waitForIdle();
+      expect(
+        read('missing-two', folder: folders.last).name,
+        'Updated missing-two',
+      );
+    },
+  );
+
   test('background checks commit without a UI frame', () async {
     ComicSourceManager().add(_source((id) async => Res(_details(id))));
     final comic = add('headless');
@@ -209,6 +286,7 @@ void main() {
       expect(read(comic.id).name, 'Original ${comic.id}');
       expect(read(comic.id).lastCheckDateTime, isNull);
       expect(cancellationChecks, 3);
+      expect(read(comic.id).lastAttemptDateTime, isNull);
     },
   );
 
