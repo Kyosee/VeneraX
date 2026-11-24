@@ -182,7 +182,7 @@ jobs:
               printf 'keyAlias=%s\n' "$KEY_ALIAS"
               printf 'keyPassword=%s\n' "$KEY_PASSWORD"
             } > android/key.properties
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: 'oracle'
           java-version: '17'
@@ -481,7 +481,7 @@ jobs:
           printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict -
           tar -xzf "$archive" -C "$VENERAX_OHOS_CHECKOUT/ohos/entry" \
             "libs/$ABI/libonnxruntime.so" src/main/resources/rawfile/onnxruntime/{LICENSE,ThirdPartyNotices.txt}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
