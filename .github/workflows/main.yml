@@ -455,7 +455,7 @@ jobs:
           echo "rhttp=ohos-rhttp-linux-$OHOS_CLI_VERSION-$ABI-$rhttp-$rust-$wrapper" >> "$GITHUB_OUTPUT"
       - name: Restore ONNX Runtime
         id: onnx
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           key: ${{ steps.inputs.outputs.onnx }}
           path: |
@@ -463,7 +463,7 @@ jobs:
             ${{ runner.temp }}/venerax-ohos/ohos/entry/src/main/resources/rawfile/onnxruntime
       - name: Restore rhttp
         id: rhttp
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
           path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
@@ -490,7 +490,7 @@ jobs:
           node-version: '22'
       - name: Cache official HarmonyOS tool archive
         id: ohos_tools
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
           key: harmonyos-cli-linux-x64-${{ env.OHOS_CLI_VERSION }}
@@ -507,7 +507,7 @@ jobs:
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/commandline-tools-linux.zip" "$download_url"
       - name: Save official HarmonyOS tool archive
         if: steps.ohos_tools.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/commandline-tools-linux.zip
           key: harmonyos-cli-linux-x64-${{ env.OHOS_CLI_VERSION }}
@@ -545,7 +545,7 @@ jobs:
           pwsh -NoProfile -File tool/build_ohos_rhttp.ps1 -NativeSdk "$DEVECO_STUDIO/sdk/default/openharmony/native" -Abi "$ABI"
       - name: Save rhttp
         if: steps.rhttp.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           key: ${{ steps.inputs.outputs.rhttp }}
           path: ${{ runner.temp }}/venerax-ohos/ohos/entry/libs/${{ env.ABI }}/librhttp.so
@@ -565,7 +565,7 @@ jobs:
           test -s src/main/resources/rawfile/onnxruntime/ThirdPartyNotices.txt
       - name: Save ONNX Runtime
         if: steps.onnx.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           key: ${{ steps.inputs.outputs.onnx }}
           path: |
