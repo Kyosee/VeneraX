@@ -99,23 +99,24 @@ class RandomComicDrawStage extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            for (final direction in [-1, 1])
-              ExcludeSemantics(
-                child: Transform.translate(
-                  offset: Offset(direction * 25, 6),
-                  child: Transform.rotate(
-                    angle: direction * 0.13,
-                    child: Opacity(
-                      opacity: 0.6,
-                      child: SizedBox(
-                        width: width - 8,
-                        height: height - 8,
-                        child: const _DrawCardBack(),
+            if (drawCount == 3)
+              for (final direction in [-1, 1])
+                ExcludeSemantics(
+                  child: Transform.translate(
+                    offset: Offset(direction * 25, 6),
+                    child: Transform.rotate(
+                      angle: direction * 0.13,
+                      child: Opacity(
+                        opacity: 0.6,
+                        child: SizedBox(
+                          width: width - 8,
+                          height: height - 8,
+                          child: const _DrawCardBack(),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
             SizedBox(
               width: width,
               height: height,

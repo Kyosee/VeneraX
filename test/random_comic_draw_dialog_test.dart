@@ -599,14 +599,22 @@ void main() {
           final dialog = tester.getRect(dialogSurface);
           final stageSize = tester.getSize(stage);
           final deckSize = tester.getSize(deckCard);
+          final cardBacks = find.descendant(
+            of: stage,
+            matching: find.byIcon(Icons.auto_stories_outlined),
+          );
+          expect(cardBacks, findsOneWidget);
           for (final mode in ['draw-mode-three', 'draw-mode-single']) {
             await _tap(tester, mode);
             await tester.pumpAndSettle();
             expect(tester.getRect(dialogSurface), dialog);
             expect(tester.getSize(stage), stageSize);
             expect(tester.getSize(deckCard), deckSize);
+            expect(cardBacks, findsNWidgets(mode == 'draw-mode-three' ? 3 : 1));
           }
           await _draw(tester);
+          expect(_key('draw-card-0'), findsOneWidget);
+          expect(_key('draw-card-1'), findsNothing);
           expect(tester.getRect(dialogSurface), dialog);
           expect(tester.getSize(stage), stageSize);
           await _tap(tester, 'draw-mode-three');
