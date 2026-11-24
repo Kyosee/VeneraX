@@ -4,6 +4,62 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v3.0.2](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.2) - 2026-11-24
+
+### Added
+
+- The AI translation guide lets you compare an original page with its translation and walks you through any setup still needed for a comic.
+- See which blocking rules match a comic on its details page. (#383)
+- Random Comic Draw can now pick from your local library, including comics you haven’t added to favorites. (#384)
+- Choose a custom cover for an individual comic or a collection from its details page, and restore the default cover at any time. (#361)
+- Include custom covers in app backups and exported comic archives, with incremental WebDAV syncing to reduce repeated transfers. (#361)
+- Added a mobile "Return to Home before exiting" option, enabled by default. Back from another main tab returns to Home first; this can be turned off in Settings. (#243)
+- AI translation now offers "All text" and "Dialogue only" scopes, including separate settings for individual comics. (#365)
+- "Dialogue only" mode offers an optional dialogue detection model to help distinguish speech inside bubbles from text outside them. (#365)
+- When the current page has a translation and the reader is displaying the translated page, open More → View page translation to read or copy the text. (#365)
+- View model sources and license information offline in the app before downloading translation models. (#365)
+
+### Changed
+
+- Find downloaded models, custom source languages and the model library under Settings → AI Translation → Model Management. The library groups downloads into text detection, text recognition and optional enhancements, with the download source selector above the tabs.
+- All languages share one text detector. PP-OCRv5 mobile is still the default, and PP-OCRv6 small is available as an alternative. To read the detected text, choose the recognition model and dictionary for the source language.
+- "Update Comics Info" for a favorites folder can continue after its progress dialog is closed. View progress and results, or cancel the task, from the task center.
+- In-app update downloads now show the amount downloaded and the total package size for clearer progress.
+- Downloads of updates, models, and comic images now slow down when the device takes longer to write the data, reducing memory use.
+- Improved text removal during translation by repairing the original lettering more precisely, reducing damage to bubble outlines, background patterns, and artwork. (#365)
+- Switching between "All text" and "Dialogue only" reuses matching saved translations where possible to reduce repeated translation requests. (#365)
+
+### Fixed
+
+- Fixed batch comic archive imports sometimes failing after selecting a folder with the Android system file picker. (#386)
+- Fixed saving files to some cloud storage providers through the Android file picker.
+- Fixed comics with the same displayed author being separated when sorting the local library or search results by author. (#385)
+- Fixed single draws showing multiple card backs in Random Comic Draw.
+- Fixed the Recent Reading widget sometimes keeping a blank cover after the app went into the background. (#374)
+- Fixed reopening the app triggering another automatic update check too soon after a comic source failed. (#374)
+- Fixed a late translation service test result appearing after its dialog had been closed.
+- Fixed reinstalling a removed detector overriding the current detector selection.
+- Fixed quick horizontal swipes not reliably saving or unsaving the current image in vertical scrolling mode when swipe collection is enabled. (#349)
+- Fixed a possible crash when canceling network requests. (#349)
+- Fixed a possible Android crash when accessing authorized folders after a background task finishes. (#349)
+- Fixed Search, History, and Downloads continuing to show old comic titles after the source updates them. (#367)
+- Fixed favorites sometimes displaying a numeric ID instead of the correct title after opening a comic by its ID. (#375)
+- Fixed extra blank space at the bottom of the reader settings sidebar that prevented content from extending behind the gesture bar. (#349, #374)
+- Fixed some dense dialogue and vertical text being missed during recognition or translation. (#365)
+- Fixed translations overlapping between neighboring bubbles and long sentences not displaying fully. (#365)
+- Fixed an existing page translation being lost when a retry recognizes no text. (#365)
+- Fixed automatic comic update checks restarting shortly after cancellation. Canceling now defers them until the next check interval, while manual checks remain available. (#374)
+- Fixed scheduled comic update checks on HarmonyOS sometimes waiting until the app was reopened. Actual timing remains subject to the system's background management. (#374)
+- Fixed frequent notification sounds during real-time WebDAV syncing on HarmonyOS. (#349, #374)
+- Fixed pending reading progress not promptly attempting to sync when HarmonyOS moves the app to the background or locks the screen. (#374)
+- Fixed successful responses from some WebDAV servers being treated as failures and preventing sync from continuing. (#361)
+
+### Removed
+
+- Removed the unofficial PP-OCRv4 detector and Chinese / Latin recognition preset from the model library. Previously downloaded files can still be viewed or deleted under My models → Legacy model files.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v3.0.1...v3.0.2
+
 ## [v3.0.1](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.1) - 2026-11-20
 
 ### Added
