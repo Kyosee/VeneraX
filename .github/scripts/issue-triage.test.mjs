@@ -103,6 +103,10 @@ test('reply language follows narrative, ignoring titles, code and form choices',
   assert.equal(parseReport(japanese, '中文标题').zh, false);
   for (const [text, expected] of [[english, 'Images stretch briefly.'], [japanese, '画像を保存']]) {
     const f = fixture(text); await f.go(ENV);
+    assert.match(f.comments[0].body, /^Issue summary: /);
+    assert.doesNotMatch(f.comments[0].body, /自动初审|Automatic triage|AI 辅助|AI assisted/);
+    const rules = fixture(text); await rules.go();
+    assert.match(rules.comments[0].body, /^Received and queued for maintainer review\./);
     const messages = JSON.parse(f.requests[0].options.body).messages;
     const request = JSON.parse(messages[1].content);
     assert.equal(request.language, 'auto'); assert.ok(request.language_sample.includes(expected));
@@ -141,7 +145,7 @@ test('sensitive supplements and cached replies are withheld even on an authorize
     f.reply('邮箱：reader@example.org', author, author === 'author' ? 'NONE' : 'COLLABORATOR');
     await f.go(ENV);
     assert.equal(f.requests.length, 1);
-    assert.doesNotMatch(f.comments[0].body, /old-private-account|reader@example|AI 辅助/);
+    assert.doesNotMatch(f.comments[0].body, /old-private-account|reader@example|issue总结：/);
     assert.equal(managedComment(f.comments).state.ai, undefined);
     assert.equal(managedComment(f.comments).state.references, undefined);
     f.reply('/triage retry', 'maintainer', 'COLLABORATOR'); await f.go(ENV);
@@ -206,6 +210,8 @@ test('rules open one comment; replay is inert; author response leaves waiting ev
   await f.go(ENV);
   assert.equal(f.requests.length, 0); assert.ok(f.issue.labels.includes(WAITING));
   assert.equal(f.comments.length, 1); assert.match(f.comments[0].body, /具体应用版本/);
+  assert.match(f.comments[0].body, /^1\. 请补充/);
+  assert.doesNotMatch(f.comments[0].body, /自动初审|Automatic triage|AI 辅助|AI assisted/);
   const count = f.writes.length; await f.go(ENV); assert.equal(f.writes.length, count);
   f.context.runId++; await f.go(ENV); assert.equal(f.writes.length, count);
   f.reply('暂时找不到版本'); await f.go(ENV);
@@ -218,12 +224,15 @@ test('rules open one comment; replay is inert; author response leaves waiting ev
 
 test('AI has a two-call budget and no authority over labels or state', async () => {
   const f = fixture(); await f.go(ENV);
+  assert.ok(f.comments[0].body.startsWith(`issue总结：${answer.summary}`));
+  assert.doesNotMatch(f.comments[0].body, /自动初审|Automatic triage|AI 辅助|AI assisted/);
   assert.equal(f.requests.length, 1); assert.ok(f.issue.labels.includes(WAITING));
   f.reply('每次都会'); await f.go(ENV);
   assert.equal(f.requests.length, 2); assert.ok(f.issue.labels.includes(READY));
   f.reply('再次补充'); await f.go(ENV);
   assert.equal(f.requests.length, 2); assert.equal(f.issue.state, 'open');
   assert.match(f.comments[0].body, /上次自动分析/);
+  assert.ok(f.comments[0].body.includes(`issue总结：${answer.summary}`));
   const request = JSON.parse(f.requests[0].options.body);
   assert.equal(request.max_tokens, 700); assert.equal(request.tools, undefined);
   assert.ok(!f.requests[0].options.body.includes(ENV.ISSUE_AI_API_KEY));
@@ -336,7 +345,7 @@ test('human changes during the initial bot writes prevent the model request', as
       };
       await f.go(ENV);
       assert.equal(f.requests.length, 0, `${timing}: ${change}`);
-      assert.doesNotMatch(f.comments.find(c => c.user.type === 'Bot').body, /AI 辅助/);
+      assert.doesNotMatch(f.comments.find(c => c.user.type === 'Bot').body, /issue总结：/);
     }
   }
 });
@@ -364,7 +373,7 @@ test('stale model output is abandoned when a human changes the Issue during the 
     f.issue.body += '\nA new update'; f.touch();
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
   });
-  assert.doesNotMatch(f.comments[0].body, /AI 辅助/);
+  assert.doesNotMatch(f.comments[0].body, /issue总结：/);
 });
 
 test('a bot-only Issue timestamp update does not discard a valid AI reply', async () => {
@@ -373,7 +382,7 @@ test('a bot-only Issue timestamp update does not discard a valid AI reply', asyn
     f.touch();
     return Response.json({ choices: [{ message: { content: JSON.stringify(answer) } }] });
   });
-  assert.match(f.comments[0].body, /AI 辅助/);
+  assert.match(f.comments[0].body, /issue总结：/);
 });
 
 test('label changes during a request discard AI output even before timeline events appear', async () => {
@@ -382,7 +391,7 @@ test('label changes during a request discard AI output even before timeline even
     f.issue.labels.push('in progress');
     return Response.json({ choices: [{ message: { content: JSON.stringify(answer) } }] });
   });
-  assert.doesNotMatch(f.comments[0].body, /AI 辅助/);
+  assert.doesNotMatch(f.comments[0].body, /issue总结：/);
   assert.ok(f.issue.labels.includes('in progress'));
 });
 
@@ -473,7 +482,7 @@ test('both protocols send the same bounded context and publish a cited answer', 
           ] },
         ] });
       });
-      assert.match(f.comments[0].body, /AI 辅助/);
+      assert.match(f.comments[0].body, /issue总结：/);
       assert.match(f.comments[0].body, /参考当前项目文档/);
       assert.equal(managedComment(f.comments).state.ai.answer, value.answer);
       assert.doesNotMatch(f.comments[0].body, /Private reasoning|Never execute this|Intermediate commentary/);
@@ -548,7 +557,7 @@ test('both protocols safely fall back on incomplete or refused output without ex
     const f = fixture();
     await f.go({ ...ENV, ISSUE_AI_API_URL: `https://api.example.com/v1/${endpoint}` }, async () => Response.json(data));
     assert.ok(f.issue.labels.includes(READY)); assert.equal(f.comments.length, 1);
-    assert.doesNotMatch(f.comments[0].body, /AI 辅助|private provider detail/);
+    assert.doesNotMatch(f.comments[0].body, /issue总结：|private provider detail/);
   }
   assert.equal(logs.length, cases.length);
   assert.ok(logs.every((log, i) => log.includes(cases[i][2])));

@@ -283,12 +283,12 @@ function render(report, state, ai = null, docs = []) {
   const zh = report.zh;
   const previous = !ai && state.ai;
   if (previous) { ai = state.ai; docs = state.references ?? []; }
-  let lines = [choose(zh, '**自动初审**', '**Automatic triage**') + (ai ? choose(zh, ' · AI 辅助', ' · AI assisted') : '')];
+  const lines = [];
   if (report.sensitive) lines.push(choose(zh, '检测到可能的隐私、源详情或安全问题，本次未发送给 AI。请编辑原文和相关评论，移除账号、密钥、个人资料及具体源信息；机器人不会替你修改公开内容。将由维护者查看。', 'Possible private details, source details or a security report were detected; this update was not sent to AI. Please edit the original text and relevant comments to remove credentials, personal data and specific source information. The bot does not redact your public content. A maintainer will review it.'));
   else if (state.paused) lines.push(choose(zh, '维护者已接手，自动追问已暂停。', 'A maintainer has taken over; automatic questions are paused.'));
   else {
     if (previous) lines.push(choose(zh, '以下保留上次自动分析，新增信息等待维护者复查。', 'Previous automated analysis is retained below; new information awaits maintainer review.'));
-    if (ai) lines.push(ai.summary);
+    if (ai) lines.push(choose(zh, 'issue总结：', 'Issue summary: ') + ai.summary);
     const questions = state.responded ? [] : report.missing.slice(0, 3).map(k => choose(zh, `请补充${FIELD_NAMES[k][0]}。`, `Please provide ${FIELD_NAMES[k][1]}.`));
     if (!questions.length && ai && !state.responded) questions.push(...ai.questions);
     if (ai?.answer) lines.push(ai.answer);
@@ -324,7 +324,7 @@ async function syncLabels(github, target, issue, state, desired) {
   state.owned = [...owned];
 }
 
-function humanLabels(events, issue, report) {
+export function humanLabels(events, issue, report) {
   const template = events.find(e => ['labeled', 'unlabeled'].includes(e.event) && Object.values(TYPES).includes(e.label?.name));
   return new Set(events.filter(e => e.actor?.type !== 'Bot' && ['labeled', 'unlabeled'].includes(e.event) &&
     !(e === template && e.event === 'labeled' && e.actor?.login === issue.user.login && e.label?.name === TYPES[report.type]))

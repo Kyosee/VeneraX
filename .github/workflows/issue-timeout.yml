@@ -1,0 +1,67 @@
+name: Issue information timeout
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report pending reminders and closures'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      issues: ${{ steps.scan.outputs.result }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        id: scan
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { resolve } = await import('node:path');
+            const { candidates } = await import(pathToFileURL(resolve('.github/scripts/issue-timeout.mjs')).href);
+            return await candidates({ github, repo: context.repo });
+  process:
+    needs: scan
+    if: needs.scan.outputs.issues != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        issue: ${{ fromJSON(needs.scan.outputs.issues) }}
+    concurrency:
+      group: issue-triage-${{ matrix.issue }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        env:
+          ISSUE_NUMBER: ${{ matrix.issue }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { resolve } = await import('node:path');
+            const { run } = await import(pathToFileURL(resolve('.github/scripts/issue-timeout.mjs')).href);
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const action = await run({ github, repo: context.repo, issueNumber, dryRun: process.env.DRY_RUN !== 'false' });
+            core.info(`Issue #${issueNumber}: ${action}${process.env.DRY_RUN !== 'false' ? ' (dry run)' : ''}`);

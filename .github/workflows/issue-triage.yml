@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: issue-triage-${{ github.event.issue.number }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   triage:

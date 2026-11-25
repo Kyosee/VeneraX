@@ -55,7 +55,6 @@
     .note { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); font-size: 13px; margin: 0; }
     .reply { padding: 24px 26px; min-width: 0; }
     .reply-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-    .reply-head strong { font-size: 14px; }
     .badge { display: inline-block; background: var(--tint); color: var(--teal); border-radius: 5px; padding: 2px 7px; font-size: 11px; }
     .badge[data-tone="attention"] { background: var(--amber-tint); color: var(--amber); }
     .reply-text { white-space: pre-line; margin: 0; font-size: 14px; min-height: 106px; }
@@ -120,13 +119,13 @@
         <li id="step-entry"><strong>选择入口</strong><span>故障、建议或使用疑问</span></li>
         <li id="step-rules"><strong>规则初审</strong><span id="rules-text">分类并检查必要信息</span></li>
         <li id="step-protect"><strong>隐私与频率</strong><span id="protect-text">先保护信息，再检查用量</span></li>
-        <li id="step-ai"><strong id="ai-title">AI 辅助</strong><span id="ai-text">依据正文语言与项目文档</span></li>
+        <li id="step-ai"><strong id="ai-title">整理反馈</strong><span id="ai-text">依据正文语言与项目文档</span></li>
         <li id="step-human"><strong>维护者复查</strong><span id="human-text">决定后续处理</span></li>
       </ol>
       <div class="stage">
         <section class="report" aria-labelledby="report-title"><p class="small-label" id="report-label">故障反馈 · 示例</p><h3 id="report-title"></h3><p class="report-text" id="report-text"></p><p class="note" id="report-note"></p></section>
         <section class="reply" aria-label="模拟初审回复" aria-live="polite" aria-atomic="true">
-          <div class="reply-head"><strong id="reply-title">自动初审</strong><span class="badge" id="mode-badge"></span><span class="badge" id="queue-badge"></span></div>
+          <div class="reply-head"><span class="badge" id="queue-badge"></span></div>
           <p class="reply-text" id="reply-text"></p><p class="basis" id="basis"></p>
           <div class="actions"><button type="button" id="supplement">模拟作者补充</button><button type="button" id="handover">模拟维护者接手</button><button type="button" id="reset" hidden>重置场景</button></div>
           <p class="status" id="state-text">初次提交</p>
@@ -137,7 +136,7 @@
 
     <div class="guardrails">
       <section aria-labelledby="cost-title"><h2 id="cost-title">帮助初审，也控制用量</h2><p>每单默认最多 <strong>2 次</strong> AI 调用：首次分析和作者补充后的复查。滚动 24 小时内，同一作者第 <strong>4 条</strong>、全仓第 <strong>21 条</strong>新 Issue 起降级为规则初审，已关闭单也计入。维护者可显式重审。</p><p style="margin-top:8px">这些限制不是费用硬上限；总费用保护仍需在服务商后台设置额度。</p></section>
-      <section aria-labelledby="boundary-title"><h2 id="boundary-title">保护信息，保留人工判断</h2><p>明确的个人资料、密钥或源名称／地址／账号等详情不发送给 AI。请编辑公开原文移除；初审不回显这些内容。</p><p style="margin-top:8px">源管理、JS 引擎和同步仍可能是应用缺陷。纯第三方自身问题由维护者确认后说明并关闭，<strong>机器人绝不自动关闭 Issue</strong>。</p></section>
+      <section aria-labelledby="boundary-title"><h2 id="boundary-title">保护信息，保留人工判断</h2><p>明确的个人资料、密钥或源名称／地址／账号等详情不发送给 AI。请编辑公开原文移除；初审不回显这些内容。</p><p style="margin-top:8px">只对等待补充的 Issue：<strong>30 天无回应提醒，再等 14 天仍无回应才关闭</strong>。作者回应即取消。已接手、已确认、功能需求和 #336、#349 始终保留。因信息不足关闭不代表已修复，补充后可申请重开。</p></section>
     </div>
     <footer>此页使用固定示例演示流程，不提交 Issue、不调用模型，也不产生外部网络请求。实际回复会随反馈内容变化。</footer>
     <noscript><p>请启用 JavaScript 查看场景演示。三个入口和底部规则仍可直接阅读。</p></noscript>
@@ -149,7 +148,7 @@
         kind: '故障反馈', title: ['切回竖屏后，图片短暂拉伸', 'Images stretch briefly after rotating back to portrait'],
         text: ['已填写应用版本、平台与设备。\n描述了最近一次操作、实际表现和期望结果。', 'App version, platform and device are provided.\nThe report describes the last occurrence, actual behavior and expected result.'],
         note: '资料足够时才进入 AI 分析；日志和附件一直选填。',
-        reply: ['已收到：切回竖屏时，图片会短暂拉伸。现有信息已足够初步理解问题，等待维护者复查。', 'Received: images briefly stretch after rotating back to portrait. The report provides enough information for an initial review and is queued for a maintainer.'],
+        reply: ['切回竖屏时，图片会短暂拉伸。\n\n已收到，已列入待处理，等待维护者查看。', 'Images briefly stretch after rotating back to portrait.\n\nReceived and queued for maintainer review.'],
         path: '信息足够且未触发隐私或频率限制，才会进行 AI 分析。'
       },
       missing: {
@@ -157,7 +156,7 @@
         text: ['填写了异常现象，但没有说明具体版本和最近一次发生时的操作。', 'The symptom is described, but the exact app version and the steps before the last crash are missing.'],
         note: '先问最有用的信息；无法取得版本或只偶发一次，也可以直接说明。',
         reply: ['请补充具体应用版本，以及最近一次发生时做了什么。无法取得版本时，说明情况即可。\n\n直接回复或编辑正文，无需重新填表。附件选填。', 'Please provide the app version and what you did before the last crash. If the version is unavailable, explain that here.\n\nReply or edit the description; no new form is needed. Attachments are optional.'],
-        path: '明确缺项先用固定规则提示，不为同样的问题反复调用 AI。'
+        path: '等待补充 30 天无回应先提醒，再等至少 14 天仍无回应才关闭。作者补充、维护者接手或豁免单不会超时关闭。'
       },
       private: {
         kind: '故障反馈', title: ['反馈中包含个人资料或源详情', 'The report contains personal data or source details'],
@@ -199,11 +198,10 @@
       $('report-text').textContent = pick(scenario.text);
       $('report-note').textContent = scenario.note;
       $('report-title').lang = $('report-text').lang = en ? 'en' : 'zh-CN';
-      $('reply-title').textContent = en ? 'Automatic triage' : '自动初审';
-      $('mode-badge').textContent = handed ? (en ? 'Maintainer review' : '人工接手') : ai ? (en ? 'AI assisted' : 'AI 辅助') : (en ? 'Fixed rules' : '固定规则');
       $('queue-badge').textContent = handed ? (en ? 'Maintainer decides' : '由维护者处理') : waiting ? (en ? 'Needs information' : '等待补充') : (en ? 'Ready for review' : '待处理');
       $('queue-badge').dataset.tone = waiting ? 'attention' : 'normal';
       let reply = pick(scenario.reply);
+      if (ai && !responded) reply = pick(['issue总结：', 'Issue summary: ']) + reply;
       if (responded) reply = current === 'private'
         ? pick(['已收到补充，等待维护者复查。请先编辑公开原文，移除个人资料和源详情；本次仍未发送给 AI。', 'Your update is received for maintainer review. Please remove personal data and source details from the public text; AI analysis is still skipped.'])
         : pick(['已收到补充，已回到待处理，等待维护者复查。无需重复填表，也不会继续反复追问。', 'Your update is received and ready for maintainer review. There is no need to submit another form; automatic questions will not continue.']);
@@ -218,7 +216,7 @@
       $('state-text').textContent = handed ? '演示状态：维护者接手后' : responded ? '演示状态：作者补充后（即使暂时无法补齐，也回待处理）' : '演示状态：初次提交';
       $('rules-text').textContent = waiting ? '只提示关键缺项' : '分类并检查必要信息';
       $('protect-text').textContent = current === 'private' ? '发现明确详情，优先保护' : current === 'busy' ? '近期新单达到限制' : '未命中隐私或频率限制';
-      $('ai-title').textContent = ai ? 'AI 辅助' : '跳过 AI';
+      $('ai-title').textContent = ai ? '整理反馈' : '等待复查';
       $('ai-text').textContent = handed ? '人工接手后停止自动追问' : ai ? '正文语言 + 可信项目文档' : current === 'private' ? '不发送详情，不回显内容' : current === 'busy' ? '规则初审继续正常受理' : '先等待作者补充';
       $('human-text').textContent = handed ? '已接手，决定后续处理' : waiting ? '作者回应后回到待处理' : current === 'source' ? '确认范围后决定是否关闭' : '等待复查，机器人不定结论';
       $('step-rules').dataset.state = waiting ? 'attention' : 'done';

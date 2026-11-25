@@ -1,13 +1,63 @@
-# Issue 自动初审 / Issue triage
+# Issue 受理与超时处理 / Issue intake and timeouts
 
 三个提交入口不变。新 Issue 自动分类并收到一条简短初审评论；需要补充时标记
 `status: needs-info`，作者回复或编辑正文后回到 `status: triage`，由维护者复查。
-日志和附件保持选填。机器人不关闭、锁定或删除 Issue，也不决定优先级与修复结论。
+日志和附件保持选填。回复直接展示内容，总结以“issue总结：”开头，不显示初审或 AI 辅助标题。
+初审不决定优先级与修复结论；独立的定时规则仅处理长期无人回应的补充请求，见下文。
+机器人不锁定或删除 Issue。
 
 The three forms stay unchanged. New Issues receive one managed triage comment.
 `status: needs-info` asks for missing information; an author update returns the
 report to `status: triage` for maintainer review. Attachments remain optional.
-The bot never closes, locks or deletes Issues or decides priority or resolution.
+Replies show their content directly, with an “Issue summary: ” prefix and no
+triage or AI badge. Intake never decides priority or resolution. A separate
+scheduled rule handles unanswered requests for information, as described below.
+The bot never locks or deletes Issues.
+
+## 等待补充超时 / Information timeout
+
+每天 UTC 02:23（北京时间 10:23）检查一次，实际执行可能稍有延迟。
+只检查机器人管理、仍带 `status: needs-info` 且从未收到作者回应的 Issue。
+
+| 情况 | 处理 |
+| --- | --- |
+| 等待补充至少 30 天，无新活动 | 留一条提醒，不立即关闭 |
+| 提醒后至少 14 天仍无回应 | 因信息不足关闭，状态原因为 `not_planned`，不标记已修复 |
+| 作者回复或编辑正文 | 取消本轮关闭；正常初审流程将其返回 `status: triage`，即使暂时无法提供信息 |
+| 维护者接手、人工标签、更改指派/里程碑、已有负责人或里程碑 | 豁免，不因时间关闭 |
+| 功能需求 | 始终豁免，即使暂缺信息 |
+| #336、#349 | 按编号永久豁免，只由仓库所有者手动关闭 |
+
+`bug🐞` 是表单分类，不代表已确认问题。维护者确认后的人工标签或接手状态会使其豁免；
+也可添加 `no-stale` 等人工标签保留 Issue。已进入待处理的 Bug 和所有功能需求都不会进入
+超时流程。旧单首次符合条件也只会收到提醒，完整等满 14 天后才可能关闭。
+提醒中说明信息不足不等于已修复，补充后可申请重新打开；不会自动重开或反复关闭人工重开的单。
+
+定时处理与初审共享每个 Issue 的并发组，写入前重新读取状态。发现未被机器人记录的新活动
+（包括初审事件运行失败后的正文编辑）时，从严跳过。单次最多处理 256 条可操作的 Issue，
+剩余单留待后续执行。GitHub Actions 中可手动运行 **Issue information timeout**；默认
+`dry_run=true`，只检查候选单，不发送提醒、不修改状态。定时运行按规则执行实际操作。
+
+The daily check runs at 02:23 UTC, subject to GitHub scheduling delays. Only
+bot-managed `status: needs-info` Issues with no author response are eligible.
+After at least 30 inactive days, the bot posts one reminder. Only after another
+14 days without a response can it close the Issue as `not_planned` for missing
+information, never as fixed. Old Issues also receive the full reminder period.
+An author reply or description edit cancels the timeout; normal intake returns
+the report to `status: triage`, even when the requested information is unavailable.
+Maintainer handover, human label decisions (including `no-stale`), assignment or
+milestone activity exempt a report. Template bug labels alone do not confirm bugs;
+confirmed reports and the ready queue are outside this cleanup. All feature
+requests are exempt, including those still missing information.
+Issues **#336 and #349 are always excluded by number** and stay under manual control.
+Authors may request reopening after adding information. Manually reopened Issues
+are exempt; the bot does not reopen them or close them again for inactivity.
+
+Each Issue shares intake's concurrency group and is rechecked before writes.
+Unaccounted activity, including edits whose event workflow failed, causes a skip.
+At most 256 actionable Issues are handled per run, with the rest left for later
+runs. A manual **Issue information timeout** run defaults to `dry_run=true`, which
+only lists pending actions. Scheduled runs perform reminders and closures.
 
 可打开 [流程预览页](issue-flow-preview.html) 查看各场景；下载后用浏览器打开即可，无需联网。
 Download the [flow preview](issue-flow-preview.html) and open it locally in a browser; it works offline.
@@ -149,7 +199,7 @@ The initial version does not analyze the full codebase or automatically decide d
 ## 验证 / Validation
 
 ```sh
-node --test .github/scripts/issue-triage.test.mjs
+node --test .github/scripts/issue-triage.test.mjs .github/scripts/issue-timeout.test.mjs
 ```
 
 测试模拟 GitHub 和模型接口，不调用真实收费 API。部署后可查看 Actions 的
