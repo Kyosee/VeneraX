@@ -7,7 +7,8 @@ if(VENERA_RUSTC)
   execute_process(
     COMMAND "${VENERA_RUSTC}" --crate-type cdylib --edition=2021
       --target x86_64-pc-windows-msvc -C opt-level=3 "${source}" -o "${library}"
-    RESULT_VARIABLE compiled ERROR_QUIET)
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE compiled)
   if(compiled STREQUAL "0")
     install(FILES "${library}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
     return()
