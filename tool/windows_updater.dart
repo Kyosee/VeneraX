@@ -268,7 +268,9 @@ Future<void> _expandZip(
   _Logger logger,
 ) async {
   logger.write('Extracting update package.');
+  // PowerShell 7 can pass an Archive module that requires a newer .NET runtime.
   final command =
+      r'Import-Module "$PSHOME\Modules\Microsoft.PowerShell.Archive" -ErrorAction Stop; '
       'Expand-Archive -LiteralPath ${_psQuote(zipFile.path)} '
       '-DestinationPath ${_psQuote(stagingDir.path)} -Force -ErrorAction Stop';
   final result = await Process.run('powershell', [
