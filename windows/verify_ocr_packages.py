@@ -8,6 +8,7 @@ import zipfile
 
 
 def check_ocr(app_dir):
+    print(f'Checking OCR in {app_dir.name}', flush=True)
     (app_dir / 'venera.exe').resolve(strict=True)
     library = (app_dir / 'venera_ocr.dll').resolve(strict=True)
     subprocess.run([
@@ -38,6 +39,7 @@ def main():
         # Reproduce an installation from before the accelerator was shipped.
         (installed / 'venera_ocr.dll').unlink()
         updater = shutil.copyfile(installed / 'venera_updater.exe', root / 'updater.exe')
+        print('Checking upgrade from an installation without the OCR library', flush=True)
         subprocess.run([
             updater, '--from-temp', '--app-dir', installed, '--package-file', archive,
         ], check=True, timeout=300)

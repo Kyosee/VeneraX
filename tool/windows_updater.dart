@@ -270,7 +270,7 @@ Future<void> _expandZip(
   logger.write('Extracting update package.');
   final command =
       'Expand-Archive -LiteralPath ${_psQuote(zipFile.path)} '
-      '-DestinationPath ${_psQuote(stagingDir.path)} -Force';
+      '-DestinationPath ${_psQuote(stagingDir.path)} -Force -ErrorAction Stop';
   final result = await Process.run('powershell', [
     '-NoProfile',
     '-ExecutionPolicy',
