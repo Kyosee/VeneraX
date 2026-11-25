@@ -232,6 +232,33 @@ void main() {
   });
 
   for (var mode in InpaintMode.values) {
+    test('${mode.name} clears small ellipsis dots on uniform paper', () async {
+      final page = _whiteImage(100, 120);
+      for (final top in [25, 32, 39]) {
+        for (var y = top; y < top + 2; y++) {
+          for (var x = 40; x < 42; x++) {
+            _gray(page, x, y, 20);
+          }
+        }
+      }
+      _letters(page, 48);
+      _gray(page, 18, 32, 20);
+      final region = TranslatedRegion(
+        rect: IntRect(60, 75, 90, 110),
+        eraseRect: IntRect(30, 14, 91, 63),
+        text: 'A',
+        backgroundColor: 0xffffffff,
+        textColor: 0xff202020,
+      );
+      final pixels = await _decodeRgba(
+        await renderTranslatedPage(Uint8List(0), page, [region], mode: mode),
+      );
+      for (final y in [25, 32, 39]) {
+        expect(pixels[(y * 100 + 40) * 4], greaterThan(220));
+      }
+      expect(pixels[(32 * 100 + 18) * 4], 20);
+    });
+
     test(
       '${mode.name} erases closely spaced lines without mistaking them for texture',
       () async {

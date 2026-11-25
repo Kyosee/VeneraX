@@ -298,6 +298,7 @@ abstract final class TextInpainter {
       mask,
       rw,
       math.min(allowedRight - allowedLeft, allowedBottom - allowedTop),
+      uniformPaper: backgroundColor != null,
     );
     if (kept == 0) return null;
 
@@ -678,10 +679,12 @@ abstract final class TextInpainter {
   static (int, Uint8List?) _filterComponents(
     Uint8List mask,
     int width,
-    int shortSide,
-  ) {
+    int shortSide, {
+    required bool uniformPaper,
+  }) {
     final n = mask.length;
-    final minimumPixels = math.max(6, (n * .0008).round());
+    // A printed ellipsis can be a row of 2x2 dots on plain bubble paper.
+    final minimumPixels = uniformPaper ? 2 : math.max(6, (n * .0008).round());
     final minimumSpan = math.max(16, (shortSide * 1.65).ceil());
     final thinWidth = (shortSide * .08).round().clamp(2, 4);
     final seen = Uint8List(n);
