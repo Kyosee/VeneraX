@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
-import 'package:flutter/painting.dart';
+import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/image_translation/inpaint.dart';
 import 'package:venera/foundation/image_translation/translation_types.dart';
 
@@ -291,7 +291,30 @@ void _drawText(
   canvas.save();
   canvas.clipRect(rect);
   try {
-    if (_prefersVertical(region.text, rect)) {
+    final columns = sourceTranslationColumns(region, rect);
+    if (columns.isNotEmpty) {
+      for (final column in columns) {
+        final step = column.rect.height / column.glyphs.length;
+        _paintVerticalColumn(
+          canvas,
+          column.glyphs,
+          color,
+          column.rect.center.dx,
+          column.rect.top,
+          step,
+          math.min(42, math.min(step, column.rect.width) * .92),
+          outline: outline,
+          background: background,
+        );
+      }
+      return;
+    }
+    if ((_sourceIsVertical(region.eraseRects) ||
+            (rect.height >= rect.width * 1.6 &&
+                !region.eraseRects.every(
+                  (line) => line.width > line.height,
+                ))) &&
+        _hasVerticalScript(region.text)) {
       _drawVerticalText(
         canvas,
         region.text,
@@ -384,23 +407,115 @@ TextPainter _horizontalPainter(
   return painter;
 }
 
-/// Whether [text] should be laid out vertically inside [rect]: the region is
-/// clearly taller than wide and the text is dominated by CJK characters.
-bool _prefersVertical(String text, ui.Rect rect) {
-  if (rect.height < rect.width * 1.6) return false;
-  var cjk = 0, total = 0;
-  for (var r in text.runes) {
-    if (r <= 0x20) continue;
-    total++;
-    if ((r >= 0x4E00 && r <= 0x9FFF) ||
-        (r >= 0x3400 && r <= 0x4DBF) ||
-        (r >= 0x3040 && r <= 0x30FF) ||
-        (r >= 0xAC00 && r <= 0xD7AF)) {
-      cjk++;
+/// Fits translated glyphs to the source columns in OCR reading order.
+@visibleForTesting
+List<({List<String> glyphs, ui.Rect rect})> sourceTranslationColumns(
+  TranslatedRegion region,
+  ui.Rect layout,
+) {
+  final lines = region.eraseRects;
+  if (!_sourceIsVertical(lines) ||
+      (lines.length == 1 && region.sourceText == null) ||
+      !_hasVerticalScript(region.text)) {
+    return [];
+  }
+  final boxes = [
+    for (final r in lines)
+      ui.Rect.fromLTRB(
+        r.left.toDouble(),
+        r.top.toDouble(),
+        r.right.toDouble(),
+        r.bottom.toDouble(),
+      ).intersect(layout),
+  ];
+  if (boxes.any((r) => r.width <= 4 || r.height < r.width)) return [];
+
+  final glyphs = _verticalGlyphs(region.text);
+  final parts = region.sourceText?.trim().split(RegExp(r'\s+'));
+  // Line OCR joins its results with spaces. Older results or block OCR may
+  // lack those boundaries; use column proportions when they are unavailable.
+  final hasLineText = parts != null && parts.length == lines.length;
+  final weights = hasLineText
+      ? [for (final part in parts) part.characters.length.toDouble()]
+      : [for (final r in lines) r.height / r.width];
+  var total = weights.reduce((a, b) => a + b);
+  if (total <= 0) return [];
+  if (hasLineText && glyphs.length != total) {
+    int trailingMarks(List<String> chars) =>
+        chars.reversed.takeWhile((c) => !_letterOrDigit.hasMatch(c)).length;
+    final difference = glyphs.length - total;
+    if (difference ==
+        trailingMarks(glyphs) - trailingMarks(_verticalGlyphs(parts.last))) {
+      // A provider may add or remove final punctuation without changing any
+      // preceding column break.
+      weights.last += difference;
+      total = glyphs.length.toDouble();
     }
   }
-  if (total < 2) return false;
-  return cjk / total >= 0.7;
+  final ends = <int>[];
+  var cumulative = 0.0;
+  var pitch = double.infinity;
+  for (var i = 0; i < boxes.length; i++) {
+    cumulative += weights[i];
+    final end = (glyphs.length * cumulative / total).round();
+    final count = end - (ends.isEmpty ? 0 : ends.last);
+    ends.add(end);
+    if (count > 0) {
+      final box = boxes[i];
+      // OCR includes a margin above and below the printed glyphs.
+      pitch = math.min(
+        pitch,
+        math.min(
+          box.width,
+          (box.height - box.width * .5) /
+              math.max(count, hasLineText ? weights[i] : count),
+        ),
+      );
+      for (var j = 0; j < i; j++) {
+        final other = boxes[j];
+        if (other.overlaps(box)) {
+          pitch = math.min(pitch, (box.center.dx - other.center.dx).abs());
+        }
+      }
+    }
+  }
+  // A much longer translation fits better by wrapping within the whole bubble.
+  final sourceSize = region.lineHeight > 0
+      ? region.lineHeight.toDouble()
+      : boxes.map((r) => r.width).reduce(math.min);
+  if (pitch < math.min(10.0, sourceSize * .5)) return [];
+  final columns = <({List<String> glyphs, ui.Rect rect})>[];
+  var start = 0;
+  for (var i = 0; i < boxes.length; i++) {
+    final end = ends[i];
+    if (end == start) continue;
+    final box = boxes[i];
+    final top = box.top + box.width * .25;
+    columns.add((
+      glyphs: glyphs.sublist(start, end),
+      rect: ui.Rect.fromLTWH(box.left, top, box.width, pitch * (end - start)),
+    ));
+    start = end;
+  }
+  return columns;
+}
+
+List<String> _verticalGlyphs(String text) =>
+    text.characters.where((c) => c.trim().isNotEmpty).toList();
+
+bool _sourceIsVertical(List<IntRect> lines) =>
+    lines.any((r) => r.height >= r.width * 1.5) &&
+    lines.every((r) => r.width > 0 && r.height >= r.width);
+
+final _verticalLetter = RegExp(
+  r'[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]',
+  unicode: true,
+);
+final _letterOrDigit = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+bool _hasVerticalScript(String text) {
+  final cjk = _verticalLetter.allMatches(text).length;
+  return cjk > 0 && cjk >= _letterOrDigit.allMatches(text).length * .7;
 }
 
 /// Draws [text] as vertical right-to-left columns fitted to [rect], one
@@ -415,23 +530,11 @@ void _drawVerticalText(
   ui.Color? background,
   int lineHeight = 0,
 }) {
-  var chars = text.runes
-      .map((r) => String.fromCharCode(r))
-      .where((c) => c.trim().isNotEmpty)
-      .toList();
+  var chars = _verticalGlyphs(text);
   if (chars.isEmpty) return;
 
   var maxWidth = rect.width - 4;
   var maxHeight = rect.height - 4;
-
-  TextPainter glyph(String c, double fontSize, TextStyle style) {
-    var painter = TextPainter(
-      text: TextSpan(text: c, style: style),
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout();
-    return painter;
-  }
 
   // Cap by the original lettering size when known, so a small vertical caption
   // stays small instead of growing to fill the column width.
@@ -470,35 +573,53 @@ void _drawVerticalText(
   var startRight = rect.left + (rect.width + blockW) / 2;
   var top = rect.top + (rect.height - blockH) / 2;
 
-  var fillStyle = _fillStyle(
-    color,
-    chosen,
-  ).copyWith(height: 1.0, backgroundColor: background);
-  var strokeStyle = outline == null
-      ? null
-      : _strokeStyle(outline, chosen).copyWith(height: 1.0);
-
   for (var col = 0; col < columns; col++) {
-    var colCenterX = startRight - (col + 0.5) * cellW;
-    for (var row = 0; row < perColumn; row++) {
-      var index = col * perColumn + row;
-      if (index >= chars.length) break;
-      var dyBase = top + row * cellH;
-      if (strokeStyle != null) {
-        var sp = glyph(chars[index], chosen, strokeStyle);
-        sp.paint(
-          canvas,
-          ui.Offset(
-            colCenterX - sp.width / 2,
-            dyBase + (cellH - sp.height) / 2,
-          ),
-        );
-        sp.dispose();
-      }
-      var painter = glyph(chars[index], chosen, fillStyle);
-      var dx = colCenterX - painter.width / 2;
-      var dy = dyBase + (cellH - painter.height) / 2;
-      painter.paint(canvas, ui.Offset(dx, dy));
+    final first = col * perColumn;
+    _paintVerticalColumn(
+      canvas,
+      chars.sublist(first, math.min(first + perColumn, chars.length)),
+      color,
+      startRight - (col + .5) * cellW,
+      top,
+      cellH,
+      chosen,
+      outline: outline,
+      background: background,
+    );
+  }
+}
+
+void _paintVerticalColumn(
+  ui.Canvas canvas,
+  List<String> glyphs,
+  ui.Color color,
+  double centerX,
+  double top,
+  double step,
+  double fontSize, {
+  ui.Color? outline,
+  ui.Color? background,
+}) {
+  final styles = [
+    if (outline != null) _strokeStyle(outline, fontSize).copyWith(height: 1),
+    _fillStyle(
+      color,
+      fontSize,
+    ).copyWith(height: 1, backgroundColor: background),
+  ];
+  for (var i = 0; i < glyphs.length; i++) {
+    for (final style in styles) {
+      final painter = TextPainter(
+        text: TextSpan(text: glyphs[i] == '…' ? '⋮' : glyphs[i], style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        ui.Offset(
+          centerX - painter.width / 2,
+          top + (i + .5) * step - painter.height / 2,
+        ),
+      );
       painter.dispose();
     }
   }

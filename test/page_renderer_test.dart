@@ -123,6 +123,141 @@ void main() {
     );
   });
 
+  group('source column placement', () {
+    final layout = ui.Rect.fromLTRB(22, 10, 106, 143);
+    final original = [
+      IntRect(71, 9, 102, 144),
+      IntRect(46, 9, 80, 144),
+      IntRect(26, 12, 54, 105),
+    ];
+    TranslatedRegion region(
+      String text, {
+      String? source,
+      List<IntRect>? lines,
+      int lineHeight = 31,
+    }) => TranslatedRegion(
+      rect: IntRect(22, 10, 106, 143),
+      eraseRects: lines ?? original,
+      sourceText: source,
+      text: text,
+      backgroundColor: 0xffffffff,
+      textColor: 0xff202020,
+      lineHeight: lineHeight,
+    );
+
+    test(
+      'keeps the original right-to-left columns and a short final column',
+      () {
+        const source = '我覺得也應該 聽聽其他類型 的東西';
+        for (final ending in ['', '：']) {
+          final saved = region('我觉得也应该听听其他类型的东西$ending', source: source);
+          final columns = sourceTranslationColumns(
+            TranslatedRegion.fromJson(saved.toJson()),
+            layout,
+          );
+          expect(columns.map((c) => c.glyphs.join()), [
+            '我觉得也应该',
+            '听听其他类型',
+            '的东西$ending',
+          ]);
+          for (var i = 0; i < columns.length; i++) {
+            expect(
+              columns[i].rect.center.dx,
+              (original[i].left + original[i].right) / 2,
+            );
+            expect(columns[i].rect.top, closeTo(columns.first.rect.top, 5));
+            expect(columns[i].rect.bottom, lessThanOrEqualTo(layout.bottom));
+          }
+        }
+      },
+    );
+
+    test(
+      'uses column centers for short replies and keeps cached Latin and punctuation intact',
+      () {
+        for (final (source, text) in [
+          ('我覺得也應該 聽聽其他類型 的東西', '我們再聽別的'),
+          (null, '这是CD啊……还有别的东西'),
+        ]) {
+          final columns = sourceTranslationColumns(
+            region(text, source: source),
+            layout,
+          );
+          expect(columns.expand((c) => c.glyphs).join(), text);
+          for (var i = 1; i < columns.length; i++) {
+            final step = columns[i].rect.height / columns[i].glyphs.length;
+            expect(
+              step,
+              lessThanOrEqualTo(
+                columns[i - 1].rect.center.dx - columns[i].rect.center.dx,
+              ),
+            );
+          }
+        }
+      },
+    );
+
+    test(
+      'reflows long or legacy single-box text and leaves horizontal lines horizontal',
+      () {
+        expect(
+          sourceTranslationColumns(region('長' * 200, lineHeight: 0), layout),
+          isEmpty,
+        );
+        expect(
+          sourceTranslationColumns(
+            region('旧版缓存', lines: [IntRect(22, 10, 106, 143)]),
+            layout,
+          ),
+          isEmpty,
+        );
+        expect(
+          sourceTranslationColumns(
+            region(
+              '横排原文',
+              lines: [IntRect(25, 20, 95, 40), IntRect(25, 65, 95, 85)],
+            ),
+            layout,
+          ),
+          isEmpty,
+        );
+        expect(
+          sourceTranslationColumns(region('Read the CD.'), layout),
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'the rendered page keeps the gap between two source columns clear',
+      () async {
+        final page = _whiteImage(110, 150);
+        final saved = region(
+          '甲乙丙丁戊己庚',
+          source: '甲乙 丙丁戊己庚',
+          lines: [IntRect(78, 15, 98, 70), IntRect(29, 15, 49, 125)],
+        );
+        final output = await _decodeRgba(
+          await renderTranslatedPage(Uint8List(0), page, [saved]),
+        );
+        int darkPixels(int left, int top, int right, int bottom) {
+          var count = 0;
+          for (var y = top; y < bottom; y++) {
+            for (var x = left; x < right; x++) {
+              if (output[(y * page.width + x) * 4] < 128) count++;
+            }
+          }
+          return count;
+        }
+
+        expect(darkPixels(78, 15, 98, 70), greaterThan(0));
+        expect(darkPixels(29, 75, 49, 125), greaterThan(0));
+        expect(darkPixels(51, 15, 75, 125), 0);
+        expect(darkPixels(78, 75, 98, 125), 0);
+      },
+    );
+  });
+
   test(
     'overlapping adjacent translations keep separate drawing rectangles',
     () {

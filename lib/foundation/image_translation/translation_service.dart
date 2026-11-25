@@ -214,7 +214,7 @@ class ImageTranslationService with ChangeNotifier {
   /// is a suffix, so the comic/chapter scope prefixes still match it for
   /// deletion.
   static String renderedKey(String cacheKey, InpaintMode mode) =>
-      '$cacheKey#4${mode.token}';
+      '$cacheKey#5${mode.token}';
 
   /// LLM translation is network-bound, so a second page's OCR can run in the
   /// worker while the first waits for its response.
