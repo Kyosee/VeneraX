@@ -197,6 +197,20 @@ void main() {
       },
     );
 
+    test('recognizes Japanese long vowels and Korean in vertical dialogue', () {
+      for (final text in ['コーヒー', 'ケーキ', 'ｺｰﾋｰ', 'ｶﾞｰﾄﾞ', '커피']) {
+        final columns = sourceTranslationColumns(region(text), layout);
+        expect(columns.expand((c) => c.glyphs).join(), text, reason: text);
+      }
+      for (final text in ['Coffee', 'A・・・・。', '・・・']) {
+        expect(
+          sourceTranslationColumns(region(text), layout),
+          isEmpty,
+          reason: text,
+        );
+      }
+    });
+
     test(
       'reflows long or legacy single-box text and leaves horizontal lines horizontal',
       () {

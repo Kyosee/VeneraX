@@ -507,15 +507,21 @@ bool _sourceIsVertical(List<IntRect> lines) =>
     lines.any((r) => r.height >= r.width * 1.5) &&
     lines.every((r) => r.width > 0 && r.height >= r.width);
 
+// Kana share their prolonged sound mark, whose primary script is Common.
 final _verticalLetter = RegExp(
-  r'[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]',
+  r'[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}'
+  r'\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}]',
   unicode: true,
 );
 final _letterOrDigit = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
 bool _hasVerticalScript(String text) {
-  final cjk = _verticalLetter.allMatches(text).length;
-  return cjk > 0 && cjk >= _letterOrDigit.allMatches(text).length * .7;
+  var total = 0, cjk = 0;
+  for (final letter in _letterOrDigit.allMatches(text)) {
+    total++;
+    if (_verticalLetter.hasMatch(letter[0]!)) cjk++;
+  }
+  return cjk > 0 && cjk >= total * .7;
 }
 
 /// Draws [text] as vertical right-to-left columns fitted to [rect], one
@@ -608,20 +614,27 @@ void _paintVerticalColumn(
     ).copyWith(height: 1, backgroundColor: background),
   ];
   for (var i = 0; i < glyphs.length; i++) {
+    final glyph = glyphs[i];
+    var center = ui.Offset(centerX, top + (i + .5) * step);
+    final rotate = glyph == 'ー' || glyph == 'ｰ';
+    if (rotate) {
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(math.pi / 2);
+      center = ui.Offset.zero;
+    }
     for (final style in styles) {
       final painter = TextPainter(
-        text: TextSpan(text: glyphs[i] == '…' ? '⋮' : glyphs[i], style: style),
+        text: TextSpan(text: glyph == '…' ? '⋮' : glyph, style: style),
         textDirection: TextDirection.ltr,
       )..layout();
       painter.paint(
         canvas,
-        ui.Offset(
-          centerX - painter.width / 2,
-          top + (i + .5) * step - painter.height / 2,
-        ),
+        center - ui.Offset(painter.width / 2, painter.height / 2),
       );
       painter.dispose();
     }
+    if (rotate) canvas.restore();
   }
 }
 
