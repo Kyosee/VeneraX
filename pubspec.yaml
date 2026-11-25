@@ -68,7 +68,7 @@ dependencies:
   flutter_saf:
     git: 
       url: https://github.com/Kyosee/flutter_saf
-      ref: dfd72930223e2dc191e40ab4fc2cce58aa85d545
+      ref: 4dc2b6e871ced2780f9756491ae60063e9b18ca3
   dynamic_color: ^1.8.1
   shimmer_animation: ^2.1.0
   flutter_memory_info: ^0.0.3
