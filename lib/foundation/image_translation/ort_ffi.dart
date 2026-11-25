@@ -216,11 +216,20 @@ class OrtRuntime {
 
 /// A typed input tensor for the OCR and dialogue detectors.
 class OrtInput {
-  OrtInput.float32(Float32List this.f32Data, this.shape) : i64Data = null;
-  OrtInput.int64(Int64List this.i64Data, this.shape) : f32Data = null;
+  OrtInput.float32(Float32List this.f32Data, this.shape)
+    : i64Data = null,
+      fill = null;
+  OrtInput.int64(Int64List this.i64Data, this.shape)
+    : f32Data = null,
+      fill = null;
+  OrtInput.fillFloat32(this.shape, void Function(Pointer<Float>, int) writer)
+    : fill = writer,
+      f32Data = null,
+      i64Data = null;
 
   final Float32List? f32Data;
   final Int64List? i64Data;
+  final void Function(Pointer<Float>, int)? fill;
   final List<int> shape;
 }
 
@@ -510,9 +519,18 @@ class OrtFfiSession {
           Pointer<Void> dataPtr;
           int byteLength;
           int elementType;
-          if (input.f32Data != null) {
+          if (input.fill case final fill?) {
+            final count = input.shape.reduce((a, b) => a * b);
+            final p = calloc<Float>(count);
+            nativeBuffers.add(p.cast());
+            fill(p, count);
+            dataPtr = p.cast();
+            byteLength = count * 4;
+            elementType = OrtRuntime.typeFloat32;
+          } else if (input.f32Data != null) {
             var data = input.f32Data!;
             var p = calloc<Float>(data.length);
+            nativeBuffers.add(p.cast());
             p.asTypedList(data.length).setAll(0, data);
             dataPtr = p.cast();
             byteLength = data.length * 4;
@@ -520,12 +538,12 @@ class OrtFfiSession {
           } else {
             var data = input.i64Data!;
             var p = calloc<Int64>(data.length);
+            nativeBuffers.add(p.cast());
             p.asTypedList(data.length).setAll(0, data);
             dataPtr = p.cast();
             byteLength = data.length * 8;
             elementType = OrtRuntime.typeInt64;
           }
-          nativeBuffers.add(dataPtr);
           var shapePtr = calloc<Int64>(input.shape.length);
           shapePtr.asTypedList(input.shape.length).setAll(0, input.shape);
           nativeBuffers.add(shapePtr.cast());

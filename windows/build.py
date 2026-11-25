@@ -10,6 +10,9 @@ file.close()
 subprocess.run(["flutter", "build", "windows"], shell=True, check=True)
 
 release_dir = "build/windows/x64/runner/Release"
+if not os.path.isfile(os.path.join(release_dir, "venera_ocr.dll")):
+    raise RuntimeError("Missing venera_ocr.dll in Windows release output. "
+                       "Install the x86_64-pc-windows-msvc Rust target before packaging.")
 subprocess.run([
     "dart",
     "compile",

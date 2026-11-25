@@ -297,6 +297,8 @@ jobs:
           pip install httpx
       - name: Install Inno Setup
         run: choco install innosetup --no-progress
+      - name: Prepare Rust for Windows x64 OCR
+        run: rustup target add x86_64-pc-windows-msvc
       - uses: ./.github/actions/onnx-prebuilt
         with:
           platform: windows-x64
@@ -312,6 +314,8 @@ jobs:
         run: |
           flutter pub get
           python windows/build.py
+      - name: Verify OCR in the portable, installed and updated app
+        run: python windows/verify_ocr_packages.py
       - name: Report native project timings
         if: ${{ !cancelled() }}
         continue-on-error: true

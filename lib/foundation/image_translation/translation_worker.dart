@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ffi' show FloatPointer;
 import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/image_translation/detector_preprocess.dart';
 import 'package:venera/foundation/session_guard.dart';
 import 'package:venera/foundation/image_translation/hf_tokenizer.dart';
 import 'package:venera/foundation/image_translation/ort_ffi.dart';
@@ -832,22 +834,16 @@ class _WorkerState {
           bottom * image.width * 4,
         ),
       );
-      var input = _detPreprocess(tile, rotate: rotate);
-      var output = session
-          .run({
-            session.inputNames.first: OrtInput.float32(input.tensor, [
-              1,
-              3,
-              input.height,
-              input.width,
-            ]),
-          })
+      final input = prepareDetectorInput(tile, rotate: rotate);
+      final output = session
+          .run({session.inputNames.first: input})
           .values
           .first;
+      final [_, _, inH, inW] = input.shape;
       var tileBoxes = postprocessTextDetections(
         output.data,
-        input.width,
-        input.height,
+        inW,
+        inH,
         rotate ? tile.height : tile.width,
         rotate ? tile.width : tile.height,
       );
@@ -1019,14 +1015,6 @@ class _WorkerState {
 // Pure image math (worker side)
 // ===========================================================================
 
-class _DetInput {
-  _DetInput(this.tensor, this.width, this.height);
-
-  final Float32List tensor;
-  final int width;
-  final int height;
-}
-
 Uint8List _resizeRegion(RgbaImage src, IntRect region, int outW, int outH) {
   var out = Uint8List(outW * outH * 4);
   var srcW = region.width;
@@ -1063,12 +1051,34 @@ Uint8List _resizeRegion(RgbaImage src, IntRect region, int outW, int outH) {
 /// PP-OCR DBNet preprocessing: long side <= 1280 (small/stylized lettering
 /// survives better than at the stock 960), multiple of 32, ImageNet
 /// normalization.
-_DetInput _detPreprocess(RgbaImage tile, {bool rotate = false}) {
+@visibleForTesting
+OrtInput prepareDetectorInput(RgbaImage tile, {bool rotate = false}) {
   const maxSide = 1280.0;
   var scale = math.min(1.0, maxSide / math.max(tile.width, tile.height));
   int round32(double v) => math.max(32, (v / 32).round() * 32);
   var inW = round32((rotate ? tile.height : tile.width) * scale);
   var inH = round32((rotate ? tile.width : tile.height) * scale);
+  final shape = [1, 3, inH, inW];
+  Float32List dartTensor() => _dartDetectorTensor(tile, inW, inH, rotate);
+  if (!canUseRustDetector(tile.pixels.lengthInBytes, 3 * inH * inW)) {
+    return OrtInput.float32(dartTensor(), shape);
+  }
+  return OrtInput.fillFloat32(shape, (output, count) {
+    final filled = fillRustDetectorTensor(
+      tile.pixels,
+      tile.width,
+      tile.height,
+      inW,
+      inH,
+      output,
+      count,
+      rotate: rotate,
+    );
+    if (!filled) output.asTypedList(count).setAll(0, dartTensor());
+  });
+}
+
+Float32List _dartDetectorTensor(RgbaImage tile, int inW, int inH, bool rotate) {
   var resized = resizeTextLine(
     tile,
     IntRect(0, 0, tile.width, tile.height),
@@ -1085,7 +1095,7 @@ _DetInput _detPreprocess(RgbaImage tile, {bool rotate = false}) {
       tensor[c * plane + i] = (resized[i * 4 + c] / 255.0 - mean[c]) / std[c];
     }
   }
-  return _DetInput(tensor, inW, inH);
+  return tensor;
 }
 
 /// A fragmented vertical page benefits from detecting the same pixels turned

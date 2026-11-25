@@ -144,14 +144,30 @@ void main() {
   test(
     'Windows reconstructs a complete new package and preserves installed files',
     () async {
-      final output = await prepare(make());
+      final library = utf8.encode('new OCR library');
+      final output = await prepare(
+        make(
+          files: [
+            file('venera.exe', 'full', app),
+            file('data/app.so', 'copy', aot),
+            {
+              ...file('venera_ocr.dll', 'full', library),
+              'payload': 'payload/1',
+            },
+          ],
+          extras: {'payload/1': library},
+        ),
+      );
       final archive = ZipDecoder().decodeBytes(output.readAsBytesSync());
       expect(archive.files.map((f) => f.name).toSet(), {
         'venera.exe',
         'data/app.so',
+        'venera_ocr.dll',
       });
       expect(archive.findFile('venera.exe')!.content, app);
       expect(archive.findFile('data/app.so')!.content, aot);
+      expect(archive.findFile('venera_ocr.dll')!.content, library);
+      expect(File('${source.path}/venera_ocr.dll').existsSync(), isFalse);
       expect(File('${source.path}/removed.dll').readAsStringSync(), 'old');
       expect(File('${source.path}/data/app.so').readAsBytesSync(), aot);
       expect(Directory('${work.path}/payload').existsSync(), isFalse);
