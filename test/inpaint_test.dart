@@ -153,6 +153,53 @@ void main() {
       );
     });
 
+    test(
+      'cleans dense edge lettering while preserving the crossing page frame',
+      () {
+        for (final flat in [false, true]) {
+          final page = _solid(110, 110, 250, 250, 250);
+          void gray(int x, int y, int value) {
+            final i = (page.width * y + x) * 4;
+            page.pixels.fillRange(i, i + 3, value);
+          }
+
+          for (var x = 0; x < page.width; x++) {
+            gray(x, 0, 20);
+            gray(x, 1, 20);
+          }
+          for (var y = 4; y < 80; y++) {
+            for (var x = 40; x < 68; x++) {
+              if ((y - 4) % 10 < 7 && (x - 40) % 7 < 4) gray(x, y, 25);
+            }
+          }
+          // Scene detail on both sides makes the clipped sampling ring vary.
+          for (var y = 2; y < 87; y += 2) {
+            gray(33, y, 95);
+            gray(74, y, 95);
+          }
+          final column = IntRect(40, 0, 68, 80);
+          final mask = TextInpainter.computeMask(
+            page,
+            column,
+            flatFill: flat,
+            textRegions: [column],
+          );
+          expect(mask, isNotNull);
+          if (flat) {
+            TextInpainter.fillWithBackground(page, mask!);
+          } else {
+            TextInpainter.eraseWithMask(page, mask!);
+          }
+          expect(_lum(page, 49, 46), greaterThan(220));
+          for (var x = 0; x < page.width; x++) {
+            expect(_lum(page, x, 0), 20);
+            expect(_lum(page, x, 1), 20);
+          }
+          expect(_lum(page, 33, 30), 95);
+        }
+      },
+    );
+
     test('drops isolated speck noise, keeps a real stroke', () {
       // A light crop with one real stroke block plus a single stray dark pixel.
       // The speck is below the noise floor and must not be erased/counted.

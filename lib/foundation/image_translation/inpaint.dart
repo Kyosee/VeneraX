@@ -188,6 +188,17 @@ abstract final class TextInpainter {
         backgroundColor = dominant;
       }
     }
+    // At a page edge the sampling ring may include the panel frame. Accept
+    // the majority paper colour when it also agrees with the ring median.
+    final atPageEdge =
+        region.top <= 0 ||
+        region.left <= 0 ||
+        region.bottom >= h ||
+        region.right >= w;
+    if (atPageEdge && unstableRing && colorCandidate != null) {
+      unstableRing = false;
+      backgroundColor = colorCandidate;
+    }
     var threshold = _otsu(lum);
 
     // Class means around the split, so the text class is chosen by which mean
