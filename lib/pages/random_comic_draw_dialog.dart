@@ -168,19 +168,17 @@ class _RandomComicDrawDialogState extends State<RandomComicDrawDialog>
       final List<FavoriteItem> comics;
       if (_pool.local) {
         final local = LocalManager().getComics(LocalSortType.defaultSort);
-        final statuses = await loadLocalComicStatuses(local);
         comics = [
-          for (final (i, comic) in local.indexed)
-            if (statuses[i] == LocalComicStatus.downloaded)
-              FavoriteItem(
-                id: comic.id,
-                name: comic.title,
-                author: comic.subtitle,
-                type: comic.comicType,
-                coverPath: 'file://${comic.coverFile.path}',
-                tags: comic.tags,
-                favoriteTime: comic.createdAt,
-              ),
+          for (final comic in local)
+            FavoriteItem(
+              id: comic.id,
+              name: comic.title,
+              author: comic.subtitle,
+              type: comic.comicType,
+              coverPath: 'file://${comic.coverFile.path}',
+              tags: comic.tags,
+              favoriteTime: comic.createdAt,
+            ),
         ];
       } else {
         comics = available == null

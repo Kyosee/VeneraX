@@ -16,10 +16,21 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/random_comic_scope.dart';
 import 'package:venera/foundation/read_later.dart';
 import 'package:venera/foundation/sqlite_connection.dart';
+import 'package:venera/network/download.dart';
 import 'package:venera/pages/random_comic_draw_dialog.dart';
 import 'package:venera/utils/translations.dart';
 
 late String _coverPath;
+
+class _QueuedDownload extends Fake implements DownloadTask {
+  _QueuedDownload(this.id);
+
+  @override
+  final String id;
+
+  @override
+  ComicType get comicType => ComicType.local;
+}
 
 FavoriteItem _comic(String id, {int type = 123, String? title}) => FavoriteItem(
   id: id,
@@ -278,7 +289,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    _drawTest('local scope draws a readable comic without favorites', (tester) async {
+    _drawTest('local scope includes every library entry without favorites', (tester) async {
       final manager = LocalManager();
       final result = await _open(tester, waitReady: false);
       await _waitUntil(tester, () => find.text('No favorite comics in this selection').evaluate().isNotEmpty);
@@ -301,25 +312,61 @@ void main() {
       );
       final saved = entry('Readable');
       final missing = entry('Missing files');
+      final downloading = entry('Downloading');
+      final queued = _QueuedDownload(downloading.id);
       await tester.runAsync(() async {
-        await Directory(saved.directory).create();
-        await File(_coverPath.substring('file://'.length)).copy(saved.coverFile.path);
-        await manager.add(saved);
-        await manager.add(missing);
+        for (final comic in [saved, downloading]) {
+          await Directory(comic.directory).create();
+          await File(_coverPath.substring('file://'.length))
+              .copy(comic.coverFile.path);
+        }
+        for (final comic in [saved, missing, downloading]) {
+          await manager.add(comic);
+        }
       });
+      manager.downloadingTasks.add(queued);
       addTearDown(() {
-        manager.remove(saved.id, saved.comicType);
-        manager.remove(missing.id, missing.comicType);
+        manager.downloadingTasks.remove(queued);
+        for (final comic in [saved, missing, downloading]) {
+          manager.remove(comic.id, comic.comicType);
+        }
       });
       final reopened = await _open(tester);
       expect(find.text('Local comics · All'), findsOneWidget);
-      await _draw(tester);
+      expect(manager.count, 3);
+      expect(
+        find.descendant(
+          of: _key('draw-scope-toggle'),
+          matching: find.text('${manager.count}'),
+        ),
+        findsOneWidget,
+      );
+      await _tap(tester, 'draw-mode-three');
+      await _draw(tester, revealAll: true);
+      Finder cardTitle(LocalComic comic) => find.descendant(
+        of: find.byType(RandomComicDrawStage),
+        matching: find.text(comic.title),
+      );
+      for (final comic in [saved, missing, downloading]) {
+        expect(cardTitle(comic), findsOneWidget);
+      }
+      for (var i = 0; i < 3; i++) {
+        if (find.descendant(
+          of: _key('draw-card-$i'),
+          matching: find.text(missing.title),
+        ).evaluate().isNotEmpty) {
+          await _tap(tester, 'draw-card-$i');
+          break;
+        }
+      }
+      await tester.pumpAndSettle();
       await _tap(tester, 'draw-read');
       final selected = await reopened.future;
-      expect(selected?.id, saved.id);
-      expect(selected?.sourceKey, saved.sourceKey);
-      expect(selected?.cover, 'file://${saved.coverFile.path}');
+      expect(selected?.id, missing.id);
+      expect(selected?.sourceKey, missing.sourceKey);
+      expect(selected?.cover, 'file://${missing.coverFile.path}');
       expect(favorites.getAllComics(), isEmpty);
+      expect(tester.takeException(), isNull);
     });
 
     _drawTest('single draw returns the real favorite', (tester) async {
