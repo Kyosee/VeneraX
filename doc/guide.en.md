@@ -42,6 +42,8 @@ Open Settings: wide windows show categories on the left and their contents on th
 | Privacy & device | App lock, background behavior, and window, tray and keyboard shortcut options on supported platforms |
 | About & help | App updates and the guide; logs and debugging tools are under "Diagnostics" |
 
+While reading on desktop, press `F8` to turn AI translation on or off for the current comic and compare it with the original. Change or clear the binding in "Privacy & device → Keyboard shortcuts → Toggle AI translation". If you previously assigned `F8` to another action, that binding is preserved; choose another key for translation. When setup is incomplete, enabling translation follows your existing translation-guide preference.
+
 Search by name or keyword at the top of Settings, then select a result to open its category or subpage and locate the option. On desktop, `Ctrl+K` (`Cmd+K` on macOS) focuses search. When an option depends on another switch or reading mode, search explains the dependency and locates the prerequisite without changing your settings. Options unsupported on your platform are hidden.
 
 While reading, open the reader menu → Settings to adjust reading options in the sidebar. Opening an entry under "More settings" or "AI Translation" changes the page inside the sidebar. Back returns one level, or closes the sidebar from its first page. Sidebar search only includes reading and translation settings.

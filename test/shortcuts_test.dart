@@ -90,6 +90,50 @@ void main() {
     });
   });
 
+  test('translation uses F8 on desktop and supports overrides', () {
+    const action = ShortcutAction.toggleImageTranslation;
+    const f8 = KeyBinding(LogicalKeyboardKey.f8);
+    const custom = KeyBinding(LogicalKeyboardKey.keyT, control: true);
+    for (final platform in _desktop) {
+      _onPlatform(platform, () {
+        _setOverrides({});
+        expect(action.isAvailable, isTrue);
+        expect(action.scope, ShortcutScope.reader);
+        expect(AppShortcuts.bindingOf(action), f8);
+        _setOverrides({action.name: custom.encode()});
+        expect(AppShortcuts.bindingOf(action), custom);
+        _setOverrides({action.name: ''});
+        expect(AppShortcuts.bindingOf(action), isNull);
+        _setOverrides({action.name: 'garbage'});
+        expect(AppShortcuts.bindingOf(action), f8);
+        _setOverrides({action.name: 8, 'collectImage': false});
+        expect(AppShortcuts.bindingOf(action), f8);
+      });
+    }
+    for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+      _onPlatform(platform, () => expect(action.isAvailable, isFalse));
+    }
+  });
+
+  test('new default keys yield to existing custom bindings', () {
+    _onPlatform(TargetPlatform.windows, () {
+      const f8 = KeyBinding(LogicalKeyboardKey.f8);
+      const translation = ShortcutAction.toggleImageTranslation;
+      for (final previous in [
+        ShortcutAction.collectImage,
+        ShortcutAction.toggleWindow,
+      ]) {
+        _setOverrides({previous.name: f8.encode()});
+        expect(AppShortcuts.bindingOf(previous), f8);
+        expect(AppShortcuts.bindingOf(translation), isNull);
+        expect(AppShortcuts.conflictOf(f8), previous);
+        expect(AppShortcuts.hint('Translation', translation), 'Translation');
+      }
+      _setOverrides({});
+      expect(AppShortcuts.bindingOf(translation), f8);
+    });
+  });
+
   test('conflicts are found across scopes and skip the edited action', () {
     _onPlatform(TargetPlatform.windows, () {
       const f11 = KeyBinding(LogicalKeyboardKey.f11);
@@ -295,7 +339,19 @@ void main() {
         await tester.pump();
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await tester.sendKeyEvent(LogicalKeyboardKey.f11);
-        expect(matched, [null, ShortcutAction.toggleFullscreen]);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f8);
+        _setOverrides({
+          'toggleImageTranslation': const KeyBinding(
+            LogicalKeyboardKey.keyT,
+          ).encode(),
+        });
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
+        expect(matched, [
+          null,
+          ShortcutAction.toggleFullscreen,
+          ShortcutAction.toggleImageTranslation,
+          null,
+        ]);
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
@@ -308,7 +364,8 @@ void main() {
         );
         AppShortcuts.suspended = true;
         await tester.sendKeyEvent(LogicalKeyboardKey.f11);
-        expect(matched, [null]);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f8);
+        expect(matched, [null, null]);
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );

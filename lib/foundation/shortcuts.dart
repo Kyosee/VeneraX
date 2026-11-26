@@ -31,7 +31,8 @@ enum ShortcutAction {
   toggleReaderMenu(ShortcutScope.reader, "Show / hide reader menu"),
   toggleAutoPageTurning(ShortcutScope.reader, "Auto Page Turning"),
   toggleNightMode(ShortcutScope.reader, "Night mode"),
-  collectImage(ShortcutScope.reader, "Collect the image");
+  collectImage(ShortcutScope.reader, "Collect the image"),
+  toggleImageTranslation(ShortcutScope.reader, "Toggle AI translation");
 
   const ShortcutAction(this.scope, this.title);
 
@@ -254,6 +255,9 @@ class AppShortcuts {
     ShortcutAction.toggleReaderMenu => const KeyBinding(
       LogicalKeyboardKey.enter,
     ),
+    ShortcutAction.toggleImageTranslation => const KeyBinding(
+      LogicalKeyboardKey.f8,
+    ),
     // A system-wide hotkey takes the combination away from every other
     // program, so it stays off until the user picks one.
     ShortcutAction.toggleWindow ||
@@ -268,10 +272,20 @@ class AppShortcuts {
   }
 
   static KeyBinding? bindingOf(ShortcutAction action) {
-    final stored = _stored()[action.name];
-    if (stored is! String) return defaultBinding(action);
-    if (stored.isEmpty) return null;
-    return KeyBinding.decode(stored) ?? defaultBinding(action);
+    final overrides = _stored();
+    final stored = overrides[action.name];
+    if (stored == '') return null;
+    final custom = stored is String ? KeyBinding.decode(stored) : null;
+    if (custom != null) return custom;
+    final fallback = defaultBinding(action);
+    if (fallback == null) return null;
+    // New defaults must not take a key already assigned by the user.
+    for (final other in ShortcutAction.values) {
+      if (other == action || !other.isAvailable) continue;
+      final value = overrides[other.name];
+      if (value is String && KeyBinding.decode(value) == fallback) return null;
+    }
+    return fallback;
   }
 
   static bool isCustomized(ShortcutAction action) =>

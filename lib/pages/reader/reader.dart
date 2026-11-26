@@ -412,6 +412,30 @@ class _ReaderState extends State<Reader>
     if (mounted) setState(() {});
   }
 
+  bool _changingImageTranslation = false;
+
+  Future<void> toggleImageTranslation() async {
+    if (_changingImageTranslation) return;
+    _changingImageTranslation = true;
+    try {
+      final changed = await TranslationGuidePage.requestComicChange(
+        context,
+        cid,
+        type.sourceKey,
+        !ImageTranslationService.isEnabledForComic(cid, type.sourceKey),
+      );
+      if (!mounted) return;
+      if (changed) showOriginalPages = false;
+      // The guide may also change this comic's languages before it is closed.
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      update();
+      if (_scaffoldState?.mounted == true) _scaffoldState!.update();
+    } finally {
+      _changingImageTranslation = false;
+    }
+  }
+
   /// A background page translation finished: rebuild so the affected page's
   /// provider identity changes and the translated image swaps in.
   void _onPageTranslated() {
@@ -654,6 +678,8 @@ class _ReaderState extends State<Reader>
         if (scaffold?.mounted == true) scaffold!.toggleNightMode();
       case ShortcutAction.collectImage:
         if (scaffold?.mounted == true) scaffold!.addImageFavorite();
+      case ShortcutAction.toggleImageTranslation:
+        unawaited(toggleImageTranslation());
       case ShortcutAction.toggleFullscreen:
       case ShortcutAction.toggleWindow:
         break;
