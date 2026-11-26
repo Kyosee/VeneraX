@@ -191,7 +191,7 @@ class _TranslationGuidePageState extends State<TranslationGuidePage> {
   Widget _providerStep() {
     final configured = LlmTranslator.isConfigured;
     return _stepBody(
-      'Add a provider, then test it with a sample line. Google Translate needs no key. For an AI model, enter your API URL, key and model name.',
+      'Add a provider, then test it with a sample line. For an AI model, enter your API URL, key and model name.',
       [
         if (LlmProviderStore.providers.isEmpty)
           FilledButton(

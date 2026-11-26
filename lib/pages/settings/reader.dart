@@ -203,7 +203,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
     var label = active.name.isNotEmpty
         ? active.name
         : (active.isPublicFree
-              ? "Google Translate (no key)".tl
+              ? "Google Translate".tl
               : (active.url.isNotEmpty ? active.url : "Unnamed provider".tl));
     var count = LlmProviderStore.providers.length;
     if (count > 1) {

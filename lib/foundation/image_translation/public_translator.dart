@@ -5,13 +5,10 @@ import 'package:venera/foundation/image_translation/rate_limiter.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
-/// Translates recognized bubble texts through Google Translate's free endpoint,
-/// which needs no account and no API key.
+/// Translates recognized bubble texts through Google Translate.
 ///
-/// This exists for readers who have no LLM service to point the app at. It is
-/// plain machine translation: no system prompt, no glossary, no cross-page
-/// context — each line is translated on its own. Quality is below a decent LLM,
-/// but setup is nothing.
+/// Each line is translated on its own, without a system prompt, glossary or
+/// cross-page context.
 ///
 /// The endpoint takes one request per batch of lines and answers with exactly
 /// one result per line, in order. That 1:1 alignment is what the render stage

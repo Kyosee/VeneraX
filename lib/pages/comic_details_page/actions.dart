@@ -186,9 +186,7 @@ abstract mixin class _ComicPageActions {
       showConfirmDialog(
         context: context,
         title: "LLM provider not configured".tl,
-        content:
-            "AI translation needs a translation service. Add one now? A no-key option is available."
-                .tl,
+        content: "AI translation needs a translation service. Add one now?".tl,
         confirmText: "Go to settings".tl,
         onConfirm: () => context.to(() => const LlmProvidersPage()),
       );

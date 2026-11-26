@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/public_translator.dart';
 
-/// The keyless engine returns one translation per input line, and the render
+/// Google Translate returns one translation per input line, and the render
 /// stage maps them onto bubbles by position. A response that is short, long or
 /// oddly shaped must therefore fail loudly instead of being padded — a silent
 /// pad would put a translation on the wrong bubble. These cases pin that, plus
@@ -91,7 +91,7 @@ void main() {
   });
 
   group('LlmProvider kind round-trip', () {
-    test('the keyless kind survives serialization', () {
+    test('the Google Translate kind survives serialization', () {
       var provider = LlmProvider(
         id: 'p1',
         name: 'free',
@@ -103,6 +103,23 @@ void main() {
       var restored = LlmProvider.fromJson(provider.toJson())!;
       expect(restored.kind, LlmProviderKind.publicFree);
       expect(restored.isPublicFree, isTrue);
+    });
+
+    test('renames only the old Google Translate default names', () {
+      for (final (kind, saved, expected) in [
+        ('public', 'Google Translate (no key)', 'Google Translate'),
+        ('public', '谷歌翻译（免 Key）', '谷歌翻译'),
+        ('public', '谷歌翻譯（免 Key）', '谷歌翻譯'),
+        ('public', '我的谷歌翻译（免 Key）', '我的谷歌翻译（免 Key）'),
+        ('openai', 'Google Translate (no key)', 'Google Translate (no key)'),
+      ]) {
+        final provider = LlmProvider.fromJson({
+          'id': 'p1',
+          'kind': kind,
+          'name': saved,
+        })!;
+        expect(provider.name, expected);
+      }
     });
 
     test('entries written before the field existed read as OpenAI', () {

@@ -112,7 +112,7 @@ class _LlmProvidersPageState extends State<LlmProvidersPage> {
     String activeId,
   ) {
     var subtitleParts = provider.isPublicFree
-        ? <String>["Google Translate (no key)".tl]
+        ? <String>["Google Translate".tl]
         : provider.isCustomScript
         ? <String>["Custom translation script".tl]
         : <String>[
@@ -353,14 +353,13 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
       );
       return;
     }
-    // The keyless service takes no endpoint, key or model: skip the validation
-    // that only applies to a user-supplied endpoint and store empty fields.
+    // Only user-supplied endpoints need validation.
     if (_kind == LlmProviderKind.publicFree) {
       context.pop(
         LlmProvider(
           id: existing?.id ?? const Uuid().v4(),
           name: _name.text.trim().isEmpty
-              ? "Google Translate (no key)".tl
+              ? "Google Translate".tl
               : _name.text.trim(),
           url: '',
           key: '',
@@ -414,8 +413,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
                     ChoiceChip(
                       label: Text(switch (kind) {
                         LlmProviderKind.openai => "AI model".tl,
-                        LlmProviderKind.publicFree =>
-                          "Google Translate (no key)".tl,
+                        LlmProviderKind.publicFree => "Google Translate".tl,
                         LlmProviderKind.customScript =>
                           "Custom translation script".tl,
                       }),
@@ -438,7 +436,7 @@ class _LlmProviderEditorState extends State<_LlmProviderEditor> {
               const SizedBox(height: 12),
               if (_kind == LlmProviderKind.publicFree)
                 Text(
-                  "Uses Google Translate's free endpoint — no account, no API key, nothing to fill in. Quality is lower than an AI model: each line is translated on its own, so wording and character names may vary between pages. It is not an official API, so it can be rate-limited or stop working at any time."
+                  "Google Translate processes each line separately, so wording and character names may vary between pages and quality may be lower than with an AI model. Its unofficial endpoint may be rate-limited or stop working at any time."
                       .tl,
                   style: ts.s14.copyWith(color: context.colorScheme.outline),
                 )

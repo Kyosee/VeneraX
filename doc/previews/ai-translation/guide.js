@@ -22,7 +22,7 @@
     ["准备识别模型", "下载模型，让设备读出漫画原文。"],
     ["为这本漫画开启翻译", "打开单本开关，在阅读器查看译图。"],
   ];
-  const providerNames = { google: "谷歌翻译（免 Key）", ai: "AI 模型" };
+  const providerNames = { google: "谷歌翻译", ai: "AI 模型" };
   const pathToComic = "漫画详情 › 右上角更多 › 开启 AI 翻译";
   const pathToReader = "阅读器 › 设置 › AI 翻译 › 阅读时翻译页面";
   let step = 0;
@@ -96,7 +96,7 @@
         <span class="step-index ${done[i] ? "done" : ""}" aria-label="${done[i] ? "已就绪" : `第 ${i + 1} 步`}">${done[i] ? "✓" : "0" + (i + 1)}</span>
         <span class="step-copy"><b>${title}</b><small>${text}</small></span>${icon("chevron")}</button></li>`).join("")}</ol></section>
       <aside class="faq"><header><span class="faq-icon">${icon("help")}</span><h2>常见问题</h2></header>
-      ${faq("一定要有 API Key 吗？", "可以选「谷歌翻译（免 Key）」，保存后点「测试翻译」。公共接口可能限流。已有兼容服务，也可以选「AI 模型」。")}
+      ${faq("可以选哪些翻译服务？", "可以选「谷歌翻译」，也可以选「AI 模型」接入自己的兼容服务。保存后点「测试翻译」。")}
       ${faq("为什么阅读时还是原图？", "先确认这本漫画已开启翻译、服务测试通过、原文对应的识别模型已下载。翻译过程中会先显示原图，失败时可点阅读器顶栏的错误图标重试。")}
       ${faq("可以提前翻译整章吗？", "为这本漫画开启翻译后，点详情页的「预翻译」选择章节。后台任务的进度可以在任务页查看。")}
       </aside></div>`;
@@ -175,7 +175,7 @@
     const saved = state.configured && state.provider === selectedProvider;
     const tested = saved && state.tested;
     return `<p class="sheet-intro">在「LLM 服务商」保存一个服务，再用「测试翻译」确认它能返回译文。</p>
-      <fieldset class="options"><legend>服务类型</legend>${["google", "ai"].map(key => `<label><input type="radio" name="provider" value="${key}" ${selectedProvider === key ? "checked" : ""}><span><b>${providerNames[key]}</b><small>${key === "google" ? "无需账号或密钥，适合先试一页。" : "使用自己的兼容服务，费用由服务商决定。"}</small></span></label>`).join("")}</fieldset>
+      <fieldset class="options"><legend>服务类型</legend>${["google", "ai"].map(key => `<label><input type="radio" name="provider" value="${key}" ${selectedProvider === key ? "checked" : ""}><span><b>${providerNames[key]}</b><small>${key === "google" ? "逐句翻译，不同页之间的用词可能不一致。" : "使用自己的兼容服务，费用由服务商决定。"}</small></span></label>`).join("")}</fieldset>
       ${selectedProvider === "ai" ? `<div class="example-config"><b>AI 模型怎么填？</b><span>填服务商给你的 API 地址和 API Key，再点「获取模型」选择模型。也可以手动填写模型名。</span></div>` : ""}
       <div class="practice"><div><b>测试翻译</b><small lang="ja">こんにちは / ありがとう</small></div>${button("test", tested ? "再次测试" : saved ? "模拟测试" : "模拟保存并测试", "tonal")}</div>
       ${tested ? '<p class="success" role="status">✓　翻译成功　你好 / 谢谢</p>' : saved ? '<p class="success" role="status">✓　示例服务已保存</p>' : button("save-provider", "仅保存示例配置", "text-button")}

@@ -34,11 +34,11 @@ void main() {
     // Default kind shows the endpoint fields.
     expect(find.text("LLM API URL".tl), findsOneWidget);
 
-    await tester.tap(find.text("Google Translate (no key)".tl).last);
+    await tester.tap(find.text("Google Translate".tl).last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    // Keyless kind hides them — nothing left to configure.
+    // Google Translate uses the built-in endpoint.
     expect(find.text("LLM API URL".tl), findsNothing);
     expect(find.text("LLM API Key".tl), findsNothing);
 

@@ -30,8 +30,7 @@ enum LlmProviderKind {
   /// A user-supplied OpenAI-compatible chat endpoint. Needs URL + model.
   openai('openai'),
 
-  /// Google Translate's free endpoint. Needs no configuration at all, so its
-  /// URL/key/model stay empty.
+  /// The built-in Google Translate endpoint.
   publicFree('public'),
 
   customScript('script');
@@ -55,8 +54,7 @@ enum LlmProviderKind {
 /// pick which one is active, so they can switch between vendors (or a paid
 /// account and a LAN gateway) without re-typing settings each time.
 ///
-/// A [LlmProviderKind.publicFree] entry is the exception: it carries no
-/// endpoint, key or model, because that service needs none.
+/// A [LlmProviderKind.publicFree] entry uses the built-in endpoint.
 class LlmProvider {
   LlmProvider({
     required this.id,
@@ -112,13 +110,24 @@ class LlmProvider {
     if (json is! Map) return null;
     var id = json['id'];
     if (id is! String || id.isEmpty) return null;
+    final kind = LlmProviderKind.fromToken(json['kind']);
+    var name = (json['name'] as String?)?.trim() ?? '';
+    if (kind == LlmProviderKind.publicFree) {
+      // Older versions saved the localized label when the name was left blank.
+      name = switch (name) {
+        'Google Translate (no key)' => 'Google Translate',
+        '谷歌翻译（免 Key）' => '谷歌翻译',
+        '谷歌翻譯（免 Key）' => '谷歌翻譯',
+        _ => name,
+      };
+    }
     return LlmProvider(
       id: id,
-      name: (json['name'] as String?)?.trim() ?? '',
+      name: name,
       url: (json['url'] as String?)?.trim() ?? '',
       key: (json['key'] as String?)?.trim() ?? '',
       model: (json['model'] as String?)?.trim() ?? '',
-      kind: LlmProviderKind.fromToken(json['kind']),
+      kind: kind,
     );
   }
 }
@@ -348,8 +357,8 @@ abstract class LlmTranslator {
 
   static String get _model => (LlmProviderStore.active?.model ?? '').trim();
 
-  /// Whether the active provider can translate right now. The keyless service
-  /// needs nothing configured; an OpenAI-compatible one needs a URL and model.
+  /// Whether the active provider can translate right now. An OpenAI-compatible
+  /// provider needs a URL and model.
   /// A key is optional on purpose: local gateways (ollama, lm-studio, one-api
   /// instances on LAN) often run without authentication.
   static bool get isConfigured {
