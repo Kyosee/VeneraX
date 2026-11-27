@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/image_translation/detector_preprocess.dart';
 
 import 'ocr_preprocess_benchmark.dart';
 
@@ -14,14 +13,13 @@ Future<void> main() async {
   try {
     final report = await Isolate.run(
       () => runOcrPreprocessBenchmark(
-        backend:
-            !rustDetectorAvailable &&
-                const bool.fromEnvironment('VENERAX_BENCH_ALLOW_MISSING')
-            ? 'dart'
-            : const String.fromEnvironment(
-                'VENERAX_BENCH_BACKEND',
-                defaultValue: 'compare',
-              ),
+        backend: const String.fromEnvironment(
+          'VENERAX_BENCH_BACKEND',
+          defaultValue: 'compare',
+        ),
+        allowMissingNative: const bool.fromEnvironment(
+          'VENERAX_BENCH_ALLOW_MISSING',
+        ),
         rounds: const int.fromEnvironment(
           'VENERAX_BENCH_ROUNDS',
           defaultValue: 15,

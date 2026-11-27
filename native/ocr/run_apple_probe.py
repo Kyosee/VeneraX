@@ -19,7 +19,9 @@ def parse_report(logs, expected_native):
     report = json.loads("".join(parts))
     if report["nativeAvailable"] != expected_native:
         raise RuntimeError("Apple OCR probe loaded the wrong backend.")
-    if expected_native and not all(case["bitwiseEqual"] for case in report["cases"]):
+    if report["backend"] != "compare" or not report["cases"]:
+        raise RuntimeError("Apple OCR probe did not compare the production path.")
+    if not all(case["bitwiseEqual"] for case in report["cases"]):
         raise RuntimeError("Apple OCR output differs from Dart.")
     return report
 

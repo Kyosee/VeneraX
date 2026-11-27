@@ -16,6 +16,7 @@ Map<String, Object?> runOcrPreprocessBenchmark({
   int rounds = 15,
   int warmups = 3,
   String? caseName,
+  bool allowMissingNative = false,
 }) {
   if (!const ['compare', 'dart', 'rust'].contains(backend)) {
     throw ArgumentError.value(backend, 'backend', 'Use compare, dart or rust');
@@ -23,7 +24,7 @@ Map<String, Object?> runOcrPreprocessBenchmark({
   if (rounds < 1 || warmups < 1) {
     throw ArgumentError('rounds and warmups must be positive');
   }
-  if (backend != 'dart' && !rustDetectorAvailable) {
+  if (backend != 'dart' && !rustDetectorAvailable && !allowMissingNative) {
     throw StateError('The packaged Rust OCR library is unavailable');
   }
   final rssBefore = ProcessInfo.currentRss;
@@ -73,6 +74,13 @@ Map<String, Object?> runOcrPreprocessBenchmark({
     }
     if (!consumedValue.isFinite) {
       throw StateError('Invalid output in ${fixture.name}');
+    }
+    final expectedNative =
+        backend != 'dart' &&
+        rustDetectorAvailable &&
+        fixture.name != 'wide_fallback';
+    if (nativeUsed != expectedNative) {
+      throw StateError('Unexpected preprocessing backend in ${fixture.name}');
     }
     if (backend == 'compare') {
       _verifyEqual(image, fixture.rotate);

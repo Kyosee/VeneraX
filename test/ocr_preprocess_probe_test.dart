@@ -2,10 +2,30 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/image_translation/detector_preprocess.dart';
 
+import '../tool/ocr_preprocess_benchmark.dart';
 import '../tool/ocr_preprocess_probe.dart';
 
 void main() {
+  test('probe compares automatic backend selection with Dart', () {
+    final report = runOcrPreprocessBenchmark(
+      allowMissingNative: true,
+      rounds: 1,
+      warmups: 1,
+      caseName: 'scaled',
+    );
+    expect(report['backend'], 'compare');
+    expect(report['nativeAvailable'], rustDetectorAvailable);
+    final result = (report['cases'] as List).single as Map;
+    expect(result['bitwiseEqual'], true);
+    expect(result['rustUsed'], rustDetectorAvailable);
+    expect(result['comparedFloat32Elements'], 3686400);
+    if (!rustDetectorAvailable) {
+      expect(runOcrPreprocessBenchmark, throwsStateError);
+    }
+  });
+
   test('long benchmark report survives the device log message limit', () {
     final report = <String, Object?>{
       'nativeAvailable': true,

@@ -80,7 +80,7 @@ jobs:
         run: |
           library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
           flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true --dart-define=VENERAX_TEST_OCR_LIBRARY="$library" test/ocr_detector_preprocess_test.dart test/ocr_preprocess_probe_test.dart
-          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=false --dart-define=VENERAX_TEST_OCR_LIBRARY="$PWD/build/ocr/missing-library" test/ocr_detector_preprocess_test.dart
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=false --dart-define=VENERAX_TEST_OCR_LIBRARY="$PWD/build/ocr/missing-library" test/ocr_detector_preprocess_test.dart test/ocr_preprocess_probe_test.dart
       - name: Compare Dart and Rust in AOT
         run: |
           library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
