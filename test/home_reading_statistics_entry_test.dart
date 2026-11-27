@@ -23,6 +23,7 @@ void main() {
     App.dataPath = tempDir.path;
     await HistoryManager().init();
 
+    appdata.settings['holidayEffects'] = false;
     appdata.settings['homeSections'] = [
       for (final section in kHomeSections)
         {'id': section.id, 'visible': section.id == 'history'},

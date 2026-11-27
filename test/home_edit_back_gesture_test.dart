@@ -21,6 +21,7 @@ void main() {
   });
 
   setUp(() {
+    appdata.settings['holidayEffects'] = false;
     appdata.settings['homeSections'] = [
       for (final section in kHomeSections) {'id': section.id, 'visible': false},
     ];

@@ -453,6 +453,7 @@ void main() {
 
   testWidgets('home preview follows the library order', (tester) async {
     final sections = appdata.settings['homeSections'];
+    appdata.settings['holidayEffects'] = false;
     appdata.settings['homeSections'] = [
       for (final section in kHomeSections)
         {'id': section.id, 'visible': section.id == 'local'},

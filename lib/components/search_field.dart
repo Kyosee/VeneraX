@@ -13,8 +13,9 @@ class AppSearchField extends StatefulWidget {
     this.autofocus = false,
     this.onChanged,
     this.onTap,
+    this.trailing,
     this.height,
-  });
+  }) : assert(trailing == null || onTap != null);
 
   final TextEditingController? controller;
 
@@ -26,6 +27,9 @@ class AppSearchField extends StatefulWidget {
 
   /// Renders the field as a button instead of a text input.
   final VoidCallback? onTap;
+
+  /// An independent action at the end of a read-only search entry.
+  final Widget? trailing;
 
   /// Defaults to [defaultHeight].
   final double? height;
@@ -73,11 +77,24 @@ class _AppSearchFieldState extends State<AppSearchField> {
               child: Text(
                 hint,
                 style: ts.s16.withColor(context.colorScheme.onSurfaceVariant),
+                maxLines: widget.trailing == null ? null : 1,
+                overflow: widget.trailing == null
+                    ? null
+                    : TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
       );
+      if (widget.trailing != null) {
+        content = Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: content),
+            widget.trailing!,
+          ],
+        );
+      }
     } else {
       content = Row(
         children: [

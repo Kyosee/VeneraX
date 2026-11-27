@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/components/holiday_card.dart';
+import 'package:venera/components/holiday_decorations.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/background_keepalive.dart';
 import 'package:venera/foundation/battery_optimization.dart';
@@ -11,6 +13,7 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/holiday.dart';
 import 'package:venera/foundation/home_layout.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/image_translation/translation_store.dart';
@@ -165,31 +168,121 @@ class _HomeSectionTitle extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.now = DateTime.now});
+
+  final DateTime Function() now;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool editMode = false;
 
   late List<HomeSectionConfig> layout;
+  HolidayOccurrence? _holiday;
+  Timer? _holidayTimer;
+  DialogRoute<void>? _holidayCard;
+  final _snow = OverlayPortalController();
+  bool _suspended = false;
 
   @override
   void initState() {
+    super.initState();
     layout = normalizeHomeLayout();
     appdata.settings.addListener(_onSettingsChanged);
-    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshHoliday();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _holidayTimer?.cancel();
+    final card = _holidayCard;
+    if (card != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (card.isActive) card.navigator?.removeRoute(card);
+      });
+    }
     appdata.settings.removeListener(_onSettingsChanged);
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _suspended =
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached;
+    if (_suspended) {
+      _holidayTimer?.cancel();
+    } else {
+      _refreshHoliday();
+    }
+  }
+
+  void _refreshHoliday() {
+    _holidayTimer?.cancel();
+    HolidayOccurrence? next;
+    if (appdata.settings['holidayEffects'] != false) {
+      final now = widget.now();
+      next = holidayAt(now);
+      if (next?.dismissalKey == appdata.settings['dismissedHoliday']) {
+        next = null;
+      }
+      if (!_suspended) {
+        final midnight = DateTime(now.year, now.month, now.day + 1);
+        final remaining = midnight.difference(now);
+        // Also follow clock or time-zone changes while the desktop stays open.
+        const recheck = Duration(minutes: 1);
+        _holidayTimer = Timer(
+          remaining < recheck ? remaining : recheck,
+          _refreshHoliday,
+        );
+      }
+    }
+    if (next == _holiday) return;
+    setState(() => _holiday = next);
+    if (next?.holiday == Holiday.christmas) {
+      _snow.show();
+    } else if (_snow.isShowing) {
+      _snow.hide();
+    }
+    final card = _holidayCard;
+    if (card != null && card.isActive) card.navigator?.removeRoute(card);
+  }
+
+  Future<void> _openHolidayCard() async {
+    _refreshHoliday();
+    final occurrence = _holiday;
+    if (occurrence == null || _holidayCard != null) return;
+    final christmas = occurrence.holiday == Holiday.christmas;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = DialogRoute<void>(
+      context: context,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+      builder: (dialogContext) => HolidayCard(
+        christmas: christmas,
+        year: occurrence.year,
+        greeting: (christmas ? 'Merry Christmas' : 'Happy New Year').tl,
+        backLabel: 'Back to home'.tl,
+        dismissLabel: 'Turn off effects for this holiday'.tl,
+        onBack: () => Navigator.of(dialogContext).pop(),
+        onDismiss: () {
+          appdata.settings['dismissedHoliday'] = occurrence.dismissalKey;
+          unawaited(appdata.saveData());
+        },
+      ),
+    );
+    setState(() => _holidayCard = route);
+    await navigator.push(route);
+    await route.completed;
+    if (mounted) setState(() => _holidayCard = null);
+  }
+
   void _onSettingsChanged() {
+    _refreshHoliday();
     // Re-read the layout when settings change (e.g. edited from the Appearance
     // settings page, or a new layout arrived via WebDAV sync download). Skip
     // while editing so an incoming sync doesn't yank the list out from under
@@ -266,11 +359,18 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final animateHoliday =
+        _holiday != null &&
+        _holidayCard == null &&
+        (ModalRoute.isCurrentOf(context) ?? true);
     var slivers = <Widget>[
       SliverPadding(padding: EdgeInsets.only(top: context.padding.top)),
       _SearchBar(
         editing: editMode,
         onEdit: editMode ? _exitEditMode : _enterEditMode,
+        holiday: _holiday?.holiday,
+        animateHoliday: animateHoliday,
+        onOpenCard: _openHolidayCard,
       ),
     ];
     if (editMode) {
@@ -322,14 +422,26 @@ class _HomePageState extends State<HomePage> {
           _exitEditMode();
         }
       },
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.width > changePoint ? 16 : 0,
+      child: OverlayPortal(
+        controller: _snow,
+        overlayChildBuilder: (_) => Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: TickerMode(
+            enabled: animateHoliday,
+            child: const HolidaySnowbank(),
+          ),
         ),
-        // The main pane already supplies the correct width beside the sidebar.
-        // Keep the feed fluid so wide desktop windows do not leave a centered
-        // column and a large unused area on the right.
-        child: SizedBox(width: double.infinity, child: widget),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: context.width > changePoint ? 16 : 0,
+          ),
+          // The main pane already supplies the correct width beside the sidebar.
+          // Keep the feed fluid so wide desktop windows do not leave a centered
+          // column and a large unused area on the right.
+          child: SizedBox(width: double.infinity, child: widget),
+        ),
       ),
     );
   }
@@ -351,11 +463,18 @@ class _HomeEditBanner extends StatelessWidget {
           color: context.colorScheme.primaryContainer.toOpacity(0.4),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(
+        child: OverflowBar(
+          alignment: MainAxisAlignment.spaceBetween,
+          overflowAlignment: OverflowBarAlignment.start,
           children: [
-            const Icon(Icons.edit_outlined, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text('Edit Home'.tl, style: ts.s16)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.edit_outlined, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text('Edit Home'.tl, style: ts.s16)),
+              ],
+            ),
             TextButton(onPressed: onReset, child: Text('Reset to Default'.tl)),
             FilledButton(onPressed: onDone, child: Text('Done'.tl)),
           ],
@@ -442,54 +561,159 @@ class _AllHiddenHint extends StatelessWidget {
 }
 
 class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.editing, required this.onEdit});
+  const _SearchBar({
+    required this.editing,
+    required this.onEdit,
+    required this.holiday,
+    required this.animateHoliday,
+    required this.onOpenCard,
+  });
 
   final bool editing;
   final VoidCallback onEdit;
+  final Holiday? holiday;
+  final bool animateHoliday;
+  final VoidCallback onOpenCard;
+
+  static const double _entryWidth = 48;
 
   @override
   Widget build(BuildContext context) {
     final double height = AppSearchField.defaultHeight;
-    return SliverToBoxAdapter(
-      child: Container(
-        height: height,
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: AppSearchField(
-                height: height,
-                onTap: () {
-                  context.to(() => const SearchPage());
-                },
-              ),
+    final christmas = holiday == Holiday.christmas;
+    final controls = Container(
+      height: height,
+      margin: const EdgeInsets.all(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: AppSearchField(
+              height: height,
+              trailing: holiday == null
+                  ? null
+                  : SizedBox(
+                      width: _entryWidth,
+                      height: height,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        tooltip: 'Open holiday card'.tl,
+                        icon: HolidayEntryIcon(christmas: christmas),
+                        onPressed: onOpenCard,
+                      ),
+                    ),
+              onTap: () {
+                context.to(() => const SearchPage());
+              },
             ),
-            _SyncButton(height: height),
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: SizedBox.square(
-                dimension: height,
-                child: Material(
-                  color: context.colorScheme.surfaceContainerHigh,
-                  shape: const CircleBorder(),
-                  clipBehavior: Clip.antiAlias,
-                  child: IconButton(
-                    onPressed: onEdit,
-                    tooltip: editing ? 'Done'.tl : 'Edit Home'.tl,
-                    style: IconButton.styleFrom(
-                      fixedSize: Size.square(height),
-                      foregroundColor: context.colorScheme.onSurfaceVariant,
-                    ),
-                    icon: Icon(
-                      editing ? Icons.check_rounded : Icons.tune_rounded,
-                    ),
+          ),
+          _SyncButton(height: height),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: SizedBox.square(
+              dimension: height,
+              child: Material(
+                color: context.colorScheme.surfaceContainerHigh,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: IconButton(
+                  onPressed: onEdit,
+                  tooltip: editing ? 'Done'.tl : 'Edit Home'.tl,
+                  style: IconButton.styleFrom(
+                    fixedSize: Size.square(height),
+                    foregroundColor: context.colorScheme.onSurfaceVariant,
+                  ),
+                  icon: Icon(
+                    editing ? Icons.check_rounded : Icons.tune_rounded,
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+    return SliverToBoxAdapter(
+      child: Stack(
+        children: [
+          controls,
+          if (holiday != null)
+            Positioned.fill(
+              child: TickerMode(
+                enabled: animateHoliday,
+                child: ListenableBuilder(
+                  listenable: DataSync(),
+                  builder: (context, _) => LayoutBuilder(
+                    builder: (context, constraints) {
+                      final edit = Rect.fromLTWH(
+                        constraints.maxWidth - 8 - height,
+                        8,
+                        height,
+                        height,
+                      );
+                      final syncWidth = DataSync().isConfigured
+                          ? height + 8
+                          : 0.0;
+                      final search = Rect.fromLTRB(
+                        8,
+                        8,
+                        edit.left - 8 - syncWidth,
+                        edit.bottom,
+                      );
+                      final label = TextPainter(
+                        text: TextSpan(
+                          text: 'Search'.tl,
+                          style: DefaultTextStyle.of(
+                            context,
+                          ).style.merge(ts.s16),
+                        ),
+                        textDirection: Directionality.of(context),
+                        textScaler: MediaQuery.textScalerOf(context),
+                        maxLines: 1,
+                      )..layout();
+                      final labelWidth = (48 + label.width + 2).clamp(
+                        0.0,
+                        (search.width - _entryWidth).clamp(
+                          0.0,
+                          double.infinity,
+                        ),
+                      );
+                      final labelHeight = label.height < 24
+                          ? 24.0
+                          : label.height;
+                      label.dispose();
+                      return HolidayToolbarTrim(
+                        christmas: christmas,
+                        searchBounds: search,
+                        settingsBounds: edit,
+                        protectedAreas: [
+                          Rect.fromLTWH(
+                            search.left + 12,
+                            search.center.dy - labelHeight / 2,
+                            (labelWidth - 12).clamp(0.0, double.infinity),
+                            labelHeight,
+                          ),
+                          Rect.fromCenter(
+                            center: Offset(
+                              search.right - _entryWidth / 2,
+                              search.center.dy,
+                            ),
+                            width: 35,
+                            height: 37,
+                          ),
+                          Rect.fromCenter(
+                            center: edit.center,
+                            width: 26,
+                            height: 26,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

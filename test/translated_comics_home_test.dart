@@ -54,6 +54,7 @@ void main() {
   });
 
   setUp(() {
+    appdata.settings['holidayEffects'] = false;
     TranslationStore().clearAll();
     appdata.implicitData['imageTranslationEnabledComics'] = {
       'pending@src': true,

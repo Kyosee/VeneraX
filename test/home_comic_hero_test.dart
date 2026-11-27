@@ -36,6 +36,7 @@ void main() {
 
   setUp(() async {
     appdata.settings['language'] = 'en-US';
+    appdata.settings['holidayEffects'] = false;
     appdata.settings['homeSections'] = [
       for (final section in kHomeSections)
         {
