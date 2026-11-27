@@ -1,0 +1,23 @@
+name: Apple AVIF decoder tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - assets/avif/**
+      - tool/avif/**
+      - test/fixtures/avif_page.dart
+      - .github/workflows/avif-apple.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pixels:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Decode the same page on macOS and an iOS simulator
+        run: bash tool/avif/apple_probe.sh
