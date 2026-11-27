@@ -24,6 +24,7 @@ import 'follow_update_result.dart';
 import 'follow_update_tasks.dart';
 import 'history.dart';
 import 'image_provider/base_image_provider.dart';
+import 'image_provider/comic_image_codec.dart';
 import 'local.dart';
 import 'log.dart';
 
@@ -560,19 +561,18 @@ class ReadingWidgetService with WidgetsBindingObserver {
                   (provider! as BaseImageProvider).load(chunks, checkCurrent))
               .timeout(const Duration(seconds: 8));
       checkCurrent();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      ui.ImageDescriptor? descriptor;
       ui.Codec? codec;
       ui.Image? image;
       try {
-        descriptor = await ui.ImageDescriptor.encoded(buffer);
-        final scale = math.min(
-          1.0,
-          math.min(240 / descriptor.width, 320 / descriptor.height),
-        );
-        codec = await descriptor.instantiateCodec(
-          targetWidth: math.max(1, (descriptor.width * scale).round()),
-          targetHeight: math.max(1, (descriptor.height * scale).round()),
+        codec = await decodeComicImage(
+          bytes,
+          getTargetSize: (width, height) {
+            final scale = math.min(1.0, math.min(240 / width, 320 / height));
+            return ui.TargetImageSize(
+              width: math.max(1, (width * scale).round()),
+              height: math.max(1, (height * scale).round()),
+            );
+          },
         );
         image = (await codec.getNextFrame()).image;
         final png = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -589,8 +589,6 @@ class ReadingWidgetService with WidgetsBindingObserver {
       } finally {
         image?.dispose();
         codec?.dispose();
-        descriptor?.dispose();
-        buffer.dispose();
       }
     } catch (_) {
       return '';

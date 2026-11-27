@@ -13,6 +13,8 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'fixtures/avif_page.dart';
+
 const _sourceKey = 'missing_pages_test';
 
 final _png = [
@@ -113,7 +115,7 @@ void main() {
     int threads = 3,
   }) async {
     appdata.settings['downloadThreads'] = threads;
-    final dir = Directory('${root.path}/$comicId')..createSync();
+    final dir = Directory('${LocalManager().path}/$comicId')..createSync();
     for (final page in pages.where((p) => p.startsWith('good'))) {
       await _cachePage(comicId, page);
     }
@@ -144,6 +146,25 @@ void main() {
 
   bool pageSaved(ImagesDownloadTask task, int index) =>
       File('${task.path}/$index.png').existsSync();
+
+  test('saves an AVIF from an extensionless page key for offline reading', () async {
+    const comicId = 'avif-download';
+    const pageKey = 'page/opaque';
+    final image = avifPageBytes();
+    await CacheManager().writeCache(
+      ImageDownloader.imageCacheKey(pageKey, _sourceKey, comicId, ''),
+      image,
+    );
+    final task = await start(comicId, [pageKey]);
+    await _until(
+      () => task.isError || LocalManager().find(comicId, task.comicType) != null,
+    );
+    expect(task.isError, isFalse);
+    final pages = await LocalManager().getImages(comicId, task.comicType, 1);
+    expect(pages.single, endsWith('0.avif'));
+    final saved = File(pages.single.substring('file://'.length));
+    expect(await saved.readAsBytes(), image);
+  });
 
   test('a failing page is skipped, then filled in on retry', () async {
     final task = await start('retry', ['good0', 'bad1', 'good2']);

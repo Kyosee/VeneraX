@@ -16,6 +16,8 @@ import 'package:venera/utils/cbz.dart';
 import 'package:venera/utils/io.dart' show overrideIO;
 import 'package:zip_flutter/zip_flutter.dart';
 
+import 'fixtures/avif_page.dart';
+
 class _SafArchive extends Fake implements AndroidFile {
   _SafArchive(this.path, this.contents);
 
@@ -81,6 +83,20 @@ void main() {
       throwsA(isA<Exception>()),
     );
     expect(Directory(App.cachePath).listSync(), isEmpty);
+  });
+
+  test('imports a CBZ containing only an AVIF page and a cover', () async {
+    final input = await Directory('${root.path}/avif-pages').create();
+    final image = avifPageBytes();
+    await File('${input.path}/001.AVIF').writeAsBytes(image);
+    await File('${input.path}/cover.Avif').writeAsBytes(image);
+    final archive = File('${root.path}/avif-book.cbz');
+    await ZipFile.compressFolderAsync(input.path, archive.path, 4);
+    final comic = (await CBZ.importAll(archive)).single;
+    expect(await comic.coverFile.readAsBytes(), image);
+    final pages = await LocalManager().getImagesForComic(comic, 1);
+    final saved = File(pages.single.substring('file://'.length));
+    expect(await saved.readAsBytes(), image);
   });
 
   test('CBZ preserves every page in unequal length chapters', () async {

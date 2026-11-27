@@ -27,12 +27,41 @@ final _resolver = MimeTypeResolver()
   // 7z
   ..addMagicNumber([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], 'application/x-7z-compressed')
   // rar
-  ..addMagicNumber([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07], 'application/vnd.rar')
-  // avif
-  ..addMagicNumber([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], 'image/avif')
-;
+  ..addMagicNumber([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07], 'application/vnd.rar');
+
+/// AVIF may declare its brand as the major brand or a compatible brand.
+bool isAvifImage(List<int> data) {
+  int uint32At(int offset) =>
+      (data[offset] << 24) |
+      (data[offset + 1] << 16) |
+      (data[offset + 2] << 8) |
+      data[offset + 3];
+
+  if (data.length < 16 || uint32At(4) != 0x66747970) return false; // ftyp
+  var size = uint32At(0);
+  var majorBrand = 8;
+  if (size == 1) {
+    size = uint32At(8) * 0x100000000 + uint32At(12);
+    majorBrand = 16;
+  }
+  if (size < majorBrand + 8 || size > data.length || size % 4 != 0) {
+    return false;
+  }
+  bool isAvifBrand(int offset) {
+    final brand = uint32At(offset);
+    return brand == 0x61766966 || brand == 0x61766973; // avif, avis
+  }
+
+  if (isAvifBrand(majorBrand)) return true;
+  // The major brand is followed by a four-byte minor version.
+  for (var offset = majorBrand + 8; offset < size; offset += 4) {
+    if (isAvifBrand(offset)) return true;
+  }
+  return false;
+}
 
 FileType detectFileType(List<int> data) {
+  if (isAvifImage(data)) return const FileType('.avif', 'image/avif');
   var mime = _resolver.lookup('no-file', headerBytes: data);
   var ext = mime == null ? '' : extensionFromMime(mime);
   if(ext == 'jpe') {

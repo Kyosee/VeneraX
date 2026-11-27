@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/image_provider/avif_fallback.dart';
 import 'package:venera/foundation/image_provider/base_image_provider.dart';
 
+import 'fixtures/avif_page.dart';
+
 /// Bytes whose header parses but whose pixels do not decode reach the framework
 /// as a working codec; only `getNextFrame()` fails, and the framework reports
 /// that straight to `FlutterError`. A provider that wraps `decode()` therefore
@@ -64,6 +66,47 @@ void main() {
   tearDown(AvifFallbackRegistry.instance.clear);
 
   const url = 'https://img.example.invalid/p/001.avif';
+
+  for (final failsAtHeader in [true, false]) {
+    test(
+      'renders AVIF when the native ${failsAtHeader ? 'header' : 'frame'} decoder fails',
+      () async {
+        final provider = _Provider(url, avifPageBytes());
+        final stream = provider.loadImage(provider, (
+          buffer, {
+          getTargetSize,
+        }) async {
+          buffer.dispose();
+          if (failsAtHeader) throw StateError('Unsupported format');
+          return _FailingCodec();
+        });
+        final ready = Completer<ImageInfo>();
+        final listener = ImageStreamListener(
+          (info, _) => ready.complete(info),
+          onError: ready.completeError,
+        );
+        stream.addListener(listener);
+        try {
+          final info = await ready.future;
+          try {
+            expect(info.image.width, 16);
+            expect(info.image.height, 8);
+            final pixels = (await info.image.toByteData(
+              format: ui.ImageByteFormat.rawStraightRgba,
+            ))!;
+            expect(pixels.getUint8(4 * 2), greaterThan(230));
+            expect(pixels.getUint8(4 * 13 + 2), greaterThan(230));
+            expect(AvifFallbackRegistry.instance.hasFailed(url), isFalse);
+            expect(_Provider.evicted, isFalse);
+          } finally {
+            info.dispose();
+          }
+        } finally {
+          stream.removeListener(listener);
+        }
+      },
+    );
+  }
 
   test('a frame-decode failure records the url and drops the cache', () async {
     final provider = _Provider(url, Uint8List.fromList([1, 2, 3]));

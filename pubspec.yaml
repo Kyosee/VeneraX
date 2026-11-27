@@ -132,6 +132,7 @@ flutter:
     - assets/translation.json
     - assets/translation_guide_seaside.png
     - assets/init.js
+    - assets/avif/
     - assets/app_icon.png
     - assets/app_icon.ico
     - assets/tags.json

@@ -391,7 +391,6 @@ class ImportComic {
     var hasSubDir = false;
     var hasImageInRoot = false;
     var hasMetaInRoot = false;
-    const imgExt = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'jpe'];
     const metaFiles = ['details.json', 'comicinfo.xml', 'metadata.json'];
 
     await for (var e in path.list()) {
@@ -402,7 +401,7 @@ class ImportComic {
         final ext = name.split('.').last;
         if (ext == 'venera_comics') hasVeneraComics = true;
         if (CBZ.archiveExts.contains(ext)) hasArchive = true;
-        if (imgExt.contains(ext)) hasImageInRoot = true;
+        if (isLocalComicImage(e)) hasImageInRoot = true;
         if (metaFiles.contains(name)) hasMetaInRoot = true;
       }
     }

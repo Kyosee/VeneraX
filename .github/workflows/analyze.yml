@@ -64,6 +64,9 @@ jobs:
           test/comic_state_repository_test.dart
           test/comic_cover_refresh_test.dart
           test/comic_detail_cover_provider_test.dart
+          test/avif_frame_decode_guard_test.dart
+          test/avif_input_test.dart
+          test/avif_reader_test.dart
           test/comic_collection_store_test.dart
           test/export_app_data_test.dart
           test/venera_comics_export_test.dart

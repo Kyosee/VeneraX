@@ -2,11 +2,12 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
+import 'package:venera/foundation/image_provider/comic_image_codec.dart';
 
 Future<void> writeImageToClipboard(Uint8List imageBytes) async {
   const channel = MethodChannel("venera/clipboard");
   if (Platform.isWindows || Platform.isLinux) {
-    var image = await instantiateImageCodec(imageBytes);
+    var image = await decodeComicImage(imageBytes);
     var frame = await image.getNextFrame();
     var data = await frame.image.toByteData(format: ImageByteFormat.rawRgba);
     await channel.invokeMethod("writeImageToClipboard", {

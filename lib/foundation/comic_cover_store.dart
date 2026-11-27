@@ -12,9 +12,9 @@ abstract final class ComicCoverStore {
   static const settingsKey = 'customComicCovers';
   static const inheritedWebdavKey = 'webdavInheritedCustomCovers';
   static const _collections = ComicCollectionStore.settingsKey;
-  static const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  static const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'];
   static final _fileName = RegExp(
-    r'^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp|gif)$',
+    r'^[A-Za-z0-9_-]+\.(?:jpe?g|png|webp|gif|avif)$',
     caseSensitive: false,
   );
 

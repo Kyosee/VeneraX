@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/image_provider/comic_image_codec.dart';
 import 'package:venera/foundation/image_translation/llm_translator.dart';
 import 'package:venera/foundation/image_translation/page_renderer.dart';
 import 'package:venera/foundation/image_translation/translation_models.dart';
@@ -229,48 +230,39 @@ class PageTranslationPipeline {
   }
 
   Future<RgbaImage> _decode(Uint8List bytes) async {
-    var buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    var descriptor = await ui.ImageDescriptor.encoded(buffer);
     // Bound decoded size: huge pages (webtoon strips) are downscaled so the
     // pipeline's RGBA buffers stay within a sane memory budget, and no
     // dimension exceeds common GPU texture limits (the rendered result goes
     // through Picture.toImage).
     const maxPixels = 12 * 1024 * 1024;
     const maxDimension = 8000;
-    var w = descriptor.width;
-    var h = descriptor.height;
-    var scale = 1.0;
-    if (w * h > maxPixels) {
-      scale = math.sqrt(maxPixels / (w * h));
-    }
-    if (math.max(w, h) * scale > maxDimension) {
-      scale = maxDimension / math.max(w, h);
-    }
-    int? targetW;
-    int? targetH;
-    if (scale < 1.0) {
-      // Both dimensions must be passed: instantiateCodec does not derive the
-      // missing one from the aspect ratio.
-      targetW = math.max(1, (w * scale).round());
-      targetH = math.max(1, (h * scale).round());
-    }
-    var codec = await descriptor.instantiateCodec(
-      targetWidth: targetW,
-      targetHeight: targetH,
+    final codec = await decodeComicImage(
+      bytes,
+      getTargetSize: (w, h) {
+        final scale = math.min(
+          1.0,
+          math.min(
+            math.sqrt(maxPixels / (w * h)),
+            maxDimension / math.max(w, h),
+          ),
+        );
+        return ui.TargetImageSize(
+          width: math.max(1, (w * scale).round()),
+          height: math.max(1, (h * scale).round()),
+        );
+      },
     );
-    var frame = await codec.getNextFrame();
-    var image = frame.image;
+    ui.Image? image;
     try {
+      image = (await codec.getNextFrame()).image;
       var data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) {
         throw Exception('Failed to read image pixels');
       }
       return RgbaImage(image.width, image.height, data.buffer.asUint8List());
     } finally {
-      image.dispose();
+      image?.dispose();
       codec.dispose();
-      descriptor.dispose();
-      buffer.dispose();
     }
   }
 

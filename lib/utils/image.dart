@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:flutter_qjs/flutter_qjs.dart';
+import 'package:venera/foundation/image_provider/comic_image_codec.dart';
 import 'package:lodepng_flutter/lodepng_flutter.dart' as lodepng;
 
 class Image {
@@ -24,7 +25,7 @@ class Image {
   Image.empty(this.width, this.height) : _data = Uint32List(width * height);
 
   static Future<Image> decodeImage(Uint8List data) async {
-    var codec = await ui.instantiateImageCodec(data);
+    var codec = await decodeComicImage(data);
     var frame = await codec.getNextFrame();
     codec.dispose();
     var info = await frame.image.toByteData(

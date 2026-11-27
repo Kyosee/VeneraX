@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/utils/file_type.dart';
 import 'avif_fallback.dart';
+import 'comic_image_codec.dart';
 
 abstract class BaseImageProvider<T extends BaseImageProvider<T>>
     extends ImageProvider<T> {
@@ -119,19 +121,19 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
       }
 
       try {
-        final buffer = await ImmutableBuffer.fromUint8List(data);
-        final codec = await decode(
-          buffer,
+        final codec = await decodeComicImage(
+          data,
+          decode: decode,
           getTargetSize: enableResize ? _getTargetSize : null,
         );
-        // Only the header has been parsed at this point. The pixel decode runs
-        // later, when the framework pulls the first frame, and its failure is
-        // reported straight to FlutterError — never to this catch. Wrap the
-        // codec so that failure still evicts the bad bytes and can redirect the
-        // next load to another encoding.
+        // The framework can still encounter a bad frame after the codec opens.
         return _GuardedCodec(codec, _onFrameDecodeFailed);
       } catch (e) {
-        await evictCorruptedCache();
+        if (isAvifImage(data)) {
+          await _onFrameDecodeFailed(e);
+        } else {
+          await evictCorruptedCache();
+        }
         if (data.length < 2 * 1024) {
           // data is too short, it's likely that the data is text, not image
           try {

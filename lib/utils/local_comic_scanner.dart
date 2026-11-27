@@ -5,9 +5,11 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/comic_metadata_resolver.dart';
 import 'package:venera/utils/io.dart';
 
-const _localComicImageExtensions = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'jpe'};
+const _localComicImageExtensions = {
+  'jpg', 'jpeg', 'png', 'webp', 'gif', 'jpe', 'avif',
+};
 
-bool _isLocalComicImage(File file) {
+bool isLocalComicImage(File file) {
   final name = file.name.toLowerCase();
   final dot = name.lastIndexOf('.');
   return dot >= 0 &&
@@ -58,7 +60,7 @@ Future<LocalComic?> scanLocalComicDirectory(
         }
       }
       chapterDirectories.add(entry);
-    } else if (entry is File && _isLocalComicImage(entry)) {
+    } else if (entry is File && isLocalComicImage(entry)) {
       rootImages.add(entry);
     }
   }
@@ -79,7 +81,7 @@ Future<LocalComic?> scanLocalComicDirectory(
     for (final chapterDirectory in chapterDirectories) {
       final chapterImages = <File>[];
       await for (final entry in chapterDirectory.list()) {
-        if (entry is File && _isLocalComicImage(entry)) {
+        if (entry is File && isLocalComicImage(entry)) {
           chapterImages.add(entry);
         }
       }
