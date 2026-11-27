@@ -2,8 +2,14 @@ name: OCR native verification
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Verification suite
+        type: choice
+        default: all
+        options: [all, desktop, android, apple-runtime]
   push:
-    branches: [master, 'codex/ocr-*']
+    branches: [master]
     paths:
       - 'native/ocr/**'
       - 'lib/foundation/image_translation/detector_*.dart'
@@ -16,6 +22,7 @@ permissions:
 
 jobs:
   desktop:
+    if: ${{ !inputs.suite || inputs.suite == 'all' || inputs.suite == 'desktop' }}
     strategy:
       fail-fast: false
       matrix:
@@ -82,6 +89,13 @@ jobs:
           build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-1.json
           build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-2.json
           build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-2.json
+      - name: Check macOS allocator retention under repeated work
+        if: matrix.os == 'macos-15'
+        run: |
+          build/ocr/benchmark.exe --backend=dart --rounds=150 --output=build/ocr/dart-long.json
+          build/ocr/benchmark.exe --backend=rust --rounds=150 --output=build/ocr/rust-long.json
+          MallocLargeCache=0 build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-no-cache.json
+          MallocLargeCache=0 build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-no-cache.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -90,10 +104,15 @@ jobs:
           if-no-files-found: error
 
   apple-runtime:
+    if: ${{ !inputs.suite || inputs.suite == 'all' || inputs.suite == 'apple-runtime' }}
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Select the iOS build SDK
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_27.1.app
+          xcodebuild -version
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.3'
@@ -106,7 +125,8 @@ jobs:
       - name: Build and run the packaged iOS simulator probe
         run: |
           rustup target add aarch64-apple-ios-sim x86_64-apple-ios
-          flutter build ios --simulator --debug --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true --dart-define=VENERAX_BENCH_ROUNDS=3 --dart-define=VENERAX_BENCH_WARMUPS=1
+          mkdir -p build/ocr
+          flutter build ios --simulator --debug --verbose --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true --dart-define=VENERAX_BENCH_ROUNDS=3 --dart-define=VENERAX_BENCH_WARMUPS=1 > build/ocr/ios-build.log 2>&1 || { tail -n 200 build/ocr/ios-build.log; exit 1; }
           python3 native/ocr/verify.py --apple-app build/ios/iphonesimulator/Runner.app
           python3 native/ocr/run_apple_probe.py --platform ios --app build/ios/iphonesimulator/Runner.app
       - name: Build and run the packaged macOS AOT probe
@@ -124,6 +144,7 @@ jobs:
           if-no-files-found: warn
 
   android:
+    if: ${{ !inputs.suite || inputs.suite == 'all' || inputs.suite == 'android' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
