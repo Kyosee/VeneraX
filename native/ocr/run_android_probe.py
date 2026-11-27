@@ -13,15 +13,23 @@ def main():
     if len(apks) != 1:
         raise RuntimeError("Expected exactly one x86_64 probe APK.")
     subprocess.run(["adb", "install", "-r", str(apks[0])], check=True)
+    subprocess.run(["adb", "shell", "am", "force-stop", "io.github.kyosee.venera"], check=True)
     subprocess.run(["adb", "logcat", "-c"], check=True)
     subprocess.run([
         "adb", "shell", "am", "start", "-W", "-n",
         "io.github.kyosee.venera/.MainActivity",
     ], check=True)
+    pid = subprocess.check_output(
+        ["adb", "shell", "pidof", "io.github.kyosee.venera"], text=True
+    ).strip()
+    if not pid.isdecimal():
+        raise RuntimeError("The Android OCR probe did not start.")
     deadline = time.monotonic() + 180
     marker = "VENERAX_OCR_BENCHMARK_PART="
     while time.monotonic() < deadline:
-        logs = subprocess.check_output(["adb", "logcat", "-d", "-v", "brief"], text=True)
+        logs = subprocess.check_output(
+            ["adb", "logcat", "-d", "-v", "brief", f"--pid={pid}"], text=True
+        )
         (output / "android-probe.log").write_text(logs, encoding="utf-8")
         if "VENERAX_OCR_BENCHMARK_ERROR=" in logs or "FATAL EXCEPTION" in logs:
             raise RuntimeError("Android OCR probe failed. See android-probe.log.")

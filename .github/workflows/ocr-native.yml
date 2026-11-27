@@ -24,6 +24,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             arch: x64
             library: venera_ocr.dll
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+            channel: master
+            library: venera_ocr.dll
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             arch: x64
@@ -31,6 +36,7 @@ jobs:
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
+            channel: master
             library: lib/libvenera_ocr.so
           - os: macos-15
             target: aarch64-apple-darwin
@@ -50,7 +56,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.3'
-          channel: stable
+          channel: ${{ matrix.channel || 'stable' }}
           architecture: ${{ matrix.arch }}
       - uses: actions/setup-python@v7
         with:
@@ -59,7 +65,7 @@ jobs:
       - name: Compile and test Rust
         run: |
           python native/ocr/build.py --target '${{ matrix.target }}' --output 'build/ocr/${{ matrix.library }}'
-          rustc --test --edition=2021 native/ocr/detector.rs -o build/ocr/rust-tests.exe
+          rustc --test --edition=2021 --target '${{ matrix.target }}' native/ocr/detector.rs -o build/ocr/rust-tests.exe
           build/ocr/rust-tests.exe
           python -m unittest discover -s native/ocr -p 'test_*.py'
       - name: Compare native tensors and exercise fallback
@@ -70,7 +76,7 @@ jobs:
       - name: Compare Dart and Rust in AOT
         run: |
           library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
-          dart compile exe -DVENERAX_TEST_OCR_LIBRARY="$library" tool/ocr_preprocess_benchmark.dart -o build/ocr/benchmark.exe
+          dart compile exe --target-arch=${{ matrix.arch }} -DVENERAX_TEST_OCR_LIBRARY="$library" tool/ocr_preprocess_benchmark.dart -o build/ocr/benchmark.exe
           build/ocr/benchmark.exe --backend=compare --output=build/ocr/compare.json
           build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-1.json
           build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-1.json
@@ -82,6 +88,40 @@ jobs:
           name: ocr-${{ matrix.target }}
           path: build/ocr/
           if-no-files-found: error
+
+  apple-runtime:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.3'
+          channel: stable
+          architecture: arm64
+      - uses: ./.github/actions/onnx-prebuilt
+        with:
+          platform: apple
+      - run: flutter pub get --enforce-lockfile
+      - name: Build and run the packaged iOS simulator probe
+        run: |
+          rustup target add aarch64-apple-ios-sim x86_64-apple-ios
+          flutter build ios --simulator --debug --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true --dart-define=VENERAX_BENCH_ROUNDS=3 --dart-define=VENERAX_BENCH_WARMUPS=1
+          python3 native/ocr/verify.py --apple-app build/ios/iphonesimulator/Runner.app
+          python3 native/ocr/run_apple_probe.py --platform ios --app build/ios/iphonesimulator/Runner.app
+      - name: Build and run the packaged macOS AOT probe
+        run: |
+          flutter build macos --release --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true
+          python3 native/ocr/verify.py --apple-app build/macos/Build/Products/Release/venera.app
+          python3 native/ocr/run_apple_probe.py --platform macos --app build/macos/Build/Products/Release/venera.app
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ocr-apple-runtime
+          path: |
+            build/ocr/*.json
+            build/ocr/*.log
+          if-no-files-found: warn
 
   android:
     runs-on: ubuntu-22.04

@@ -3,6 +3,8 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/image_translation/detector_preprocess.dart';
 
 import 'ocr_preprocess_benchmark.dart';
 
@@ -12,10 +14,14 @@ Future<void> main() async {
   try {
     final report = await Isolate.run(
       () => runOcrPreprocessBenchmark(
-        backend: const String.fromEnvironment(
-          'VENERAX_BENCH_BACKEND',
-          defaultValue: 'compare',
-        ),
+        backend:
+            !rustDetectorAvailable &&
+                const bool.fromEnvironment('VENERAX_BENCH_ALLOW_MISSING')
+            ? 'dart'
+            : const String.fromEnvironment(
+                'VENERAX_BENCH_BACKEND',
+                defaultValue: 'compare',
+              ),
         rounds: const int.fromEnvironment(
           'VENERAX_BENCH_ROUNDS',
           defaultValue: 15,
@@ -26,6 +32,9 @@ Future<void> main() async {
         ),
       ),
     );
+    report['buildMode'] = kReleaseMode
+        ? 'release'
+        : (kProfileMode ? 'profile' : 'debug');
     // Keep each line below the device logger's message limit.
     final encoded = jsonEncode(report);
     for (var start = 0; start < encoded.length; start += 1000) {
