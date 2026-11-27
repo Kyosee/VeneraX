@@ -15,6 +15,7 @@ Map<String, Object?> runOcrPreprocessBenchmark({
   String backend = 'compare',
   int rounds = 15,
   int warmups = 3,
+  String? caseName,
 }) {
   if (!const ['compare', 'dart', 'rust'].contains(backend)) {
     throw ArgumentError.value(backend, 'backend', 'Use compare, dart or rust');
@@ -33,6 +34,8 @@ Map<String, Object?> runOcrPreprocessBenchmark({
     (name: 'rotated', width: 1217, height: 823, rotate: true),
     (name: 'wide_fallback', width: 4096, height: 64, rotate: false),
   ]) {
+    if (caseName != null && fixture.name != caseName) continue;
+    final rssBeforeInput = ProcessInfo.currentRss;
     final pixels = Uint8List(fixture.width * fixture.height * 4);
     for (var i = 0; i < pixels.length ~/ 4; i++) {
       final row = i ~/ fixture.width;
@@ -42,6 +45,7 @@ Map<String, Object?> runOcrPreprocessBenchmark({
       pixels[4 * i + 3] = 255;
     }
     final image = RgbaImage(fixture.width, fixture.height, pixels);
+    final rssWithInput = ProcessInfo.currentRss;
     var nativeUsed = false;
     var shape = <int>[];
     final samples = <String, List<double>>{
@@ -89,9 +93,17 @@ Map<String, Object?> runOcrPreprocessBenchmark({
       'bitwiseEqual': backend == 'compare' ? true : null,
       'samplesMs': samples,
       'medianMs': medians,
+      'memory': {
+        'rssBeforeInputBytes': rssBeforeInput,
+        'rssWithInputBytes': rssWithInput,
+        'rssAfterRoundsBytes': ProcessInfo.currentRss,
+      },
       if (backend == 'compare' && nativeUsed)
         'timeReductionPercent': (1 - medians['rust']! / medians['dart']!) * 100,
     });
+  }
+  if (results.isEmpty) {
+    throw ArgumentError.value(caseName, 'caseName', 'Unknown benchmark case');
   }
   return {
     'scope': 'ocr_detector_preprocessing',
@@ -204,6 +216,7 @@ void main(List<String> arguments) {
   var backend = 'compare';
   var rounds = 15;
   var warmups = 3;
+  String? caseName;
   String? output;
   for (final argument in arguments) {
     if (argument.startsWith('--backend=')) {
@@ -214,6 +227,8 @@ void main(List<String> arguments) {
       warmups = int.parse(argument.substring('--warmups='.length));
     } else if (argument.startsWith('--output=')) {
       output = argument.substring('--output='.length);
+    } else if (argument.startsWith('--case=')) {
+      caseName = argument.substring('--case='.length);
     } else {
       throw ArgumentError('Unknown argument $argument');
     }
@@ -223,6 +238,7 @@ void main(List<String> arguments) {
       backend: backend,
       rounds: rounds,
       warmups: warmups,
+      caseName: caseName,
     ),
   );
   if (output != null) File(output).writeAsStringSync(report, flush: true);

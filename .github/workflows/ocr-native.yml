@@ -97,6 +97,10 @@ jobs:
           build/ocr/benchmark.exe --backend=rust --rounds=150 --output=build/ocr/rust-long.json
           MallocLargeCache=0 build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-no-cache.json
           MallocLargeCache=0 build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-no-cache.json
+          for fixture in ordinary scaled rotated wide_fallback; do
+            build/ocr/benchmark.exe --backend=dart --case="$fixture" --output="build/ocr/dart-$fixture.json"
+            build/ocr/benchmark.exe --backend=rust --case="$fixture" --output="build/ocr/rust-$fixture.json"
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
