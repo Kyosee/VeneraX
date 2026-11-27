@@ -33,9 +33,11 @@ def run_probe(app, platform, device, output, expected_native):
     identifier = metadata["CFBundleIdentifier"]
     if platform == "ios":
         subprocess.run(["xcrun", "simctl", "install", device, str(app)], check=True)
+        # Flutter writes Dart output to syslog on iOS, not the launch console.
         command = [
-            "xcrun", "simctl", "launch", "--console", "--terminate-running-process",
-            device, identifier,
+            "xcrun", "simctl", "spawn", device, "log", "stream",
+            "--style", "compact", "--predicate",
+            f'processImagePath ENDSWITH "/{metadata["CFBundleExecutable"]}"',
         ]
     else:
         command = [str(contents / "MacOS" / metadata["CFBundleExecutable"])]
@@ -44,6 +46,11 @@ def run_probe(app, platform, device, output, expected_native):
     with log.open("w", encoding="utf-8") as stream:
         process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
         try:
+            if platform == "ios":
+                subprocess.run([
+                    "xcrun", "simctl", "launch", "--terminate-running-process",
+                    device, identifier,
+                ], check=True, timeout=180)
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 report = parse_report(log.read_text(encoding="utf-8", errors="replace"), expected_native)

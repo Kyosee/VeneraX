@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
+import plistlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import run_android_probe
-from run_apple_probe import parse_report
+from run_apple_probe import parse_report, run_probe
 
 
 class OcrProbeTests(unittest.TestCase):
@@ -69,6 +70,44 @@ class OcrProbeTests(unittest.TestCase):
             )
             self.assertIn("--pid=123", output.call_args.args[0])
             self.assertTrue((root / "build/ocr/android-compare.json").is_file())
+
+    def test_ios_reads_dart_output_from_system_logs(self):
+        report = {
+            "backend": "compare",
+            "nativeAvailable": True,
+            "cases": [{"bitwiseEqual": True}],
+        }
+        process = Mock()
+        process.poll.return_value = None
+
+        def start(command, *, stdout, stderr):
+            self.assertEqual(command[:8], [
+                "xcrun", "simctl", "spawn", "device", "log", "stream",
+                "--style", "compact",
+            ])
+            self.assertIn('processImagePath ENDSWITH "/Runner"', command)
+            stdout.write("Runner: VENERAX_OCR_BENCHMARK_PART=" + json.dumps(report) + "\n")
+            stdout.write("Runner: VENERAX_OCR_BENCHMARK_DONE\n")
+            stdout.flush()
+            return process
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "Runner.app"
+            app.mkdir()
+            (app / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "io.github.kyosee.venera",
+                "CFBundleExecutable": "Runner",
+            }))
+            with patch("run_apple_probe.subprocess.Popen", side_effect=start), \
+                    patch("run_apple_probe.subprocess.run") as run:
+                run_probe(app, "ios", "device", root, True)
+            run.assert_any_call([
+                "xcrun", "simctl", "launch", "--terminate-running-process",
+                "device", "io.github.kyosee.venera",
+            ], check=True, timeout=180)
+            self.assertEqual(json.loads((root / "ios-native.json").read_text()), report)
+            process.terminate.assert_called_once()
 
 
 if __name__ == "__main__":
