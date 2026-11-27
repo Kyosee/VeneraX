@@ -150,6 +150,34 @@ flutter {
     source = "../.."
 }
 
+def ocrSource = rootProject.file('../native/ocr')
+def ocrLibraries = layout.buildDirectory.dir('ocr/jniLibs')
+android.sourceSets.main.jniLibs.srcDir(ocrLibraries)
+def buildOcr = tasks.register('buildOcr') {
+    inputs.files(new File(ocrSource, 'detector.rs'), new File(ocrSource, 'build.py'))
+    inputs.property('ndkVersion', android.ndkVersion)
+    inputs.property('minSdk', android.defaultConfig.minSdkVersion.apiLevel)
+    outputs.dir(ocrLibraries)
+    doLast {
+        def python = System.getProperty('os.name').toLowerCase().contains('windows') ? 'python' : 'python3'
+        def targets = [
+            'armeabi-v7a': 'armv7-linux-androideabi',
+            'arm64-v8a': 'aarch64-linux-android',
+            'x86_64': 'x86_64-linux-android',
+        ]
+        targets.each { abi, target ->
+            exec {
+                commandLine python, new File(ocrSource, 'build.py'),
+                    '--target', target,
+                    '--android-ndk', android.ndkDirectory,
+                    '--android-api', android.defaultConfig.minSdkVersion.apiLevel,
+                    '--output', new File(ocrLibraries.get().asFile, "${abi}/libvenera_ocr.so")
+            }
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn(buildOcr) }
+
 dependencies {
     implementation "androidx.activity:activity-ktx:1.10.1"
     implementation 'androidx.documentfile:documentfile:1.0.1'

@@ -56,7 +56,8 @@ $nativeLibraries = @(
     'libapp.so', 'libflutter.so', 'libc++_shared.so', 'libflutter_7zip.so',
     # PDF rendering is provided by HarmonyOS PDF Kit.
     'liblodepng_flutter.so', 'libonnxruntime.so', 'libinappwebview.so',
-    'libqjs.so', 'librhttp.so', 'libsqlite3.so', 'libzip_flutter.so'
+    'libqjs.so', 'librhttp.so', 'libsqlite3.so', 'libzip_flutter.so',
+    'libvenera_ocr.so'
 )
 $buildScript = Join-Path $checkoutRoot 'tool/build_ohos.ps1'
 $builtHap = Join-Path $checkoutRoot 'build/ohos/hap/entry-default-unsigned.hap'

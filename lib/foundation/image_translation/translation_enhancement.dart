@@ -11,7 +11,7 @@ List<List<IntRect>> rtDetrDialogueGroups(
 ) {
   const size = 640, plane = size * size;
   final page = IntRect(0, 0, image.width, image.height);
-  final resized = _resizeRegion(image, page, size, size);
+  final resized = resizeTextLine(image, page, size, size);
   final rgb = Float32List(3 * plane);
   for (var i = 0; i < plane; i++) {
     rgb[i] = resized[4 * i] / 255;

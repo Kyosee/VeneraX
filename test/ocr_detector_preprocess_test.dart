@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -111,6 +112,27 @@ void _compare(
   }
 }
 
+Float32List _preparedPixels(
+  RgbaImage image,
+  bool rotate, {
+  bool allowRust = true,
+}) {
+  final input = prepareDetectorInput(
+    image,
+    rotate: rotate,
+    allowRust: allowRust,
+  );
+  if (input.f32Data case final data?) return data;
+  final count = input.shape.reduce((a, b) => a * b);
+  final output = calloc<Float>(count);
+  try {
+    input.fill!(output, count);
+    return Float32List.fromList(output.asTypedList(count));
+  } finally {
+    calloc.free(output);
+  }
+}
+
 void main() {
   if (const bool.hasEnvironment('VENERAX_TEST_OCR_NATIVE')) {
     test('loads the expected OCR backend', () {
@@ -191,5 +213,69 @@ void main() {
     final tile = Uint8List.sublistView(page, tileTop * width * 4);
     _compare(tile, width, height - tileTop, 32, 160);
     expect(page, orderedEquals(before));
+  });
+
+  test('matches all color levels at the maximum detector dimensions', () {
+    final pixels = Uint8List(1280 * 1280 * 4);
+    for (var i = 0; i < pixels.length ~/ 4; i++) {
+      pixels[4 * i] = i & 255;
+      pixels[4 * i + 1] = (255 - i) & 255;
+      pixels[4 * i + 2] = (i * 37) & 255;
+      pixels[4 * i + 3] = 255;
+    }
+    _compare(pixels, 1280, 1280, 1280, 1280);
+  });
+
+  test('can explicitly select the original Dart backend', () {
+    final pixels = Uint8List.fromList(
+      List.generate(97 * 83 * 4, (i) => (i * 37) & 255),
+    );
+    final image = RgbaImage(97, 83, pixels);
+    final input = prepareDetectorInput(image, allowRust: false);
+    expect(input.fill, isNull);
+    final [_, _, height, width] = input.shape;
+    _expectSameBits(
+      input.f32Data!,
+      _reference(pixels, 97, 83, width, height, false),
+      'Explicit Dart backend',
+    );
+  });
+
+  test('independent isolates repeatedly produce identical tensors', () async {
+    final pixels = Uint8List.fromList(
+      List.generate(97 * 83 * 4, (i) => (i * 71) & 255),
+    );
+    final before = Uint8List.fromList(pixels);
+    final image = RgbaImage(97, 83, pixels);
+    final references = [
+      _preparedPixels(image, false, allowRust: false),
+      _preparedPixels(image, true, allowRust: false),
+    ];
+    final results = await Future.wait(
+      List.generate(
+        4,
+        (index) => Isolate.run(() {
+          final rotate = index.isOdd;
+          final outputs = <Float32List>[];
+          for (var round = 0; round < 6; round++) {
+            outputs.add(_preparedPixels(image, rotate));
+          }
+          return (rustDetectorAvailable, outputs, pixels);
+        }),
+      ),
+    );
+    for (var i = 0; i < results.length; i++) {
+      final (native, outputs, input) = results[i];
+      expect(native, rustDetectorAvailable);
+      for (var round = 0; round < outputs.length; round++) {
+        _expectSameBits(
+          outputs[round],
+          references[i % 2],
+          'Isolate $i round $round',
+        );
+      }
+      expect(input, orderedEquals(before));
+    }
+    expect(pixels, orderedEquals(before));
   });
 }

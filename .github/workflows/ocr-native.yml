@@ -1,0 +1,136 @@
+name: OCR native verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, 'codex/ocr-*']
+    paths:
+      - 'native/ocr/**'
+      - 'lib/foundation/image_translation/detector_*.dart'
+      - 'test/ocr_detector_preprocess_test.dart'
+      - 'tool/ocr_preprocess_*.dart'
+      - '.github/workflows/ocr-native.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            library: venera_ocr.dll
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            library: lib/libvenera_ocr.so
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            library: lib/libvenera_ocr.so
+          - os: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            library: libvenera_ocr.dylib
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+            library: libvenera_ocr.dylib
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.3'
+          channel: stable
+          architecture: ${{ matrix.arch }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: flutter pub get --enforce-lockfile
+      - name: Compile and test Rust
+        run: |
+          python native/ocr/build.py --target '${{ matrix.target }}' --output 'build/ocr/${{ matrix.library }}'
+          rustc --test --edition=2021 native/ocr/detector.rs -o build/ocr/rust-tests.exe
+          build/ocr/rust-tests.exe
+          python -m unittest discover -s native/ocr -p 'test_*.py'
+      - name: Compare native tensors and exercise fallback
+        run: |
+          library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true --dart-define=VENERAX_TEST_OCR_LIBRARY="$library" test/ocr_detector_preprocess_test.dart
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=false --dart-define=VENERAX_TEST_OCR_LIBRARY="$PWD/build/ocr/missing-library" test/ocr_detector_preprocess_test.dart
+      - name: Compare Dart and Rust in AOT
+        run: |
+          library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
+          dart compile exe -DVENERAX_TEST_OCR_LIBRARY="$library" tool/ocr_preprocess_benchmark.dart -o build/ocr/benchmark.exe
+          build/ocr/benchmark.exe --backend=compare --output=build/ocr/compare.json
+          build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-1.json
+          build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-1.json
+          build/ocr/benchmark.exe --backend=rust --output=build/ocr/rust-2.json
+          build/ocr/benchmark.exe --backend=dart --output=build/ocr/dart-2.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ocr-${{ matrix.target }}
+          path: build/ocr/
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.3'
+          channel: stable
+          architecture: x64
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: ./.github/actions/onnx-prebuilt
+        with:
+          platform: android
+      - name: Prepare test signing
+        run: |
+          keytool -genkeypair -keystore android/ocr-test.jks -alias ocr-test -keyalg RSA -keysize 2048 -validity 2 -storepass android -keypass android -dname 'CN=OCR Test'
+          printf 'storeFile=ocr-test.jks\nstorePassword=android\nkeyAlias=ocr-test\nkeyPassword=android\n' > android/key.properties
+      - run: flutter pub get --enforce-lockfile
+      - name: Build the AOT comparison probe
+        run: flutter build apk --release --target tool/ocr_preprocess_probe.dart
+      - name: Verify every packaged CPU library
+        run: |
+          for apk in build/app/outputs/apk/release/*.apk; do
+            python3 native/ocr/verify.py --apk "$apk"
+          done
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run AOT on Android x86_64
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 native/ocr/run_android_probe.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ocr-android
+          path: |
+            build/ocr/*.json
+            build/ocr/*.log
+            build/app/outputs/apk/release/*x86_64.apk
+          if-no-files-found: warn

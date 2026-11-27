@@ -32,6 +32,8 @@ jobs:
           python-version: '3.12'
       - name: Check pinned ONNX archive downloads
         run: python -m unittest discover -s tool -p test_onnx_prebuilt.py
+      - name: Check OCR cross-platform build tooling
+        run: python -m unittest discover -s native/ocr -p 'test_*.py'
       - name: Check incremental updates
         run: |
           python -m pip install --disable-pip-version-check bsdiff4==1.2.6

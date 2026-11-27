@@ -9,6 +9,8 @@ file.close()
 subprocess.run(["flutter", "build", "windows", "--target-platform", "windows-arm64"], shell=True, check=True)
 
 release_dir = "build/windows/arm64/runner/Release"
+if not os.path.isfile(os.path.join(release_dir, "venera_ocr.dll")):
+    raise RuntimeError("The Windows ARM64 package is missing the Rust OCR library")
 subprocess.run([
     "dart",
     "compile",

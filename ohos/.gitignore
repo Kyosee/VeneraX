@@ -20,5 +20,6 @@
 **/libs/**/libvmservice_snapshot.so
 **/libs/**/librhttp.so
 **/libs/**/libonnxruntime.so
+**/libs/**/libvenera_ocr.so
 /entry/src/main/resources/rawfile/onnxruntime/
 /AppScope/resources/base/media/icon_*.png

@@ -82,9 +82,7 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
-if(FLUTTER_TARGET_PLATFORM STREQUAL "windows-x64")
-  add_subdirectory("../native/ocr" "ocr")
-endif()
+add_subdirectory("../native/ocr" "ocr")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)

@@ -78,6 +78,8 @@ jobs:
       # Step 2: Build the Flutter macOS app
       - name: Build Flutter macOS App
         run: flutter build macos --release
+      - name: Verify packaged Rust OCR framework
+        run: python3 native/ocr/verify.py --apple-app build/macos/Build/Products/Release/venera.app
       - name: Report native target timings
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -127,7 +129,11 @@ jobs:
         with:
           platform: apple
       - run: flutter pub get
+      - name: Prepare Rust for iOS OCR
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
       - run: flutter build ios --release --no-codesign
+      - name: Verify packaged Rust OCR framework
+        run: python3 native/ocr/verify.py --apple-app build/ios/iphoneos/Runner.app
       - run: |
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
@@ -190,6 +196,11 @@ jobs:
       - name: Prepare published Android rhttp
         run: bash .github/scripts/android-rhttp.sh
       - run: flutter build apk --release
+      - name: Verify Rust OCR in every APK ABI
+        run: |
+          for apk in build/app/outputs/apk/release/*.apk; do
+            python3 native/ocr/verify.py --apk "$apk"
+          done
       - name: Verify packaged rhttp libraries
         if: env.VENERAX_ANDROID_RHTTP != ''
         run: |
@@ -341,6 +352,11 @@ jobs:
         with:
           platform: linux-x64
       - run: python3 debian/build.py x64
+      - name: Verify packaged Rust OCR
+        run: >-
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true
+          --dart-define=VENERAX_TEST_OCR_LIBRARY=$PWD/build/linux/x64/release/bundle/lib/libvenera_ocr.so
+          test/ocr_detector_preprocess_test.dart
       - name: Build AppImage
         run: python3 linux/appimage/build.py x64
       - uses: actions/upload-artifact@v7
@@ -399,6 +415,11 @@ jobs:
         with:
           platform: linux-arm64
       - run: python3 debian/build.py arm64
+      - name: Verify packaged Rust OCR
+        run: >-
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true
+          --dart-define=VENERAX_TEST_OCR_LIBRARY=$PWD/build/linux/arm64/release/bundle/lib/libvenera_ocr.so
+          test/ocr_detector_preprocess_test.dart
       - name: Build AppImage
         run: python3 linux/appimage/build.py arm64
       - uses: actions/upload-artifact@v7
@@ -582,6 +603,10 @@ jobs:
         if: env.PACKAGE_HAP == 'true'
         shell: pwsh
         run: |
+          rustup toolchain install 1.95 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot prepare the HarmonyOS Rust toolchain.' }
+          rustup target add --toolchain 1.95 aarch64-unknown-linux-ohos
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot prepare the HarmonyOS Rust target.' }
           & .github/scripts/build-harmonyos.ps1 `
             -Checkout $env:VENERAX_OHOS_CHECKOUT `
             -SourceRepository $env:GITHUB_WORKSPACE `

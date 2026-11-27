@@ -416,6 +416,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				9635D3A6D08BF5053750BABC /* [CP] Embed Pods Frameworks */,
+				391B151B78B3458E92144302 /* Build Rust OCR */,
 			);
 			buildRules = (
 			);
@@ -537,6 +538,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		391B151B78B3458E92144302 /* Build Rust OCR */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/../native/ocr/detector.rs",
+				"$(SRCROOT)/../native/ocr/build.py",
+			);
+			name = "Build Rust OCR";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/VeneraOcr.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\npython3 \"$SRCROOT/../native/ocr/build.py\" --apple-framework --output \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/VeneraOcr.framework\"\n";
+			showEnvVarsInLog = 0;
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

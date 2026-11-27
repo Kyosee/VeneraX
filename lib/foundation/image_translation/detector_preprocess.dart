@@ -31,15 +31,24 @@ typedef _Resize =
 
 _Resize? _loadKernel() {
   const testLibrary = String.fromEnvironment('VENERAX_TEST_OCR_LIBRARY');
-  if (testLibrary.isEmpty &&
-      (!Platform.isWindows || Abi.current() != Abi.windowsX64)) {
+  final executable = File(Platform.resolvedExecutable).parent.uri;
+  String path;
+  if (testLibrary.isNotEmpty) {
+    path = testLibrary;
+  } else if (Platform.isWindows) {
+    path = executable.resolve('venera_ocr.dll').toFilePath();
+  } else if (Platform.isAndroid || Platform.operatingSystem == 'ohos') {
+    path = 'libvenera_ocr.so';
+  } else if (Platform.isLinux) {
+    path = executable.resolve('lib/libvenera_ocr.so').toFilePath();
+  } else if (Platform.isIOS || Platform.isMacOS) {
+    final frameworks = Platform.isMacOS ? '../Frameworks/' : 'Frameworks/';
+    path = executable
+        .resolve('${frameworks}VeneraOcr.framework/VeneraOcr')
+        .toFilePath();
+  } else {
     return null;
   }
-  final path = testLibrary.isNotEmpty
-      ? testLibrary
-      : File(
-          Platform.resolvedExecutable,
-        ).parent.uri.resolve('venera_ocr.dll').toFilePath();
   try {
     return DynamicLibrary.open(
       path,

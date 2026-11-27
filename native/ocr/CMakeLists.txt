@@ -1,20 +1,48 @@
-# A rustup launcher alone does not imply a working x64 MSVC toolchain.
-find_program(VENERA_RUSTC rustc)
-if(VENERA_RUSTC)
-  set(source "${CMAKE_CURRENT_SOURCE_DIR}/detector.rs")
-  set(library "${CMAKE_CURRENT_BINARY_DIR}/venera_ocr.dll")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
-  execute_process(
-    COMMAND "${VENERA_RUSTC}" --crate-type cdylib --edition=2021
-      --target x86_64-pc-windows-msvc -C opt-level=3 "${source}" -o "${library}"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    RESULT_VARIABLE compiled)
-  if(compiled STREQUAL "0")
-    install(FILES "${library}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
-    return()
+if(WIN32)
+  find_program(VENERA_OCR_PYTHON NAMES python python3)
+else()
+  find_program(VENERA_OCR_PYTHON NAMES python3 python)
+endif()
+if(NOT VENERA_OCR_PYTHON)
+  message(FATAL_ERROR "Python 3 is required to build Rust OCR.")
+endif()
+if(WIN32)
+  if(FLUTTER_TARGET_PLATFORM STREQUAL "windows-arm64")
+    set(ocr_target aarch64-pc-windows-msvc)
+  else()
+    set(ocr_target x86_64-pc-windows-msvc)
+  endif()
+  set(ocr_name venera_ocr.dll)
+elseif(FLUTTER_TARGET_PLATFORM STREQUAL "linux-arm64")
+  set(ocr_target aarch64-unknown-linux-gnu)
+  set(ocr_name libvenera_ocr.so)
+elseif(FLUTTER_TARGET_PLATFORM STREQUAL "linux-x64")
+  set(ocr_target x86_64-unknown-linux-gnu)
+  set(ocr_name libvenera_ocr.so)
+else()
+  message(FATAL_ERROR "Unsupported OCR target: ${FLUTTER_TARGET_PLATFORM}")
+endif()
+
+set(ocr_link_args)
+if(NOT WIN32)
+  list(APPEND ocr_link_args "--linker=${CMAKE_CXX_COMPILER}")
+  if(CMAKE_CXX_COMPILER_TARGET)
+    list(APPEND ocr_link_args "--link-arg=--target=${CMAKE_CXX_COMPILER_TARGET}")
+  endif()
+  if(CMAKE_SYSROOT)
+    list(APPEND ocr_link_args "--link-arg=--sysroot=${CMAKE_SYSROOT}")
   endif()
 endif()
 
-message(STATUS "Rust OCR library unavailable for x64 MSVC; using Dart preprocessing")
-# An incremental install may still contain the library from a previous build.
-install(CODE "file(REMOVE \"\$ENV{DESTDIR}${INSTALL_BUNDLE_LIB_DIR}/venera_ocr.dll\")" COMPONENT Runtime)
+set(ocr_library "${CMAKE_CURRENT_BINARY_DIR}/${ocr_name}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/detector.rs" "${CMAKE_CURRENT_SOURCE_DIR}/build.py")
+execute_process(
+  COMMAND "${VENERA_OCR_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/build.py"
+    --target "${ocr_target}" --output "${ocr_library}" ${ocr_link_args}
+  RESULT_VARIABLE ocr_compiled)
+if(NOT ocr_compiled STREQUAL "0")
+  message(FATAL_ERROR "Rust OCR build failed for ${ocr_target}. Install its Rust target and toolchain.")
+endif()
+
+install(FILES "${ocr_library}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)

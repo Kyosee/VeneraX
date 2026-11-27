@@ -61,6 +61,16 @@ try {
         & (Join-Path $PSScriptRoot 'build_ohos_rhttp.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -Abi $abi
         & (Join-Path $PSScriptRoot 'build_ohos_onnx.ps1') -NativeSdk (Join-Path $DevEcoStudio 'sdk/default/openharmony/native') -Abi $abi -SourceRoot $OnnxSource -EigenRoot $EigenSource
     }
+    $abi = if ($TargetPlatform -eq 'ohos-arm64') { 'arm64-v8a' } else { 'x86_64' }
+    $rustArch = if ($TargetPlatform -eq 'ohos-arm64') { 'aarch64' } else { 'x86_64' }
+    $nativeSdk = Join-Path $DevEcoStudio 'sdk/default/openharmony/native'
+    $clang = Join-Path $nativeSdk $(if ($windowsHost) { 'llvm/bin/clang.exe' } else { 'llvm/bin/clang' })
+    $python = if ($windowsHost) { 'python' } else { 'python3' }
+    & $python native/ocr/build.py --target "$rustArch-unknown-linux-ohos" `
+        --output "ohos/entry/libs/$abi/libvenera_ocr.so" `
+        "--linker=$clang" "--link-arg=--target=$rustArch-linux-ohos" `
+        "--link-arg=--sysroot=$nativeSdk/sysroot" --link-arg=-Wl,-soname,libvenera_ocr.so
+    if ($LASTEXITCODE -ne 0) { throw "HarmonyOS OCR library build failed for $abi." }
     $buildArguments = @('build', 'hap', "--$BuildMode", '--target-platform', $TargetPlatform, '--no-pub', '-t', $Target)
     if (-not $CodeSign) { $buildArguments += '--no-codesign' }
     & $flutter @buildArguments
