@@ -82,13 +82,12 @@ class OcrProbeTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "tmp").mkdir()
-            result = root / "tmp/venera-ocr-native.json"
+            (root / "Documents").mkdir()
+            result = root / "Documents/venera-ocr-probe.json"
             result.write_text('{"error":"stale"}', encoding="utf-8")
 
             def run_command(command, **options):
                 if command[2] == "launch":
-                    self.assertEqual(options["env"]["SIMCTL_CHILD_VENERAX_OCR_REPORT"], str(result))
                     self.assertFalse(result.exists())
                     result.write_text(json.dumps(report), encoding="utf-8")
 

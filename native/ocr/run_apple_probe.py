@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -44,7 +43,7 @@ def run_probe(app, platform, device, output, expected_native):
         container = subprocess.check_output([
             "xcrun", "simctl", "get_app_container", device, identifier, "data",
         ], text=True)
-        ios_report = Path(container.strip()) / "tmp" / f"venera-ocr-{label}.json"
+        ios_report = Path(container.strip()) / "Documents" / "venera-ocr-probe.json"
         ios_report.unlink(missing_ok=True)
         # Keep system logs for diagnostics; the subscriber can miss early app output.
         command = [
@@ -62,9 +61,7 @@ def run_probe(app, platform, device, output, expected_native):
                 subprocess.run([
                     "xcrun", "simctl", "launch", "--terminate-running-process",
                     device, identifier,
-                ], check=True, timeout=180, env={
-                    **os.environ, "SIMCTL_CHILD_VENERAX_OCR_REPORT": str(ios_report),
-                })
+                ], check=True, timeout=180)
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 report = None

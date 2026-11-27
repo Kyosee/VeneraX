@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'ocr_preprocess_benchmark.dart';
 
@@ -40,8 +41,9 @@ Future<void> main() async {
     report = {'error': '$error\n$stack'};
     print('VENERAX_OCR_BENCHMARK_ERROR=${jsonEncode(report['error'])}');
   }
-  final output = Platform.environment['VENERAX_OCR_REPORT'];
-  if (output != null) {
+  if (Platform.isIOS) {
+    final documents = await getApplicationDocumentsDirectory();
+    final output = '${documents.path}/venera-ocr-probe.json';
     final temporary = File('$output.tmp');
     await temporary.writeAsString(jsonEncode(report));
     await temporary.rename(output);
