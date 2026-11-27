@@ -110,33 +110,46 @@ jobs:
 
   apple-runtime:
     if: ${{ !inputs.suite || inputs.suite == 'all' || inputs.suite == 'apple-runtime' }}
-    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ios
+            os: macos-15-intel
+            arch: x64
+          - platform: macos
+            os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - name: Select the iOS build SDK
+      - name: Select the Apple test SDK
         run: |
-          sudo xcode-select --switch /Applications/Xcode_27.1.app
+          sudo xcode-select --switch /Applications/Xcode_16.4.app
           xcodebuild -version
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.3'
           channel: stable
-          architecture: arm64
+          architecture: ${{ matrix.arch }}
       - uses: ./.github/actions/onnx-prebuilt
         with:
           platform: apple
       - run: flutter pub get --enforce-lockfile
       - name: Build and run the packaged iOS simulator probe
+        if: matrix.platform == 'ios'
         env:
-          FLUTTER_XCODE_ARCHS: arm64
+          # The locked ML Kit frameworks support Intel simulators only.
+          FLUTTER_XCODE_ARCHS: x86_64
         run: |
-          rustup target add aarch64-apple-ios-sim x86_64-apple-ios
+          rustup target add x86_64-apple-ios
           mkdir -p build/ocr
           flutter build ios --simulator --debug --verbose --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true --dart-define=VENERAX_BENCH_ROUNDS=3 --dart-define=VENERAX_BENCH_WARMUPS=1 > build/ocr/ios-build.log 2>&1 || { tail -n 200 build/ocr/ios-build.log; exit 1; }
           python3 native/ocr/verify.py --apple-app build/ios/iphonesimulator/Runner.app
           python3 native/ocr/run_apple_probe.py --platform ios --app build/ios/iphonesimulator/Runner.app
       - name: Build and run the packaged macOS AOT probe
+        if: matrix.platform == 'macos'
         run: |
           flutter build macos --release --target tool/ocr_preprocess_probe.dart --dart-define=VENERAX_BENCH_ALLOW_MISSING=true
           python3 native/ocr/verify.py --apple-app build/macos/Build/Products/Release/venera.app
@@ -144,7 +157,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: ocr-apple-runtime
+          name: ocr-apple-runtime-${{ matrix.platform }}
           path: |
             build/ocr/*.json
             build/ocr/*.log
