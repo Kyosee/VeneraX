@@ -146,6 +146,13 @@ flutter:
     - assets/new_logo3.ico
     - assets/user_logo.ico
     - assets/venera_original.ico
+    - assets/holidays/card_christmas.webp
+    - assets/holidays/card_newyear.webp
+    - assets/holidays/home_gift.png
+    - assets/holidays/home_newyear_stamp.png
+    - assets/holidays/home_snow_dark.png
+    - assets/holidays/home_snow_light.png
+    - assets/holidays/NotoSerif-LICENSE.txt
     # User guide, authored once and read both here and on the repo page.
     - doc/guide.zh.md
     - doc/guide.en.md
@@ -155,7 +162,15 @@ flutter:
     - doc/import_comic.md
   shaders:
     - shaders/image_enhance.frag
-# fonts:
+  fonts:
+    - family: HolidayGreetingSC
+      fonts:
+        - asset: assets/holidays/greeting_sc.ttf
+          weight: 600
+    - family: HolidayGreetingTC
+      fonts:
+        - asset: assets/holidays/greeting_tc.ttf
+          weight: 600
 
 flutter_to_arch:
   name: Venera
