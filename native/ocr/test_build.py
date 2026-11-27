@@ -2,7 +2,9 @@ import importlib.util
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -131,6 +133,51 @@ class OcrBuildTests(unittest.TestCase):
         ):
             with self.assertRaises(subprocess.CalledProcessError):
                 build.compile_library("x86_64-unknown-linux-gnu", Path("unused.so"))
+
+    @unittest.skipUnless(os.name == "nt", "Verifies Windows multi-configuration installs")
+    def test_windows_install_without_rust(self):
+        cmake = shutil.which("cmake")
+        if cmake is None:
+            self.skipTest("CMake is required for the Windows install test")
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            output = project / "build"
+            (project / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.14)\n'
+                'project(ocr_install NONE)\n'
+                'set(CMAKE_CONFIGURATION_TYPES Debug Profile Release)\n'
+                'set(FLUTTER_TARGET_PLATFORM windows-x64)\n'
+                'set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_BINARY_DIR}/bundle/$<CONFIG>")\n'
+                'set(saved_path "$ENV{PATH}")\n'
+                'set(ENV{PATH} "${CMAKE_BINARY_DIR}/no-rust")\n'
+                f'add_subdirectory("{build.SOURCE.as_posix()}" ocr)\n'
+                'set(ENV{PATH} "${saved_path}")\n',
+                encoding="utf-8",
+            )
+            # Exercise all three install modes from a single configure.
+            env = {k: v for k, v in os.environ.items() if not k.startswith("CMAKE_GENERATOR")}
+            if shutil.which("ninja"):
+                env["CMAKE_GENERATOR"] = "Ninja Multi-Config"
+            config = subprocess.run([
+                cmake, "-S", project, "-B", output,
+                f"-DVENERA_OCR_PYTHON:FILEPATH={sys.executable}",
+            ], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.assertEqual(config.returncode, 0, config.stdout)
+            self.assertIn("Rust is required to build the OCR library", config.stdout)
+            for mode in ("Debug", "Profile", "Release"):
+                with self.subTest(mode=mode):
+                    library = output / "bundle" / mode / "venera_ocr.dll"
+                    library.parent.mkdir(parents=True)
+                    library.write_bytes(b"previous build")
+                    install = subprocess.run([
+                        cmake, "--install", output, "--config", mode,
+                    ], capture_output=True, text=True)
+                    self.assertFalse(library.exists())
+                    if mode == "Release":
+                        self.assertNotEqual(install.returncode, 0)
+                        self.assertIn("venera_ocr.dll", install.stderr)
+                    else:
+                        self.assertEqual(install.returncode, 0, install.stderr)
 
 
 if __name__ == "__main__":

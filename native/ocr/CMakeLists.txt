@@ -3,7 +3,7 @@ if(WIN32)
 else()
   find_program(VENERA_OCR_PYTHON NAMES python3 python)
 endif()
-if(NOT VENERA_OCR_PYTHON)
+if(NOT VENERA_OCR_PYTHON AND NOT WIN32)
   message(FATAL_ERROR "Python 3 is required to build Rust OCR.")
 endif()
 if(WIN32)
@@ -37,12 +37,24 @@ endif()
 set(ocr_library "${CMAKE_CURRENT_BINARY_DIR}/${ocr_name}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/detector.rs" "${CMAKE_CURRENT_SOURCE_DIR}/build.py")
-execute_process(
-  COMMAND "${VENERA_OCR_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/build.py"
-    --target "${ocr_target}" --output "${ocr_library}" ${ocr_link_args}
-  RESULT_VARIABLE ocr_compiled)
-if(NOT ocr_compiled STREQUAL "0")
-  message(FATAL_ERROR "Rust OCR build failed for ${ocr_target}. Install its Rust target and toolchain.")
+if(VENERA_OCR_PYTHON)
+  execute_process(
+    COMMAND "${VENERA_OCR_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/build.py"
+      --target "${ocr_target}" --output "${ocr_library}" ${ocr_link_args}
+    RESULT_VARIABLE ocr_compiled)
 endif()
 
-install(FILES "${ocr_library}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+if(ocr_compiled STREQUAL "0")
+  install(FILES "${ocr_library}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+elseif(WIN32)
+  message(STATUS "Rust OCR unavailable for ${ocr_target}. Debug and Profile will use Dart.")
+  # Visual Studio selects the configuration after configure. Discard stale DLLs at install.
+  install(CODE "
+    file(REMOVE \"\$ENV{DESTDIR}${INSTALL_BUNDLE_LIB_DIR}/${ocr_name}\")
+    if($<CONFIG:Release>)
+      message(FATAL_ERROR \"Windows Release requires ${ocr_name}. Install Python 3 and the ${ocr_target} Rust target.\")
+    endif()
+  " COMPONENT Runtime)
+else()
+  message(FATAL_ERROR "Rust OCR build failed for ${ocr_target}. Install its Rust target and toolchain.")
+endif()
