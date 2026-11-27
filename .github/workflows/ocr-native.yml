@@ -14,6 +14,7 @@ on:
       - 'native/ocr/**'
       - 'lib/foundation/image_translation/detector_*.dart'
       - 'test/ocr_detector_preprocess_test.dart'
+      - 'test/ocr_preprocess_probe_test.dart'
       - 'tool/ocr_preprocess_*.dart'
       - '.github/workflows/ocr-native.yml'
 
@@ -78,7 +79,7 @@ jobs:
       - name: Compare native tensors and exercise fallback
         run: |
           library=$(python -c 'from pathlib import Path; print(Path("build/ocr/${{ matrix.library }}").resolve().as_posix())')
-          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true --dart-define=VENERAX_TEST_OCR_LIBRARY="$library" test/ocr_detector_preprocess_test.dart
+          flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=true --dart-define=VENERAX_TEST_OCR_LIBRARY="$library" test/ocr_detector_preprocess_test.dart test/ocr_preprocess_probe_test.dart
           flutter test --no-pub --dart-define=VENERAX_TEST_OCR_NATIVE=false --dart-define=VENERAX_TEST_OCR_LIBRARY="$PWD/build/ocr/missing-library" test/ocr_detector_preprocess_test.dart
       - name: Compare Dart and Rust in AOT
         run: |
@@ -123,6 +124,8 @@ jobs:
           platform: apple
       - run: flutter pub get --enforce-lockfile
       - name: Build and run the packaged iOS simulator probe
+        env:
+          FLUTTER_XCODE_ARCHS: arm64
         run: |
           rustup target add aarch64-apple-ios-sim x86_64-apple-ios
           mkdir -p build/ocr
@@ -161,6 +164,8 @@ jobs:
       - uses: ./.github/actions/onnx-prebuilt
         with:
           platform: android
+      - name: Prepare the existing Android HTTP dependency
+        run: bash .github/scripts/android-rhttp.sh
       - name: Prepare test signing
         run: |
           keytool -genkeypair -keystore android/ocr-test.jks -alias ocr-test -keyalg RSA -keysize 2048 -validity 2 -storepass android -keypass android -dname 'CN=OCR Test'

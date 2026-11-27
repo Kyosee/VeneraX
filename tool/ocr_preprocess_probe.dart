@@ -35,14 +35,18 @@ Future<void> main() async {
     report['buildMode'] = kReleaseMode
         ? 'release'
         : (kProfileMode ? 'profile' : 'debug');
-    // Keep each line below the device logger's message limit.
-    final encoded = jsonEncode(report);
-    for (var start = 0; start < encoded.length; start += 1000) {
-      final end = math.min(start + 1000, encoded.length);
-      print('VENERAX_OCR_BENCHMARK_PART=${encoded.substring(start, end)}');
-    }
-    print('VENERAX_OCR_BENCHMARK_DONE');
+    printOcrBenchmarkReport(report);
   } catch (error, stack) {
     print('VENERAX_OCR_BENCHMARK_ERROR=${jsonEncode('$error\n$stack')}');
   }
+}
+
+void printOcrBenchmarkReport(Map<String, Object?> report) {
+  // Flutter's Android logger truncates messages before logcat's own limit.
+  final encoded = jsonEncode(report);
+  for (var start = 0; start < encoded.length; start += 500) {
+    final end = math.min(start + 500, encoded.length);
+    print('VENERAX_OCR_BENCHMARK_PART=${encoded.substring(start, end)}');
+  }
+  print('VENERAX_OCR_BENCHMARK_DONE');
 }
