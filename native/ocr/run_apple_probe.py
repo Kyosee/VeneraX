@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -16,7 +17,12 @@ def parse_report(logs, expected_native):
     if "VENERAX_OCR_BENCHMARK_DONE" not in logs:
         return None
     parts = [line.split(marker, 1)[1] for line in logs.splitlines() if marker in line]
-    report = json.loads("".join(parts))
+    return validate_report(json.loads("".join(parts)), expected_native)
+
+
+def validate_report(report, expected_native):
+    if "error" in report:
+        raise RuntimeError(f"Apple OCR probe reported an error: {report['error']}")
     if report["nativeAvailable"] != expected_native:
         raise RuntimeError("Apple OCR probe loaded the wrong backend.")
     if report["backend"] != "compare" or not report["cases"]:
@@ -31,9 +37,16 @@ def run_probe(app, platform, device, output, expected_native):
     with (contents / "Info.plist").open("rb") as stream:
         metadata = plistlib.load(stream)
     identifier = metadata["CFBundleIdentifier"]
+    label = "native" if expected_native else "fallback"
+    ios_report = None
     if platform == "ios":
         subprocess.run(["xcrun", "simctl", "install", device, str(app)], check=True)
-        # Flutter writes Dart output to syslog on iOS, not the launch console.
+        container = subprocess.check_output([
+            "xcrun", "simctl", "get_app_container", device, identifier, "data",
+        ], text=True)
+        ios_report = Path(container.strip()) / "tmp" / f"venera-ocr-{label}.json"
+        ios_report.unlink(missing_ok=True)
+        # Keep system logs for diagnostics; the subscriber can miss early app output.
         command = [
             "xcrun", "simctl", "spawn", device, "log", "stream",
             "--style", "compact", "--predicate",
@@ -41,26 +54,31 @@ def run_probe(app, platform, device, output, expected_native):
         ]
     else:
         command = [str(contents / "MacOS" / metadata["CFBundleExecutable"])]
-    label = "native" if expected_native else "fallback"
     log = output / f"{platform}-{label}.log"
     with log.open("w", encoding="utf-8") as stream:
         process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
         try:
-            if platform == "ios":
+            if ios_report is not None:
                 subprocess.run([
                     "xcrun", "simctl", "launch", "--terminate-running-process",
                     device, identifier,
-                ], check=True, timeout=180)
+                ], check=True, timeout=180, env={
+                    **os.environ, "SIMCTL_CHILD_VENERAX_OCR_REPORT": str(ios_report),
+                })
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
-                report = parse_report(log.read_text(encoding="utf-8", errors="replace"), expected_native)
+                report = None
+                if ios_report is None:
+                    report = parse_report(log.read_text(encoding="utf-8", errors="replace"), expected_native)
+                elif ios_report.is_file():
+                    report = validate_report(json.loads(ios_report.read_text(encoding="utf-8")), expected_native)
                 if report is not None:
                     (output / f"{platform}-{label}.json").write_text(
                         json.dumps(report, indent=2), encoding="utf-8"
                     )
                     print(json.dumps(report))
                     return
-                if process.poll() is not None:
+                if ios_report is None and process.poll() is not None:
                     raise RuntimeError(f"Apple OCR probe exited early. See {log}.")
                 time.sleep(1)
             raise RuntimeError(f"Apple OCR probe timed out. See {log}.")

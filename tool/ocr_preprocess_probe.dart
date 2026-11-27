@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
@@ -10,8 +11,9 @@ import 'ocr_preprocess_benchmark.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SizedBox.shrink());
+  Map<String, Object?> report;
   try {
-    final report = await Isolate.run(
+    report = await Isolate.run(
       () => runOcrPreprocessBenchmark(
         backend: const String.fromEnvironment(
           'VENERAX_BENCH_BACKEND',
@@ -35,7 +37,14 @@ Future<void> main() async {
         : (kProfileMode ? 'profile' : 'debug');
     printOcrBenchmarkReport(report);
   } catch (error, stack) {
-    print('VENERAX_OCR_BENCHMARK_ERROR=${jsonEncode('$error\n$stack')}');
+    report = {'error': '$error\n$stack'};
+    print('VENERAX_OCR_BENCHMARK_ERROR=${jsonEncode(report['error'])}');
+  }
+  final output = Platform.environment['VENERAX_OCR_REPORT'];
+  if (output != null) {
+    final temporary = File('$output.tmp');
+    await temporary.writeAsString(jsonEncode(report));
+    await temporary.rename(output);
   }
 }
 

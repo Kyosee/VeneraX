@@ -71,7 +71,7 @@ class OcrProbeTests(unittest.TestCase):
             self.assertIn("--pid=123", output.call_args.args[0])
             self.assertTrue((root / "build/ocr/android-compare.json").is_file())
 
-    def test_ios_reads_dart_output_from_system_logs(self):
+    def test_ios_reads_the_current_report_when_startup_logs_are_missing(self):
         report = {
             "backend": "compare",
             "nativeAvailable": True,
@@ -80,32 +80,31 @@ class OcrProbeTests(unittest.TestCase):
         process = Mock()
         process.poll.return_value = None
 
-        def start(command, *, stdout, stderr):
-            self.assertEqual(command[:8], [
-                "xcrun", "simctl", "spawn", "device", "log", "stream",
-                "--style", "compact",
-            ])
-            self.assertIn('processImagePath ENDSWITH "/Runner"', command)
-            stdout.write("Runner: VENERAX_OCR_BENCHMARK_PART=" + json.dumps(report) + "\n")
-            stdout.write("Runner: VENERAX_OCR_BENCHMARK_DONE\n")
-            stdout.flush()
-            return process
-
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            (root / "tmp").mkdir()
+            result = root / "tmp/venera-ocr-native.json"
+            result.write_text('{"error":"stale"}', encoding="utf-8")
+
+            def run_command(command, **options):
+                if command[2] == "launch":
+                    self.assertEqual(options["env"]["SIMCTL_CHILD_VENERAX_OCR_REPORT"], str(result))
+                    self.assertFalse(result.exists())
+                    result.write_text(json.dumps(report), encoding="utf-8")
+
             app = root / "Runner.app"
             app.mkdir()
             (app / "Info.plist").write_bytes(plistlib.dumps({
                 "CFBundleIdentifier": "io.github.kyosee.venera",
                 "CFBundleExecutable": "Runner",
             }))
-            with patch("run_apple_probe.subprocess.Popen", side_effect=start), \
-                    patch("run_apple_probe.subprocess.run") as run:
+            with patch("run_apple_probe.subprocess.Popen", return_value=process), \
+                    patch("run_apple_probe.subprocess.check_output", return_value=str(root)) as container, \
+                    patch("run_apple_probe.subprocess.run", side_effect=run_command):
                 run_probe(app, "ios", "device", root, True)
-            run.assert_any_call([
-                "xcrun", "simctl", "launch", "--terminate-running-process",
-                "device", "io.github.kyosee.venera",
-            ], check=True, timeout=180)
+            container.assert_called_once_with([
+                "xcrun", "simctl", "get_app_container", "device", "io.github.kyosee.venera", "data",
+            ], text=True)
             self.assertEqual(json.loads((root / "ios-native.json").read_text()), report)
             process.terminate.assert_called_once()
 
