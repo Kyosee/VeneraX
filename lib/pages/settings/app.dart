@@ -192,6 +192,10 @@ class _AppSettingsState extends State<AppSettings> {
                       App.forceRebuild();
                     },
                   ),
+                  _SwitchSetting(
+                    title: "Holiday effects".tl,
+                    settingKey: "holidayEffects",
+                  ),
                 ],
               ),
               _SettingsSection(

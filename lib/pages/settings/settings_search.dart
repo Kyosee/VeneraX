@@ -74,7 +74,10 @@ class _SettingsSearchEntry {
   String? get section {
     if (category == 0) {
       return switch (title) {
-        'Theme Mode' || 'Theme Color' || 'Language' => 'Appearance',
+        'Theme Mode' ||
+        'Theme Color' ||
+        'Language' ||
+        'Holiday effects' => 'Appearance',
         _ => 'Layout and navigation',
       };
     }
@@ -514,6 +517,11 @@ final _settingsSearchIndex = <_SettingsSearchEntry>[
   // --- 0: App / Appearance ---
   _SettingsSearchEntry("Theme Mode", 0, keywords: ["dark", "light"]),
   _SettingsSearchEntry("Theme Color", 0, keywords: ["accent", "color"]),
+  _SettingsSearchEntry(
+    "Holiday effects",
+    0,
+    keywords: ["Merry Christmas", "Happy New Year", "New Year's Day"],
+  ),
   _SettingsSearchEntry(
     "Predictive Back Animation",
     0,

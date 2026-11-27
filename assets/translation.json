@@ -1,5 +1,12 @@
 {
   "zh_CN": {
+    "Holiday effects": "节日彩蛋",
+    "Open holiday card": "打开节日贺卡",
+    "Back to home": "返回主页",
+    "Turn off effects for this holiday": "关闭本次节日效果",
+    "Merry Christmas": "圣诞快乐",
+    "Happy New Year": "新年快乐",
+    "New Year's Day": "元旦",
     "Translate your first manga page": "翻译第一页漫画",
     "First time translating a comic?": "第一次翻译漫画？",
     "Set up a service and recognition models, then turn translation on for the comic you want to read.": "先配置翻译服务和识别模型，再为想读的漫画开启翻译。",
@@ -2110,6 +2117,13 @@
     "Safe mode: automatic sync, update checks and unfinished tasks are off for this run": "安全模式：本次运行已关闭自动同步、更新检查和未完成任务的续传"
   },
   "zh_TW": {
+    "Holiday effects": "節日彩蛋",
+    "Open holiday card": "開啟節日賀卡",
+    "Back to home": "返回首頁",
+    "Turn off effects for this holiday": "關閉本次節日效果",
+    "Merry Christmas": "聖誕快樂",
+    "Happy New Year": "新年快樂",
+    "New Year's Day": "元旦",
     "Translate your first manga page": "翻譯第一頁漫畫",
     "First time translating a comic?": "第一次翻譯漫畫？",
     "Set up a service and recognition models, then turn translation on for the comic you want to read.": "先設定翻譯服務和辨識模型，再為想讀的漫畫開啟翻譯。",

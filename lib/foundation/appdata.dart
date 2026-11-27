@@ -403,6 +403,8 @@ class Settings with ChangeNotifier {
     'comicTileScale': 1.00, // 0.75-1.25
     'color': 'system', // red, pink, purple, green, orange, blue
     'theme_mode': 'system', // light, dark, system
+    'holidayEffects': true,
+    'dismissedHoliday': '',
     'newFavoriteAddTo': 'end', // start, end
     'moveFavoriteAfterRead': 'none', // none, end, start
     'proxy': 'system', // direct, system, proxy string

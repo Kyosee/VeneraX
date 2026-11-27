@@ -45,6 +45,8 @@ const syncSkipCategories = <SyncSkipCategory>[
     [
       "color",
       "theme_mode",
+      "holidayEffects",
+      "dismissedHoliday",
       "comicDisplayMode",
       "comicTileScale",
       "initialPage",
