@@ -7,7 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/adaptive_reading.dart';
 import 'package:venera/foundation/image_provider/reader_image.dart';
 
+import 'fixtures/avif_page.dart';
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('detectReadingLayout', () {
     test('recognizes ordinary pages with a cover and a wide spread', () {
       // Covers and spreads are deliberately mixed into the body sample. The
@@ -218,6 +222,25 @@ void main() {
 
     expect(await provider.readDimensions(() {}), const Size(1, 1));
   });
+
+  test(
+    'adaptive reading recognizes AVIF without native header support',
+    () async {
+      final provider = _MemoryReaderImageProvider(avifPageBytes());
+      final result = await probeReadingLayout(
+        imageCount: 4,
+        readSize: (_) => provider.readDimensions(
+          () {},
+          readHeader: (_) async =>
+              throw const FormatException('Unsupported AVIF header'),
+        ),
+        isCancelled: () => false,
+        timeout: const Duration(seconds: 10),
+      );
+
+      expect(result, AdaptiveReadingLayout.paged);
+    },
+  );
 }
 
 class _MemoryReaderImageProvider extends ReaderImageProvider {

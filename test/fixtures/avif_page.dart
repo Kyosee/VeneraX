@@ -12,6 +12,17 @@ Uint8List avifPageBytes() => base64Decode(
   'txFxrY4uwbtD+M3Q627eBigri8G3klqtuoA=',
 );
 
+/// The same page with an extended ftyp header and adjusted absolute iloc offset.
+Uint8List extendedAvifPageBytes() => base64Decode(
+  'AAAAAWZ0eXAAAAAAAAAAKGF2aWYAAAAAYXZpZm1pZjFtaWFmTUExQQAAAOttZXRh'
+  'AAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAAB'
+  'AAAAHmlsb2MAAAAARAAAAQABAAAAAQAAARsAAAAqAAAAKGlpbmYAAAAAAAEAAAAa'
+  'aW5mZQIAAAAAAQAAYXYwMUNvbG9yAAAAAGppcHJwAAAAS2lwY28AAAAUaXNw'
+  'ZQAAAAAAAAAQAAAACAAAABBwaXhpAAAAAAMICAgAAAAMYXYxQ4EgAAAAAAATY29s'
+  'cm5jbHgAAQANAAaAAAAAF2lwbWEAAAAAAAAAAQABBAECgwQAAAAybWRhdBIACgU4'
+  'DL+wSDIfEMAAAEC3EXGtji7Bu0P4zdDrbt4GKCuLwbeSWq26gA==',
+);
+
 /// The same pattern with half-opacity red pixels and opaque blue pixels.
 Uint8List transparentAvifPageBytes() => base64Decode(
   'AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUEAAAGGbWV0YQAAAAAAAAAh'

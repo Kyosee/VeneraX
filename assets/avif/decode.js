@@ -7710,8 +7710,15 @@
   function isAVIF(d) {
     if (d.length < 16 || fourcc(d, 4) !== "ftyp")
       return false;
-    const size = new DataView(d.buffer, d.byteOffset, d.byteLength).getUint32(0);
-    for (let o = 8;o + 4 <= Math.min(size, d.length); o += o === 8 ? 8 : 4) {
+    const view = new DataView(d.buffer, d.byteOffset, d.byteLength);
+    let size = view.getUint32(0), start = 8;
+    if (size === 1) {
+      size = view.getUint32(8) * 2 ** 32 + view.getUint32(12);
+      start = 16;
+    }
+    if (size < start + 8 || size > d.length || size % 4 !== 0)
+      return false;
+    for (let o = start;o + 4 <= size; o += o === start ? 8 : 4) {
       const brand = fourcc(d, o);
       if (brand === "avif" || brand === "avis")
         return true;

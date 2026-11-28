@@ -12,6 +12,28 @@ import 'fixtures/avif_page.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('software decoding accepts an extended file-type header', () async {
+    final codec = await decodeComicImage(
+      extendedAvifPageBytes(),
+      decode: (buffer, {getTargetSize}) async {
+        buffer.dispose();
+        throw const FormatException('Unsupported AVIF');
+      },
+    );
+    addTearDown(codec.dispose);
+    final image = (await codec.getNextFrame()).image;
+    addTearDown(image.dispose);
+    expect(image.width, 16);
+    expect(image.height, 8);
+    final pixels = (await image.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    ))!;
+    expect(pixels.getUint8(4 * 2), greaterThan(230));
+    expect(pixels.getUint8(4 * 2 + 2), lessThan(30));
+    expect(pixels.getUint8(4 * 13), lessThan(30));
+    expect(pixels.getUint8(4 * 13 + 2), greaterThan(230));
+  });
+
   test('software decoding preserves transparency and requested size', () async {
     final codec = await decodeComicImage(
       transparentAvifPageBytes(),

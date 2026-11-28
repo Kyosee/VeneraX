@@ -6,9 +6,11 @@ import 'package:venera/foundation/image_translation/translation_config.dart';
 import 'package:venera/foundation/image_translation/translation_service.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'base_image_provider.dart';
+import 'comic_image_codec.dart';
 import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
 
@@ -88,8 +90,12 @@ class ReaderImageProvider
   @override
   final bool enableResize;
 
-  /// Read the processed image header without allocating its full bitmap.
-  Future<Size> readDimensions(void Function() checkStop) async {
+  /// Read processed dimensions from the header when the engine supports it.
+  Future<Size> readDimensions(
+    void Function() checkStop, {
+    Future<ui.ImageDescriptor> Function(ui.ImmutableBuffer) readHeader =
+        ui.ImageDescriptor.encoded,
+  }) async {
     final chunks = StreamController<ImageChunkEvent>.broadcast();
     ui.ImmutableBuffer? buffer;
     ui.ImageDescriptor? descriptor;
@@ -98,7 +104,22 @@ class ReaderImageProvider
       final bytes = await load(chunks, checkStop);
       checkStop();
       buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      try {
+        descriptor = await readHeader(buffer);
+      } catch (_) {
+        if (!isAvifImage(bytes)) rethrow;
+        final codec = await decodeComicImage(bytes);
+        ui.Image? image;
+        try {
+          checkStop();
+          image = (await codec.getNextFrame()).image;
+          checkStop();
+          return Size(image.width.toDouble(), image.height.toDouble());
+        } finally {
+          image?.dispose();
+          codec.dispose();
+        }
+      }
       checkStop();
       return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
     } finally {
