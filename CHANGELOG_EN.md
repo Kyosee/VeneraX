@@ -4,6 +4,35 @@
 
 [中文](CHANGELOG.md) | English
 
+## [v3.0.3](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.3) - 2026-11-28
+
+### Added
+
+- Added support for AVIF comic images in online and offline reading, local folders, and CBZ archives. Animated AVIF images display only their first frame on some devices. (#393)
+- AVIF images are also supported in custom covers, reading widgets, and AI translation. (#393)
+- Added a desktop reader shortcut for AI translation. Press F8 by default to turn translation on or off for the current comic, with options to change or clear the binding in Settings. (#389)
+- Added a few little surprises for you to discover.
+
+### Changed
+
+- Improved text recognition performance for AI translation on Android, HarmonyOS, iOS, Windows, macOS, and Linux by reducing image processing time before recognition.
+
+### Fixed
+
+- Fixed Android incorrectly reporting "Invalid comic" when importing some local comic folders with similar names. (#387)
+- Fixed the number of comics available in Draw One's "Local comics · All" pool not matching the local library count. (#390)
+- Fixed vertical dialogue being laid out horizontally or shifted away from its original columns in cases such as Traditional-to-Simplified Chinese conversion. (#388)
+- Fixed Japanese long vowel marks being drawn in the wrong orientation in vertical dialogue. (#388)
+- Fixed small punctuation marks, such as ellipsis dots, remaining on plain speech bubble backgrounds after AI translation. (#388)
+- Fixed incomplete removal of dialogue near page edges while preserving panel borders. (#388)
+- Fixed Windows being unable to extract app update packages in some system environments.
+
+### Removed
+
+- No features were removed in this release.
+
+**Full Changelog**: https://github.com/Kyosee/VeneraX/compare/v3.0.2...v3.0.3
+
 ## [v3.0.2](https://github.com/Kyosee/VeneraX/releases/tag/v3.0.2) - 2026-11-24
 
 ### Added
